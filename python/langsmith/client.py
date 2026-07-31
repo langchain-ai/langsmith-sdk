@@ -114,6 +114,12 @@ from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
 from langsmith._openapi_client import Langsmith as SyncLangsmithOpenAPIClient
+from langsmith._openapi_client._base_client import (
+    AsyncHttpxClientWrapper as _AsyncHttpxClientWrapper,
+)
+from langsmith._openapi_client._base_client import (
+    SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
+)
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -160,6 +166,57 @@ def _get_openapi_base_url(api_url: str) -> str:
         if api_url.endswith(suffix):
             return api_url[: -len(suffix)]
     return api_url
+
+
+def _httpx_kwargs_from_session(session: requests.Session) -> dict[str, Any]:
+    """Translate a `requests.Session`'s transport config into `httpx` kwargs.
+
+    The generated OpenAPI client is `httpx`-based, so a `requests.Session`
+    cannot be shared with it directly. Instead we carry over the settings that
+    have a direct `httpx` equivalent, so that a caller-supplied session's TLS,
+    proxy, cookie and header configuration also applies to the v2 endpoints.
+
+    Not carried over (no `httpx` equivalent): custom mounted `HTTPAdapter`s,
+    `session.auth`, and `session.hooks`. Connection pool bounds and retries are
+    left at the generated client's own defaults rather than being derived from
+    the session's adapter.
+    """
+    kwargs: dict[str, Any] = {"trust_env": session.trust_env}
+
+    # Only user-added headers; `requests`' own defaults (its `User-Agent`,
+    # `Accept-Encoding`, ...) must not shadow the ones httpx/the SDK sets.
+    requests_defaults = requests.utils.default_headers()
+    headers = {
+        key: value
+        for key, value in session.headers.items()
+        if value is not None and requests_defaults.get(key) != value
+    }
+    if headers:
+        kwargs["headers"] = headers
+    if session.cookies:
+        # Pass the jar itself, not `dict(...)`: flattening drops each cookie's
+        # domain/path/secure scope (leaking cookies meant for another host to
+        # the API) and raises `CookieConflictError` on same-name cookies.
+        kwargs["cookies"] = session.cookies
+    # `verify` may be a bool or a path to a CA bundle; both are valid in httpx.
+    if session.verify is not True:
+        kwargs["verify"] = session.verify
+    if session.cert:
+        kwargs["cert"] = session.cert
+    # `requests` keys proxies per-scheme; httpx takes a single proxy (or
+    # `mounts`, which would require rebuilding the transport). The API base URL
+    # is https in practice, so prefer that entry.
+    proxy = session.proxies.get("https") or session.proxies.get("http")
+    if proxy:
+        # httpx renamed `proxies` to `proxy` in 0.26 and dropped `proxies` in
+        # 0.28; we support >=0.23, so pick whichever this version accepts.
+        proxy_kwarg = (
+            "proxy"
+            if "proxy" in signature(_httpx.Client.__init__).parameters
+            else "proxies"
+        )
+        kwargs[proxy_kwarg] = proxy
+    return kwargs
 
 
 _TRACING_SEND_TIMEOUT = (3, 10)  # (connect, read) seconds for background sends
@@ -951,6 +1008,7 @@ class Client:
         "_profile_auth_headers",
         "_langsmith_api",
         "_langsmith_api_sync",
+        "_session_provided",
     ]
 
     _api_key: Optional[str]
@@ -963,6 +1021,7 @@ class Client:
     _profile_auth_headers: dict[str, str]
     _langsmith_api: Optional[LangsmithOpenAPIClient]
     _langsmith_api_sync: Optional[SyncLangsmithOpenAPIClient]
+    _session_provided: bool
 
     def __init__(
         self,
@@ -1018,6 +1077,12 @@ class Client:
             session: The session to use for requests.
 
                 If `None`, a new session will be created.
+
+                v2 endpoints are served by an `httpx`-based client, which cannot
+                share the session itself. Its headers, cookies, `verify`, `cert`,
+                proxies and `trust_env` settings are translated onto that client;
+                custom mounted `HTTPAdapter`s, `session.auth` and `session.hooks`
+                are not.
             auto_batch_tracing: Whether to automatically batch tracing.
             anonymizer: A function applied for masking serialized run inputs and
                 outputs, before sending to the API.
@@ -1267,6 +1332,10 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
+        # Whether to derive the generated OpenAPI client's httpx config from the
+        # session. Only meaningful for a caller-supplied one; the default
+        # session carries no user configuration.
+        self._session_provided = session is not None
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -1511,35 +1580,53 @@ class Client:
     # __dict__; the stainless client caches each resource internally.
     # ------------------------------------------------------------------
 
+    def _openapi_timeout(self) -> _httpx.Timeout:
+        return _httpx.Timeout(
+            connect=self._timeout[0],
+            read=self._timeout[1],
+            write=self._timeout[1],
+            pool=self._timeout[0],
+        )
+
     def _get_langsmith_api(self) -> LangsmithOpenAPIClient:
         if self._langsmith_api is None:
+            base_url = _get_openapi_base_url(self.api_url)
+            timeout = self._openapi_timeout()
+            http_client = None
+            if self._session_provided:
+                http_client = _AsyncHttpxClientWrapper(
+                    base_url=base_url,
+                    timeout=timeout,
+                    **_httpx_kwargs_from_session(self.session),
+                )
             self._langsmith_api = LangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=_get_openapi_base_url(self.api_url),
-                timeout=_httpx.Timeout(
-                    connect=self._timeout[0],
-                    read=self._timeout[1],
-                    write=self._timeout[1],
-                    pool=self._timeout[0],
-                ),
+                base_url=base_url,
+                timeout=timeout,
                 default_headers=self._headers or None,
+                http_client=http_client,
             )
         return self._langsmith_api
 
     def _get_langsmith_api_sync(self) -> SyncLangsmithOpenAPIClient:
         if self._langsmith_api_sync is None:
+            base_url = _get_openapi_base_url(self.api_url)
+            timeout = self._openapi_timeout()
+            http_client = None
+            if self._session_provided:
+                http_client = _SyncHttpxClientWrapper(
+                    base_url=base_url,
+                    timeout=timeout,
+                    **_httpx_kwargs_from_session(self.session),
+                )
             self._langsmith_api_sync = SyncLangsmithOpenAPIClient(
                 api_key=self._api_key,
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
-                base_url=_get_openapi_base_url(self.api_url),
-                timeout=_httpx.Timeout(
-                    connect=self._timeout[0],
-                    read=self._timeout[1],
-                    write=self._timeout[1],
-                    pool=self._timeout[0],
-                ),
+                base_url=base_url,
+                timeout=timeout,
                 default_headers=self._headers or None,
+                http_client=http_client,
             )
         return self._langsmith_api_sync
 
