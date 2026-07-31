@@ -146,6 +146,8 @@ def _parse_profile_expires_at(expires_at: str) -> Optional[datetime.datetime]:
 
 
 def should_refresh_profile_token(profile: ProfileConfig) -> bool:
+    if trim_auth_value(profile.get("api_key")):
+        return False
     oauth = profile.get("oauth") or {}
     if not oauth.get("refresh_token"):
         return False
