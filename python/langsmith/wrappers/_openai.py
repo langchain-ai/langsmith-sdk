@@ -137,7 +137,7 @@ def _infer_invocation_params(
     if not isinstance(request_metadata, Mapping):
         request_metadata = {}
 
-    return {
+    result = {
         **request_metadata,
         "ls_provider": provider,
         "ls_model_type": model_type,
@@ -152,6 +152,18 @@ def _infer_invocation_params(
             **invocation_params,
         },
     }
+
+    if "ls_agent_type" not in result:
+        parent = run_helpers.get_current_run_tree()
+        parent_tag = None
+        if parent is not None and parent.extra:
+            parent_tag = parent.extra.get("metadata", {}).get("ls_agent_type")
+        if parent_tag in {"middleware", "subagent", "compaction"}:
+            result["ls_agent_type"] = parent_tag
+        else:
+            result["ls_agent_type"] = "root"
+
+    return result
 
 
 def _reduce_choices(choices: list[Choice]) -> dict:
