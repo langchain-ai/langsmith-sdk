@@ -37,6 +37,9 @@ import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
@@ -7121,6 +7124,92 @@ def test_run_tree_get_url_builds_url_locally_on_clickhouse_only() -> None:
         f"r/{run_tree.id}?poll=true"
     )
     api.runs.get_url.assert_not_called()
+
+
+def _deprecation_messages(recorded) -> list[str]:
+    return [
+        str(w.message) for w in recorded if issubclass(w.category, DeprecationWarning)
+    ]
+
+
+def test_read_thread_does_not_warn_about_list_runs() -> None:
+    """read_thread() points at threads.list_traces(), not list_runs()'s runs.query()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with pytest.warns(DeprecationWarning) as recorded:
+        # Deprecation fires when the generator is created, before any iteration.
+        client.read_thread(thread_id="t1", project_id=uuid.uuid4())
+
+    messages = _deprecation_messages(recorded)
+    assert any("read_thread() is deprecated" in m for m in messages)
+    assert not any("list_runs() is deprecated" in m for m in messages)
+
+
+def test_read_run_with_child_runs_does_not_warn_about_list_runs() -> None:
+    """The caller asked for child runs, not for list_runs()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Only the HTTP layer is stubbed, so the real _load_child_runs() ->
+        # list_runs() chain still executes.
+        mock.patch.object(Client, "request_with_retries") as request,
+        mock.patch.object(
+            Client, "_get_cursor_paginated_list", return_value=iter([])
+        ) as paginate,
+    ):
+        request.return_value = mock.Mock(
+            json=lambda: {
+                "id": str(run.id),
+                "name": "stub",
+                "run_type": "chain",
+                "start_time": _CREATED_AT.isoformat(),
+                "trace_id": str(run.id),
+            }
+        )
+        with pytest.warns(DeprecationWarning) as recorded:
+            client.read_run(run.id, load_child_runs=True)
+
+    paginate.assert_called_once()
+    messages = _deprecation_messages(recorded)
+    assert any("read_run() is deprecated" in m for m in messages)
+    assert not any("list_runs() is deprecated" in m for m in messages)
+
+
+def test_load_child_runs_does_not_warn_about_list_runs() -> None:
+    """_load_child_runs() reaches the real list_runs(); no warning may surface."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Stub only the HTTP fetch, so the real decorated list_runs() still runs.
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert client._load_child_runs(run) is run
+
+
+def test_suppress_deprecation_warning_is_scoped() -> None:
+    """The suppression must not leak past its block, including on exceptions."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with pytest.raises(RuntimeError):
+        with _suppress_deprecation_warning():
+            raise RuntimeError("boom")
+
+    with pytest.warns(DeprecationWarning, match="list_runs\\(\\) is deprecated"):
+        client.list_runs(project_id=uuid.uuid4())
 
 
 def _gtr_example_id() -> uuid.UUID:

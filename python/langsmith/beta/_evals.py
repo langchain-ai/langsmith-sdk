@@ -14,7 +14,11 @@ import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
 from langsmith._internal import _v2_migration_utils
-from langsmith._internal._beta_decorator import deprecated, warn_beta
+from langsmith._internal._beta_decorator import (
+    deprecated,
+    suppress_deprecation_warning,
+    warn_beta,
+)
 from langsmith.client import Client
 
 
@@ -180,7 +184,10 @@ def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Ru
     if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
         return _v2_migration_utils._load_nested_traces_v2(project_name, client)
 
-    runs = client.list_runs(project_name=project_name)
+    # Suppressed: compute_test_metrics() already warned, and it points at
+    # create_feedback() rather than list_runs()'s runs.query().
+    with suppress_deprecation_warning():
+        runs = client.list_runs(project_name=project_name)
     treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
         collections.defaultdict(list)
     )

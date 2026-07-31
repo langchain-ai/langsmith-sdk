@@ -14,6 +14,7 @@ import {
   getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
 import { parseHubIdentifier } from "../utils/prompts.js";
+import { _resetWarnedMessages } from "../utils/warn.js";
 
 describe("Client", () => {
   describe("createFeedback", () => {
@@ -1992,6 +1993,8 @@ describe("_checkBackendVersion", () => {
 });
 
 describe("getRunUrl deprecation", () => {
+  beforeEach(() => _resetWarnedMessages());
+
   it("warns and does not emit a nested readRun warning", async () => {
     const client = new Client({
       apiKey: "test-key",
@@ -2027,5 +2030,82 @@ describe("getRunUrl deprecation", () => {
     } finally {
       emitWarningSpy.mockRestore();
     }
+  });
+});
+
+describe("nested deprecation warnings", () => {
+  const RUN_ID = "00000000-0000-4000-8000-000000000011";
+  const PROJECT_ID = "00000000-0000-4000-8000-000000000012";
+
+  let client: Client;
+  let warnings: string[];
+  let emitWarningSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    _resetWarnedMessages();
+    client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    warnings = [];
+    emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+  });
+
+  afterEach(() => emitWarningSpy.mockRestore());
+
+  it("readThread() warns for itself but not for listRuns()", async () => {
+    // _listRuns is what readThread delegates to; stub it so no HTTP happens.
+    jest
+      .spyOn(client as any, "_listRuns")
+      .mockImplementation(async function* () {} as never);
+
+    for await (const _ of client.readThread({
+      threadId: "thread-1",
+      projectId: PROJECT_ID,
+    })) {
+      // drain
+    }
+
+    expect(
+      warnings.filter((w) => w.includes("readThread() is deprecated")),
+    ).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes("listRuns()"))).toHaveLength(0);
+  });
+
+  it("readRun({ loadChildRuns }) warns for itself but not for listRuns()", async () => {
+    jest.spyOn(client as any, "_get").mockResolvedValue({
+      id: RUN_ID,
+      name: "r",
+      run_type: "chain",
+      session_id: PROJECT_ID,
+      trace_id: RUN_ID,
+      dotted_order: "1",
+    } as never);
+    jest
+      .spyOn(client as any, "_listRuns")
+      .mockImplementation(async function* () {} as never);
+
+    await client.readRun(RUN_ID, { loadChildRuns: true });
+
+    expect(
+      warnings.filter((w) => w.includes("readRun() is deprecated")),
+    ).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes("listRuns()"))).toHaveLength(0);
+  });
+
+  it("_listRuns() does not warn at all", async () => {
+    jest
+      .spyOn(client as any, "_getCursorPaginatedList")
+      .mockImplementation(async function* () {} as never);
+
+    for await (const _ of client._listRuns({ projectId: PROJECT_ID })) {
+      // drain
+    }
+
+    expect(warnings).toHaveLength(0);
   });
 });
