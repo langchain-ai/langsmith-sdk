@@ -819,6 +819,84 @@ const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 /** Maximum number of operations to batch in a single request. */
 const DEFAULT_BATCH_SIZE_LIMIT = 100;
 
+/**
+ * Reject header names or values that could alter a request's framing.
+ *
+ * `Headers` does this for us, and does it the same way `fetch` will.
+ */
+function assertValidHeader(name: string, value: string): void {
+  new Headers({ [name]: value });
+}
+
+/** Reject a malformed header up front, before it can reach a request. */
+function assertValidHeaders(headers?: Record<string, string>): void {
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    assertValidHeader(name, value);
+  }
+}
+
+/**
+ * Fold a `HeadersInit` into a plain object so it can be spread.
+ *
+ * Names are matched case-insensitively with the last value winning, keeping the
+ * first spelling seen. A plain object would instead keep both spellings, which
+ * `Headers` later joins into a `"first, second"` list rather than an override.
+ * Every name and value is validated on the way through.
+ */
+function normalizeHeaders(
+  headers?: HeadersInit | Record<string, string>,
+): Record<string, string> {
+  if (!headers) return {};
+  const entries: Array<[string, string]> =
+    headers instanceof Headers
+      ? [...headers.entries()]
+      : Array.isArray(headers)
+        ? headers.map(([name, value]) => [name, value])
+        : Object.entries(headers);
+
+  const normalized: Record<string, string> = {};
+  const nameByLower = new Map<string, string>();
+  for (const [name, value] of entries) {
+    assertValidHeader(name, value);
+    const lowerName = name.toLowerCase();
+    const existingName = nameByLower.get(lowerName);
+    if (existingName === undefined) {
+      nameByLower.set(lowerName, name);
+      normalized[name] = value;
+    } else {
+      normalized[existingName] = value;
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Merge the caller's two header channels, then drop the `reserved` names.
+ *
+ * `overrides` wins, matched case-insensitively so a header supplied through both
+ * channels is overridden rather than turned into a `"first, second"` list.
+ */
+function mergeCallerHeaders(
+  base: Record<string, string>,
+  overrides: Record<string, string>,
+  reserved: ReadonlySet<string>,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...base };
+  const nameByLower = new Map(
+    Object.keys(merged).map((name) => [name.toLowerCase(), name]),
+  );
+  for (const [name, value] of Object.entries(overrides)) {
+    const lowerName = name.toLowerCase();
+    merged[nameByLower.get(lowerName) ?? name] = value;
+  }
+  for (const name of Object.keys(merged)) {
+    if (reserved.has(name.toLowerCase())) {
+      delete merged[name];
+    }
+  }
+  return merged;
+}
+
 export class AutoBatchQueue {
   items: {
     action: "create" | "update";
@@ -978,9 +1056,14 @@ export class Client implements LangSmithTracingClientInterface {
 
   private batchSizeLimit?: number;
 
-  private fetchOptions: RequestInit;
+  /** `config.fetchOptions` without its `headers`, which are merged separately. */
+  private fetchOptions: Omit<RequestInit, "headers">;
 
-  private openAPIClient: OpenAPILangsmith;
+  private _fetchOptionsHeaders: Record<string, string> = {};
+
+  private _openAPIClient?: OpenAPILangsmith;
+
+  private _openAPIClientSignature?: string;
 
   private settings: Promise<LangSmithSettings> | null;
 
@@ -1357,8 +1440,16 @@ export class Client implements LangSmithTracingClientInterface {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.batchSizeLimit = config.batchSizeLimit;
-    this.fetchOptions = config.fetchOptions || {};
-    this.openAPIClient = this._newOpenAPIClient();
+    const { headers: fetchOptionsHeaders, ...fetchOptions } =
+      config.fetchOptions || {};
+    this.fetchOptions = fetchOptions;
+    // Kept apart from `fetchOptions` so they can be merged *under* the required
+    // headers instead of replacing the whole set at each call site.
+    this._fetchOptionsHeaders = normalizeHeaders(fetchOptionsHeaders);
+    // Validated eagerly so malformed input fails at construction, but stored
+    // as given: `get headers` hands this object back to the caller.
+    assertValidHeaders(config.headers);
+    this._customHeaders = config.headers ?? {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     this._tracingMode = resolveTracingMode(config.tracingMode);
     if (this._tracingMode === "otel") {
@@ -1396,9 +1487,6 @@ export class Client implements LangSmithTracingClientInterface {
       // Use the global singleton instance
       this._promptCache = promptCacheSingleton;
     }
-
-    // Initialize custom headers
-    this._customHeaders = config.headers ?? {};
   }
 
   public static getDefaultClientConfig(): DefaultClientConfig {
@@ -1469,11 +1557,51 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /**
+   * The headers this client sets from its own config, which a caller-supplied
+   * header must not replace.
+   *
+   * Only what the client *actually* supplies: passing an explicit `Authorization`
+   * or `x-api-key` header with no configured credential is a supported way to
+   * authenticate (see `hasExplicitAuthHeader`), so those must survive.
+   */
+  private get _sdkControlledHeaders(): ReadonlySet<string> {
+    const names = new Set<string>();
+    if (this.apiKey !== undefined) {
+      names.add("x-api-key");
+    } else {
+      const profileAuthHeader = this.profileAuth?.currentAuthHeader();
+      if (profileAuthHeader) {
+        names.add(profileAuthHeader.name.toLowerCase());
+      }
+    }
+    if (this.workspaceId) {
+      names.add("x-tenant-id");
+    }
+    return names;
+  }
+
+  /**
+   * Headers supplied by the caller, through either `config.headers` or
+   * `config.fetchOptions.headers`, with the ones this SDK sets removed.
+   *
+   * `_customHeaders` is normalized here rather than at assignment because it is
+   * public and mutable: `get headers` hands back the caller's own object, so its
+   * contents can change (and can become malformed) at any point.
+   */
+  private get _callerHeaders(): Record<string, string> {
+    return mergeCallerHeaders(
+      normalizeHeaders(this._customHeaders),
+      this._fetchOptionsHeaders,
+      this._sdkControlledHeaders,
+    );
+  }
+
   private get _mergedHeaders(): { [header: string]: string } {
-    // Start with custom headers so they don't override required headers
+    // Start with caller-supplied headers so they don't override required headers
     const headers: { [header: string]: string } = {
       "User-Agent": `langsmith-js/${__version__}`,
-      ...this._customHeaders,
+      ...this._callerHeaders,
     };
     // Required headers that should not be overridden
     if (this.apiKey !== undefined) {
@@ -1491,6 +1619,44 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * The auth options and caller headers to build the generated client with.
+   *
+   * The generated client applies `defaultHeaders` *after* its own auth headers,
+   * so the ones this SDK sets are already dropped from `_callerHeaders` to keep
+   * the precedence of `_mergedHeaders`, where required headers win.
+   */
+  private get _openAPIAuth(): {
+    apiKey: string | undefined;
+    defaultHeaders: Record<string, string | null> | undefined;
+  } {
+    const headers: Record<string, string | null> = { ...this._callerHeaders };
+
+    // A caller may authenticate by supplying `x-api-key` themselves. The
+    // generated client rejects that as a header (its `validateHeaders` requires
+    // its own `apiKey` to be set), so hand it over as the `apiKey` option and
+    // drop the header to avoid sending the same value twice.
+    const callerApiKeyName = Object.keys(headers).find(
+      (name) => name.toLowerCase() === "x-api-key",
+    );
+    let apiKey = this.apiKey;
+    if (apiKey === undefined && callerApiKeyName !== undefined) {
+      apiKey = headers[callerApiKeyName] ?? undefined;
+      delete headers[callerApiKeyName];
+    }
+
+    if (apiKey === undefined && this.workspaceId === undefined) {
+      // Let the wrapped `fetch` supply auth (profile auth, an explicit
+      // `Authorization` header, or none at all).
+      headers["X-API-Key"] = null;
+    }
+
+    return {
+      apiKey,
+      defaultHeaders: Object.keys(headers).length > 0 ? headers : undefined,
+    };
+  }
+
+  /**
    * Get or set custom headers for the client.
    * Custom headers are merged with default headers (User-Agent, x-api-key, x-tenant-id).
    * Custom headers will not override the default required headers.
@@ -1500,6 +1666,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public set headers(value: Record<string, string> | undefined) {
+    assertValidHeaders(value);
     this._customHeaders = value ?? {};
   }
 
@@ -1511,27 +1678,45 @@ export class Client implements LangSmithTracingClientInterface {
     return url;
   }
 
-  private _newOpenAPIClient(): OpenAPILangsmith {
-    const defaultHeaders =
-      this.apiKey === undefined && this.workspaceId === undefined
-        ? { "X-API-Key": null }
-        : undefined;
+  /**
+   * The generated OpenAPI client, rebuilt whenever its auth or headers change.
+   *
+   * The generated client captures `defaultHeaders` and `apiKey` when it is
+   * built, while the handwritten paths recompute `_mergedHeaders` per request.
+   * Rebuilding on change keeps the two halves from diverging when the inputs
+   * move underneath us — a caller mutating the object returned by
+   * `get headers`, or a profile whose auth header only becomes available after
+   * its token is refreshed.
+   */
+  private get openAPIClient(): OpenAPILangsmith {
+    const auth = this._openAPIAuth;
+    const signature = JSON.stringify([auth.apiKey, auth.defaultHeaders]);
+    if (
+      this._openAPIClient === undefined ||
+      this._openAPIClientSignature !== signature
+    ) {
+      this._openAPIClientSignature = signature;
+      this._openAPIClient = this._newOpenAPIClient(auth);
+    }
+    return this._openAPIClient;
+  }
+
+  private _newOpenAPIClient(auth = this._openAPIAuth): OpenAPILangsmith {
     const {
       method: _method,
-      headers: _headers,
       body: _body,
       signal: _signal,
       ...openAPIFetchOptions
     } = this.fetchOptions;
 
     return new OpenAPILangsmith({
-      apiKey: this.apiKey,
+      apiKey: auth.apiKey,
       tenantID: this.workspaceId,
       baseURL: this._getOpenAPIBaseUrl(),
       timeout: this.timeout_ms,
       fetch: this._fetch,
       fetchOptions: openAPIFetchOptions,
-      defaultHeaders,
+      defaultHeaders: auth.defaultHeaders,
     });
   }
 
