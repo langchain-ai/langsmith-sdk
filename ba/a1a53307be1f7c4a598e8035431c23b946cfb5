@@ -14,6 +14,7 @@ python/tests/unit_tests/test_client.py
   s_238901bcab1a6a::t_8e7a67a9e9b697 7334
   s_238901bcab1a6a::t_1bda6a7087fb5c 7388,7398-7399
   s_238901bcab1a6a::t_8d413965b530b3 7362-7363,7365-7367,7381
+  s_238901bcab1a6a::t_5f324d00b41810 64-66
 python/langsmith/run_trees.py
   s_6d702641fab4ee::t_589a1117ffb4ff 23
 python/tests/unit_tests/evaluation/test_runner.py
