@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import pathlib
+import ssl
 import sys
 import threading
 import time
@@ -52,6 +53,7 @@ from langsmith.client import (
     _default_retry_config,
     _dumps_json,
     _get_openapi_base_url,
+    _httpx_kwargs_from_session,
     _is_langchain_hosted,
     _parse_token_or_url,
     _reject_filesystem_attachments,
@@ -5711,6 +5713,91 @@ def test_async_client_uses_normalized_base_url(
 
     client = AsyncClient(api_url=api_url, api_key="test-api-key")
     assert str(client._langsmith_api.base_url).rstrip("/") == expected_base_url
+
+
+def test_httpx_kwargs_from_session_translates_transport_config() -> None:
+    """A caller-supplied session's transport config carries over to httpx."""
+    session = requests.Session()
+    session.headers["X-Custom"] = "custom-value"
+    session.cookies.set("cookie-name", "cookie-value")
+    session.verify = "/path/to/ca-bundle.pem"
+    session.cert = ("/path/to/client.crt", "/path/to/client.key")
+    session.proxies = {"https": "http://proxy.internal:8080"}
+    session.trust_env = False
+
+    kwargs = _httpx_kwargs_from_session(session)
+
+    assert kwargs["headers"] == {"X-Custom": "custom-value"}
+    assert kwargs["cookies"] == {"cookie-name": "cookie-value"}
+    assert kwargs["verify"] == "/path/to/ca-bundle.pem"
+    assert kwargs["cert"] == ("/path/to/client.crt", "/path/to/client.key")
+    assert kwargs["proxy"] == "http://proxy.internal:8080"
+    assert kwargs["trust_env"] is False
+
+
+def test_httpx_kwargs_from_session_omits_requests_defaults() -> None:
+    """`requests`' own default headers must not shadow the httpx/SDK ones."""
+    kwargs = _httpx_kwargs_from_session(requests.Session())
+
+    assert "headers" not in kwargs
+    assert "cookies" not in kwargs
+    assert "verify" not in kwargs
+    assert "cert" not in kwargs
+    assert "proxy" not in kwargs
+    assert kwargs["trust_env"] is True
+
+
+def test_openapi_clients_apply_provided_session_config() -> None:
+    """Both generated clients honor a caller-supplied session's config."""
+    from langsmith._openapi_client._models import FinalRequestOptions
+
+    session = requests.Session()
+    session.headers["X-Custom"] = "custom-value"
+    session.headers["x-api-key"] = "hijacked"
+    session.cookies.set("cookie-name", "cookie-value")
+    session.verify = False
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+        session=session,
+    )
+
+    for openapi_client in (
+        client._get_langsmith_api(),
+        client._get_langsmith_api_sync(),
+    ):
+        http_client = openapi_client._client
+        assert http_client.headers["X-Custom"] == "custom-value"
+        assert str(http_client.base_url).rstrip("/") == "http://localhost:1984"
+        # verify=False disables certificate verification on the transport.
+        assert http_client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+
+        request = openapi_client._build_request(
+            FinalRequestOptions(method="get", url="/api/v2/runs")
+        )
+        assert request.headers["cookie"] == "cookie-name=cookie-value"
+        # The SDK's own auth headers still win over the session's.
+        assert "hijacked" not in request.headers["x-api-key"]
+        assert "test-api-key" in request.headers["x-api-key"]
+
+
+def test_openapi_clients_keep_defaults_without_provided_session() -> None:
+    """Without an explicit session there is nothing to port over."""
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+    )
+
+    assert "python-requests" not in client._get_langsmith_api()._client.headers.get(
+        "user-agent", ""
+    )
+    assert (
+        "python-requests"
+        not in client._get_langsmith_api_sync()._client.headers.get("user-agent", "")
+    )
 
 
 def test_process_buffered_run_ops_core_functionality():
