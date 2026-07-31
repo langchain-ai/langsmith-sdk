@@ -79,6 +79,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
+from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
@@ -4156,6 +4157,12 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
     def read_run(
         self,
         run_id: ID_TYPE,
@@ -4165,6 +4172,12 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]):
@@ -4233,6 +4246,12 @@ class Client:
             start_time=start_time,
         )
 
+    @_deprecated(
+        "read_thread() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.list_traces() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-list-traces for the migration guide."
+    )
     def read_thread(
         self,
         *,
@@ -4247,6 +4266,12 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """Read runs for a single thread.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.threads.list_traces` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             thread_id: Thread id (required).
@@ -4289,6 +4314,12 @@ class Client:
             **kwargs,
         )
 
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     def list_runs(
         self,
         *,
@@ -4311,6 +4342,12 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -4483,6 +4520,12 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    @_deprecated(
+        "list_threads() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.threads.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#threads-query for the migration guide."
+    )
     def list_threads(
         self,
         *,
@@ -4494,6 +4537,12 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
     ) -> list[ListThreadsItem]:
         """List threads and fetch the runs for each thread.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.threads.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The project (session) id.
@@ -4699,6 +4748,12 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return response.json()
 
+    @_deprecated(
+        "get_run_url() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.get_url() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-get-url for the migration guide."
+    )
     def get_run_url(
         self,
         *,
@@ -4712,6 +4767,12 @@ class Client:
         More for use interacting with runs after the fact
         for data analysis or ETL workloads.
 
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.get_url` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.
+            Will be removed after Jan 31, 2027.
+
         Args:
             run (RunBase): The run.
             project_name (Optional[str]): The name of the project.
@@ -4719,6 +4780,21 @@ class Client:
 
         Returns:
             str: The URL for the run.
+        """
+        return self._construct_run_url(
+            run=run, project_name=project_name, project_id=project_id
+        )
+
+    def _construct_run_url(
+        self,
+        *,
+        run: ls_schemas.RunBase,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> str:
+        """Build a run's UI URL locally, without calling the backend.
+
+        Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
         if session_id := getattr(run, "session_id", None):
             pass
@@ -7784,6 +7860,11 @@ class Client:
             )
         return results_
 
+    @_deprecated(
+        "evaluate_run() is deprecated and will be removed after Jan 31, 2027. "
+        "There is no replacement: run the evaluator yourself and log the result "
+        "with client.create_feedback()."
+    )
     def evaluate_run(
         self,
         run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
@@ -7798,6 +7879,12 @@ class Client:
         load_child_runs: bool = False,
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run.
+
+        .. admonition:: Deprecated
+
+            There is no replacement. Run the evaluator yourself and log the
+            result with :meth:`langsmith.Client.create_feedback`.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run (Union[V2Run, Run, RunBase, str, UUID]):
@@ -7905,6 +7992,11 @@ class Client:
             )
         return results
 
+    @_deprecated(
+        "aevaluate_run() is deprecated and will be removed after Jan 31, 2027. "
+        "There is no replacement: run the evaluator yourself and log the result "
+        "with client.create_feedback()."
+    )
     async def aevaluate_run(
         self,
         run: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
@@ -7919,6 +8011,12 @@ class Client:
         load_child_runs: bool = False,
     ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run asynchronously.
+
+        .. admonition:: Deprecated
+
+            There is no replacement. Run the evaluator yourself and log the
+            result with :meth:`langsmith.Client.create_feedback`.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run (Union[V2Run, Run, RunBase, str, UUID]):
@@ -8627,7 +8725,8 @@ class Client:
     ) -> Iterator[ls_schemas.FeedbackFormula]:
         """List feedback formulas.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8643,7 +8742,8 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Get a feedback formula by ID.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8667,7 +8767,8 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Create a feedback formula.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8690,7 +8791,8 @@ class Client:
     ) -> ls_schemas.FeedbackFormula:
         """Update a feedback formula.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -8704,7 +8806,8 @@ class Client:
     def delete_feedback_formula(self, feedback_formula_id: ID_TYPE) -> None:
         """Delete a feedback formula by ID.
 
-        .. deprecated::
+        .. admonition:: Deprecated
+
             Composite feedback formulas are no longer supported in the SDK.
             Add composite feedback scores via the LangSmith UI instead.
             This method now raises ``NotImplementedError``.
@@ -9075,8 +9178,9 @@ class Client:
           (`run_id`, `session_id`, `start_time`, and an optional
           `source_proposed_example_id`). This lets the run be located directly,
           without a scan, and is required for workspaces served by SmithDB.
-        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
-          future release; prefer `runs`.
+        - `run_ids`: a plain list of run IDs. This path is deprecated and will
+          be removed after Jan 31, 2027; prefer `runs`.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -9097,6 +9201,13 @@ class Client:
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/by-key"
             json_body = [_serialize_run_key(run, i) for i, run in enumerate(runs)]
         elif run_ids is not None:
+            warnings.warn(
+                "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
+                "Use the runs parameter with RunKey objects instead. "
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
             json_body = [
                 str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
@@ -10935,6 +11046,12 @@ class Client:
 
             offset += len(batch)
 
+    @_deprecated(
+        "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.datasets.experiment_runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#dataset-experiment-runs-query for the migration guide."
+    )
     def get_experiment_results(
         self,
         name: Optional[str] = None,
@@ -10945,6 +11062,12 @@ class Client:
         limit: Optional[int] = None,
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.datasets.experiment_runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#dataset-experiment-runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Experiment results may not be available immediately after the experiment is created.
 

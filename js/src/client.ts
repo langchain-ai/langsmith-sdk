@@ -3147,10 +3147,17 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRun(
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
   ): Promise<Run> {
+    warnOnce(
+      "readRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.retrieve() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
+    );
     assertUuid(runId);
     let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
     if (loadChildRuns) {
@@ -3159,6 +3166,7 @@ export class Client implements LangSmithTracingClientInterface {
     return run;
   }
 
+  /** @deprecated Use `client.runs.getURL()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide. Will be removed after Jan 31, 2027. */
   public async getRunUrl({
     runId,
     run,
@@ -3168,6 +3176,12 @@ export class Client implements LangSmithTracingClientInterface {
     run?: Run;
     projectOpts?: ProjectOptions;
   }): Promise<string> {
+    warnOnce(
+      "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.getURL() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
+    );
     if (run !== undefined) {
       let sessionId: string;
       if (run.session_id) {
@@ -3189,7 +3203,12 @@ export class Client implements LangSmithTracingClientInterface {
         run.id
       }?poll=true`;
     } else if (runId !== undefined) {
-      const run_ = await this.readRun(runId);
+      // Fetch directly rather than through readRun() so callers don't also get a
+      // readRun deprecation warning for a method they never called.
+      assertUuid(runId);
+      const run_ = _normalizeRunTimestamps(
+        await this._get<Run>(`/runs/${runId}`),
+      );
       if (!run_.app_path) {
         throw new Error(`Run ${runId} has no app_path`);
       }
@@ -3243,6 +3262,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * List runs from the LangSmith server.
+   * @deprecated Use `client.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide. Will be removed after Jan 31, 2027.
    * @param projectId - The ID of the project to filter by.
    * @param projectName - The name of the project to filter by.
    * @param parentRunId - The ID of the parent run to filter by.
@@ -3324,6 +3344,12 @@ export class Client implements LangSmithTracingClientInterface {
    * });
    */
   public async *listRuns(props: ListRunsParams): AsyncIterable<Run> {
+    warnOnce(
+      "listRuns() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
+    );
     const {
       projectId,
       projectName,
@@ -3511,7 +3537,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    warnOnce(
+      "readThread() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.listTraces() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_THREAD" },
+    );
     const {
       threadId,
       projectId,
@@ -3541,9 +3574,16 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide. Will be removed after Jan 31, 2027. */
   public async listThreads(
     props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
+    warnOnce(
+      "listThreads() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_THREADS" },
+    );
     const {
       projectId,
       projectName,
@@ -6108,8 +6148,9 @@ export class Client implements LangSmithTracingClientInterface {
    * - `RunKey[]` (preferred): each entry carries the run's full lookup key, so
    *   it can be located directly without a scan. Required for workspaces served
    *   by SmithDB; routes to `POST /runs/by-key`.
-   * - `string[]`: a plain list of run IDs. This path will be deprecated in a
-   *   future release; prefer the key form. Routes to `POST /runs`.
+   * - `string[]`: a plain list of run IDs. **Deprecated**: this path will be
+   *   removed after Jan 31, 2027; prefer the key form. Routes to `POST /runs`.
+   *   See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
    *
    * If every element is a string (or the list is empty) it is treated as run
    * IDs; otherwise the list is treated as `RunKey` objects.
@@ -6155,6 +6196,15 @@ export class Client implements LangSmithTracingClientInterface {
         }),
       );
     } else {
+      warnOnce(
+        "Passing run IDs as strings to addRunsToAnnotationQueue() is deprecated and will be removed after Jan 31, 2027. " +
+          "Use RunKey[] instead. " +
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+        {
+          type: "DeprecationWarning",
+          code: "LANGSMITH_DEPRECATED_ADD_RUNS_STRING_IDS",
+        },
+      );
       url = base;
       body = JSON.stringify(
         (runs as string[]).map((id, i) =>

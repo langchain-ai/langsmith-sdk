@@ -14,12 +14,13 @@ from datetime import datetime, timezone
 from typing import Any, NamedTuple, Optional, Union, cast
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 from langsmith.uuid import uuid7_from_datetime
@@ -340,6 +341,8 @@ class RunTree(ls_schemas.RunBase):
         default=None,
         description="Projects to replicate this run to with optional updates.",
     )
+
+    _cached_url: Optional[str] = PrivateAttr(default=None)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -918,8 +921,49 @@ class RunTree(ls_schemas.RunBase):
         pass
 
     def get_url(self) -> str:
-        """Return the URL of the run."""
-        return self.client.get_run_url(run=self)
+        """Return the URL of the run.
+
+        The result is resolved once and then cached on the run, since callers
+        often ask for it per log line.
+        """
+        if self._cached_url is None:
+            self._cached_url = self._resolve_url()
+        return self._cached_url
+
+    def _resolve_url(self) -> str:
+        """Ask the backend for the run's URL, falling back to building it locally."""
+        client = self.client
+        try:
+            backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
+            if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
+                # The v2 endpoint doesn't exist on ClickHouse-only backends, which
+                # may predate it; build the URL locally there instead.
+                return client._construct_run_url(run=self)
+            session_id = self.session_id or (
+                client.read_project(
+                    project_name=self.session_name or utils.get_tracer_project()
+                ).id
+            )
+            response = client._get_langsmith_api_sync().runs.get_url(
+                str(self.id),
+                project_id=str(session_id),
+                trace_id=str(self.trace_id),
+                start_time=self.start_time.isoformat(),
+            )
+            if response.url is not None:
+                return response.url
+            logger.debug(
+                "No URL returned for run %s; building it locally instead.", self.id
+            )
+        except Exception:
+            # get_url() is called from logging and callbacks, where it must not
+            # start failing just because a request blipped.
+            logger.debug(
+                "Failed to fetch the URL for run %s; building it locally instead.",
+                self.id,
+                exc_info=True,
+            )
+        return client._construct_run_url(run=self)
 
     @classmethod
     def from_dotted_order(
