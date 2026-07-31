@@ -754,7 +754,10 @@ def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
     Call only when run-level feedback has no ``session_id``.
     """
     docs = "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create"
-    if (info.instance_flags or {}).get("ch_query_enabled") is False:
+    if (
+        _v2_migration_utils.get_query_backend(info.instance_flags)
+        == _v2_migration_utils.QueryBackend.SMITHDB_ONLY
+    ):
         raise ValueError(
             "session_id must be provided when creating feedback for a run:"
             f" this deployment cannot locate the run without it. See {docs}"

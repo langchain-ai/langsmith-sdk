@@ -415,7 +415,9 @@ async def test_async_create_feedback_requires_session_id_on_smithdb(
     mock_httpx_client = AsyncMock()
     mock_client_cls.return_value = mock_httpx_client
     client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
-    client._info = ls_schemas.LangSmithInfo(instance_flags={"ch_query_enabled": False})
+    client._info = ls_schemas.LangSmithInfo(
+        instance_flags={"ch_query_enabled": False, "sdb_query_enabled": True}
+    )
 
     with pytest.raises(ValueError, match="session_id must be provided"):
         await client.create_feedback(uuid4(), key="quality")
