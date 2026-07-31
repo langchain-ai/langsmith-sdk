@@ -187,15 +187,17 @@ if HAVE_AGENTS:
             else:
                 run_name = "Agent workflow"
 
-            # Build metadata
-            run_extra = {
-                "metadata": {
-                    **(self._metadata or {}),
-                    "ls_integration": "openai-agents-sdk",
-                    "ls_integration_version": get_package_version("openai-agents"),
-                    "ls_agent_type": "root",
-                }
+            # Build metadata. User-supplied trace.metadata (e.g. from
+            # RunConfig.trace_metadata) is honored for ls_agent_type; SDK
+            # identity fields (ls_integration*) are force-set as ground truth.
+            merged_metadata = {
+                **(self._metadata or {}),
+                **(getattr(trace, "metadata", None) or {}),
+                "ls_integration": "openai-agents-sdk",
+                "ls_integration_version": get_package_version("openai-agents"),
             }
+            merged_metadata.setdefault("ls_agent_type", "root")
+            run_extra = {"metadata": merged_metadata}
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
@@ -240,6 +242,9 @@ if HAVE_AGENTS:
 
             trace_dict = trace.export() or {}
             metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
+            # SDK identity fields are force-set; user's trace.metadata cannot
+            # spoof them via this later-lifecycle write site either.
+            metadata["ls_integration"] = "openai-agents-sdk"
 
             try:
                 # Update run with final inputs/outputs
@@ -327,7 +332,14 @@ if HAVE_AGENTS:
                     if parent_span_data_type is tracing.FunctionSpanData:
                         if "metadata" not in child_run.extra:
                             child_run.extra["metadata"] = {}
-                        child_run.extra["metadata"]["ls_agent_type"] = "subagent"
+                        # Preserve user narrowing intent (middleware / compaction);
+                        # otherwise apply structural subagent detection. This still
+                        # overrides an inherited "root" or missing tag with "subagent".
+                        if child_run.extra["metadata"].get("ls_agent_type") not in (
+                            "middleware",
+                            "compaction",
+                        ):
+                            child_run.extra["metadata"]["ls_agent_type"] = "subagent"
 
                 # Track span data type for parent lookups
                 self._span_data_types[span.span_id] = type(span.span_data)

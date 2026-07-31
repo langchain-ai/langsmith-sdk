@@ -210,6 +210,92 @@ describe("OpenAIAgentsTracingProcessor", () => {
         );
       }
     });
+
+    test("defaults ls_agent_type to root when trace has no metadata", async () => {
+      const trace = createMockTrace("trace-lst-1", "Agent");
+      await processor.onTraceStart(trace);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootNode = tree.nodes.find((n) => n.includes("Agent"));
+      expect(rootNode).toBeDefined();
+      if (rootNode) {
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
+          "root",
+        );
+      }
+    });
+
+    test.each(["middleware", "subagent", "compaction", "root"] as const)(
+      "preserves user-supplied ls_agent_type='%s' from trace.metadata",
+      async (userTag) => {
+        const trace = createMockTrace(`trace-lst-${userTag}`, "Agent", {
+          metadata: { ls_agent_type: userTag },
+        });
+        await processor.onTraceStart(trace);
+        await processor.onTraceEnd(trace);
+        await client.awaitPendingTraceBatches();
+
+        const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+        const rootNode = tree.nodes.find((n) => n.includes("Agent"));
+        expect(rootNode).toBeDefined();
+        if (rootNode) {
+          expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
+            userTag,
+          );
+        }
+      },
+    );
+
+    test("force-sets ls_integration even if user overrides via trace.metadata", async () => {
+      const trace = createMockTrace("trace-lst-integ", "Agent", {
+        metadata: {
+          ls_integration: "user-override",
+          ls_agent_type: "middleware",
+        },
+      });
+      await processor.onTraceStart(trace);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootNode = tree.nodes.find((n) => n.includes("Agent"));
+      expect(rootNode).toBeDefined();
+      if (rootNode) {
+        expect(tree.data[rootNode].extra?.metadata?.ls_integration).toBe(
+          "openai-agents-sdk",
+        );
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
+          "middleware",
+        );
+      }
+    });
+
+    test("preserves other user trace.metadata alongside ls_agent_type", async () => {
+      const trace = createMockTrace("trace-lst-other", "Agent", {
+        metadata: {
+          middleware_name: "entry_guardrail",
+          phase: "entry",
+        },
+      });
+      await processor.onTraceStart(trace);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootNode = tree.nodes.find((n) => n.includes("Agent"));
+      expect(rootNode).toBeDefined();
+      if (rootNode) {
+        expect(tree.data[rootNode].extra?.metadata?.middleware_name).toBe(
+          "entry_guardrail",
+        );
+        expect(tree.data[rootNode].extra?.metadata?.phase).toBe("entry");
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
+          "root",
+        );
+      }
+    });
   });
 
   describe("span handling", () => {

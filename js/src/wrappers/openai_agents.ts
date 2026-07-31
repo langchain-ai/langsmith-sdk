@@ -583,14 +583,18 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       runName = "Agent workflow";
     }
 
-    // Build metadata
-    const runExtra: Record<string, unknown> = {
-      metadata: {
-        ...this._metadata,
-        ls_integration: "openai-agents-sdk",
-        ls_agent_type: "root",
-      },
+    // Build metadata. User-supplied trace.metadata (e.g. Runner's
+    // traceMetadata) is honored for ls_agent_type; SDK identity
+    // (ls_integration) is force-set as ground truth.
+    const mergedMetadata: Record<string, unknown> = {
+      ...this._metadata,
+      ...((trace.metadata as Record<string, unknown> | undefined) ?? {}),
+      ls_integration: "openai-agents-sdk",
     };
+    if (!("ls_agent_type" in mergedMetadata)) {
+      mergedMetadata.ls_agent_type = "root";
+    }
+    const runExtra: Record<string, unknown> = { metadata: mergedMetadata };
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
     const groupId =
@@ -659,10 +663,13 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     this._runs.delete(trace.traceId);
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
-    const metadata = {
+    const metadata: Record<string, unknown> = {
       ...(traceDict.metadata as Record<string, unknown>),
       ...this._metadata,
     };
+    // SDK identity fields are force-set; user's trace.metadata cannot spoof
+    // them via this later-lifecycle write site either.
+    metadata.ls_integration = "openai-agents-sdk";
 
     try {
       // Update run with final inputs/outputs
@@ -772,10 +779,14 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
         if (!childRun.extra.metadata) {
           childRun.extra.metadata = {};
         }
-        childRun.extra.metadata = {
-          ...childRun.extra.metadata,
-          ls_agent_type: "subagent",
-        };
+        const meta = childRun.extra.metadata as Record<string, unknown>;
+        // Preserve user narrowing intent (middleware / compaction); otherwise
+        // apply structural subagent detection. Still overrides an inherited
+        // "root" or missing tag with "subagent".
+        const current = meta.ls_agent_type;
+        if (current !== "middleware" && current !== "compaction") {
+          meta.ls_agent_type = "subagent";
+        }
       }
     }
 
