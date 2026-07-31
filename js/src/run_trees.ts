@@ -184,6 +184,69 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "reroot",
 ]);
 
+// Untrusted header-supplied replica `updates` is merged into the run, so restrict it
+// to a fail-closed allow-list. `reroot` (re-parenting control) is always kept;
+// `metadata`/`tags` are the default annotation fields, and everything else is dropped.
+const HEADER_REQUIRED_UPDATE_FIELDS = ["reroot"];
+const HEADER_SAFE_UPDATE_FIELDS_DEFAULT = ["reroot", "metadata", "tags"];
+
+/**
+ * Allow-list of replica `updates` keys accepted from a `baggage` header.
+ *
+ * Overridable via `LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS` (comma-separated);
+ * replaces the default `{reroot, metadata, tags}` but always keeps `reroot`.
+ */
+function getHeaderSafeUpdateFields(): Set<string> {
+  const raw = getLangSmithEnvironmentVariable("BAGGAGE_ALLOWED_UPDATE_FIELDS");
+  if (raw == null) {
+    return new Set(HEADER_SAFE_UPDATE_FIELDS_DEFAULT);
+  }
+  const configured = raw
+    .split(",")
+    .map((field) => field.trim())
+    .filter((field) => field.length > 0);
+  return new Set([...HEADER_REQUIRED_UPDATE_FIELDS, ...configured]);
+}
+
+/**
+ * Filter untrusted header-supplied `updates` to the allow-list (fail closed).
+ *
+ * Non-object input passes through unchanged; dropped fields are warned about,
+ * never thrown.
+ */
+function sanitizeHeaderUpdates<T>(updates: T): T {
+  if (
+    typeof updates !== "object" ||
+    updates === null ||
+    Array.isArray(updates)
+  ) {
+    return updates;
+  }
+  const allowed = getHeaderSafeUpdateFields();
+  const sanitized: Record<string, unknown> = {};
+  const dropped: string[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    if (allowed.has(key)) {
+      sanitized[key] = value;
+    } else {
+      dropped.push(key);
+    }
+  }
+  if (dropped.length > 0) {
+    console.warn(
+      `Ignored non-allow-listed field(s) ${JSON.stringify(dropped.sort())} in ` +
+        "a distributed-tracing `baggage` replica `updates` payload; they are " +
+        "dropped for security reasons. If these come from a trusted upstream " +
+        "and are legitimate, add them to the allow-list via the " +
+        "LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS environment variable " +
+        `(comma-separated). Currently allowed: ${JSON.stringify(
+          [...allowed].sort(),
+        )}.`,
+    );
+  }
+  return sanitized as T;
+}
+
 function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
   const filtered: WriteReplica = {};
   for (const key of Object.keys(replica) as (keyof WriteReplica)[]) {
@@ -193,6 +256,9 @@ function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
     if (HEADER_SAFE_REPLICA_FIELDS.has(key)) {
       (filtered as Record<string, unknown>)[key] = replica[key];
     }
+  }
+  if ("updates" in filtered) {
+    filtered.updates = sanitizeHeaderUpdates(filtered.updates);
   }
   return filtered;
 }
@@ -236,7 +302,10 @@ class Baggage {
         const parsed = JSON.parse(value) as Replica[];
         replicas = parsed.map((replica) => {
           if (Array.isArray(replica)) {
-            return replica;
+            return [
+              replica[0],
+              sanitizeHeaderUpdates(replica[1]),
+            ] as ProjectReplica;
           }
           return filterReplicaForHeaders(replica);
         });

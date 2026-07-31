@@ -650,3 +650,157 @@ test("fromHeaders drops a non-boolean replica primary value", () => {
   const remapped = (parsed as any)._remapForProject(replica);
   expect(remapped.id).not.toBe(parsed!.id);
 });
+
+function replicasFromBaggage(replicas: unknown) {
+  const parsed = RunTree.fromHeaders({
+    "langsmith-trace":
+      "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+    baggage: `langsmith-replicas=${encodeURIComponent(
+      JSON.stringify(replicas),
+    )}`,
+  });
+  expect(parsed).toBeDefined();
+  expect(parsed!.replicas).toBeDefined();
+  return parsed!.replicas!;
+}
+
+test("fromHeaders allow-lists replica update fields", () => {
+  const replicas = replicasFromBaggage([
+    {
+      projectName: "legit-project",
+      updates: {
+        reroot: true,
+        metadata: { k: "v" },
+        tags: ["a"],
+        session_name: "attacker-project",
+        outputs: { forged: "attacker-controlled-output" },
+        environment: "prod",
+      },
+    },
+  ]);
+
+  expect(replicas[0].projectName).toBe("legit-project");
+  expect(replicas[0].updates).toEqual({
+    reroot: true,
+    metadata: { k: "v" },
+    tags: ["a"],
+  });
+});
+
+test("fromHeaders allow-lists replica update fields in the legacy array form", () => {
+  const replicas = replicasFromBaggage([
+    [
+      "legit-project",
+      {
+        reroot: true,
+        metadata: { k: "v" },
+        trace_id: "22222222-2222-2222-2222-222222222222",
+        outputs: { forged: "attacker-controlled-output" },
+        environment: "prod",
+      },
+    ],
+  ]);
+
+  expect(replicas[0].projectName).toBe("legit-project");
+  expect(replicas[0].updates).toEqual({ reroot: true, metadata: { k: "v" } });
+});
+
+test("fromHeaders update allow-list is configurable and always keeps reroot", () => {
+  process.env.LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS = "environment";
+  try {
+    const replicas = replicasFromBaggage([
+      {
+        projectName: "legit-project",
+        updates: { reroot: true, environment: "prod", metadata: { k: "v" } },
+      },
+    ]);
+
+    // `environment` is now allowed, `reroot` is always kept, and the default
+    // `metadata` is no longer allowed.
+    expect(replicas[0].updates).toEqual({ reroot: true, environment: "prod" });
+  } finally {
+    delete process.env.LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS;
+  }
+});
+
+test("fromHeaders warns about dropped replica update fields", () => {
+  const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    replicasFromBaggage([
+      {
+        projectName: "legit-project",
+        updates: { reroot: true, outputs: { forged: "value" } },
+      },
+    ]);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const message = String(warnSpy.mock.calls[0][0]);
+    expect(message).toContain("outputs");
+    expect(message).toContain("LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS");
+
+    warnSpy.mockClear();
+    replicasFromBaggage([
+      { projectName: "legit-project", updates: { reroot: true, tags: ["a"] } },
+    ]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  } finally {
+    warnSpy.mockRestore();
+  }
+});
+
+test("fromHeaders passes through non-object replica updates unchanged", () => {
+  expect(
+    replicasFromBaggage([{ projectName: "legit-project", updates: "nope" }])[0]
+      .updates,
+  ).toBe("nope");
+  expect(
+    replicasFromBaggage([{ projectName: "legit-project" }])[0].updates,
+  ).toBeUndefined();
+  expect(replicasFromBaggage([["legit-project", null]])[0].updates).toBeNull();
+});
+
+test("baggage replica updates cannot inject fields into the run update payload", async () => {
+  const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const { client, callSpy } = mockClient();
+    const updates = {
+      session_name: "attacker-chosen-project",
+      trace_id: "22222222-2222-2222-2222-222222222222",
+      parent_run_id: "33333333-3333-3333-3333-333333333333",
+      outputs: { forged: "attacker-controlled-output" },
+      reference_example_id: "44444444-4444-4444-4444-444444444444",
+      metadata: { k: "v" },
+    };
+    const runTree = RunTree.fromHeaders(
+      {
+        "langsmith-trace":
+          "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        baggage: `langsmith-replicas=${encodeURIComponent(
+          JSON.stringify([{ projectName: "victim-project", updates }]),
+        )}`,
+      },
+      { client },
+    );
+    expect(runTree).toBeDefined();
+
+    await runTree!.patchRun();
+
+    const patchCalls = callSpy.mock.calls.filter(
+      ([, init]: [unknown, RequestInit | undefined]) =>
+        init?.method === "PATCH",
+    );
+    expect(patchCalls).toHaveLength(1);
+    const rawBody = patchCalls[0][1].body;
+    const body = JSON.parse(
+      typeof rawBody === "string" ? rawBody : new TextDecoder().decode(rawBody),
+    );
+
+    expect(body.session_name).toBe("victim-project");
+    expect(body.outputs).toBeUndefined();
+    expect(body.reference_example_id).toBeUndefined();
+    expect(body.trace_id).not.toBe(updates.trace_id);
+    expect(body.parent_run_id).not.toBe(updates.parent_run_id);
+  } finally {
+    warnSpy.mockRestore();
+  }
+});
