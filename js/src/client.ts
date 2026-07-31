@@ -3833,10 +3833,17 @@ export class Client implements LangSmithTracingClientInterface {
     return result;
   }
 
+  /** @deprecated Use `client.runs.share.create()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async shareRun(
     runId: string,
     { shareId }: { shareId?: string } = {},
   ): Promise<string> {
+    warnOnce(
+      "shareRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.share.create() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_SHARE_RUN" },
+    );
     const data = {
       run_id: runId,
       share_token: shareId || uuid.v4(),
@@ -3861,7 +3868,14 @@ export class Client implements LangSmithTracingClientInterface {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
+  /** @deprecated Use `client.runs.share.delete()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async unshareRun(runId: string): Promise<void> {
+    warnOnce(
+      "unshareRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.share.delete() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_UNSHARE_RUN" },
+    );
     assertUuid(runId);
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
@@ -3875,7 +3889,17 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.runs.retrieve({ selects: ["SHARE_URL"] })` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
+    warnOnce(
+      "readRunSharedLink() is deprecated and will be removed after Jan 31, 2027. " +
+        'Use client.runs.retrieve({ selects: ["SHARE_URL"] }) instead. ' +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_READ_RUN_SHARED_LINK",
+      },
+    );
     assertUuid(runId);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
@@ -3894,6 +3918,7 @@ export class Client implements LangSmithTracingClientInterface {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
+  /** @deprecated Use `client.public.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async listSharedRuns(
     shareToken: string,
     {
@@ -3902,6 +3927,15 @@ export class Client implements LangSmithTracingClientInterface {
       runIds?: string[];
     } = {},
   ): Promise<Run[]> {
+    warnOnce(
+      "listSharedRuns() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.public.runs.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_LIST_SHARED_RUNS",
+      },
+    );
     const queryParams = new URLSearchParams({
       share_token: shareToken,
     });

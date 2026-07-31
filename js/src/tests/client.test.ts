@@ -2110,3 +2110,78 @@ describe("nested deprecation warnings", () => {
     expect(warnings).toHaveLength(0);
   });
 });
+
+describe("run sharing deprecations", () => {
+  const RUN_ID = "00000000-0000-4000-8000-000000000021";
+  const SHARE_TOKEN = "00000000-0000-4000-8000-000000000022";
+
+  let client: Client;
+  let warnings: string[];
+  let emitWarningSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    _resetWarnedMessages();
+    client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    warnings = [];
+    emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+  });
+
+  afterEach(() => emitWarningSpy.mockRestore());
+
+  /** Stub only the transport, so each real method body still executes. */
+  const stubFetch = (body: unknown) =>
+    jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => body,
+      text: async () => "",
+    } as never);
+
+  it.each([
+    [
+      "shareRun",
+      { share_token: SHARE_TOKEN },
+      () => client.shareRun(RUN_ID),
+      "client.runs.share.create()",
+    ],
+    [
+      "unshareRun",
+      {},
+      () => client.unshareRun(RUN_ID),
+      "client.runs.share.delete()",
+    ],
+    [
+      "readRunSharedLink",
+      { share_token: SHARE_TOKEN },
+      () => client.readRunSharedLink(RUN_ID),
+      'client.runs.retrieve({ selects: ["SHARE_URL"] })',
+    ],
+    [
+      "listSharedRuns",
+      [],
+      () => client.listSharedRuns(SHARE_TOKEN),
+      "client.public.runs.query()",
+    ],
+  ])(
+    "%s() warns once and names its replacement",
+    async (name, body, call, replacement) => {
+      stubFetch(body);
+      await call();
+
+      const emitted = warnings.filter((w) =>
+        w.includes(`${name}() is deprecated`),
+      );
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toContain(`Use ${replacement} instead.`);
+      expect(emitted[0]).toContain("#share-and-read-public-runs");
+    },
+  );
+});
