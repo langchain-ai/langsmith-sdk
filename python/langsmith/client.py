@@ -4821,8 +4821,20 @@ class Client:
             f"r/{run.id}?poll=true"
         )
 
+    @_deprecated(
+        "share_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.create() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.share.create` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run to share.
@@ -4847,8 +4859,20 @@ class Client:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
+    @_deprecated(
+        "unshare_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.delete() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.share.delete` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run to unshare.
@@ -4863,8 +4887,20 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    @_deprecated(
+        "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
+        'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.retrieve` with ``selects=["SHARE_URL"]`` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run.
@@ -4893,13 +4929,26 @@ class Client:
         Returns:
             bool: True if the run is shared, False otherwise.
         """
-        link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
+        with _suppress_deprecation_warning():
+            link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
         return link is not None
 
+    @_deprecated(
+        "read_shared_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.public.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def read_shared_run(
         self, share_token: Union[ID_TYPE, str], run_id: Optional[ID_TYPE] = None
     ) -> ls_schemas.Run:
         """Get shared runs.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.public.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared run.
@@ -4921,10 +4970,22 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Run(**response.json(), _host_url=self._host_url)
 
+    @_deprecated(
+        "list_shared_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.public.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def list_shared_runs(
         self, share_token: Union[ID_TYPE, str], run_ids: Optional[list[str]] = None
     ) -> Iterator[ls_schemas.Run]:
         """Get shared runs.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.public.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared run.
