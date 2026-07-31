@@ -2136,3 +2136,66 @@ describe("caller-supplied header collisions", () => {
     },
   );
 });
+
+describe("caller-supplied credentials", () => {
+  const originalEnv = process.env;
+  let tempDir: string;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "langsmith-caller-auth-"));
+    // No configured credential of any kind: no env key, and a profile config
+    // with no auth so the machine's real profile can't supply one.
+    delete process.env.LANGSMITH_API_KEY;
+    delete process.env.LANGCHAIN_API_KEY;
+    delete process.env.LANGSMITH_PROFILE;
+    delete process.env.LANGSMITH_WORKSPACE_ID;
+    delete process.env.LANGCHAIN_WORKSPACE_ID;
+    const configPath = path.join(tempDir, "config.json");
+    fs.writeFileSync(configPath, `${JSON.stringify({ profiles: {} })}\n`);
+    process.env.LANGSMITH_CONFIG_FILE = configPath;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    process.env = originalEnv;
+  });
+
+  const mockJsonResponse = () =>
+    jest.fn(
+      async () =>
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+  it.each([
+    ["Authorization", "Bearer caller-token"],
+    ["x-api-key", "caller-key"],
+  ])(
+    "keeps a caller-supplied %s when no credential is configured",
+    async (name, value) => {
+      const mockFetch = mockJsonResponse();
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        headers: { [name]: value },
+        fetchImplementation: mockFetch as any,
+      });
+
+      // The SDK has no credential of its own to apply, so dropping the
+      // caller's would leave the request unauthenticated.
+      expect(
+        new Headers((client as any)._mergedHeaders).get(name.toLowerCase()),
+      ).toBe(value);
+
+      await (client as any).openAPIClient.info.list();
+
+      const [, init] = mockFetch.mock.calls[0] as unknown as [
+        RequestInfo | URL,
+        RequestInit,
+      ];
+      expect(new Headers(init.headers).get(name.toLowerCase())).toBe(value);
+    },
+  );
+});
