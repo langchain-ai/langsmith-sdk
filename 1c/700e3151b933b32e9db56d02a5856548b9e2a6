@@ -1,0 +1,29 @@
+js/src/experimental/vercel/wrap.ts
+  s_ff080844706851::t_e2121335e8c842 431,525,782,936
+  s_ff080844706851::t_85872a504f4144 12
+  s_ff080844706851::t_d929fc28b14ef9 14
+js/src/experimental/vercel/_agent_type.ts
+  s_ff080844706851::t_c0a70f1422b64e 1-39
+js/src/tests/vercel_agent_type.test.ts
+  s_ff080844706851::t_e3bc2d40cdf937 1,9-82
+  s_ff080844706851::t_7fe11004cd3037 2-8
+js/src/experimental/vercel/telemetry.ts
+  s_ff080844706851::t_20174ffa0ee644 353
+  s_ff080844706851::t_a3f820adbfa501 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "1c700e3151b933b32e9db56d02a5856548b9e2a6",
+  "prompts": {},
+  "sessions": {
+    "s_ff080844706851": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40df46e9-1a8a-41fc-8b66-bb84f7803d70",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}
