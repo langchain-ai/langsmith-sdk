@@ -86,6 +86,7 @@ import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
+import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   raiseForStatus,
@@ -2225,7 +2226,9 @@ export class Client implements LangSmithTracingClientInterface {
     const docs =
       "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
     const serverInfo = await this._ensureServerInfo();
-    if (serverInfo.instance_flags?.ch_query_enabled === false) {
+    if (
+      getQueryBackend(serverInfo.instance_flags) === QueryBackend.SMITHDB_ONLY
+    ) {
       throw new Error(
         `sessionId must be provided when creating feedback for a run: this ` +
           `deployment cannot locate the run without it. See ${docs}`,

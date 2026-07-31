@@ -2023,7 +2023,7 @@ def _feedback_client(session: mock.Mock, **flags: bool) -> Client:
 def test_create_feedback_requires_session_id_when_ch_query_disabled() -> None:
     """SmithDB-only backends cannot locate the run without session_id."""
     session = mock.Mock()
-    client = _feedback_client(session, ch_query_enabled=False)
+    client = _feedback_client(session, ch_query_enabled=False, sdb_query_enabled=True)
 
     with pytest.raises(ValueError, match="session_id must be provided"):
         client.create_feedback(uuid.uuid4(), key="Foo")

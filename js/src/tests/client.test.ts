@@ -79,15 +79,16 @@ describe("Client", () => {
       );
     });
 
-    const infoClient = (chQueryEnabled: boolean) => {
+    const infoClient = (smithdbOnly: boolean) => {
+      const instance_flags = smithdbOnly
+        ? { ch_query_enabled: false, sdb_query_enabled: true }
+        : { ch_query_enabled: true };
       const mockFetch = jest.fn<typeof fetch>().mockImplementation(
         async () =>
-          new Response(
-            JSON.stringify({
-              instance_flags: { ch_query_enabled: chQueryEnabled },
-            }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          ),
+          new Response(JSON.stringify({ instance_flags }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
       );
       const client = new Client({
         apiUrl: "http://localhost:1984",
@@ -100,7 +101,7 @@ describe("Client", () => {
     };
 
     it("throws without a sessionId on a SmithDB-only deployment", async () => {
-      const { client, paths } = infoClient(false);
+      const { client, paths } = infoClient(true);
 
       await expect(
         client.createFeedback("550e8400-e29b-41d4-a716-446655440000", "Foo", {
@@ -129,7 +130,7 @@ describe("Client", () => {
     });
 
     it("accepts the params-object overload, which requires sessionId", async () => {
-      const { client, paths } = infoClient(false);
+      const { client, paths } = infoClient(true);
 
       await client.createFeedback({
         runId: "550e8400-e29b-41d4-a716-446655440000",
@@ -151,7 +152,7 @@ describe("Client", () => {
     });
 
     it("warns without a sessionId on other deployments", async () => {
-      const { client, paths } = infoClient(true);
+      const { client, paths } = infoClient(false);
       // warnOnce dedupes per process, so this must be the only test that warns.
       const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 

@@ -112,6 +112,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
 from langsmith._openapi_client import Langsmith as SyncLangsmithOpenAPIClient
 from langsmith._openapi_client._base_client import (
@@ -754,7 +755,7 @@ def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
     Call only when run-level feedback has no ``session_id``.
     """
     docs = "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create"
-    if (info.instance_flags or {}).get("ch_query_enabled") is False:
+    if get_query_backend(info.instance_flags) == QueryBackend.SMITHDB_ONLY:
         raise ValueError(
             "session_id must be provided when creating feedback for a run:"
             f" this deployment cannot locate the run without it. See {docs}"
