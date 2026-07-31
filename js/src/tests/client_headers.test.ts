@@ -119,6 +119,57 @@ describe("caller-supplied headers", () => {
     expect(requestHeaders(mockFetch).get("x-corp-trace")).toBe("set-later");
   });
 
+  it("picks up headers mutated through the getter, which never fires the setter", async () => {
+    const mockFetch = mockJsonResponse();
+    const client = new Client({
+      apiKey: "test-api-key",
+      headers: { "X-Corp-Trace": "initial" },
+      fetchImplementation: mockFetch as any,
+    });
+
+    // `get headers` hands back the caller's own object by reference.
+    client.headers["X-Corp-Trace"] = "mutated";
+    client.headers["X-Added-Later"] = "added";
+    await (client as any).openAPIClient.info.list();
+
+    const headers = requestHeaders(mockFetch);
+    expect(headers.get("x-corp-trace")).toBe("mutated");
+    expect(headers.get("x-added-later")).toBe("added");
+  });
+
+  it("stops forwarding a caller Authorization once profile auth supplies one", async () => {
+    const mockFetch = mockJsonResponse();
+    const client = new Client({
+      apiKey: undefined,
+      headers: { Authorization: "Bearer caller-token" },
+      fetchImplementation: mockFetch as any,
+    });
+    // A profile holding only a refresh token has no auth header yet, so the
+    // caller's survives; once refreshed, the profile's must win instead.
+    let profileHeader: { name: string; value: string } | undefined;
+    (client as any).profileAuth = {
+      currentAuthHeader: () => profileHeader,
+      getAuthHeader: async () => profileHeader,
+      isProfileAuthorizationHeader: (value: string) =>
+        value === profileHeader?.value,
+    };
+
+    await (client as any).openAPIClient.info.list();
+    expect(requestHeaders(mockFetch).get("authorization")).toBe(
+      "Bearer caller-token",
+    );
+
+    profileHeader = { name: "Authorization", value: "Bearer profile-token" };
+    const secondFetch = mockJsonResponse();
+    (client as any).fetchImplementation = secondFetch;
+    await (client as any).openAPIClient.info.list();
+
+    // The generated client must not still be holding the stale snapshot.
+    expect(requestHeaders(secondFetch).get("authorization")).toBe(
+      "Bearer profile-token",
+    );
+  });
+
   it("rejects malformed caller-supplied header names", () => {
     expect(
       () =>
@@ -127,6 +178,17 @@ describe("caller-supplied headers", () => {
           fetchOptions: { headers: { "X-Bad\nInjected": "value" } },
         }),
     ).toThrow();
+    expect(
+      () =>
+        new Client({
+          apiKey: "test-api-key",
+          headers: { "X-Bad\nInjected": "value" },
+        }),
+    ).toThrow();
+    const client = new Client({ apiKey: "test-api-key" });
+    expect(() => {
+      client.headers = { "X-Bad\nInjected": "value" };
+    }).toThrow();
   });
 });
 
@@ -143,6 +205,25 @@ describe("caller-supplied header collisions", () => {
     // `Headers` appends them.
     expect(new Headers(merged).get("x-corp-trace")).toBe("from-fetch-options");
   });
+
+  it.each([
+    ["config.headers", (h: Record<string, string>) => ({ headers: h })],
+    [
+      "fetchOptions.headers",
+      (h: Record<string, string>) => ({ fetchOptions: { headers: h } }),
+    ],
+  ])(
+    "resolves duplicate spellings within %s to the last value",
+    (_name, build) => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        ...build({ "X-Corp-Trace": "first", "x-corp-trace": "second" }),
+      });
+
+      const merged = (client as any)._mergedHeaders;
+      expect(new Headers(merged).get("x-corp-trace")).toBe("second");
+    },
+  );
 
   it.each([["x-api-key"], ["X-Api-Key"]])(
     "never lets a caller-supplied %s reach the required headers",
