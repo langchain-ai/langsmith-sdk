@@ -72,7 +72,6 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith._internal import _orjson, _profiles, _v2_migration_utils
-from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -113,6 +112,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
 from langsmith._openapi_client import Langsmith as SyncLangsmithOpenAPIClient
 from langsmith._openapi_client._base_client import (
