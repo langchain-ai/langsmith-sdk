@@ -27,6 +27,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import dataclasses_json
+import httpx
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
@@ -5728,11 +5729,33 @@ def test_httpx_kwargs_from_session_translates_transport_config() -> None:
     kwargs = _httpx_kwargs_from_session(session)
 
     assert kwargs["headers"] == {"X-Custom": "custom-value"}
-    assert kwargs["cookies"] == {"cookie-name": "cookie-value"}
+    assert kwargs["cookies"] is session.cookies
     assert kwargs["verify"] == "/path/to/ca-bundle.pem"
     assert kwargs["cert"] == ("/path/to/client.crt", "/path/to/client.key")
-    assert kwargs["proxy"] == "http://proxy.internal:8080"
     assert kwargs["trust_env"] is False
+    # httpx renamed `proxies` to `proxy` in 0.26; either name is accepted here.
+    proxy_kwarg = (
+        "proxy"
+        if "proxy" in inspect.signature(httpx.Client.__init__).parameters
+        else "proxies"
+    )
+    assert kwargs[proxy_kwarg] == "http://proxy.internal:8080"
+    # Whichever name this httpx accepts, the kwargs must be usable as-is.
+    httpx.Client(**{**kwargs, "verify": False, "cert": None}).close()
+
+
+def test_httpx_kwargs_from_session_preserves_cookie_scope() -> None:
+    """Cookies keep their domain/path scope instead of being flattened."""
+    session = requests.Session()
+    session.cookies.set("shared", "other-service", domain="internal.example", path="/x")
+    session.cookies.set("shared", "langsmith", domain="api.smith.langchain.com")
+
+    cookies = httpx.Cookies(_httpx_kwargs_from_session(session)["cookies"])
+    request = httpx.Request("GET", "https://api.smith.langchain.com/api/v2/runs")
+    cookies.set_cookie_header(request)
+
+    # The cookie scoped to another host must not be sent to the API.
+    assert request.headers["cookie"] == "shared=langsmith"
 
 
 def test_httpx_kwargs_from_session_omits_requests_defaults() -> None:
@@ -5744,6 +5767,7 @@ def test_httpx_kwargs_from_session_omits_requests_defaults() -> None:
     assert "verify" not in kwargs
     assert "cert" not in kwargs
     assert "proxy" not in kwargs
+    assert "proxies" not in kwargs
     assert kwargs["trust_env"] is True
 
 

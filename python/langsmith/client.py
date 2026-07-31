@@ -194,7 +194,10 @@ def _httpx_kwargs_from_session(session: requests.Session) -> dict[str, Any]:
     if headers:
         kwargs["headers"] = headers
     if session.cookies:
-        kwargs["cookies"] = dict(session.cookies)
+        # Pass the jar itself, not `dict(...)`: flattening drops each cookie's
+        # domain/path/secure scope (leaking cookies meant for another host to
+        # the API) and raises `CookieConflictError` on same-name cookies.
+        kwargs["cookies"] = session.cookies
     # `verify` may be a bool or a path to a CA bundle; both are valid in httpx.
     if session.verify is not True:
         kwargs["verify"] = session.verify
@@ -205,7 +208,14 @@ def _httpx_kwargs_from_session(session: requests.Session) -> dict[str, Any]:
     # is https in practice, so prefer that entry.
     proxy = session.proxies.get("https") or session.proxies.get("http")
     if proxy:
-        kwargs["proxy"] = proxy
+        # httpx renamed `proxies` to `proxy` in 0.26 and dropped `proxies` in
+        # 0.28; we support >=0.23, so pick whichever this version accepts.
+        proxy_kwarg = (
+            "proxy"
+            if "proxy" in signature(_httpx.Client.__init__).parameters
+            else "proxies"
+        )
+        kwargs[proxy_kwarg] = proxy
     return kwargs
 
 
