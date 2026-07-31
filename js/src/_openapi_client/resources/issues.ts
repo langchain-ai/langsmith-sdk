@@ -116,7 +116,7 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
   /**
    * Filter by status
    */
-  status?: 'open' | 'completed' | 'ignored';
+  status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
 
   /**
    * Filter by tag (exact match)

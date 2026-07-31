@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import typing_extensions
 from typing import Union, Iterable, Optional
 from datetime import datetime
 from typing_extensions import Literal, overload
@@ -49,6 +50,9 @@ class RunsResource(SyncAPIResource):
         """
         return RunsResourceWithStreamingResponse(self)
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @overload
     def create(
         self,
@@ -77,6 +81,9 @@ class RunsResource(SyncAPIResource):
         """
         ...
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @overload
     def create(
         self,
@@ -105,6 +112,9 @@ class RunsResource(SyncAPIResource):
         """
         ...
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @overload
     def create(
         self,
@@ -133,6 +143,9 @@ class RunsResource(SyncAPIResource):
         """
         ...
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @required_args(["body"])
     def create(
         self,
@@ -166,6 +179,9 @@ class RunsResource(SyncAPIResource):
             cast_to=RunCreateResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.update(...) instead, which calls PATCH /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}. Will be removed after Jan 31, 2027."
+    )
     def update(
         self,
         queue_run_id: str,
@@ -213,6 +229,9 @@ class RunsResource(SyncAPIResource):
             cast_to=object,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.list(...) instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items. Will be removed after Jan 31, 2027."
+    )
     def list(
         self,
         queue_id: str,
@@ -264,6 +283,9 @@ class RunsResource(SyncAPIResource):
             cast_to=RunListResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     def create_by_key(
         self,
         queue_id: str,
@@ -278,7 +300,7 @@ class RunsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> RunCreateByKeyResponse:
         """
-        Add Runs To Annotation Queue By Key
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           extra_headers: Send extra headers
@@ -306,6 +328,9 @@ class RunsResource(SyncAPIResource):
             cast_to=RunCreateByKeyResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.delete_all(...) instead, which calls POST /api/v1/platform/annotation-queues/{queue_id}/items/delete. Will be removed after Jan 31, 2027."
+    )
     def delete_all(
         self,
         queue_id: str,
@@ -350,6 +375,9 @@ class RunsResource(SyncAPIResource):
             cast_to=object,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.delete_all(...) with the item ID instead, which calls POST /api/v1/platform/annotation-queues/{queue_id}/items/delete. Will be removed after Jan 31, 2027."
+    )
     def delete_queue(
         self,
         queue_run_id: str,
@@ -405,6 +433,9 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         return AsyncRunsResourceWithStreamingResponse(self)
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @overload
     async def create(
         self,
@@ -433,6 +464,9 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         ...
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @overload
     async def create(
         self,
@@ -461,6 +495,9 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         ...
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @overload
     async def create(
         self,
@@ -489,6 +526,9 @@ class AsyncRunsResource(AsyncAPIResource):
         """
         ...
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     @required_args(["body"])
     async def create(
         self,
@@ -522,6 +562,9 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=RunCreateResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.update(...) instead, which calls PATCH /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}. Will be removed after Jan 31, 2027."
+    )
     async def update(
         self,
         queue_run_id: str,
@@ -569,6 +612,9 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=object,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.list(...) instead, which calls GET /api/v1/platform/annotation-queues/{queue_id}/items. Will be removed after Jan 31, 2027."
+    )
     async def list(
         self,
         queue_id: str,
@@ -620,6 +666,9 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=RunListResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.create() instead. Will be removed after Jan 31, 2027."
+    )
     async def create_by_key(
         self,
         queue_id: str,
@@ -634,7 +683,7 @@ class AsyncRunsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> RunCreateByKeyResponse:
         """
-        Add Runs To Annotation Queue By Key
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           extra_headers: Send extra headers
@@ -662,6 +711,9 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=RunCreateByKeyResponse,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.delete_all(...) instead, which calls POST /api/v1/platform/annotation-queues/{queue_id}/items/delete. Will be removed after Jan 31, 2027."
+    )
     async def delete_all(
         self,
         queue_id: str,
@@ -706,6 +758,9 @@ class AsyncRunsResource(AsyncAPIResource):
             cast_to=object,
         )
 
+    @typing_extensions.deprecated(
+        "Deprecated: use annotation_queues.items.delete_all(...) with the item ID instead, which calls POST /api/v1/platform/annotation-queues/{queue_id}/items/delete. Will be removed after Jan 31, 2027."
+    )
     async def delete_queue(
         self,
         queue_run_id: str,
@@ -749,23 +804,35 @@ class RunsResourceWithRawResponse:
     def __init__(self, runs: RunsResource) -> None:
         self._runs = runs
 
-        self.create = to_raw_response_wrapper(
-            runs.create,
+        self.create = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                runs.create,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.update = to_raw_response_wrapper(
-            runs.update,
+        self.update = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                runs.update,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.list = to_raw_response_wrapper(
-            runs.list,
+        self.list = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                runs.list,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.create_by_key = to_raw_response_wrapper(
-            runs.create_by_key,
+        self.create_by_key = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                runs.create_by_key,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_all = to_raw_response_wrapper(
-            runs.delete_all,
+        self.delete_all = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                runs.delete_all,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_queue = to_raw_response_wrapper(
-            runs.delete_queue,
+        self.delete_queue = (  # pyright: ignore[reportDeprecated]
+            to_raw_response_wrapper(
+                runs.delete_queue,  # pyright: ignore[reportDeprecated],
+            )
         )
 
 
@@ -773,23 +840,35 @@ class AsyncRunsResourceWithRawResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
         self._runs = runs
 
-        self.create = async_to_raw_response_wrapper(
-            runs.create,
+        self.create = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                runs.create,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.update = async_to_raw_response_wrapper(
-            runs.update,
+        self.update = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                runs.update,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.list = async_to_raw_response_wrapper(
-            runs.list,
+        self.list = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                runs.list,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.create_by_key = async_to_raw_response_wrapper(
-            runs.create_by_key,
+        self.create_by_key = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                runs.create_by_key,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_all = async_to_raw_response_wrapper(
-            runs.delete_all,
+        self.delete_all = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                runs.delete_all,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_queue = async_to_raw_response_wrapper(
-            runs.delete_queue,
+        self.delete_queue = (  # pyright: ignore[reportDeprecated]
+            async_to_raw_response_wrapper(
+                runs.delete_queue,  # pyright: ignore[reportDeprecated],
+            )
         )
 
 
@@ -797,23 +876,35 @@ class RunsResourceWithStreamingResponse:
     def __init__(self, runs: RunsResource) -> None:
         self._runs = runs
 
-        self.create = to_streamed_response_wrapper(
-            runs.create,
+        self.create = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                runs.create,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.update = to_streamed_response_wrapper(
-            runs.update,
+        self.update = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                runs.update,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.list = to_streamed_response_wrapper(
-            runs.list,
+        self.list = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                runs.list,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.create_by_key = to_streamed_response_wrapper(
-            runs.create_by_key,
+        self.create_by_key = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                runs.create_by_key,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_all = to_streamed_response_wrapper(
-            runs.delete_all,
+        self.delete_all = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                runs.delete_all,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_queue = to_streamed_response_wrapper(
-            runs.delete_queue,
+        self.delete_queue = (  # pyright: ignore[reportDeprecated]
+            to_streamed_response_wrapper(
+                runs.delete_queue,  # pyright: ignore[reportDeprecated],
+            )
         )
 
 
@@ -821,21 +912,33 @@ class AsyncRunsResourceWithStreamingResponse:
     def __init__(self, runs: AsyncRunsResource) -> None:
         self._runs = runs
 
-        self.create = async_to_streamed_response_wrapper(
-            runs.create,
+        self.create = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                runs.create,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.update = async_to_streamed_response_wrapper(
-            runs.update,
+        self.update = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                runs.update,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.list = async_to_streamed_response_wrapper(
-            runs.list,
+        self.list = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                runs.list,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.create_by_key = async_to_streamed_response_wrapper(
-            runs.create_by_key,
+        self.create_by_key = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                runs.create_by_key,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_all = async_to_streamed_response_wrapper(
-            runs.delete_all,
+        self.delete_all = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                runs.delete_all,  # pyright: ignore[reportDeprecated],
+            )
         )
-        self.delete_queue = async_to_streamed_response_wrapper(
-            runs.delete_queue,
+        self.delete_queue = (  # pyright: ignore[reportDeprecated]
+            async_to_streamed_response_wrapper(
+                runs.delete_queue,  # pyright: ignore[reportDeprecated],
+            )
         )
