@@ -3158,6 +3158,21 @@ export class Client implements LangSmithTracingClientInterface {
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
     );
+    return this._readRun(runId, { loadChildRuns });
+  }
+
+  /**
+   * Fetch a run without emitting the `readRun()` deprecation warning.
+   *
+   * Internal callers use this so that a supported method doesn't warn about a
+   * deprecated one the caller never invoked.
+   *
+   * @internal
+   */
+  public async _readRun(
+    runId: string,
+    { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
+  ): Promise<Run> {
     assertUuid(runId);
     let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
     if (loadChildRuns) {
@@ -3203,12 +3218,9 @@ export class Client implements LangSmithTracingClientInterface {
         run.id
       }?poll=true`;
     } else if (runId !== undefined) {
-      // Fetch directly rather than through readRun() so callers don't also get a
+      // Via _readRun() rather than readRun() so callers don't also get a
       // readRun deprecation warning for a method they never called.
-      assertUuid(runId);
-      const run_ = _normalizeRunTimestamps(
-        await this._get<Run>(`/runs/${runId}`),
-      );
+      const run_ = await this._readRun(runId);
       if (!run_.app_path) {
         throw new Error(`Run ${runId} has no app_path`);
       }
@@ -3221,7 +3233,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _loadChildRuns(run: Run): Promise<Run> {
     const childRuns = await toArray(
-      this.listRuns({
+      this._listRuns({
         isRoot: false,
         projectId: run.session_id,
         traceId: run.trace_id,
@@ -3350,6 +3362,18 @@ export class Client implements LangSmithTracingClientInterface {
         "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
     );
+    yield* this._listRuns(props);
+  }
+
+  /**
+   * List runs without emitting the `listRuns()` deprecation warning.
+   *
+   * Internal callers use this so that a supported method doesn't warn about a
+   * deprecated one the caller never invoked.
+   *
+   * @internal
+   */
+  public async *_listRuns(props: ListRunsParams): AsyncIterable<Run> {
     const {
       projectId,
       projectName,
@@ -3564,7 +3588,9 @@ export class Client implements LangSmithTracingClientInterface {
       ? `and(${threadFilter}, ${userFilter})`
       : threadFilter;
 
-    yield* this.listRuns({
+    // Via _listRuns() rather than listRuns(): readThread() already warned, and it
+    // points at threads.listTraces() rather than listRuns()'s runs.query().
+    yield* this._listRuns({
       projectId: projectId ?? undefined,
       projectName: projectName ?? undefined,
       isRoot,

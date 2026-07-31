@@ -4,6 +4,7 @@ import { OpenAIAgentsTracingProcessor } from "../wrappers/openai_agents.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { traceable } from "../traceable.js";
+import { AsyncLocalStorageProviderSingleton } from "../singletons/traceable.js";
 
 // Mock types matching @openai/agents-core/tracing
 type MockSpanData =
@@ -118,6 +119,20 @@ describe("OpenAIAgentsTracingProcessor", () => {
   let callSpy: ReturnType<typeof mockClient>["callSpy"];
 
   beforeEach(() => {
+    // onTraceStart installs the run tree via AsyncLocalStorage.enterWith(), which
+    // leaks into every later async task in this file: onTraceEnd's restore only
+    // lands when it runs on the start's async task. Without this reset, test N+1
+    // nests its runs under test N's run tree and posts through test N's client.
+    //
+    // `enterWith` is absent from AsyncLocalStorageInterface (and from the mock
+    // storage used when tracing was never initialized), so guard on it the same
+    // way enterRunTreeContext() in the wrapper does.
+    const storage = AsyncLocalStorageProviderSingleton.getInstance();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const maybeEnterWith = (storage as any).enterWith;
+    if (typeof maybeEnterWith === "function") {
+      maybeEnterWith.call(storage, undefined);
+    }
     const mock = mockClient();
     client = mock.client;
     callSpy = mock.callSpy;

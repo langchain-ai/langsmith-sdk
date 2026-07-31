@@ -80,6 +80,9 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import deprecated as _deprecated
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
@@ -4127,9 +4130,11 @@ class Client:
                 "#load-a-run’s-child-runs"
             )
 
-        child_runs = self.list_runs(
-            is_root=False, session_id=run.session_id, trace_id=run.trace_id
-        )
+        # Suppressed: the caller asked for child runs, not for list_runs().
+        with _suppress_deprecation_warning():
+            child_runs = self.list_runs(
+                is_root=False, session_id=run.session_id, trace_id=run.trace_id
+            )
         treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
             collections.defaultdict(list)
         )
@@ -4303,16 +4308,19 @@ class Client:
         thread_id_escaped = json.dumps(str(thread_id))
         thread_filter = f"eq(thread_id, {thread_id_escaped})"
         combined_filter = f"and({thread_filter}, {filter})" if filter else thread_filter
-        return self.list_runs(
-            project_id=project_id,
-            project_name=project_name,
-            is_root=is_root,
-            limit=limit,
-            select=select,
-            filter=combined_filter,
-            order=order,
-            **kwargs,
-        )
+        # Suppressed: read_thread() already warned, and it points at
+        # threads.list_traces() rather than list_runs()'s runs.query().
+        with _suppress_deprecation_warning():
+            return self.list_runs(
+                project_id=project_id,
+                project_name=project_name,
+                is_root=is_root,
+                limit=limit,
+                select=select,
+                filter=combined_filter,
+                order=order,
+                **kwargs,
+            )
 
     @_deprecated(
         "list_runs() is deprecated and will be removed after Jan 31, 2027. "
@@ -5381,21 +5389,24 @@ class Client:
 
         backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
         if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
-            runs: Iterable[ls_schemas.Run] = self.list_runs(
-                project_id=project_id,
-                project_name=project_name,
-                is_root=True,
-                select=[
-                    "id",
-                    "reference_example_id",
-                    "inputs",
-                    "outputs",
-                    "error",
-                    "feedback_stats",
-                    "start_time",
-                    "end_time",
-                ],
-            )
+            # Suppressed: get_test_results() is supported, so callers have nothing
+            # to migrate; how it fetches runs is an implementation detail.
+            with _suppress_deprecation_warning():
+                runs: Iterable[ls_schemas.Run] = self.list_runs(
+                    project_id=project_id,
+                    project_name=project_name,
+                    is_root=True,
+                    select=[
+                        "id",
+                        "reference_example_id",
+                        "inputs",
+                        "outputs",
+                        "error",
+                        "feedback_stats",
+                        "start_time",
+                        "end_time",
+                    ],
+                )
         else:
             if project_id is None and project_name is not None:
                 project_id = self.read_project(project_name=project_name).id
@@ -7779,12 +7790,16 @@ class Client:
                     DeprecationWarning,
                     stacklevel=3,
                 )
-            run_: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase] = self.read_run(
-                run,
-                load_child_runs=load_child_runs,
-                project_id=project_id,
-                start_time=start_time,
-            )
+            # Suppressed: the caller passed a run ID to (a)evaluate_run(), which
+            # already warned and points at create_feedback() rather than
+            # read_run()'s runs.retrieve().
+            with _suppress_deprecation_warning():
+                run_: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase] = self.read_run(
+                    run,
+                    load_child_runs=load_child_runs,
+                    project_id=project_id,
+                    start_time=start_time,
+                )
         else:
             run_ = run
         return run_
