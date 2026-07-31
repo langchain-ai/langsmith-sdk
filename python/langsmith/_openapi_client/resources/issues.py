@@ -84,7 +84,7 @@ class IssuesResource(SyncAPIResource):
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
         sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
-        status: Literal["open", "completed", "ignored"] | Omit = omit,
+        status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
         tag: str | Omit = omit,
         updated_at: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -214,7 +214,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
         sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
-        status: Literal["open", "completed", "ignored"] | Omit = omit,
+        status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
         tag: str | Omit = omit,
         updated_at: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.

@@ -26,7 +26,7 @@ class IssueListParams(TypedDict, total=False):
     sort_by: Literal["created_at", "updated_at", "severity"]
     """Sort field"""
 
-    status: Literal["open", "completed", "ignored"]
+    status: Literal["open", "fixing", "watching", "completed", "ignored"]
     """Filter by status"""
 
     tag: str
