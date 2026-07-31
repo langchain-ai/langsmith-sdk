@@ -473,8 +473,10 @@ export async function runWsStream(
  * Reconnect to an existing command over WebSocket.
  *
  * Returns a tuple of [async_message_iterator, control], same as runWsStream.
- * The iterator yields stdout, stderr, exit, and error messages.
- * No 'started' message is sent on reconnection.
+ * The iterator yields the server's 'started' acknowledgement, then stdout,
+ * stderr, exit, and error messages. That acknowledgement is the only evidence a
+ * reattachment landed for a command producing no output, so it is forwarded
+ * rather than dropped.
  */
 export async function reconnectWsStream(
   dataplaneUrl: string,
@@ -512,7 +514,11 @@ export async function reconnectWsStream(
       for await (const msg of readWsMessages(ws)) {
         const msgType = msg.type;
 
-        if (msgType === "stdout" || msgType === "stderr") {
+        if (
+          msgType === "started" ||
+          msgType === "stdout" ||
+          msgType === "stderr"
+        ) {
           yield msg;
         } else if (msgType === "exit") {
           yield msg;

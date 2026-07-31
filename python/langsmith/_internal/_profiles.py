@@ -146,6 +146,8 @@ def _parse_profile_expires_at(expires_at: str) -> Optional[datetime.datetime]:
 
 
 def should_refresh_profile_token(profile: ProfileConfig) -> bool:
+    if trim_auth_value(profile.get("api_key")):
+        return False
     oauth = profile.get("oauth") or {}
     if not oauth.get("refresh_token"):
         return False
@@ -354,14 +356,14 @@ class ProfileAuth:
     def _headers_from_profile(self, profile: Optional[ProfileConfig]) -> dict[str, str]:
         if profile is None:
             return {}
+        api_key = trim_auth_value(profile.get("api_key"))
+        if api_key:
+            return {self._api_key_header: api_key}
         oauth_access_token = trim_auth_value(
             (profile.get("oauth") or {}).get("access_token")
         )
         if oauth_access_token:
             return {"Authorization": f"Bearer {oauth_access_token}"}
-        api_key = trim_auth_value(profile.get("api_key"))
-        if api_key:
-            return {self._api_key_header: api_key}
         return {}
 
     def _remember_auth_headers(self, headers: Mapping[str, str]) -> None:

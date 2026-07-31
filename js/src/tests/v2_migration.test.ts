@@ -1,6 +1,10 @@
 import type { Run as V2Run } from "../_openapi_client/resources/runs/runs.js";
 import type { TracerSession } from "../schemas.js";
-import { v2RunToRun } from "../utils/v2_migration.js";
+import {
+  getQueryBackend,
+  QueryBackend,
+  v2RunToRun,
+} from "../utils/v2_migration.js";
 
 const project: TracerSession = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -24,6 +28,24 @@ const v2Run: V2Run = {
 };
 
 describe("v2 migration utils", () => {
+  test.each([
+    [undefined, QueryBackend.CLICKHOUSE_ONLY],
+    [{}, QueryBackend.CLICKHOUSE_ONLY],
+    [{ ch_query_enabled: true }, QueryBackend.CLICKHOUSE_ONLY],
+    [{ sdb_query_enabled: true }, QueryBackend.DUAL],
+    [{ ch_query_enabled: true, sdb_query_enabled: true }, QueryBackend.DUAL],
+    [
+      { ch_query_enabled: false, sdb_query_enabled: true },
+      QueryBackend.SMITHDB_ONLY,
+    ],
+    [
+      { ch_query_enabled: false, sdb_query_enabled: false },
+      QueryBackend.CLICKHOUSE_ONLY,
+    ],
+  ])("getQueryBackend(%j) -> %s", (flags, expected) => {
+    expect(getQueryBackend(flags)).toBe(expected);
+  });
+
   test("maps generated v2 runs to legacy runs", () => {
     expect(v2RunToRun(v2Run)).toEqual(
       expect.objectContaining({

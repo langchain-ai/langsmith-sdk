@@ -5,6 +5,26 @@ import type {
 import type { Client } from "../client.js";
 import type { Run, TracerSession } from "../schemas.js";
 
+export const QueryBackend = {
+  CLICKHOUSE_ONLY: "clickhouse_only",
+  SMITHDB_ONLY: "smithdb_only",
+  DUAL: "dual",
+} as const;
+
+export type QueryBackend = (typeof QueryBackend)[keyof typeof QueryBackend];
+
+/** Which backend(s) `/info`'s `instance_flags` indicate for run/trace queries. */
+export function getQueryBackend(
+  instanceFlags?: Record<string, unknown> | null,
+): QueryBackend {
+  const flags = instanceFlags ?? {};
+  const chEnabled = Boolean(flags.ch_query_enabled ?? true);
+  const sdbEnabled = Boolean(flags.sdb_query_enabled ?? false);
+  if (!chEnabled && sdbEnabled) return QueryBackend.SMITHDB_ONLY;
+  if (chEnabled && sdbEnabled) return QueryBackend.DUAL;
+  return QueryBackend.CLICKHOUSE_ONLY;
+}
+
 // Omitting selects from `/v2/runs/query` returns only the run ID.
 const V2_RUN_SELECTS: RunSelectField[] = [
   "ID",

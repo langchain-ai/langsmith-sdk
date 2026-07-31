@@ -169,6 +169,54 @@ def test_async_client_profile_config_uses_oauth_access_token(
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
+async def test_async_client_profile_config_uses_api_key_before_oauth_access_token(
+    mock_client_cls: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    _clear_profile_env(monkeypatch)
+    mock_httpx_client = mock.AsyncMock()
+    mock_httpx_client.headers = httpx.Headers()
+    response = mock.Mock()
+    response.status_code = 200
+    mock_httpx_client.request.return_value = response
+    mock_client_cls.return_value = mock_httpx_client
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "profile-access-token",
+                            "refresh_token": "profile-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    mock_post = mock.Mock()
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    client = AsyncClient()
+    await client._arequest_with_retries("GET", "/info")
+
+    assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["x-api-key"] == "profile-key"
+    assert "Authorization" not in passed_headers
+    mock_httpx_client.request.assert_awaited_once()
+    mock_post.assert_not_called()
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
 async def test_async_client_profile_refresh_replaces_snapshotted_auth_headers(
     mock_client_cls: mock.Mock,
     monkeypatch: pytest.MonkeyPatch,
@@ -415,7 +463,9 @@ async def test_async_create_feedback_requires_session_id_on_smithdb(
     mock_httpx_client = AsyncMock()
     mock_client_cls.return_value = mock_httpx_client
     client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
-    client._info = ls_schemas.LangSmithInfo(instance_flags={"ch_query_enabled": False})
+    client._info = ls_schemas.LangSmithInfo(
+        instance_flags={"ch_query_enabled": False, "sdb_query_enabled": True}
+    )
 
     with pytest.raises(ValueError, match="session_id must be provided"):
         await client.create_feedback(uuid4(), key="quality")

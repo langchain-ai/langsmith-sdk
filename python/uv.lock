@@ -1667,6 +1667,9 @@ dependencies = [
 claude-agent-sdk = [
     { name = "claude-agent-sdk" },
 ]
+gemini-live = [
+    { name = "google-genai" },
+]
 google-adk = [
     { name = "google-adk" },
     { name = "wrapt" },
@@ -1788,6 +1791,7 @@ requires-dist = [
     { name = "distro", specifier = ">=1.7.0" },
     { name = "google-adk", marker = "extra == 'google-adk'", specifier = ">=1.0.0" },
     { name = "google-adk", marker = "extra == 'google-adk-live'", specifier = ">=2.3.0" },
+    { name = "google-genai", marker = "extra == 'gemini-live'", specifier = ">=1.75" },
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
     { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=1.0" },
@@ -1826,7 +1830,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
+provides-extras = ["claude-agent-sdk", "gemini-live", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
 
 [package.metadata.requires-dev]
 dev = [

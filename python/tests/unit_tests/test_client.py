@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import pathlib
+import ssl
 import sys
 import threading
 import time
@@ -26,6 +27,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import dataclasses_json
+import httpx
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
@@ -55,6 +57,7 @@ from langsmith.client import (
     _default_retry_config,
     _dumps_json,
     _get_openapi_base_url,
+    _httpx_kwargs_from_session,
     _is_langchain_hosted,
     _parse_token_or_url,
     _reject_filesystem_attachments,
@@ -298,7 +301,7 @@ def test_profile_config_loads_api_key_and_workspace(
     assert client._headers["X-Tenant-Id"] == "workspace-id"
 
 
-def test_profile_config_uses_oauth_access_token_before_api_key(
+def test_profile_config_uses_api_key_before_oauth_access_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     _clear_profile_env(monkeypatch)
@@ -321,8 +324,8 @@ def test_profile_config_uses_oauth_access_token_before_api_key(
     client = Client(auto_batch_tracing=False)
 
     assert client.api_key is None
-    assert client._headers["Authorization"] == "Bearer profile-access-token"
-    assert "x-api-key" not in client._headers
+    assert client._headers["x-api-key"] == "profile-key"
+    assert "Authorization" not in client._headers
 
 
 def test_profile_config_env_auth_suppresses_profile_auth(
@@ -2024,7 +2027,7 @@ def _feedback_client(session: mock.Mock, **flags: bool) -> Client:
 def test_create_feedback_requires_session_id_when_ch_query_disabled() -> None:
     """SmithDB-only backends cannot locate the run without session_id."""
     session = mock.Mock()
-    client = _feedback_client(session, ch_query_enabled=False)
+    client = _feedback_client(session, ch_query_enabled=False, sdb_query_enabled=True)
 
     with pytest.raises(ValueError, match="session_id must be provided"):
         client.create_feedback(uuid.uuid4(), key="Foo")
@@ -5717,6 +5720,114 @@ def test_async_client_uses_normalized_base_url(
     assert str(client._langsmith_api.base_url).rstrip("/") == expected_base_url
 
 
+def test_httpx_kwargs_from_session_translates_transport_config() -> None:
+    """A caller-supplied session's transport config carries over to httpx."""
+    session = requests.Session()
+    session.headers["X-Custom"] = "custom-value"
+    session.cookies.set("cookie-name", "cookie-value")
+    session.verify = "/path/to/ca-bundle.pem"
+    session.cert = ("/path/to/client.crt", "/path/to/client.key")
+    session.proxies = {"https": "http://proxy.internal:8080"}
+    session.trust_env = False
+
+    kwargs = _httpx_kwargs_from_session(session)
+
+    assert kwargs["headers"] == {"X-Custom": "custom-value"}
+    assert kwargs["cookies"] is session.cookies
+    assert kwargs["verify"] == "/path/to/ca-bundle.pem"
+    assert kwargs["cert"] == ("/path/to/client.crt", "/path/to/client.key")
+    assert kwargs["trust_env"] is False
+    # httpx renamed `proxies` to `proxy` in 0.26; either name is accepted here.
+    proxy_kwarg = (
+        "proxy"
+        if "proxy" in inspect.signature(httpx.Client.__init__).parameters
+        else "proxies"
+    )
+    assert kwargs[proxy_kwarg] == "http://proxy.internal:8080"
+    # Whichever name this httpx accepts, the kwargs must be usable as-is.
+    httpx.Client(**{**kwargs, "verify": False, "cert": None}).close()
+
+
+def test_httpx_kwargs_from_session_preserves_cookie_scope() -> None:
+    """Cookies keep their domain/path scope instead of being flattened."""
+    session = requests.Session()
+    session.cookies.set("shared", "other-service", domain="internal.example", path="/x")
+    session.cookies.set("shared", "langsmith", domain="api.smith.langchain.com")
+
+    cookies = httpx.Cookies(_httpx_kwargs_from_session(session)["cookies"])
+    request = httpx.Request("GET", "https://api.smith.langchain.com/api/v2/runs")
+    cookies.set_cookie_header(request)
+
+    # The cookie scoped to another host must not be sent to the API.
+    assert request.headers["cookie"] == "shared=langsmith"
+
+
+def test_httpx_kwargs_from_session_omits_requests_defaults() -> None:
+    """`requests`' own default headers must not shadow the httpx/SDK ones."""
+    kwargs = _httpx_kwargs_from_session(requests.Session())
+
+    assert "headers" not in kwargs
+    assert "cookies" not in kwargs
+    assert "verify" not in kwargs
+    assert "cert" not in kwargs
+    assert "proxy" not in kwargs
+    assert "proxies" not in kwargs
+    assert kwargs["trust_env"] is True
+
+
+def test_openapi_clients_apply_provided_session_config() -> None:
+    """Both generated clients honor a caller-supplied session's config."""
+    from langsmith._openapi_client._models import FinalRequestOptions
+
+    session = requests.Session()
+    session.headers["X-Custom"] = "custom-value"
+    session.headers["x-api-key"] = "hijacked"
+    session.cookies.set("cookie-name", "cookie-value")
+    session.verify = False
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+        session=session,
+    )
+
+    for openapi_client in (
+        client._get_langsmith_api(),
+        client._get_langsmith_api_sync(),
+    ):
+        http_client = openapi_client._client
+        assert http_client.headers["X-Custom"] == "custom-value"
+        assert str(http_client.base_url).rstrip("/") == "http://localhost:1984"
+        # verify=False disables certificate verification on the transport.
+        assert http_client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+
+        request = openapi_client._build_request(
+            FinalRequestOptions(method="get", url="/api/v2/runs")
+        )
+        assert request.headers["cookie"] == "cookie-name=cookie-value"
+        # The SDK's own auth headers still win over the session's.
+        assert "hijacked" not in request.headers["x-api-key"]
+        assert "test-api-key" in request.headers["x-api-key"]
+
+
+def test_openapi_clients_keep_defaults_without_provided_session() -> None:
+    """Without an explicit session there is nothing to port over."""
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+    )
+
+    assert "python-requests" not in client._get_langsmith_api()._client.headers.get(
+        "user-agent", ""
+    )
+    assert (
+        "python-requests"
+        not in client._get_langsmith_api_sync()._client.headers.get("user-agent", "")
+    )
+
+
 def test_process_buffered_run_ops_core_functionality():
     """Test core functionality: parameter validation, basic processing, compressed traces, and mixed operations."""
     # Test 1: Parameter validation - both parameters must be provided together or neither
@@ -7124,6 +7235,98 @@ def test_run_tree_get_url_builds_url_locally_on_clickhouse_only() -> None:
         f"r/{run_tree.id}?poll=true"
     )
     api.runs.get_url.assert_not_called()
+
+
+def test_run_tree_get_url_is_cached() -> None:
+    """get_url() is called per log line, so it must only hit the backend once."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run_tree = RunTree(name="stub", project_id=uuid.uuid4(), ls_client=client)
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url.return_value = mock.Mock(url="http://localhost:1984/run-url")
+    api = mock.Mock()
+    api.runs = runs_resource
+    info = mock.Mock(instance_flags={"sdb_query_enabled": True})
+
+    with (
+        patch.object(type(client), "info", property(lambda self: info)),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+    ):
+        assert run_tree.get_url() == "http://localhost:1984/run-url"
+        assert run_tree.get_url() == "http://localhost:1984/run-url"
+
+    runs_resource.get_url.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        {"side_effect": ValueError("boom")},
+        {"return_value": mock.Mock(url=None)},
+    ],
+)
+def test_run_tree_get_url_falls_back_when_backend_call_fails(failure) -> None:
+    """A transient failure must not turn get_url() into a raising call."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url = mock.Mock(**failure)
+    api = mock.Mock()
+    api.runs = runs_resource
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(
+                lambda self: mock.Mock(instance_flags={"sdb_query_enabled": True})
+            ),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+        mock.patch.object(Client, "_get_tenant_id", return_value=tenant_id),
+    ):
+        url = run_tree.get_url()
+
+    assert url == (
+        f"{client._host_url}/o/{tenant_id}/projects/p/{project_id}/"
+        f"r/{run_tree.id}?poll=true"
+    )
+
+
+def test_run_tree_get_url_without_session_uses_tracer_project() -> None:
+    """A run with no project set must not look up `read_project(None)`."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", ls_client=client)
+    run_tree.session_name = None  # type: ignore[assignment]
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url.return_value = mock.Mock(url="http://localhost:1984/run-url")
+    api = mock.Mock()
+    api.runs = runs_resource
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(
+                lambda self: mock.Mock(instance_flags={"sdb_query_enabled": True})
+            ),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+        mock.patch.object(
+            Client, "read_project", return_value=mock.Mock(id=project_id)
+        ) as read_project,
+        mock.patch.object(
+            ls_utils, "get_tracer_project", return_value="from-the-environment"
+        ),
+    ):
+        assert run_tree.get_url() == "http://localhost:1984/run-url"
+
+    read_project.assert_called_once_with(project_name="from-the-environment")
 
 
 def _deprecation_messages(recorded) -> list[str]:
