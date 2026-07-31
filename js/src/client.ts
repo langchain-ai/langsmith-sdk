@@ -2226,7 +2226,9 @@ export class Client implements LangSmithTracingClientInterface {
     const docs =
       "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
     const serverInfo = await this._ensureServerInfo();
-    if (getQueryBackend(serverInfo.instance_flags) === QueryBackend.SMITHDB_ONLY) {
+    if (
+      getQueryBackend(serverInfo.instance_flags) === QueryBackend.SMITHDB_ONLY
+    ) {
       throw new Error(
         `sessionId must be provided when creating feedback for a run: this ` +
           `deployment cannot locate the run without it. See ${docs}`,

@@ -33,10 +33,7 @@ describe("v2 migration utils", () => {
     [{}, QueryBackend.CLICKHOUSE_ONLY],
     [{ ch_query_enabled: true }, QueryBackend.CLICKHOUSE_ONLY],
     [{ sdb_query_enabled: true }, QueryBackend.DUAL],
-    [
-      { ch_query_enabled: true, sdb_query_enabled: true },
-      QueryBackend.DUAL,
-    ],
+    [{ ch_query_enabled: true, sdb_query_enabled: true }, QueryBackend.DUAL],
     [
       { ch_query_enabled: false, sdb_query_enabled: true },
       QueryBackend.SMITHDB_ONLY,
