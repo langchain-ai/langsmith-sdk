@@ -137,7 +137,7 @@ def _infer_invocation_params(
     if not isinstance(request_metadata, Mapping):
         request_metadata = {}
 
-    result = {
+    return {
         **request_metadata,
         "ls_provider": provider,
         "ls_model_type": model_type,
@@ -153,16 +153,30 @@ def _infer_invocation_params(
         },
     }
 
-    if "ls_agent_type" not in result:
-        parent = run_helpers.get_current_run_tree()
-        parent_tag = None
-        if parent is not None and parent.extra:
-            parent_tag = parent.extra.get("metadata", {}).get("ls_agent_type")
-        if parent_tag in {"middleware", "subagent", "compaction"}:
-            result["ls_agent_type"] = parent_tag
-        else:
-            result["ls_agent_type"] = "root"
 
+def _resolve_default_ls_agent_type() -> str:
+    """Default ls_agent_type for a wrap_openai call, inherited from parent."""
+    parent = run_helpers.get_current_run_tree()
+    parent_tag = None
+    if parent is not None and parent.extra:
+        parent_tag = parent.extra.get("metadata", {}).get("ls_agent_type")
+    if parent_tag in {"middleware", "subagent", "compaction"}:
+        return parent_tag
+    return "root"
+
+
+def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
+    """Return textra with ls_agent_type defaulted at the wrapper-config layer.
+
+    Stamping here (rather than via ``_invocation_params_fn``) means wrapper-supplied
+    ``tracing_extra["metadata"]["ls_agent_type"]`` is preserved via setdefault; per-call
+    ``kwargs["metadata"]["ls_agent_type"]`` still overrides downstream because it flows
+    through the invocation-params merge, which is applied last inside ``traceable``.
+    """
+    result = dict(textra)
+    metadata = dict(result.get("metadata") or {})
+    metadata.setdefault("ls_agent_type", _resolve_default_ls_agent_type())
+    result["metadata"] = metadata
     return result
 
 
@@ -309,7 +323,7 @@ def _get_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
 
         return decorator(original_create)(*args, **kwargs)
@@ -323,7 +337,7 @@ def _get_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
         return await decorator(original_create)(*args, **kwargs)
 
@@ -348,7 +362,7 @@ def _get_parse_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
         return decorator(original_parse)(*args, **kwargs)
 
@@ -361,7 +375,7 @@ def _get_parse_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
         return await decorator(original_parse)(*args, **kwargs)
 
