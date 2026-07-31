@@ -187,9 +187,7 @@ if HAVE_AGENTS:
             else:
                 run_name = "Agent workflow"
 
-            # Build metadata. User-supplied trace.metadata (e.g. from
-            # RunConfig.trace_metadata) is honored for ls_agent_type; SDK
-            # identity fields (ls_integration*) are force-set as ground truth.
+            # Build metadata; honor user trace.metadata but force-set SDK identity.
             merged_metadata = {
                 **(self._metadata or {}),
                 **(getattr(trace, "metadata", None) or {}),
@@ -242,8 +240,7 @@ if HAVE_AGENTS:
 
             trace_dict = trace.export() or {}
             metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
-            # SDK identity fields are force-set; user's trace.metadata cannot
-            # spoof them via this later-lifecycle write site either.
+            # Force-set SDK identity; user trace.metadata cannot spoof it here either.
             metadata["ls_integration"] = "openai-agents-sdk"
 
             try:
@@ -332,9 +329,7 @@ if HAVE_AGENTS:
                     if parent_span_data_type is tracing.FunctionSpanData:
                         if "metadata" not in child_run.extra:
                             child_run.extra["metadata"] = {}
-                        # Preserve user narrowing intent (middleware / compaction);
-                        # otherwise apply structural subagent detection. This still
-                        # overrides an inherited "root" or missing tag with "subagent".
+                        # Preserve user middleware/compaction; else stamp subagent.
                         if child_run.extra["metadata"].get("ls_agent_type") not in (
                             "middleware",
                             "compaction",

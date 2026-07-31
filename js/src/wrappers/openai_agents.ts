@@ -583,9 +583,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       runName = "Agent workflow";
     }
 
-    // Build metadata. User-supplied trace.metadata (e.g. Runner's
-    // traceMetadata) is honored for ls_agent_type; SDK identity
-    // (ls_integration) is force-set as ground truth.
+    // Build metadata; honor user trace.metadata but force-set SDK identity.
     const mergedMetadata: Record<string, unknown> = {
       ...this._metadata,
       ...((trace.metadata as Record<string, unknown> | undefined) ?? {}),
@@ -667,8 +665,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       ...(traceDict.metadata as Record<string, unknown>),
       ...this._metadata,
     };
-    // SDK identity fields are force-set; user's trace.metadata cannot spoof
-    // them via this later-lifecycle write site either.
+    // Force-set SDK identity; user trace.metadata cannot spoof it here either.
     metadata.ls_integration = "openai-agents-sdk";
 
     try {
@@ -780,9 +777,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
           childRun.extra.metadata = {};
         }
         const meta = childRun.extra.metadata as Record<string, unknown>;
-        // Preserve user narrowing intent (middleware / compaction); otherwise
-        // apply structural subagent detection. Still overrides an inherited
-        // "root" or missing tag with "subagent".
+        // Preserve user middleware/compaction; else apply subagent detection.
         const current = meta.ls_agent_type;
         if (current !== "middleware" && current !== "compaction") {
           meta.ls_agent_type = "subagent";

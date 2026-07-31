@@ -1,8 +1,4 @@
-"""Unit tests for OpenAIAgentsTracingProcessor metadata stamping.
-
-Covers LSO-3608: user-supplied ls_agent_type via RunConfig.trace_metadata must
-be preserved through on_trace_start and subagent stamping (check-then-set).
-"""
+"""Unit tests for OpenAIAgentsTracingProcessor metadata stamping."""
 
 from types import SimpleNamespace
 from unittest import mock
@@ -48,9 +44,7 @@ def _capture_run_extra(processor):
 
 def _run_trace_start(trace_metadata, processor_metadata=None):
     client = mock.MagicMock(spec=Client)
-    processor = OpenAIAgentsTracingProcessor(
-        client=client, metadata=processor_metadata
-    )
+    processor = OpenAIAgentsTracingProcessor(client=client, metadata=processor_metadata)
     trace = _fake_trace(metadata=trace_metadata)
 
     fake_parent = mock.MagicMock()
@@ -71,9 +65,7 @@ def test_on_trace_start_defaults_to_root_when_no_user_tag():
     assert meta["ls_integration"] == "openai-agents-sdk"
 
 
-@pytest.mark.parametrize(
-    "user_tag", ["middleware", "subagent", "compaction", "root"]
-)
+@pytest.mark.parametrize("user_tag", ["middleware", "subagent", "compaction", "root"])
 def test_on_trace_start_preserves_user_supplied_ls_agent_type(user_tag):
     meta = _run_trace_start(trace_metadata={"ls_agent_type": user_tag})
     assert meta["ls_agent_type"] == user_tag
@@ -81,7 +73,10 @@ def test_on_trace_start_preserves_user_supplied_ls_agent_type(user_tag):
 
 def test_on_trace_start_force_sets_ls_integration_even_if_user_overrides():
     meta = _run_trace_start(
-        trace_metadata={"ls_integration": "user-override", "ls_agent_type": "middleware"}
+        trace_metadata={
+            "ls_integration": "user-override",
+            "ls_agent_type": "middleware",
+        }
     )
     assert meta["ls_integration"] == "openai-agents-sdk"
     assert meta["ls_agent_type"] == "middleware"
@@ -97,9 +92,7 @@ def test_on_trace_start_preserves_other_user_trace_metadata():
 
 
 def test_on_trace_start_processor_metadata_still_applied():
-    meta = _run_trace_start(
-        trace_metadata=None, processor_metadata={"env": "test"}
-    )
+    meta = _run_trace_start(trace_metadata=None, processor_metadata={"env": "test"})
     assert meta["env"] == "test"
     assert meta["ls_agent_type"] == "root"
 
@@ -126,9 +119,7 @@ def _run_subagent_stamp(existing_tag):
     processor._runs[parent_span_id] = parent_run
 
     child_run = mock.MagicMock()
-    initial_meta = (
-        {"ls_agent_type": existing_tag} if existing_tag is not None else {}
-    )
+    initial_meta = {"ls_agent_type": existing_tag} if existing_tag is not None else {}
     child_run.extra = {"metadata": initial_meta}
     parent_run.create_child.return_value = child_run
 
@@ -159,7 +150,7 @@ def test_subagent_stamp_applies_structural_detection(existing_tag):
 
 
 def _run_trace_end(trace_metadata):
-    """Fire on_trace_end with the given trace.metadata and return run's final metadata."""
+    """Fire on_trace_end and return the run's final metadata."""
     client = mock.MagicMock(spec=Client)
     processor = OpenAIAgentsTracingProcessor(client=client)
 
