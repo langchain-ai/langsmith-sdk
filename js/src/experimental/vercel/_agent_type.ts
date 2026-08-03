@@ -1,3 +1,4 @@
+import { isRunTree } from "../../run_trees.js";
 import { getCurrentRunTree } from "../../singletons/traceable.js";
 
 export type LsAgentType = "root" | "subagent" | "middleware" | "compaction";
@@ -7,12 +8,6 @@ const NARROWING_TAGS: ReadonlySet<string> = new Set([
   "subagent",
   "compaction",
 ]);
-
-function isRunTreeLike(
-  x: unknown,
-): x is { run_type?: string; extra?: { metadata?: Record<string, unknown> } } {
-  return typeof x === "object" && x !== null;
-}
 
 /**
  * Resolve `ls_agent_type` for a Vercel-generated span.
@@ -30,7 +25,10 @@ export function resolveLsAgentType(
   parentRunTree?: unknown,
 ): LsAgentType | undefined {
   const parent = parentRunTree ?? getCurrentRunTree(true);
-  if (!isRunTreeLike(parent) || parent == null) return "root";
+  // A ContextPlaceholder (from tracingEnabled=false) is a non-null object but
+  // not an actual RunTree — treat it as "no parent" so nested LangSmithTelemetry
+  // calls that re-enable tracing still get the default root stamp.
+  if (!isRunTree(parent)) return "root";
 
   const parentTag = parent.extra?.metadata?.ls_agent_type;
   if (typeof parentTag === "string" && NARROWING_TAGS.has(parentTag)) {
