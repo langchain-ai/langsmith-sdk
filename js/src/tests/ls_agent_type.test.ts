@@ -28,7 +28,9 @@ test("resolves root for non-runtree values (e.g. ContextPlaceholder)", () => {
 
 test("lsAgentTypeMetadata spreads tag when set", () => {
   expect(lsAgentTypeMetadata("root")).toEqual({ ls_agent_type: "root" });
-  expect(lsAgentTypeMetadata("subagent")).toEqual({ ls_agent_type: "subagent" });
+  expect(lsAgentTypeMetadata("subagent")).toEqual({
+    ls_agent_type: "subagent",
+  });
 });
 
 test("lsAgentTypeMetadata skips key when undefined", () => {
