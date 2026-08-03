@@ -7,17 +7,6 @@ import { isRunTree } from "../run_trees.js";
 
 export type LsAgentType = "root" | "middleware" | "subagent" | "compaction";
 
-export const NARROWING_LS_AGENT_TYPES: ReadonlySet<string> = new Set([
-  "middleware",
-  "subagent",
-  "compaction",
-]);
-
-export const LS_AGENT_TYPES: ReadonlySet<string> = new Set([
-  ...NARROWING_LS_AGENT_TYPES,
-  "root",
-]);
-
 // `"root"` at trace root; `undefined` when nested (rely on propagation).
 export function resolveDefaultLsAgentType(
   parentRunTree?: unknown,

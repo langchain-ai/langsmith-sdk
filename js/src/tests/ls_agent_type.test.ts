@@ -1,7 +1,5 @@
 import { RunTree } from "../run_trees.js";
 import {
-  LS_AGENT_TYPES,
-  NARROWING_LS_AGENT_TYPES,
   defaultLsAgentTypeMetadata,
   lsAgentTypeMetadata,
   resolveDefaultLsAgentType,
@@ -35,18 +33,6 @@ test("lsAgentTypeMetadata spreads tag when set", () => {
 
 test("lsAgentTypeMetadata skips key when undefined", () => {
   expect(lsAgentTypeMetadata(undefined)).toEqual({});
-});
-
-test("NARROWING_LS_AGENT_TYPES has the three narrowing tags", () => {
-  expect(NARROWING_LS_AGENT_TYPES).toEqual(
-    new Set(["middleware", "subagent", "compaction"]),
-  );
-});
-
-test("LS_AGENT_TYPES is narrowing plus root", () => {
-  expect(LS_AGENT_TYPES).toEqual(
-    new Set(["root", "middleware", "subagent", "compaction"]),
-  );
 });
 
 test("defaultLsAgentTypeMetadata stamps root when no parent and key absent", () => {

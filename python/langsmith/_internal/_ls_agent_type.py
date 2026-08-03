@@ -14,11 +14,6 @@ if TYPE_CHECKING:
 
 LsAgentType = Literal["root", "middleware", "subagent", "compaction"]
 
-NARROWING_LS_AGENT_TYPES: frozenset[str] = frozenset(
-    {"middleware", "subagent", "compaction"}
-)
-LS_AGENT_TYPES: frozenset[str] = NARROWING_LS_AGENT_TYPES | {"root"}
-
 
 def resolve_default_ls_agent_type(
     parent_runtree: Optional[RunTree],
