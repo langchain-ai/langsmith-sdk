@@ -6,7 +6,7 @@ import { convertMessageToTracedFormat } from "./utils.js";
 import { setUsageMetadataOnRunTree } from "./utils.js";
 import type { KVMap } from "../../schemas.js";
 import { isPrimitive, isRecord } from "../../utils/types.js";
-import { resolveLsAgentType } from "./_agent_type.js";
+import { lsAgentTypeMetadata } from "./_agent_type.js";
 
 /**
  * Configuration options for creating a LangSmith telemetry integration
@@ -350,7 +350,7 @@ export function LangSmithTelemetry(
         metadata: {
           ...customMetadata,
           ai_sdk_method: event.operationId,
-          ls_agent_type: resolveLsAgentType(parentRunTree),
+          ...lsAgentTypeMetadata(parentRunTree),
           ls_model_name: event.modelId,
           ls_integration: "vercel-ai-sdk-telemetry",
         },
