@@ -9,25 +9,12 @@ const NARROWING_TAGS: ReadonlySet<string> = new Set([
   "compaction",
 ]);
 
-/**
- * Resolve `ls_agent_type` for a Vercel-generated span.
- *
- * Precedence:
- *   1. Narrowing parent tag (`middleware` / `subagent` / `compaction`)
- *      always inherits — user narrowing intent beats structural detection.
- *   2. `parent.run_type === "tool"` → `subagent`. Vercel's structural
- *      convention overrides inherited/default `root`.
- *   3. Parent tagged `root` (default or user) inherits explicitly.
- *   4. `"root"` when there is no parent runtree.
- *   5. Otherwise `undefined` — caller skips stamping.
- */
+// Precedence: narrowing tag > run_type=tool > inherited root > root (no parent) > undefined.
 export function resolveLsAgentType(
   parentRunTree?: unknown,
 ): LsAgentType | undefined {
   const parent = parentRunTree ?? getCurrentRunTree(true);
-  // A ContextPlaceholder (from tracingEnabled=false) is a non-null object but
-  // not an actual RunTree — treat it as "no parent" so nested LangSmithTelemetry
-  // calls that re-enable tracing still get the default root stamp.
+  // ContextPlaceholder (tracingEnabled=false) isn't a RunTree; treat as no parent.
   if (!isRunTree(parent)) return "root";
 
   const parentTag = parent.extra?.metadata?.ls_agent_type;
@@ -39,11 +26,7 @@ export function resolveLsAgentType(
   return undefined;
 }
 
-/**
- * Convenience spread — `{ ls_agent_type: <tag> }` or `{}` when the resolver
- * yields undefined. Prevents `ls_agent_type: undefined` from landing in a
- * spread metadata object.
- */
+// Spread helper — skips `ls_agent_type` when the resolver returns undefined.
 export function lsAgentTypeMetadata(parentRunTree?: unknown): {
   ls_agent_type?: LsAgentType;
 } {

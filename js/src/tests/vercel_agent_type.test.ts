@@ -5,8 +5,7 @@ import {
   resolveLsAgentType,
 } from "../experimental/vercel/_agent_type.js";
 
-// `isRunTree` (used inside the resolver) does duck-type checks on `createChild`
-// and `postRun`; the mock parent adds no-op stubs so it passes.
+// createChild/postRun stubs let the mock parent pass isRunTree.
 const buildParent = (
   metadata: Record<string, unknown> | undefined,
   runType?: string,
@@ -76,13 +75,10 @@ test("invalid parent tag falls through to run_type/undefined", () => {
 });
 
 test("non-RunTree parent returns root (safety default)", () => {
-  // null / primitives are not RunTree — return root default.
   expect(resolveLsAgentType(null)).toBe("root");
   expect(resolveLsAgentType("not-a-runtree")).toBe("root");
   expect(resolveLsAgentType(42)).toBe("root");
-  // A ContextPlaceholder is a non-null object without RunTree methods —
-  // also treated as no-parent so a nested LangSmithTelemetry re-enabling
-  // tracing still stamps the default root on its new root run.
+  // ContextPlaceholder (tracingEnabled=false) — treated as no parent.
   expect(resolveLsAgentType({ tracingEnabled: false })).toBe("root");
 });
 
