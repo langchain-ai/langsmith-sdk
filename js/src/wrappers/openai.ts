@@ -11,7 +11,8 @@ import { getCurrentRunTree } from "../singletons/traceable.js";
 
 export const _resolveLsAgentType = (
   requestMetadata: Record<string, unknown>,
-): string => {
+): string | undefined => {
+  // User-supplied per-call metadata wins (any known value); null opts out.
   const supplied = requestMetadata.ls_agent_type;
   if (
     supplied === "root" ||
@@ -21,16 +22,12 @@ export const _resolveLsAgentType = (
   ) {
     return supplied;
   }
-  const parent = getCurrentRunTree(true);
-  const parentTag = parent?.extra?.metadata?.ls_agent_type;
-  if (
-    parentTag === "middleware" ||
-    parentTag === "subagent" ||
-    parentTag === "compaction"
-  ) {
-    return parentTag;
-  }
-  return "root";
+  if (supplied === null) return undefined;
+
+  // Default root only at the trace root; nested calls rely on outer_metadata
+  // propagation from the enclosing traceable.
+  if (getCurrentRunTree(true) == null) return "root";
+  return undefined;
 };
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
@@ -392,6 +389,7 @@ const getChatModelInvocationParamsFn = (
         ? (params.metadata as Record<string, unknown>)
         : {};
 
+    const lsAgentType = _resolveLsAgentType(requestMetadata);
     return {
       ...requestMetadata,
       ls_provider: provider,
@@ -405,7 +403,7 @@ const getChatModelInvocationParamsFn = (
         ...prepopulatedInvocationParams,
         ...ls_invocation_params,
       },
-      ls_agent_type: _resolveLsAgentType(requestMetadata),
+      ...(lsAgentType !== undefined ? { ls_agent_type: lsAgentType } : {}),
     } as InvocationParamsSchema;
   };
 };
@@ -610,6 +608,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           }
         }
 
+        const lsAgentType = _resolveLsAgentType({});
         return {
           ls_provider: provider,
           ls_model_type: "llm",
@@ -621,7 +620,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             ...prepopulatedInvocationParams,
             ...ls_invocation_params,
           },
-          ls_agent_type: _resolveLsAgentType({}),
+          ...(lsAgentType !== undefined ? { ls_agent_type: lsAgentType } : {}),
         };
       },
       ...cleanedOptions,

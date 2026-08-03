@@ -154,28 +154,33 @@ def _infer_invocation_params(
     }
 
 
-def _resolve_default_ls_agent_type() -> str:
-    """Default ls_agent_type for a wrap_openai call, inherited from parent."""
-    parent = run_helpers.get_current_run_tree()
-    parent_tag = None
-    if parent is not None and parent.extra:
-        parent_tag = parent.extra.get("metadata", {}).get("ls_agent_type")
-    if parent_tag in {"middleware", "subagent", "compaction"}:
-        return parent_tag
-    return "root"
+def _resolve_default_ls_agent_type() -> Optional[str]:
+    """Default ls_agent_type for a wrap_openai call.
+
+    Returns ``"root"`` only when this call is the trace root (no parent runtree).
+    Nested calls return ``None`` so we don't restamp — traceable's outer_metadata
+    mechanism propagates the parent's tag to the child automatically.
+    """
+    if run_helpers.get_current_run_tree() is None:
+        return "root"
+    return None
 
 
 def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
     """Return textra with ls_agent_type defaulted at the wrapper-config layer.
 
-    Stamping here (rather than via ``_invocation_params_fn``) means wrapper-supplied
-    ``tracing_extra["metadata"]["ls_agent_type"]`` is preserved via setdefault; per-call
-    ``kwargs["metadata"]["ls_agent_type"]`` still overrides downstream because it flows
-    through the invocation-params merge, which is applied last inside ``traceable``.
+    Wrapper-supplied ``tracing_extra["metadata"]["ls_agent_type"]`` is preserved.
+    ``None`` opt-out removes the key. Per-call ``kwargs["metadata"]["ls_agent_type"]``
+    still overrides downstream via the invocation-params merge inside ``traceable``.
     """
     result = dict(textra)
     metadata = dict(result.get("metadata") or {})
-    metadata.setdefault("ls_agent_type", _resolve_default_ls_agent_type())
+    if "ls_agent_type" not in metadata:
+        default_tag = _resolve_default_ls_agent_type()
+        if default_tag is not None:
+            metadata["ls_agent_type"] = default_tag
+    elif metadata["ls_agent_type"] is None:
+        del metadata["ls_agent_type"]
     result["metadata"] = metadata
     return result
 
