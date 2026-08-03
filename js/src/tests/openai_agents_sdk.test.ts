@@ -221,9 +221,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const rootNode = tree.nodes.find((n) => n.includes("Agent"));
       expect(rootNode).toBeDefined();
       if (rootNode) {
-        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
-          "root",
-        );
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe("root");
       }
     });
 
@@ -285,9 +283,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
           "entry_guardrail",
         );
         expect(tree.data[rootNode].extra?.metadata?.phase).toBe("entry");
-        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
-          "root",
-        );
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe("root");
       }
     });
   });
