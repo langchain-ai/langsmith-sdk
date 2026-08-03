@@ -1,0 +1,22 @@
+js/src/tests/vercel_agent_type.test.ts
+  s_ff080844706851::t_e728d770a683db 8-9,17-18,78-79,83-86
+js/src/experimental/vercel/_agent_type.ts
+  s_ff080844706851::t_4f2fca0ab580b0 28-31
+  s_ff080844706851::t_e1ebfb01a92b3e 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "14e0ed9a586b4e1b8c9b9f3941c00457b00266c7",
+  "prompts": {},
+  "sessions": {
+    "s_ff080844706851": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40df46e9-1a8a-41fc-8b66-bb84f7803d70",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}
