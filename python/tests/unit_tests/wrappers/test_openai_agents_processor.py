@@ -25,11 +25,7 @@ def _fake_trace(metadata=None, name="workflow", trace_id="trace-1"):
 
 
 def _run_trace_start(trace_metadata, processor_metadata=None, has_parent_runtree=True):
-    """Fire on_trace_start and return the resulting run_extra.metadata.
-
-    ``has_parent_runtree`` controls whether get_current_run_tree returns a
-    parent (nested) or None (true trace root).
-    """
+    """Fire on_trace_start and return the resulting run_extra.metadata."""
     client = mock.MagicMock(spec=Client)
     processor = OpenAIAgentsTracingProcessor(client=client, metadata=processor_metadata)
     trace = _fake_trace(metadata=trace_metadata)
@@ -50,9 +46,6 @@ def _run_trace_start(trace_metadata, processor_metadata=None, has_parent_runtree
     if has_parent_runtree:
         call = parent_return.create_child.call_args
         return call.kwargs["extra"]["metadata"]
-
-    # No parent: on_trace_start creates a new RunTree directly. Grab it from
-    # the processor's stored runs mapping.
     stored = next(iter(processor._runs.values()))
     return stored.extra["metadata"]
 
@@ -74,23 +67,16 @@ def test_no_default_stamp_when_nested_under_parent_runtree():
 
 @pytest.mark.parametrize("user_tag", ["root", "middleware", "subagent", "compaction"])
 def test_preserves_user_supplied_ls_agent_type(user_tag):
-    """Any user-supplied tag via trace.metadata is preserved (any known value)."""
     meta = _run_trace_start(trace_metadata={"ls_agent_type": user_tag})
     assert meta["ls_agent_type"] == user_tag
 
 
 def test_none_opt_out_at_trace_start_preserves_null():
-    """None passes through unchanged; the null value overrides create_child's
-    inherited parent tag on the resulting child run.
-    """
     meta = _run_trace_start(trace_metadata={"ls_agent_type": None})
     assert meta["ls_agent_type"] is None
 
 
 def test_trace_end_matches_trace_start_precedence():
-    """trace.metadata wins over processor metadata at both trace-start and
-    trace-end (previously reversed at trace-end).
-    """
     from unittest import mock as _mock
 
     from langsmith import Client
@@ -126,7 +112,6 @@ def test_preserves_other_user_trace_metadata():
 
 
 def test_trace_metadata_wins_over_processor_metadata():
-    """Per-invocation trace.metadata overrides processor-level defaults."""
     meta = _run_trace_start(
         trace_metadata={"env": "prod"},
         processor_metadata={"env": "test"},
@@ -140,7 +125,6 @@ def test_trace_metadata_wins_over_processor_metadata():
 
 
 def _run_subagent_stamp(existing_tag):
-    """Fire the subagent-detection path with a pre-existing tag on child_run."""
     client = mock.MagicMock(spec=Client)
     processor = OpenAIAgentsTracingProcessor(client=client)
 
@@ -172,25 +156,18 @@ def _run_subagent_stamp(existing_tag):
 
 
 def test_subagent_stamps_when_child_untagged():
-    """Untagged child: structural detection stamps subagent."""
     assert _run_subagent_stamp(None) == "subagent"
 
 
 def test_subagent_overrides_inherited_root():
-    """Documented trade: default/user root at trace propagates to child, then
-    structural detection overrides it to subagent at agent-as-tool spans. We
-    can't distinguish user-set root from default-stamped root at this write
-    site, so we allow structural detection to fire.
-    """
+    # Structural detection overrides propagated root at agent-as-tool spans.
     assert _run_subagent_stamp("root") == "subagent"
 
 
 @pytest.mark.parametrize("narrowing_tag", ["middleware", "compaction"])
 def test_subagent_preserves_user_narrowing_tag(narrowing_tag):
-    """User narrowing intent (middleware/compaction) beats structural detection."""
     assert _run_subagent_stamp(narrowing_tag) == narrowing_tag
 
 
 def test_subagent_preserves_existing_subagent_tag():
-    """Already-subagent is a no-op (idempotent)."""
     assert _run_subagent_stamp("subagent") == "subagent"

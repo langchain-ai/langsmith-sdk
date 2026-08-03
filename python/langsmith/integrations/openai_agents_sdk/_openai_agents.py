@@ -187,16 +187,14 @@ if HAVE_AGENTS:
             else:
                 run_name = "Agent workflow"
 
-            # Build metadata; honor user trace.metadata but force-set SDK identity.
+            # trace.metadata wins over processor defaults; ls_integration force-set.
             merged_metadata = {
                 **(self._metadata or {}),
                 **(getattr(trace, "metadata", None) or {}),
                 "ls_integration": "openai-agents-sdk",
                 "ls_integration_version": get_package_version("openai-agents"),
             }
-            # Default root only at true trace root; nested traces inherit via
-            # create_child. User-supplied None flows through unchanged so it
-            # overrides create_child's inherited parent tag on the child run.
+            # Default root only at trace root; nested traces inherit via create_child.
             if "ls_agent_type" not in merged_metadata and current_run_tree is None:
                 merged_metadata["ls_agent_type"] = "root"
             run_extra = {"metadata": merged_metadata}
@@ -243,8 +241,7 @@ if HAVE_AGENTS:
                 return
 
             trace_dict = trace.export() or {}
-            # Match on_trace_start precedence: per-invocation trace.metadata
-            # wins over processor-level defaults.
+            # trace.metadata wins over processor defaults (matches on_trace_start).
             metadata = {
                 **(self._metadata or {}),
                 **(trace_dict.get("metadata") or {}),

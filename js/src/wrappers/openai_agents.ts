@@ -583,15 +583,13 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       runName = "Agent workflow";
     }
 
-    // Build metadata; honor user trace.metadata but force-set SDK identity.
+    // Build metadata; trace.metadata wins over processor defaults, ls_integration force-set.
     const mergedMetadata: Record<string, unknown> = {
       ...this._metadata,
       ...((trace.metadata as Record<string, unknown> | undefined) ?? {}),
       ls_integration: "openai-agents-sdk",
     };
-    // Default root only at true trace root; nested traces inherit via
-    // create_child. User-supplied null flows through unchanged so it overrides
-    // create_child's inherited parent tag on the child run.
+    // Default root only at true trace root; nested traces inherit via create_child.
     if (!("ls_agent_type" in mergedMetadata) && currentRunTree === undefined) {
       mergedMetadata.ls_agent_type = "root";
     }
@@ -664,8 +662,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     this._runs.delete(trace.traceId);
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
-    // Match onTraceStart precedence: per-invocation trace.metadata wins over
-    // processor-level defaults.
+    // trace.metadata wins over processor defaults (matches onTraceStart).
     const metadata: Record<string, unknown> = {
       ...this._metadata,
       ...(traceDict.metadata as Record<string, unknown>),
