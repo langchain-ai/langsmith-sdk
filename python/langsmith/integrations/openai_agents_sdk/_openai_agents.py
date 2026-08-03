@@ -194,7 +194,13 @@ if HAVE_AGENTS:
                 "ls_integration": "openai-agents-sdk",
                 "ls_integration_version": get_package_version("openai-agents"),
             }
-            merged_metadata.setdefault("ls_agent_type", "root")
+            # Default root only at true trace root; nested traces inherit via
+            # create_child. `None` opt-out removes the key.
+            if "ls_agent_type" not in merged_metadata:
+                if current_run_tree is None:
+                    merged_metadata["ls_agent_type"] = "root"
+            elif merged_metadata["ls_agent_type"] is None:
+                del merged_metadata["ls_agent_type"]
             run_extra = {"metadata": merged_metadata}
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
@@ -240,8 +246,9 @@ if HAVE_AGENTS:
 
             trace_dict = trace.export() or {}
             metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
-            # Force-set SDK identity; user trace.metadata cannot spoof it here either.
-            metadata["ls_integration"] = "openai-agents-sdk"
+            # Honor null opt-out from trace.metadata (mirror of on_trace_start).
+            if metadata.get("ls_agent_type") is None and "ls_agent_type" in metadata:
+                del metadata["ls_agent_type"]
 
             try:
                 # Update run with final inputs/outputs

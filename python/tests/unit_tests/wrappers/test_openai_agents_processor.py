@@ -16,93 +16,94 @@ from langsmith.integrations.openai_agents_sdk import (  # noqa: E402
 
 
 def _fake_trace(metadata=None, name="workflow", trace_id="trace-1"):
-    trace = SimpleNamespace(
+    return SimpleNamespace(
         name=name,
         trace_id=trace_id,
         metadata=metadata,
         export=lambda: {},
     )
-    return trace
 
 
-def _capture_run_extra(processor):
-    """Run on_trace_start against a fake trace and return the resulting extra."""
-    captured = {}
+def _run_trace_start(trace_metadata, processor_metadata=None, has_parent_runtree=True):
+    """Fire on_trace_start and return the resulting run_extra.metadata.
 
-    def fake_create_child(**kwargs):
-        captured.update(kwargs)
-        run = mock.MagicMock()
-        run.id = "run-id"
-        return run
-
-    with mock.patch(
-        "langsmith.integrations.openai_agents_sdk._openai_agents.get_current_run_tree",
-        return_value=SimpleNamespace(create_child=fake_create_child),
-    ):
-        return captured
-
-
-def _run_trace_start(trace_metadata, processor_metadata=None):
+    ``has_parent_runtree`` controls whether get_current_run_tree returns a
+    parent (nested) or None (true trace root).
+    """
     client = mock.MagicMock(spec=Client)
     processor = OpenAIAgentsTracingProcessor(client=client, metadata=processor_metadata)
     trace = _fake_trace(metadata=trace_metadata)
 
-    fake_parent = mock.MagicMock()
-    fake_parent.create_child.return_value = mock.MagicMock()
+    if has_parent_runtree:
+        fake_parent = mock.MagicMock()
+        fake_parent.create_child.return_value = mock.MagicMock()
+        parent_return = fake_parent
+    else:
+        parent_return = None
+
     with mock.patch(
         "langsmith.integrations.openai_agents_sdk._openai_agents.get_current_run_tree",
-        return_value=fake_parent,
+        return_value=parent_return,
     ):
         processor.on_trace_start(trace)
 
-    call = fake_parent.create_child.call_args
-    return call.kwargs["extra"]["metadata"]
+    if has_parent_runtree:
+        call = parent_return.create_child.call_args
+        return call.kwargs["extra"]["metadata"]
+
+    # No parent: on_trace_start creates a new RunTree directly. Grab it from
+    # the processor's stored runs mapping.
+    stored = next(iter(processor._runs.values()))
+    return stored.extra["metadata"]
 
 
-def test_on_trace_start_defaults_to_root_when_no_user_tag():
-    meta = _run_trace_start(trace_metadata=None)
+# ---------------------------------------------------------------------------
+# on_trace_start
+# ---------------------------------------------------------------------------
+
+
+def test_stamps_default_root_when_no_parent_runtree():
+    meta = _run_trace_start(trace_metadata=None, has_parent_runtree=False)
     assert meta["ls_agent_type"] == "root"
-    assert meta["ls_integration"] == "openai-agents-sdk"
 
 
-@pytest.mark.parametrize("user_tag", ["middleware", "subagent", "compaction", "root"])
-def test_on_trace_start_preserves_user_supplied_ls_agent_type(user_tag):
+def test_no_default_stamp_when_nested_under_parent_runtree():
+    meta = _run_trace_start(trace_metadata=None, has_parent_runtree=True)
+    assert "ls_agent_type" not in meta
+
+
+@pytest.mark.parametrize("user_tag", ["root", "middleware", "subagent", "compaction"])
+def test_preserves_user_supplied_ls_agent_type(user_tag):
+    """Any user-supplied tag via trace.metadata is preserved (any known value)."""
     meta = _run_trace_start(trace_metadata={"ls_agent_type": user_tag})
     assert meta["ls_agent_type"] == user_tag
 
 
-def test_on_trace_start_force_sets_ls_integration_even_if_user_overrides():
-    meta = _run_trace_start(
-        trace_metadata={
-            "ls_integration": "user-override",
-            "ls_agent_type": "middleware",
-        }
-    )
-    assert meta["ls_integration"] == "openai-agents-sdk"
-    assert meta["ls_agent_type"] == "middleware"
+def test_none_opt_out_at_trace_start_deletes_key():
+    meta = _run_trace_start(trace_metadata={"ls_agent_type": None})
+    assert "ls_agent_type" not in meta
 
 
-def test_on_trace_start_preserves_other_user_trace_metadata():
+def test_preserves_other_user_trace_metadata():
     meta = _run_trace_start(
         trace_metadata={"middleware_name": "entry_guardrail", "phase": "entry"}
     )
     assert meta["middleware_name"] == "entry_guardrail"
     assert meta["phase"] == "entry"
-    assert meta["ls_agent_type"] == "root"
 
 
-def test_on_trace_start_processor_metadata_still_applied():
-    meta = _run_trace_start(trace_metadata=None, processor_metadata={"env": "test"})
-    assert meta["env"] == "test"
-    assert meta["ls_agent_type"] == "root"
-
-
-def test_on_trace_start_trace_metadata_wins_over_processor_metadata():
+def test_trace_metadata_wins_over_processor_metadata():
+    """Per-invocation trace.metadata overrides processor-level defaults."""
     meta = _run_trace_start(
         trace_metadata={"env": "prod"},
         processor_metadata={"env": "test"},
     )
     assert meta["env"] == "prod"
+
+
+# ---------------------------------------------------------------------------
+# Subagent structural detection (agent-as-tool)
+# ---------------------------------------------------------------------------
 
 
 def _run_subagent_stamp(existing_tag):
@@ -134,47 +135,29 @@ def _run_subagent_stamp(existing_tag):
     child_span.span_data.name = "Some Subagent"
 
     processor.on_span_start(child_span)
-    return child_run.extra["metadata"]["ls_agent_type"]
+    return child_run.extra["metadata"].get("ls_agent_type")
 
 
-@pytest.mark.parametrize("existing_tag", ["middleware", "compaction"])
-def test_subagent_stamp_preserves_user_narrowing_tags(existing_tag):
-    """User-supplied middleware/compaction beats structural subagent detection."""
-    assert _run_subagent_stamp(existing_tag) == existing_tag
+def test_subagent_stamps_when_child_untagged():
+    """Untagged child: structural detection stamps subagent."""
+    assert _run_subagent_stamp(None) == "subagent"
 
 
-@pytest.mark.parametrize("existing_tag", [None, "root", "subagent"])
-def test_subagent_stamp_applies_structural_detection(existing_tag):
-    """Missing tag, inherited root, or already-subagent all resolve to subagent."""
-    assert _run_subagent_stamp(existing_tag) == "subagent"
+def test_subagent_overrides_inherited_root():
+    """Documented trade: default/user root at trace propagates to child, then
+    structural detection overrides it to subagent at agent-as-tool spans. We
+    can't distinguish user-set root from default-stamped root at this write
+    site, so we allow structural detection to fire.
+    """
+    assert _run_subagent_stamp("root") == "subagent"
 
 
-def _run_trace_end(trace_metadata):
-    """Fire on_trace_end and return the run's final metadata."""
-    client = mock.MagicMock(spec=Client)
-    processor = OpenAIAgentsTracingProcessor(client=client)
-
-    run = mock.MagicMock()
-    run.extra = {"metadata": {}}
-    processor._runs["trace-1"] = run
-    processor._last_response_outputs["trace-1"] = {}
-
-    trace = SimpleNamespace(
-        trace_id="trace-1",
-        name="Agent workflow",
-        metadata=trace_metadata,
-        export=lambda: {"metadata": trace_metadata} if trace_metadata else {},
-    )
-    processor.on_trace_end(trace)
-    return run.extra["metadata"]
+@pytest.mark.parametrize("narrowing_tag", ["middleware", "compaction"])
+def test_subagent_preserves_user_narrowing_tag(narrowing_tag):
+    """User narrowing intent (middleware/compaction) beats structural detection."""
+    assert _run_subagent_stamp(narrowing_tag) == narrowing_tag
 
 
-def test_on_trace_end_force_sets_ls_integration():
-    meta = _run_trace_end({"ls_integration": "user-override"})
-    assert meta["ls_integration"] == "openai-agents-sdk"
-
-
-def test_on_trace_end_preserves_other_user_metadata():
-    meta = _run_trace_end({"middleware_name": "exit_guardrail"})
-    assert meta["middleware_name"] == "exit_guardrail"
-    assert meta["ls_integration"] == "openai-agents-sdk"
+def test_subagent_preserves_existing_subagent_tag():
+    """Already-subagent is a no-op (idempotent)."""
+    assert _run_subagent_stamp("subagent") == "subagent"

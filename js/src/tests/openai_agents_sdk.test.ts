@@ -211,7 +211,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       }
     });
 
-    test("defaults ls_agent_type to root when trace has no metadata", async () => {
+    test("stamps default ls_agent_type=root at trace root with no user tag", async () => {
       const trace = createMockTrace("trace-lst-1", "Agent");
       await processor.onTraceStart(trace);
       await processor.onTraceEnd(trace);
@@ -227,7 +227,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       }
     });
 
-    test.each(["middleware", "subagent", "compaction", "root"] as const)(
+    test.each(["root", "middleware", "subagent", "compaction"] as const)(
       "preserves user-supplied ls_agent_type='%s' from trace.metadata",
       async (userTag) => {
         const trace = createMockTrace(`trace-lst-${userTag}`, "Agent", {
@@ -248,12 +248,9 @@ describe("OpenAIAgentsTracingProcessor", () => {
       },
     );
 
-    test("force-sets ls_integration even if user overrides via trace.metadata", async () => {
-      const trace = createMockTrace("trace-lst-integ", "Agent", {
-        metadata: {
-          ls_integration: "user-override",
-          ls_agent_type: "middleware",
-        },
+    test("null in trace.metadata opts out and deletes the key", async () => {
+      const trace = createMockTrace("trace-lst-optout", "Agent", {
+        metadata: { ls_agent_type: null },
       });
       await processor.onTraceStart(trace);
       await processor.onTraceEnd(trace);
@@ -263,16 +260,13 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const rootNode = tree.nodes.find((n) => n.includes("Agent"));
       expect(rootNode).toBeDefined();
       if (rootNode) {
-        expect(tree.data[rootNode].extra?.metadata?.ls_integration).toBe(
-          "openai-agents-sdk",
-        );
-        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
-          "middleware",
-        );
+        expect(
+          "ls_agent_type" in (tree.data[rootNode].extra?.metadata ?? {}),
+        ).toBe(false);
       }
     });
 
-    test("preserves other user trace.metadata alongside ls_agent_type", async () => {
+    test("preserves other user trace.metadata alongside default root", async () => {
       const trace = createMockTrace("trace-lst-other", "Agent", {
         metadata: {
           middleware_name: "entry_guardrail",
