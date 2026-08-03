@@ -44,7 +44,10 @@ from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _v2_migration_utils
-from langsmith._internal._beta_decorator import _warn_once
+from langsmith._internal._beta_decorator import (
+    _warn_once,
+    suppress_deprecation_warning,
+)
 from langsmith.evaluation.evaluator import (
     SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
@@ -1176,12 +1179,17 @@ def _load_traces_for_experiment(
         if not isinstance(project, schemas.TracerSession):
             project = _load_experiment(project, client)
         runs = _v2_migration_utils._load_traces_v2(project, client, is_root=is_root)
+    # Suppressed: evaluate()/aevaluate() are supported, so callers have nothing to
+    # migrate; how an experiment's traces are loaded is an implementation detail.
     elif isinstance(project, schemas.TracerSession):
-        runs = client.list_runs(project_id=project.id, is_root=is_root)
+        with suppress_deprecation_warning():
+            runs = client.list_runs(project_id=project.id, is_root=is_root)
     elif isinstance(project, uuid.UUID) or _is_uuid(project):
-        runs = client.list_runs(project_id=project, is_root=is_root)
+        with suppress_deprecation_warning():
+            runs = client.list_runs(project_id=project, is_root=is_root)
     else:
-        runs = client.list_runs(project_name=project, is_root=is_root)
+        with suppress_deprecation_warning():
+            runs = client.list_runs(project_name=project, is_root=is_root)
     if not load_nested:
         return list(runs)
 

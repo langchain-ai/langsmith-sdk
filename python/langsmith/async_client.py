@@ -24,6 +24,9 @@ import httpx
 
 import langsmith._openapi_client as _langsmith_api_module
 from langsmith._internal._beta_decorator import deprecated as _deprecated
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
 from langsmith.client import _get_openapi_base_url
 
 if TYPE_CHECKING:
@@ -854,10 +857,22 @@ class AsyncClient:
             if limit is not None and ix >= limit:
                 break
 
+    @_deprecated(
+        "share_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.create() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     async def share_run(
         self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
     ) -> str:
         """Get a share link for a run asynchronously.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.share.create` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (ID_TYPE): The ID of the run to share.
@@ -887,11 +902,24 @@ class AsyncClient:
 
     async def run_is_shared(self, run_id: ls_client.ID_TYPE) -> bool:
         """Get share state for a run asynchronously."""
-        link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
+        with _suppress_deprecation_warning():
+            link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
         return link is not None
 
+    @_deprecated(
+        "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
+        'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run asynchronously.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` with ``selects=["SHARE_URL"]`` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (ID_TYPE): The ID of the run.

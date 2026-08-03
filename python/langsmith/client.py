@@ -80,6 +80,9 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import deprecated as _deprecated
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
@@ -1086,8 +1089,8 @@ class Client:
                 custom mounted `HTTPAdapter`s, `session.auth` and `session.hooks`
                 are not.
             auto_batch_tracing: Whether to automatically batch tracing.
-            anonymizer: A function applied for masking serialized run inputs and
-                outputs, before sending to the API.
+            anonymizer: A function applied for masking serialized run inputs,
+                outputs, metadata and error, before sending to the API.
             hide_inputs: Whether to hide run inputs when tracing with this client.
 
                 If `True`, hides the entire inputs.
@@ -2477,9 +2480,9 @@ class Client:
             # update metadata
             metadata: dict = run_extra.setdefault("metadata", {})
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
-            metadata.update(
-                {k: v for k, v in langchain_metadata.items() if k not in metadata}
-            )
+            added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            if added:
+                metadata.update(self._hide_run_metadata(added))
 
     def _should_sample(self) -> bool:
         if self.tracing_sample_rate is None:
@@ -2894,6 +2897,9 @@ class Client:
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
             return {}
+        if self._anonymizer:
+            json_metadata = _orjson.loads(_dumps_json(metadata))
+            return self._anonymizer(json_metadata)
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
@@ -3819,9 +3825,9 @@ class Client:
         if events is not None:
             data["events"] = self._filter_new_token_events(events)
         if data["extra"]:
-            self._insert_runtime_env([data])
             if metadata := data["extra"].get("metadata"):
                 data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+            self._insert_runtime_env([data])
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
 
@@ -4127,9 +4133,11 @@ class Client:
                 "#load-a-run’s-child-runs"
             )
 
-        child_runs = self.list_runs(
-            is_root=False, session_id=run.session_id, trace_id=run.trace_id
-        )
+        # Suppressed: the caller asked for child runs, not for list_runs().
+        with _suppress_deprecation_warning():
+            child_runs = self.list_runs(
+                is_root=False, session_id=run.session_id, trace_id=run.trace_id
+            )
         treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
             collections.defaultdict(list)
         )
@@ -4303,16 +4311,19 @@ class Client:
         thread_id_escaped = json.dumps(str(thread_id))
         thread_filter = f"eq(thread_id, {thread_id_escaped})"
         combined_filter = f"and({thread_filter}, {filter})" if filter else thread_filter
-        return self.list_runs(
-            project_id=project_id,
-            project_name=project_name,
-            is_root=is_root,
-            limit=limit,
-            select=select,
-            filter=combined_filter,
-            order=order,
-            **kwargs,
-        )
+        # Suppressed: read_thread() already warned, and it points at
+        # threads.list_traces() rather than list_runs()'s runs.query().
+        with _suppress_deprecation_warning():
+            return self.list_runs(
+                project_id=project_id,
+                project_name=project_name,
+                is_root=is_root,
+                limit=limit,
+                select=select,
+                filter=combined_filter,
+                order=order,
+                **kwargs,
+            )
 
     @_deprecated(
         "list_runs() is deprecated and will be removed after Jan 31, 2027. "
@@ -4813,8 +4824,20 @@ class Client:
             f"r/{run.id}?poll=true"
         )
 
+    @_deprecated(
+        "share_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.create() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.share.create` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run to share.
@@ -4839,8 +4862,20 @@ class Client:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
+    @_deprecated(
+        "unshare_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.delete() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.share.delete` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run to unshare.
@@ -4855,8 +4890,20 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    @_deprecated(
+        "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
+        'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.runs.retrieve` with ``selects=["SHARE_URL"]`` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run.
@@ -4885,13 +4932,26 @@ class Client:
         Returns:
             bool: True if the run is shared, False otherwise.
         """
-        link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
+        with _suppress_deprecation_warning():
+            link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
         return link is not None
 
+    @_deprecated(
+        "read_shared_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.public.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def read_shared_run(
         self, share_token: Union[ID_TYPE, str], run_id: Optional[ID_TYPE] = None
     ) -> ls_schemas.Run:
         """Get shared runs.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.public.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared run.
@@ -4913,10 +4973,22 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Run(**response.json(), _host_url=self._host_url)
 
+    @_deprecated(
+        "list_shared_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.public.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     def list_shared_runs(
         self, share_token: Union[ID_TYPE, str], run_ids: Optional[list[str]] = None
     ) -> Iterator[ls_schemas.Run]:
         """Get shared runs.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.Client.public.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared run.
@@ -5381,21 +5453,24 @@ class Client:
 
         backend = _v2_migration_utils.get_query_backend(self.info.instance_flags)
         if backend != _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
-            runs: Iterable[ls_schemas.Run] = self.list_runs(
-                project_id=project_id,
-                project_name=project_name,
-                is_root=True,
-                select=[
-                    "id",
-                    "reference_example_id",
-                    "inputs",
-                    "outputs",
-                    "error",
-                    "feedback_stats",
-                    "start_time",
-                    "end_time",
-                ],
-            )
+            # Suppressed: get_test_results() is supported, so callers have nothing
+            # to migrate; how it fetches runs is an implementation detail.
+            with _suppress_deprecation_warning():
+                runs: Iterable[ls_schemas.Run] = self.list_runs(
+                    project_id=project_id,
+                    project_name=project_name,
+                    is_root=True,
+                    select=[
+                        "id",
+                        "reference_example_id",
+                        "inputs",
+                        "outputs",
+                        "error",
+                        "feedback_stats",
+                        "start_time",
+                        "end_time",
+                    ],
+                )
         else:
             if project_id is None and project_name is not None:
                 project_id = self.read_project(project_name=project_name).id
@@ -7779,12 +7854,16 @@ class Client:
                     DeprecationWarning,
                     stacklevel=3,
                 )
-            run_: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase] = self.read_run(
-                run,
-                load_child_runs=load_child_runs,
-                project_id=project_id,
-                start_time=start_time,
-            )
+            # Suppressed: the caller passed a run ID to (a)evaluate_run(), which
+            # already warned and points at create_feedback() rather than
+            # read_run()'s runs.retrieve().
+            with _suppress_deprecation_warning():
+                run_: Union[V2Run, ls_schemas.Run, ls_schemas.RunBase] = self.read_run(
+                    run,
+                    load_child_runs=load_child_runs,
+                    project_id=project_id,
+                    start_time=start_time,
+                )
         else:
             run_ = run
         return run_

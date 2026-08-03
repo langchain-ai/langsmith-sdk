@@ -269,6 +269,82 @@ describe("error field", () => {
   });
 });
 
+describe("metadata field", () => {
+  // Assembled at runtime so no literal secret-shaped string sits in source.
+  const fakeKey = "sk-ant-api03-" + "A".repeat(30);
+  const metadataWithSecret = () => ({
+    config: { authorization: `Bearer ${fakeKey}` },
+  });
+
+  test("anonymizer redacts the metadata field on run create", async () => {
+    const { client, callSpy } = mockClient({
+      anonymizer: createSecretAnonymizer(),
+    });
+
+    await client.createRun({
+      id: uuid(),
+      name: "traced",
+      run_type: "llm",
+      inputs: { in: "put" },
+      extra: { metadata: metadataWithSecret() },
+    });
+
+    const { data } = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const metadata = JSON.stringify(data["traced:0"].extra?.metadata);
+    expect(metadata).not.toContain(fakeKey);
+    expect(metadata).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("anonymizer redacts the metadata field on run update", async () => {
+    const { client, callSpy } = mockClient({
+      anonymizer: createSecretAnonymizer(),
+    });
+
+    const id = uuid();
+    await client.createRun({
+      id,
+      name: "traced",
+      run_type: "llm",
+      inputs: { in: "put" },
+    });
+    await client.updateRun(id, { extra: { metadata: metadataWithSecret() } });
+
+    const { data } = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    const metadata = JSON.stringify(data["traced:0"].extra?.metadata);
+    expect(metadata).not.toContain(fakeKey);
+    expect(metadata).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test("anonymizer redacts metadata merged in from the environment", async () => {
+    // Read once at construction, so it has to be set before the client exists.
+    // eslint-disable-next-line no-process-env
+    process.env.LANGCHAIN_TEST_ENV_METADATA = `Bearer ${fakeKey}`;
+    try {
+      const { client, callSpy } = mockClient({
+        anonymizer: createSecretAnonymizer(),
+      });
+
+      await client.createRun({
+        id: uuid(),
+        name: "traced",
+        run_type: "llm",
+        inputs: { in: "put" },
+      });
+
+      const { data } = await getAssumedTreeFromCalls(
+        callSpy.mock.calls,
+        client,
+      );
+      const metadata = JSON.stringify(data["traced:0"].extra?.metadata);
+      expect(metadata).not.toContain(fakeKey);
+      expect(metadata).toContain(SECRET_PLACEHOLDER);
+    } finally {
+      // eslint-disable-next-line no-process-env
+      delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+    }
+  });
+});
+
 describe("createSecretAnonymizer", () => {
   const redact = createSecretAnonymizer();
 
