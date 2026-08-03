@@ -97,7 +97,7 @@ openai-agents = ["openai-agents>=0.0.3"]
 claude-agent-sdk = ["claude-agent-sdk>=0.1.0; python_version>='3.10'"]
 
 # Enabled via `pip install langsmith[google-adk]`
-google-adk = ["google-adk>=1.0.0", "wrapt>=1.16.0"]
+google-adk = ["google-adk>=2.3.0", "wrapt>=1.16.0"]
 
 # Enabled via `pip install langsmith[google-adk-live]`
 # ADK Live (Gemini Live voice) tracing via LangSmithGoogleADKLivePlugin. Needs the
@@ -171,10 +171,10 @@ dev = [
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.44",
+    "ty==0.0.65",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
-    "google-adk>=1.0.0",
+    "google-adk>=2.3.0",
     "pytest-timeout>=2.3.1",
 ]
 
