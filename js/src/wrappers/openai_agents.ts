@@ -12,6 +12,7 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "../singletons/traceable.js";
+import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
 import type { ContextPlaceholder } from "../singletons/types.js";
 import type {
   AgentSpanData,
@@ -589,10 +590,10 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       ...((trace.metadata as Record<string, unknown> | undefined) ?? {}),
       ls_integration: "openai-agents-sdk",
     };
-    // Default root only at true trace root; nested traces inherit via create_child.
-    if (!("ls_agent_type" in mergedMetadata) && currentRunTree === undefined) {
-      mergedMetadata.ls_agent_type = "root";
-    }
+    Object.assign(
+      mergedMetadata,
+      defaultLsAgentTypeMetadata(mergedMetadata, currentRunTree),
+    );
     const runExtra: Record<string, unknown> = { metadata: mergedMetadata };
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};

@@ -5,6 +5,7 @@ from typing import Optional
 
 from langsmith import run_trees as rt
 from langsmith._internal import _context
+from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
 from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree
 
@@ -194,9 +195,7 @@ if HAVE_AGENTS:
                 "ls_integration": "openai-agents-sdk",
                 "ls_integration_version": get_package_version("openai-agents"),
             }
-            # Default root only at trace root; nested traces inherit via create_child.
-            if "ls_agent_type" not in merged_metadata and current_run_tree is None:
-                merged_metadata["ls_agent_type"] = "root"
+            apply_default_ls_agent_type(merged_metadata, current_run_tree)
             run_extra = {"metadata": merged_metadata}
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
