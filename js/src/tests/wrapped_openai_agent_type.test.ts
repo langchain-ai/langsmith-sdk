@@ -1,6 +1,4 @@
 import { RunTree } from "../run_trees.js";
-// Import withRunTree from the top-level traceable module — its module-load side
-// effect installs the real AsyncLocalStorage instance the helper reads from.
 import { withRunTree } from "../traceable.js";
 import { _resolveLsAgentType } from "../wrappers/openai.js";
 
@@ -39,7 +37,7 @@ test.each(["root", "subagent", "middleware", "compaction"] as const)(
   },
 );
 
-test("null per-call opts out (returns undefined)", () => {
+test("null per-call opts out — helper returns undefined; caller's ...requestMetadata spread leaves ls_agent_type=null on the run", () => {
   expect(_resolveLsAgentType({ ls_agent_type: null })).toBeUndefined();
 });
 

@@ -155,12 +155,7 @@ def _infer_invocation_params(
 
 
 def _resolve_default_ls_agent_type() -> Optional[str]:
-    """Default ls_agent_type for a wrap_openai call.
-
-    Returns ``"root"`` only when this call is the trace root (no parent runtree).
-    Nested calls return ``None`` so we don't restamp — traceable's outer_metadata
-    mechanism propagates the parent's tag to the child automatically.
-    """
+    """Default ls_agent_type: root at the trace root, None when nested."""
     if run_helpers.get_current_run_tree() is None:
         return "root"
     return None
@@ -169,9 +164,9 @@ def _resolve_default_ls_agent_type() -> Optional[str]:
 def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
     """Return textra with ls_agent_type defaulted at the wrapper-config layer.
 
-    Wrapper-supplied ``tracing_extra["metadata"]["ls_agent_type"]`` is preserved.
-    ``None`` opt-out removes the key. Per-call ``kwargs["metadata"]["ls_agent_type"]``
-    still overrides downstream via the invocation-params merge inside ``traceable``.
+    A user-supplied value (including None) is preserved unchanged; None flows
+    through as an explicit opt-out that overrides any propagated parent tag via
+    traceable's metadata_.update(wrapper_metadata) step.
     """
     result = dict(textra)
     metadata = dict(result.get("metadata") or {})
@@ -179,8 +174,6 @@ def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
         default_tag = _resolve_default_ls_agent_type()
         if default_tag is not None:
             metadata["ls_agent_type"] = default_tag
-    elif metadata["ls_agent_type"] is None:
-        del metadata["ls_agent_type"]
     result["metadata"] = metadata
     return result
 

@@ -1,21 +1,18 @@
 """Unit tests for OpenAI wrapper processing functions."""
 
 from types import SimpleNamespace
-from unittest import mock
 
 import pytest
 
 from langsmith import run_helpers
-from langsmith.run_trees import RunTree
 from langsmith.wrappers._openai import (
     _infer_invocation_params,
     _resolve_default_ls_agent_type,
     _traceable_kwargs_with_ls_agent_type,
 )
 
-
 # ---------------------------------------------------------------------------
-# _infer_invocation_params (existing behavior + regression)
+# _infer_invocation_params
 # ---------------------------------------------------------------------------
 
 
@@ -73,7 +70,6 @@ def test_infer_invocation_params_ignores_non_mapping_metadata(metadata):
 
 
 def test_infer_invocation_params_no_longer_stamps_ls_agent_type():
-    """Regression: ls_agent_type is stamped at the wrapper-config layer, not here."""
     result = _infer_invocation_params(
         "chat", "openai", {}, False, {"model": "gpt-4o-mini"}
     )
@@ -81,7 +77,6 @@ def test_infer_invocation_params_no_longer_stamps_ls_agent_type():
 
 
 def test_per_call_kwargs_metadata_ls_agent_type_flows_through():
-    """Per-call metadata.ls_agent_type still reaches invocation_params via spread."""
     result = _infer_invocation_params(
         "chat",
         "openai",
@@ -93,7 +88,7 @@ def test_per_call_kwargs_metadata_ls_agent_type_flows_through():
 
 
 # ---------------------------------------------------------------------------
-# _resolve_default_ls_agent_type (positive case)
+# _resolve_default_ls_agent_type
 # ---------------------------------------------------------------------------
 
 
@@ -103,7 +98,7 @@ def test_resolver_returns_root_at_trace_root(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# _traceable_kwargs_with_ls_agent_type (wrapper-config helper)
+# _traceable_kwargs_with_ls_agent_type
 # ---------------------------------------------------------------------------
 
 
@@ -117,7 +112,6 @@ def test_traceable_kwargs_stamps_root_at_top_level(monkeypatch):
     "wrapper_tag", ["root", "middleware", "subagent", "compaction"]
 )
 def test_traceable_kwargs_preserves_user_supplied_tag(monkeypatch, wrapper_tag):
-    """Wrapper-level ls_agent_type (any known value) is preserved."""
     monkeypatch.setattr(run_helpers, "get_current_run_tree", lambda: None)
     result = _traceable_kwargs_with_ls_agent_type(
         {"metadata": {"ls_agent_type": wrapper_tag}}
@@ -125,11 +119,12 @@ def test_traceable_kwargs_preserves_user_supplied_tag(monkeypatch, wrapper_tag):
     assert result["metadata"]["ls_agent_type"] == wrapper_tag
 
 
-def test_traceable_kwargs_deletes_key_on_none_opt_out(monkeypatch):
-    """User can opt out by explicitly passing ls_agent_type=None."""
+def test_traceable_kwargs_preserves_none_opt_out(monkeypatch):
+    """None passes through so traceable's .update() sets ls_agent_type=None on
+    the run, overriding any propagated parent tag."""
     monkeypatch.setattr(run_helpers, "get_current_run_tree", lambda: None)
     result = _traceable_kwargs_with_ls_agent_type({"metadata": {"ls_agent_type": None}})
-    assert "ls_agent_type" not in result["metadata"]
+    assert result["metadata"]["ls_agent_type"] is None
 
 
 def test_traceable_kwargs_does_not_mutate_input(monkeypatch):
@@ -151,21 +146,11 @@ def test_traceable_kwargs_preserves_other_user_metadata(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# End-to-end propagation (helper decision + traceable outer_metadata merge)
-#
-# Uses the real ``_context._METADATA`` ContextVar to simulate the outer
-# traceable's state, then applies traceable's documented merge order
-# (run_helpers.py:1628-1646) to check the child's final metadata.
+# End-to-end (helper decision + traceable outer_metadata merge)
 # ---------------------------------------------------------------------------
 
 
 def _simulate_child_metadata(parent_metadata, wrapper_metadata=None):
-    """Return the final metadata a nested LLM run would carry, given the
-    parent's outer_metadata state and any wrapper-supplied kwargs.
-
-    Combines (1) the helper's decision at the nested site and (2) traceable's
-    outer_metadata merge order.
-    """
     from langsmith._internal import _context
 
     parent_runtree = SimpleNamespace(extra={"metadata": parent_metadata})
@@ -174,9 +159,7 @@ def _simulate_child_metadata(parent_metadata, wrapper_metadata=None):
     run_helpers.get_current_run_tree = lambda: parent_runtree
     try:
         helper_out = _traceable_kwargs_with_ls_agent_type(wrapper_metadata or {})
-        outer_metadata = _context._METADATA.get() or {}
-        # Mirror run_helpers.py:1628-1633: langsmith_extra + outer, then update with wrapper metadata.
-        child_metadata = {**outer_metadata}
+        child_metadata = {**(_context._METADATA.get() or {})}
         child_metadata.update(helper_out.get("metadata") or {})
         return {"helper_output": helper_out, "child_metadata": child_metadata}
     finally:
@@ -186,25 +169,32 @@ def _simulate_child_metadata(parent_metadata, wrapper_metadata=None):
 
 @pytest.mark.parametrize("parent_tag", ["root", "middleware", "subagent", "compaction"])
 def test_propagation_carries_parent_tag_to_nested_llm_run(parent_tag):
-    """Any parent tag propagates to the nested LLM run via outer_metadata,
-    while the helper stamps nothing new on the wrapper's own metadata.
-    """
     result = _simulate_child_metadata({"ls_agent_type": parent_tag})
     assert "ls_agent_type" not in result["helper_output"]["metadata"]
     assert result["child_metadata"].get("ls_agent_type") == parent_tag
 
 
 def test_no_tag_on_nested_when_parent_untagged():
-    """Untagged parent: no propagation, no restamp — child has no tag."""
     result = _simulate_child_metadata({})
     assert "ls_agent_type" not in result["helper_output"]["metadata"]
     assert "ls_agent_type" not in result["child_metadata"]
 
 
 def test_user_wrapper_tag_overrides_propagation():
-    """Wrapper-supplied ls_agent_type beats a propagated parent tag."""
     result = _simulate_child_metadata(
         parent_metadata={"ls_agent_type": "root"},
         wrapper_metadata={"metadata": {"ls_agent_type": "middleware"}},
     )
     assert result["child_metadata"].get("ls_agent_type") == "middleware"
+
+
+def test_nested_none_opt_out_overrides_propagated_tag():
+    """User's None at wrapper level overrides a propagated middleware tag,
+    landing ls_agent_type=None on the child (backend treats null as no-tag).
+    """
+    result = _simulate_child_metadata(
+        parent_metadata={"ls_agent_type": "middleware"},
+        wrapper_metadata={"metadata": {"ls_agent_type": None}},
+    )
+    assert "ls_agent_type" in result["child_metadata"]
+    assert result["child_metadata"]["ls_agent_type"] is None

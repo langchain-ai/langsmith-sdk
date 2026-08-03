@@ -12,7 +12,6 @@ import { getCurrentRunTree } from "../singletons/traceable.js";
 export const _resolveLsAgentType = (
   requestMetadata: Record<string, unknown>,
 ): string | undefined => {
-  // User-supplied per-call metadata wins (any known value); null opts out.
   const supplied = requestMetadata.ls_agent_type;
   if (
     supplied === "root" ||
@@ -22,10 +21,8 @@ export const _resolveLsAgentType = (
   ) {
     return supplied;
   }
+  // null opt-out flows through unchanged via `...requestMetadata` in the caller.
   if (supplied === null) return undefined;
-
-  // Default root only at the trace root; nested calls rely on outer_metadata
-  // propagation from the enclosing traceable.
   if (getCurrentRunTree(true) == null) return "root";
   return undefined;
 };
