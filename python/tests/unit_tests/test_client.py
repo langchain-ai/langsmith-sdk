@@ -1792,6 +1792,26 @@ def test_hide_metadata_callable_sees_runtime_env_metadata() -> None:
     assert metadata["initial_key"] == "initial_value"
 
 
+def test_hide_metadata_callable_applied_once_per_key() -> None:
+    """The env merge must not re-run a callable over already-masked keys.
+
+    ``hide_metadata`` is not required to be idempotent -- hashing, prefixing or
+    otherwise rewriting values is supported -- so applying it twice to the user's
+    own keys corrupts what gets uploaded.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(
+        session,
+        hide_metadata=lambda metadata: {f"masked_{k}": v for k, v in metadata.items()},
+    )
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    metadata = _posted_metadata(session, "POST", "/runs")
+    assert metadata["masked_initial_key"] == "initial_value"
+    assert metadata["masked_LANGCHAIN_REVISION"] == "abcd2234"
+
+
 def test_hide_metadata_true_also_hides_runtime_env_metadata_on_update() -> None:
     session = mock.MagicMock(spec=requests.Session)
     client = _client(session, hide_metadata=True)

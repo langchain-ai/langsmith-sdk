@@ -2479,8 +2479,7 @@ class Client:
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
             added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
             if added:
-                metadata.update(added)
-                run_extra["metadata"] = self._hide_run_metadata(metadata)
+                metadata.update(self._hide_run_metadata(added))
 
     def _should_sample(self) -> bool:
         if self.tracing_sample_rate is None:
