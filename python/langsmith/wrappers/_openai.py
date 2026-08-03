@@ -17,6 +17,7 @@ from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith._internal._ls_agent_type import resolve_default_ls_agent_type
 
 # ``_create_usage_metadata`` lives in a non-deprecated internal module so
 # integrations can reuse it without importing the ``wrappers`` package (whose
@@ -154,13 +155,6 @@ def _infer_invocation_params(
     }
 
 
-def _resolve_default_ls_agent_type() -> Optional[str]:
-    """Default ls_agent_type: root at the trace root, None when nested."""
-    if run_helpers.get_current_run_tree() is None:
-        return "root"
-    return None
-
-
 def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
     """Return textra with ls_agent_type defaulted at the wrapper-config layer.
 
@@ -170,10 +164,12 @@ def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
     """
     result = dict(textra)
     metadata = dict(result.get("metadata") or {})
-    if "ls_agent_type" not in metadata:
-        default_tag = _resolve_default_ls_agent_type()
-        if default_tag is not None:
-            metadata["ls_agent_type"] = default_tag
+    if "ls_agent_type" in metadata:
+        result["metadata"] = metadata
+        return result
+    tag = resolve_default_ls_agent_type(run_helpers.get_current_run_tree())
+    if tag is not None:
+        metadata["ls_agent_type"] = tag
     result["metadata"] = metadata
     return result
 

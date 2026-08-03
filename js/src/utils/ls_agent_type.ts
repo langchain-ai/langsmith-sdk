@@ -1,0 +1,33 @@
+// Shared primitives for the `ls_agent_type` metadata tag.
+// Consumed by wrappers/integrations that stamp or inspect `ls_agent_type` on
+// traced runs (wrap_openai, OpenAI Agents SDK, Vercel, future wrappers).
+// Keep this module SDK-agnostic: the caller passes in the parent run tree.
+
+import { isRunTree } from "../run_trees.js";
+
+export type LsAgentType = "root" | "middleware" | "subagent" | "compaction";
+
+export const NARROWING_LS_AGENT_TYPES: ReadonlySet<string> = new Set([
+  "middleware",
+  "subagent",
+  "compaction",
+]);
+
+export const LS_AGENT_TYPES: ReadonlySet<string> = new Set([
+  ...NARROWING_LS_AGENT_TYPES,
+  "root",
+]);
+
+// `"root"` at trace root; `undefined` when nested (rely on propagation).
+export function resolveDefaultLsAgentType(
+  parentRunTree?: unknown,
+): LsAgentType | undefined {
+  return isRunTree(parentRunTree) ? undefined : "root";
+}
+
+// Spread helper: `{ ls_agent_type: tag }` when tag is set, `{}` when undefined.
+export function lsAgentTypeMetadata(tag: LsAgentType | undefined): {
+  ls_agent_type?: LsAgentType;
+} {
+  return tag !== undefined ? { ls_agent_type: tag } : {};
+}

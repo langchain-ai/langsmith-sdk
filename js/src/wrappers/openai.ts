@@ -8,23 +8,18 @@ import {
 } from "../traceable.js";
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
 import { getCurrentRunTree } from "../singletons/traceable.js";
+import {
+  lsAgentTypeMetadata,
+  resolveDefaultLsAgentType,
+} from "../utils/ls_agent_type.js";
 
-export const _resolveLsAgentType = (
+// User-supplied `ls_agent_type` on requestMetadata wins via `...requestMetadata`
+// in the caller; default `root` is only stamped when the user didn't set the key.
+const _defaultLsAgentTypeMetadata = (
   requestMetadata: Record<string, unknown>,
-): string | undefined => {
-  const supplied = requestMetadata.ls_agent_type;
-  if (
-    supplied === "root" ||
-    supplied === "subagent" ||
-    supplied === "middleware" ||
-    supplied === "compaction"
-  ) {
-    return supplied;
-  }
-  // null opt-out flows through unchanged via `...requestMetadata` in the caller.
-  if (supplied === null) return undefined;
-  if (getCurrentRunTree(true) == null) return "root";
-  return undefined;
+) => {
+  if ("ls_agent_type" in requestMetadata) return {};
+  return lsAgentTypeMetadata(resolveDefaultLsAgentType(getCurrentRunTree(true)));
 };
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
@@ -386,7 +381,6 @@ const getChatModelInvocationParamsFn = (
         ? (params.metadata as Record<string, unknown>)
         : {};
 
-    const lsAgentType = _resolveLsAgentType(requestMetadata);
     return {
       ...requestMetadata,
       ls_provider: provider,
@@ -400,7 +394,7 @@ const getChatModelInvocationParamsFn = (
         ...prepopulatedInvocationParams,
         ...ls_invocation_params,
       },
-      ...(lsAgentType !== undefined ? { ls_agent_type: lsAgentType } : {}),
+      ..._defaultLsAgentTypeMetadata(requestMetadata),
     } as InvocationParamsSchema;
   };
 };
@@ -605,7 +599,6 @@ export const wrapOpenAI = <T extends OpenAIType>(
           }
         }
 
-        const lsAgentType = _resolveLsAgentType({});
         return {
           ls_provider: provider,
           ls_model_type: "llm",
@@ -617,7 +610,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             ...prepopulatedInvocationParams,
             ...ls_invocation_params,
           },
-          ...(lsAgentType !== undefined ? { ls_agent_type: lsAgentType } : {}),
+          ..._defaultLsAgentTypeMetadata({}),
         };
       },
       ...cleanedOptions,

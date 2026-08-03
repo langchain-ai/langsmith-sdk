@@ -7,7 +7,6 @@ import pytest
 from langsmith import run_helpers
 from langsmith.wrappers._openai import (
     _infer_invocation_params,
-    _resolve_default_ls_agent_type,
     _traceable_kwargs_with_ls_agent_type,
 )
 
@@ -85,16 +84,6 @@ def test_per_call_kwargs_metadata_ls_agent_type_flows_through():
         {"model": "gpt-4o-mini", "metadata": {"ls_agent_type": "middleware"}},
     )
     assert result["ls_agent_type"] == "middleware"
-
-
-# ---------------------------------------------------------------------------
-# _resolve_default_ls_agent_type
-# ---------------------------------------------------------------------------
-
-
-def test_resolver_returns_root_at_trace_root(monkeypatch):
-    monkeypatch.setattr(run_helpers, "get_current_run_tree", lambda: None)
-    assert _resolve_default_ls_agent_type() == "root"
 
 
 # ---------------------------------------------------------------------------
