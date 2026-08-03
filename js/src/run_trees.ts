@@ -311,6 +311,13 @@ export class RunTree implements BaseRun {
   distributedParentId?: string;
 
   /**
+   * When true, postRun()/patchRun() are no-ops. Set when a `processInputs`
+   * redactor fails, so the run is dropped rather than uploaded unredacted
+   * (mirrors the client-level anonymizer).
+   */
+  dropped = false;
+
+  /**
    * @interface
    */
   private _serialized_start_time: string | undefined;
@@ -807,6 +814,8 @@ export class RunTree implements BaseRun {
     if (this._awaitInputsOnPost) {
       this.inputs = await (this.inputs as Promise<KVMap>);
     }
+    // After resolving inputs, so an async redactor that rejected is honored.
+    if (this.dropped) return;
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
@@ -874,6 +883,7 @@ export class RunTree implements BaseRun {
    * to `false`.
    */
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
+    if (this.dropped) return;
     const excludeInputs = options?.excludeInputs ?? getExcludeInputsOnPatch();
     if (this.replicas && this.replicas.length > 0) {
       for (const {
