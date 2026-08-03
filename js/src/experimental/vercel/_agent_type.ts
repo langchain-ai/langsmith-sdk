@@ -2,8 +2,7 @@ import { getCurrentRunTree } from "../../singletons/traceable.js";
 
 export type LsAgentType = "root" | "subagent" | "middleware" | "compaction";
 
-const KNOWN_TAGS: ReadonlySet<string> = new Set([
-  "root",
+const NARROWING_TAGS: ReadonlySet<string> = new Set([
   "middleware",
   "subagent",
   "compaction",
@@ -19,17 +18,13 @@ function isRunTreeLike(
  * Resolve `ls_agent_type` for a Vercel-generated span.
  *
  * Precedence:
- *   1. Any known user-supplied parent tag (`root` / `middleware` / `subagent` /
- *      `compaction`) inherits. Explicit inheritance because Vercel's inner LLM
- *      spans don't reliably use traceable's outer_metadata propagation.
- *   2. `parent.run_type === "tool"` → `subagent` (Vercel-specific convention).
- *   3. `undefined` when nested with no user signal — caller should skip
- *      stamping so the run has no `ls_agent_type` on its own metadata.
- *   4. `"root"` when no parent runtree (top-level Vercel call).
- *
- * `parentRunTree` may be passed explicitly (used by `telemetry.ts`, which
- * captures the parent runtree at a specific point in its emission pipeline);
- * otherwise the current AsyncLocalStorage runtree is consulted.
+ *   1. Narrowing parent tag (`middleware` / `subagent` / `compaction`)
+ *      always inherits — user narrowing intent beats structural detection.
+ *   2. `parent.run_type === "tool"` → `subagent`. Vercel's structural
+ *      convention overrides inherited/default `root`.
+ *   3. Parent tagged `root` (default or user) inherits explicitly.
+ *   4. `"root"` when there is no parent runtree.
+ *   5. Otherwise `undefined` — caller skips stamping.
  */
 export function resolveLsAgentType(
   parentRunTree?: unknown,
@@ -38,21 +33,22 @@ export function resolveLsAgentType(
   if (!isRunTreeLike(parent) || parent == null) return "root";
 
   const parentTag = parent.extra?.metadata?.ls_agent_type;
-  if (typeof parentTag === "string" && KNOWN_TAGS.has(parentTag)) {
+  if (typeof parentTag === "string" && NARROWING_TAGS.has(parentTag)) {
     return parentTag as LsAgentType;
   }
   if (parent.run_type === "tool") return "subagent";
+  if (parentTag === "root") return "root";
   return undefined;
 }
 
 /**
- * Convenience spread for metadata objects — yields `{ ls_agent_type: <tag> }`
- * when the resolver returns a value, or an empty object when it returns
- * `undefined`. Prevents `ls_agent_type: undefined` from landing in metadata.
+ * Convenience spread — `{ ls_agent_type: <tag> }` or `{}` when the resolver
+ * yields undefined. Prevents `ls_agent_type: undefined` from landing in a
+ * spread metadata object.
  */
-export function lsAgentTypeMetadata(
-  parentRunTree?: unknown,
-): { ls_agent_type?: LsAgentType } {
+export function lsAgentTypeMetadata(parentRunTree?: unknown): {
+  ls_agent_type?: LsAgentType;
+} {
   const tag = resolveLsAgentType(parentRunTree);
   return tag !== undefined ? { ls_agent_type: tag } : {};
 }

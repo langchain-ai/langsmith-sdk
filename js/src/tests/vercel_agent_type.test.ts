@@ -1,7 +1,4 @@
 import { RunTree } from "../run_trees.js";
-// Import `withRunTree` from the top-level traceable module; its module-load
-// side effect installs the real Node AsyncLocalStorage, which the shared
-// `_agent_type.ts` helper depends on.
 import { withRunTree } from "../traceable.js";
 import {
   lsAgentTypeMetadata,
@@ -53,9 +50,17 @@ test("returns subagent when parent.run_type='tool' (Vercel convention)", () => {
   expect(resolveLsAgentType(parent)).toBe("subagent");
 });
 
-test("parent user tag beats parent.run_type='tool'", () => {
-  const parent = buildParent({ ls_agent_type: "middleware" }, "tool");
-  expect(resolveLsAgentType(parent)).toBe("middleware");
+test.each(["middleware", "subagent", "compaction"] as const)(
+  "user narrowing tag '%s' beats parent.run_type='tool'",
+  (narrowingTag) => {
+    const parent = buildParent({ ls_agent_type: narrowingTag }, "tool");
+    expect(resolveLsAgentType(parent)).toBe(narrowingTag);
+  },
+);
+
+test("parent.run_type='tool' overrides inherited root (structural detection)", () => {
+  const parent = buildParent({ ls_agent_type: "root" }, "tool");
+  expect(resolveLsAgentType(parent)).toBe("subagent");
 });
 
 test("invalid parent tag falls through to run_type/undefined", () => {
@@ -71,10 +76,6 @@ test("non-object parent returns root (safety default)", () => {
   expect(resolveLsAgentType("not-a-runtree")).toBe("root");
   expect(resolveLsAgentType(42)).toBe("root");
 });
-
-// ---------------------------------------------------------------------------
-// lsAgentTypeMetadata spread helper (used by callers)
-// ---------------------------------------------------------------------------
 
 test("spread helper yields { ls_agent_type } when a tag resolves", () => {
   expect(lsAgentTypeMetadata()).toEqual({ ls_agent_type: "root" });
