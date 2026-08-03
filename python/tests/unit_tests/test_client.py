@@ -22,7 +22,17 @@ from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
 from types import SimpleNamespace
-from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Type,
+    Union,
+)
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -1720,6 +1730,139 @@ def test_hide_run_error_passthrough_without_anonymizer() -> None:
     )
     assert client._hide_run_error(traceback_str) == traceback_str
     assert client._hide_run_error(None) is None
+
+
+def _client(session: mock.MagicMock, **kwargs: Any) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,  # Easier to inspect single calls
+        session=session,
+        **kwargs,
+    )
+
+
+def _create_run_with_env_metadata(client: Client, metadata: dict) -> None:
+    """Create a run with the runtime env contributing ``LANGCHAIN_REVISION``."""
+    with patch.dict("os.environ", {"LANGCHAIN_REVISION": "abcd2234"}):
+        ls_env.get_langchain_env_var_metadata.cache_clear()
+        try:
+            client.create_run(
+                "my_run",
+                inputs={"in": "put"},
+                run_type="llm",
+                id=uuid.uuid4(),
+                extra={"metadata": metadata},
+            )
+        finally:
+            ls_env.get_langchain_env_var_metadata.cache_clear()
+
+
+def _posted_metadata(session: mock.MagicMock, method: str, url_substr: str) -> dict:
+    payload = _find_request_payload(session, method, url_substr)
+    return payload.get("extra", {}).get("metadata", {})
+
+
+def test_hide_metadata_true_also_hides_runtime_env_metadata() -> None:
+    """Runtime env metadata is merged *after* masking, so it must be re-masked.
+
+    ``LANGCHAIN_*``/``LANGSMITH_*`` env values are copied into metadata verbatim
+    and can carry credentials the user never logged, so ``hide_metadata=True``
+    has to cover them too.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, hide_metadata=True)
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    assert _posted_metadata(session, "POST", "/runs") == {}
+
+
+def test_hide_metadata_callable_sees_runtime_env_metadata() -> None:
+    """A ``hide_metadata`` callable gets the env-derived keys too."""
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(
+        session,
+        hide_metadata=lambda metadata: {
+            k: v for k, v in metadata.items() if not k.startswith("LANGCHAIN_")
+        },
+    )
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    metadata = _posted_metadata(session, "POST", "/runs")
+    assert "LANGCHAIN_REVISION" not in metadata
+    assert metadata["initial_key"] == "initial_value"
+
+
+def test_hide_metadata_callable_applied_once_per_key() -> None:
+    """The env merge must not re-run a callable over already-masked keys.
+
+    ``hide_metadata`` is not required to be idempotent -- hashing, prefixing or
+    otherwise rewriting values is supported -- so applying it twice to the user's
+    own keys corrupts what gets uploaded.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(
+        session,
+        hide_metadata=lambda metadata: {f"masked_{k}": v for k, v in metadata.items()},
+    )
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    metadata = _posted_metadata(session, "POST", "/runs")
+    assert metadata["masked_initial_key"] == "initial_value"
+    assert metadata["masked_LANGCHAIN_REVISION"] == "abcd2234"
+
+
+def test_hide_metadata_true_also_hides_runtime_env_metadata_on_update() -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, hide_metadata=True)
+
+    with patch.dict("os.environ", {"LANGCHAIN_REVISION": "abcd2234"}):
+        ls_env.get_langchain_env_var_metadata.cache_clear()
+        try:
+            client.update_run(
+                uuid.uuid4(), extra={"metadata": {"initial_key": "initial_value"}}
+            )
+        finally:
+            ls_env.get_langchain_env_var_metadata.cache_clear()
+
+    assert _posted_metadata(session, "PATCH", "/runs/") == {}
+
+
+def test_anonymizer_redacts_metadata_on_create() -> None:
+    """``create_secret_anonymizer`` documents metadata coverage; honor it."""
+    fake_key, _ = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.create_run(
+        "my_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=uuid.uuid4(),
+        extra={"metadata": {"config": {"authorization": f"Bearer {fake_key}"}}},
+    )
+
+    metadata = json.dumps(_posted_metadata(session, "POST", "/runs"))
+    assert fake_key not in metadata
+    assert SECRET_PLACEHOLDER in metadata
+
+
+def test_anonymizer_redacts_metadata_on_update() -> None:
+    fake_key, _ = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.update_run(
+        uuid.uuid4(),
+        extra={"metadata": {"config": {"authorization": f"Bearer {fake_key}"}}},
+    )
+
+    metadata = json.dumps(_posted_metadata(session, "PATCH", "/runs/"))
+    assert fake_key not in metadata
+    assert SECRET_PLACEHOLDER in metadata
 
 
 def test_omit_traced_runtime_info() -> None:

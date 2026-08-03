@@ -1089,8 +1089,8 @@ class Client:
                 custom mounted `HTTPAdapter`s, `session.auth` and `session.hooks`
                 are not.
             auto_batch_tracing: Whether to automatically batch tracing.
-            anonymizer: A function applied for masking serialized run inputs and
-                outputs, before sending to the API.
+            anonymizer: A function applied for masking serialized run inputs,
+                outputs, metadata and error, before sending to the API.
             hide_inputs: Whether to hide run inputs when tracing with this client.
 
                 If `True`, hides the entire inputs.
@@ -2480,9 +2480,9 @@ class Client:
             # update metadata
             metadata: dict = run_extra.setdefault("metadata", {})
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
-            metadata.update(
-                {k: v for k, v in langchain_metadata.items() if k not in metadata}
-            )
+            added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            if added:
+                metadata.update(self._hide_run_metadata(added))
 
     def _should_sample(self) -> bool:
         if self.tracing_sample_rate is None:
@@ -2897,6 +2897,9 @@ class Client:
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
             return {}
+        if self._anonymizer:
+            json_metadata = _orjson.loads(_dumps_json(metadata))
+            return self._anonymizer(json_metadata)
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
@@ -3822,9 +3825,9 @@ class Client:
         if events is not None:
             data["events"] = self._filter_new_token_events(events)
         if data["extra"]:
-            self._insert_runtime_env([data])
             if metadata := data["extra"].get("metadata"):
                 data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+            self._insert_runtime_env([data])
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
 
