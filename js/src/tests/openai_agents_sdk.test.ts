@@ -246,7 +246,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       },
     );
 
-    test("null in trace.metadata opts out and deletes the key", async () => {
+    test("null in trace.metadata opts out; null value flows through so it overrides create_child inheritance", async () => {
       const trace = createMockTrace("trace-lst-optout", "Agent", {
         metadata: { ls_agent_type: null },
       });
@@ -258,9 +258,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const rootNode = tree.nodes.find((n) => n.includes("Agent"));
       expect(rootNode).toBeDefined();
       if (rootNode) {
-        expect(
-          "ls_agent_type" in (tree.data[rootNode].extra?.metadata ?? {}),
-        ).toBe(false);
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBeNull();
       }
     });
 

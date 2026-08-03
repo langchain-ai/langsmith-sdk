@@ -195,12 +195,10 @@ if HAVE_AGENTS:
                 "ls_integration_version": get_package_version("openai-agents"),
             }
             # Default root only at true trace root; nested traces inherit via
-            # create_child. `None` opt-out removes the key.
-            if "ls_agent_type" not in merged_metadata:
-                if current_run_tree is None:
-                    merged_metadata["ls_agent_type"] = "root"
-            elif merged_metadata["ls_agent_type"] is None:
-                del merged_metadata["ls_agent_type"]
+            # create_child. User-supplied None flows through unchanged so it
+            # overrides create_child's inherited parent tag on the child run.
+            if "ls_agent_type" not in merged_metadata and current_run_tree is None:
+                merged_metadata["ls_agent_type"] = "root"
             run_extra = {"metadata": merged_metadata}
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
@@ -245,10 +243,12 @@ if HAVE_AGENTS:
                 return
 
             trace_dict = trace.export() or {}
-            metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
-            # Honor null opt-out from trace.metadata (mirror of on_trace_start).
-            if metadata.get("ls_agent_type") is None and "ls_agent_type" in metadata:
-                del metadata["ls_agent_type"]
+            # Match on_trace_start precedence: per-invocation trace.metadata
+            # wins over processor-level defaults.
+            metadata = {
+                **(self._metadata or {}),
+                **(trace_dict.get("metadata") or {}),
+            }
 
             try:
                 # Update run with final inputs/outputs

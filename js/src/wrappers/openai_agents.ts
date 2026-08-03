@@ -590,13 +590,10 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       ls_integration: "openai-agents-sdk",
     };
     // Default root only at true trace root; nested traces inherit via
-    // create_child. `null` opt-out removes the key.
-    if (!("ls_agent_type" in mergedMetadata)) {
-      if (currentRunTree === undefined) {
-        mergedMetadata.ls_agent_type = "root";
-      }
-    } else if (mergedMetadata.ls_agent_type === null) {
-      delete mergedMetadata.ls_agent_type;
+    // create_child. User-supplied null flows through unchanged so it overrides
+    // create_child's inherited parent tag on the child run.
+    if (!("ls_agent_type" in mergedMetadata) && currentRunTree === undefined) {
+      mergedMetadata.ls_agent_type = "root";
     }
     const runExtra: Record<string, unknown> = { metadata: mergedMetadata };
 
@@ -667,14 +664,12 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     this._runs.delete(trace.traceId);
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
+    // Match onTraceStart precedence: per-invocation trace.metadata wins over
+    // processor-level defaults.
     const metadata: Record<string, unknown> = {
-      ...(traceDict.metadata as Record<string, unknown>),
       ...this._metadata,
+      ...(traceDict.metadata as Record<string, unknown>),
     };
-    // Honor null opt-out from trace.metadata (mirror of onTraceStart).
-    if (metadata.ls_agent_type === null) {
-      delete metadata.ls_agent_type;
-    }
 
     try {
       // Update run with final inputs/outputs

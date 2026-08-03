@@ -79,9 +79,42 @@ def test_preserves_user_supplied_ls_agent_type(user_tag):
     assert meta["ls_agent_type"] == user_tag
 
 
-def test_none_opt_out_at_trace_start_deletes_key():
+def test_none_opt_out_at_trace_start_preserves_null():
+    """None passes through unchanged; the null value overrides create_child's
+    inherited parent tag on the resulting child run.
+    """
     meta = _run_trace_start(trace_metadata={"ls_agent_type": None})
-    assert "ls_agent_type" not in meta
+    assert meta["ls_agent_type"] is None
+
+
+def test_trace_end_matches_trace_start_precedence():
+    """trace.metadata wins over processor metadata at both trace-start and
+    trace-end (previously reversed at trace-end).
+    """
+    from unittest import mock as _mock
+
+    from langsmith import Client
+    from langsmith.integrations.openai_agents_sdk import (
+        OpenAIAgentsTracingProcessor,
+    )
+
+    client = _mock.MagicMock(spec=Client)
+    processor = OpenAIAgentsTracingProcessor(
+        client=client, metadata={"ls_agent_type": "root"}
+    )
+    run = _mock.MagicMock()
+    run.extra = {"metadata": {}}
+    processor._runs["trace-1"] = run
+    processor._last_response_outputs["trace-1"] = {}
+
+    trace = SimpleNamespace(
+        trace_id="trace-1",
+        name="Agent workflow",
+        metadata={"ls_agent_type": "middleware"},
+        export=lambda: {"metadata": {"ls_agent_type": "middleware"}},
+    )
+    processor.on_trace_end(trace)
+    assert run.extra["metadata"]["ls_agent_type"] == "middleware"
 
 
 def test_preserves_other_user_trace_metadata():
