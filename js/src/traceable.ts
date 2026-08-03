@@ -141,15 +141,32 @@ const handleRunInputs = <Args extends unknown[]>(
   processInputs: (
     inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
-): KVMap => {
-  try {
-    return processInputs(inputs);
-  } catch (e) {
-    console.error(
-      "Error occurred during processInputs. Sending raw inputs:",
+  runTree: RunTree,
+): KVMap | Promise<KVMap> => {
+  // Fail closed: if the redactor throws or rejects, drop the run rather than
+  // upload raw inputs (mirrors the client-level anonymizer).
+  const drop = (e: unknown) => {
+    console.warn(
+      `processInputs failed for run "${runTree.name}" (${runTree.id}); ` +
+        `dropping run to avoid uploading unredacted inputs:`,
       e,
     );
+    runTree.dropped = true;
     return inputs;
+  };
+  try {
+    const processed = processInputs(inputs);
+    if (
+      processed != null &&
+      typeof (processed as Promise<KVMap>).then === "function"
+    ) {
+      // Make postRun await inputs so a rejection is seen and drops the run.
+      runTree._awaitInputsOnPost = true;
+      return Promise.resolve(processed).catch(drop);
+    }
+    return processed;
+  } catch (e) {
+    return drop(e);
   }
 };
 
@@ -266,13 +283,18 @@ async function handleRunOutputs<Return>(params: {
           await runTree?.end(processedOutputs);
         })
         .catch(async (e: unknown) => {
+          // Fail closed: withhold outputs (run already created, so we can't
+          // drop it -- just don't upload the unprocessed outputs).
           console.error(
-            "Error occurred during processOutputs. Sending unprocessed outputs:",
+            "Error occurred during processOutputs. Withholding outputs:",
             e,
           );
           try {
             await childRunEndPromises;
-            await runTree?.end(outputs);
+            await runTree?.end(
+              undefined,
+              "processOutputs failed; outputs withheld",
+            );
           } catch (e) {
             console.error("Error occurred during runTree?.end.", e);
           }
@@ -292,10 +314,15 @@ async function handleRunOutputs<Return>(params: {
       return;
     }
   } catch (e) {
+    // Fail closed: `outputs` still holds the raw value, so withhold it (run
+    // already created; drop the outputs, not the whole run).
     console.error(
-      "Error occurred during processOutputs. Sending unprocessed outputs:",
+      "Error occurred during processOutputs. Withholding outputs:",
       e,
     );
+    // Empty KVMap: withholds the secret, keeps downstream (usage metadata,
+    // end()) working.
+    outputs = {};
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
@@ -359,10 +386,8 @@ const getTracingRunTree = <Args extends unknown[]>(
       | undefined,
   );
   runTree.attachments = attached;
-  const processedInputs = handleRunInputs<Args>(args, processInputs);
-  if (isAsyncFn(processInputs)) {
-    runTree._awaitInputsOnPost = true;
-  }
+  // handleRunInputs sets _awaitInputsOnPost itself for promise-returning redactors.
+  const processedInputs = handleRunInputs<Args>(args, processInputs, runTree);
   runTree.inputs = processedInputs;
 
   const invocationParams = getInvocationParams?.(...inputs);

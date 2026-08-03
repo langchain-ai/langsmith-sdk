@@ -1647,11 +1647,21 @@ def _setup_run(
         except BaseException as e:
             LOGGER.error(f"Failed to infer invocation params for {name_}: {e}")
     process_inputs = container_input.get("process_inputs")
+    drop_run = False
     if process_inputs:
         try:
             inputs = process_inputs(inputs)
         except BaseException as e:
-            LOGGER.error(f"Failed to filter inputs for {name_}: {e}")
+            # Fail closed: drop the run rather than upload raw inputs (mirrors
+            # the client-level anonymizer). We can't bubble here -- the user's
+            # function hasn't run -- so mark it dropped; post()/patch() no-op.
+            LOGGER.warning(
+                "process_inputs failed for %s; dropping run to avoid "
+                "uploading unredacted inputs: %s",
+                name_,
+                e,
+            )
+            drop_run = True
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     context.run(_context._TAGS.set, tags_)
     tags_ += tags or []
@@ -1686,6 +1696,9 @@ def _setup_run(
         if id_ is not None:
             run_tree_kwargs["id"] = ls_client._ensure_uuid(id_)
         new_run = run_trees.RunTree(**cast(Any, run_tree_kwargs))
+    # Drop the run: post() and the teardown patch() both no-op (the flag also
+    # suppresses the patch, avoiding an orphan update for a never-created run).
+    new_run._dropped = drop_run
     # Post run if enabled=True (force) or if tracing is enabled globally
     if enabled is True or utils.tracing_is_enabled() is True:
         try:
