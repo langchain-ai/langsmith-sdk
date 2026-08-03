@@ -31,3 +31,12 @@ export function lsAgentTypeMetadata(tag: LsAgentType | undefined): {
 } {
   return tag !== undefined ? { ls_agent_type: tag } : {};
 }
+
+// Preserves user-supplied ls_agent_type; stamps default only when key is absent.
+export function defaultLsAgentTypeMetadata(
+  existingMetadata: Record<string, unknown>,
+  parentRunTree?: unknown,
+): { ls_agent_type?: LsAgentType } {
+  if ("ls_agent_type" in existingMetadata) return {};
+  return lsAgentTypeMetadata(resolveDefaultLsAgentType(parentRunTree));
+}

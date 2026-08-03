@@ -17,7 +17,7 @@ from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
-from langsmith._internal._ls_agent_type import resolve_default_ls_agent_type
+from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
 
 # ``_create_usage_metadata`` lives in a non-deprecated internal module so
 # integrations can reuse it without importing the ``wrappers`` package (whose
@@ -164,12 +164,7 @@ def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
     """
     result = dict(textra)
     metadata = dict(result.get("metadata") or {})
-    if "ls_agent_type" in metadata:
-        result["metadata"] = metadata
-        return result
-    tag = resolve_default_ls_agent_type(run_helpers.get_current_run_tree())
-    if tag is not None:
-        metadata["ls_agent_type"] = tag
+    apply_default_ls_agent_type(metadata, run_helpers.get_current_run_tree())
     result["metadata"] = metadata
     return result
 

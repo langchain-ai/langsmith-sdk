@@ -8,19 +8,7 @@ import {
 } from "../traceable.js";
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
 import { getCurrentRunTree } from "../singletons/traceable.js";
-import {
-  lsAgentTypeMetadata,
-  resolveDefaultLsAgentType,
-} from "../utils/ls_agent_type.js";
-
-// User-supplied `ls_agent_type` on requestMetadata wins via `...requestMetadata`
-// in the caller; default `root` is only stamped when the user didn't set the key.
-const _defaultLsAgentTypeMetadata = (
-  requestMetadata: Record<string, unknown>,
-) => {
-  if ("ls_agent_type" in requestMetadata) return {};
-  return lsAgentTypeMetadata(resolveDefaultLsAgentType(getCurrentRunTree(true)));
-};
+import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -394,7 +382,7 @@ const getChatModelInvocationParamsFn = (
         ...prepopulatedInvocationParams,
         ...ls_invocation_params,
       },
-      ..._defaultLsAgentTypeMetadata(requestMetadata),
+      ...defaultLsAgentTypeMetadata(requestMetadata, getCurrentRunTree(true)),
     } as InvocationParamsSchema;
   };
 };
@@ -610,7 +598,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             ...prepopulatedInvocationParams,
             ...ls_invocation_params,
           },
-          ..._defaultLsAgentTypeMetadata({}),
+          ...defaultLsAgentTypeMetadata({}, getCurrentRunTree(true)),
         };
       },
       ...cleanedOptions,

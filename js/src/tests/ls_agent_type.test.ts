@@ -2,6 +2,7 @@ import { RunTree } from "../run_trees.js";
 import {
   LS_AGENT_TYPES,
   NARROWING_LS_AGENT_TYPES,
+  defaultLsAgentTypeMetadata,
   lsAgentTypeMetadata,
   resolveDefaultLsAgentType,
 } from "../utils/ls_agent_type.js";
@@ -46,4 +47,26 @@ test("LS_AGENT_TYPES is narrowing plus root", () => {
   expect(LS_AGENT_TYPES).toEqual(
     new Set(["root", "middleware", "subagent", "compaction"]),
   );
+});
+
+test("defaultLsAgentTypeMetadata stamps root when no parent and key absent", () => {
+  expect(defaultLsAgentTypeMetadata({}, undefined)).toEqual({
+    ls_agent_type: "root",
+  });
+});
+
+test("defaultLsAgentTypeMetadata skips when nested and key absent", () => {
+  expect(defaultLsAgentTypeMetadata({}, fakeRunTree())).toEqual({});
+});
+
+test("defaultLsAgentTypeMetadata preserves user-supplied value (returns empty delta)", () => {
+  expect(
+    defaultLsAgentTypeMetadata({ ls_agent_type: "middleware" }, undefined),
+  ).toEqual({});
+});
+
+test("defaultLsAgentTypeMetadata preserves null opt-out (returns empty delta)", () => {
+  expect(
+    defaultLsAgentTypeMetadata({ ls_agent_type: null }, undefined),
+  ).toEqual({});
 });

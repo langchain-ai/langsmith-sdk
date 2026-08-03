@@ -30,3 +30,15 @@ def resolve_default_ls_agent_type(
     that propagation is not overwritten.
     """
     return "root" if parent_runtree is None else None
+
+
+def apply_default_ls_agent_type(
+    metadata: dict,
+    parent_runtree: Optional[RunTree],
+) -> None:
+    """Stamp default ``ls_agent_type`` on ``metadata`` if the key is absent."""
+    if "ls_agent_type" in metadata:
+        return
+    tag = resolve_default_ls_agent_type(parent_runtree)
+    if tag is not None:
+        metadata["ls_agent_type"] = tag
