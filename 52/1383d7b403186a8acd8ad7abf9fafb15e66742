@@ -1,0 +1,68 @@
+python/langsmith/run_helpers.py
+  s_7bc7bd68a2946c::t_bfa97fb4eeb4ac 1655-1657
+  s_7bc7bd68a2946c::t_4101a221aa9f74 1650,1658-1664
+  s_7bc7bd68a2946c::t_14dcaa468d9869 1699-1700
+  s_7bc7bd68a2946c::t_ad13816b1175a6 1701
+js/src/run_trees.ts
+  s_7bc7bd68a2946c::t_6d028196b8fc03 309-311
+  s_7bc7bd68a2946c::t_402e0e2b05796c 812
+  s_7bc7bd68a2946c::t_28098334781e5e 312-314
+  s_7bc7bd68a2946c::t_ee8fa360ee0892 813
+  s_7bc7bd68a2946c::t_01421438422048 869
+  s_1f184358a5f644::t_cab7ea690e0e8d 308
+python/langsmith/run_trees.py
+  s_7bc7bd68a2946c::t_ead130a44d716d 347-348
+  s_7bc7bd68a2946c::t_21390416eee710 346
+  s_7bc7bd68a2946c::t_8bb5f27a1a740d 785-786
+  s_7bc7bd68a2946c::t_678ee66d1e2388 834-835
+js/src/traceable.ts
+  s_7bc7bd68a2946c::t_96f1bf3086d6b1 144-145,148,154,156-158,165-169
+  s_7bc7bd68a2946c::t_a02e04e8391c0e 323-324
+  s_7bc7bd68a2946c::t_fa12a898cc5e56 390
+  s_7bc7bd68a2946c::t_2c455c83479610 286-287
+  s_7bc7bd68a2946c::t_638d92d1f0f1c7 317-318
+  s_7bc7bd68a2946c::t_c2083f4a596b65 146-147
+  s_7bc7bd68a2946c::t_368dfd5162b2b5 163
+  s_7bc7bd68a2946c::t_c31834d7ab1c18 320
+  s_7bc7bd68a2946c::t_a0f2ea06874bba 149-151
+  s_7bc7bd68a2946c::t_5c820527e34739 294-297
+  s_7bc7bd68a2946c::t_8e98f436a22dd3 325
+  s_7bc7bd68a2946c::t_e99455d27e844e 289
+  s_7bc7bd68a2946c::t_32fd770372affe 159-162,164
+  s_7bc7bd68a2946c::t_a6c0c4cd911e4e 389
+js/src/tests/traceable.test.ts
+  s_7bc7bd68a2946c::t_49bd2a5f58c9e1 1809-1814
+  s_7bc7bd68a2946c::t_25482b4a8858f8 1777-1778,1780-1781
+  s_7bc7bd68a2946c::t_6943be9e618d49 1818,1833-1839,1841-1842,1844-1858,1860-1865,1867-1871,1874,1888-1895
+  s_7bc7bd68a2946c::t_8f352719ce0e90 1815-1816,1819-1832,1840,1859,1866,1872-1873,1875-1883,1885-1887
+  s_7bc7bd68a2946c::t_e4b14dff45d5f2 1817
+python/tests/unit_tests/test_run_helpers.py
+  s_7bc7bd68a2946c::t_bd71428b1a51ce 447-448
+  s_7bc7bd68a2946c::t_e9ae1dce17e827 472-473
+  s_7bc7bd68a2946c::t_ad4472ea9ed6d7 449-459,461,464,494-495
+  s_7bc7bd68a2946c::t_4a3771bda8e91e 446,460,462-463,465-471,474-493
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "521383d7b403186a8acd8ad7abf9fafb15e66742",
+  "prompts": {},
+  "sessions": {
+    "s_1f184358a5f644": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "91403b0f-3edc-4af8-91f1-d38ac4549ea6",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    },
+    "s_7bc7bd68a2946c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b2e25b0-7569-4b6d-b1fe-8e27e45caed7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
