@@ -845,7 +845,7 @@ describe("loadTracesForExperiment", () => {
     const client = {
       _supportsSDBQuery: async () => true,
       runs: { queryV2 },
-      listRuns,
+      _listRuns: listRuns,
     } as unknown as Client;
 
     const runs = await loadTracesForExperiment(client, project, {
@@ -885,7 +885,7 @@ describe("loadTracesForExperiment", () => {
     const client = {
       _supportsSDBQuery: async () => false,
       runs: { queryV2 },
-      listRuns,
+      _listRuns: listRuns,
     } as unknown as Client;
 
     const runs = await loadTracesForExperiment(client, project, {

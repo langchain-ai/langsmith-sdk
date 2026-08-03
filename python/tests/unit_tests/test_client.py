@@ -39,6 +39,9 @@ import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
@@ -7324,6 +7327,215 @@ def test_run_tree_get_url_without_session_uses_tracer_project() -> None:
         assert run_tree.get_url() == "http://localhost:1984/run-url"
 
     read_project.assert_called_once_with(project_name="from-the-environment")
+
+
+def _deprecation_messages(recorded) -> list[str]:
+    return [
+        str(w.message) for w in recorded if issubclass(w.category, DeprecationWarning)
+    ]
+
+
+def test_read_thread_does_not_warn_about_list_runs() -> None:
+    """read_thread() points at threads.list_traces(), not list_runs()'s runs.query()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with pytest.warns(DeprecationWarning) as recorded:
+        # Deprecation fires when the generator is created, before any iteration.
+        client.read_thread(thread_id="t1", project_id=uuid.uuid4())
+
+    messages = _deprecation_messages(recorded)
+    assert any("read_thread() is deprecated" in m for m in messages)
+    assert not any("list_runs() is deprecated" in m for m in messages)
+
+
+def test_read_run_with_child_runs_does_not_warn_about_list_runs() -> None:
+    """The caller asked for child runs, not for list_runs()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Only the HTTP layer is stubbed, so the real _load_child_runs() ->
+        # list_runs() chain still executes.
+        mock.patch.object(Client, "request_with_retries") as request,
+        mock.patch.object(
+            Client, "_get_cursor_paginated_list", return_value=iter([])
+        ) as paginate,
+    ):
+        request.return_value = mock.Mock(
+            json=lambda: {
+                "id": str(run.id),
+                "name": "stub",
+                "run_type": "chain",
+                "start_time": _CREATED_AT.isoformat(),
+                "trace_id": str(run.id),
+            }
+        )
+        with pytest.warns(DeprecationWarning) as recorded:
+            client.read_run(run.id, load_child_runs=True)
+
+    paginate.assert_called_once()
+    messages = _deprecation_messages(recorded)
+    assert any("read_run() is deprecated" in m for m in messages)
+    assert not any("list_runs() is deprecated" in m for m in messages)
+
+
+def test_load_child_runs_does_not_warn_about_list_runs() -> None:
+    """_load_child_runs() reaches the real list_runs(); no warning may surface."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Stub only the HTTP fetch, so the real decorated list_runs() still runs.
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert client._load_child_runs(run) is run
+
+
+def test_suppress_deprecation_warning_is_scoped() -> None:
+    """The suppression must not leak past its block, including on exceptions."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with pytest.raises(RuntimeError):
+        with _suppress_deprecation_warning():
+            raise RuntimeError("boom")
+
+    with pytest.warns(DeprecationWarning, match="list_runs\\(\\) is deprecated"):
+        client.list_runs(project_id=uuid.uuid4())
+
+
+_SHARE_TOKEN = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+
+def _share_response(run_id: uuid.UUID) -> mock.Mock:
+    """One response body that satisfies every sharing endpoint under test."""
+    return mock.Mock(
+        json=lambda: {
+            "share_token": str(_SHARE_TOKEN),
+            "id": str(run_id),
+            "name": "stub",
+            "run_type": "chain",
+            "start_time": _CREATED_AT.isoformat(),
+            "trace_id": str(run_id),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "method,takes_share_token,expected",
+    [
+        ("share_run", False, "Use client.runs.share.create() instead."),
+        ("unshare_run", False, "Use client.runs.share.delete() instead."),
+        (
+            "read_run_shared_link",
+            False,
+            'Use client.runs.retrieve(selects=["SHARE_URL"]) instead.',
+        ),
+        ("read_shared_run", True, "Use client.public.runs.retrieve() instead."),
+        ("list_shared_runs", True, "Use client.public.runs.query() instead."),
+    ],
+)
+def test_run_sharing_methods_are_deprecated(
+    method: str, takes_share_token: bool, expected: str
+) -> None:
+    """Every method in the guide's sharing section warns once, naming its replacement."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run_id = uuid.uuid4()
+    arg = _SHARE_TOKEN if takes_share_token else run_id
+
+    with (
+        mock.patch.object(
+            Client, "request_with_retries", return_value=_share_response(run_id)
+        ),
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+    ):
+        with pytest.warns(DeprecationWarning) as recorded:
+            result = getattr(client, method)(arg)
+            if method == "list_shared_runs":
+                list(result)  # a generator; drain it so the body runs too
+
+    messages = _deprecation_messages(recorded)
+    assert len(messages) == 1, messages
+    assert f"{method}() is deprecated" in messages[0]
+    assert expected in messages[0]
+    assert "#share-and-read-public-runs" in messages[0]
+
+
+def test_run_is_shared_does_not_warn_about_read_run_shared_link() -> None:
+    """run_is_shared() is supported; it must not warn about its internal call."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run_id = uuid.uuid4()
+
+    # Only the HTTP layer is stubbed, so the real decorated
+    # read_run_shared_link() still executes.
+    with mock.patch.object(
+        Client, "request_with_retries", return_value=_share_response(run_id)
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert client.run_is_shared(run_id) is True
+
+
+@pytest.mark.parametrize(
+    "method,expected",
+    [
+        ("share_run", "Use client.runs.share.create() instead."),
+        (
+            "read_run_shared_link",
+            'Use client.runs.retrieve(selects=["SHARE_URL"]) instead.',
+        ),
+    ],
+)
+async def test_async_run_sharing_methods_are_deprecated(
+    method: str, expected: str
+) -> None:
+    """The async client's sharing methods carry the same deprecations."""
+    from langsmith.async_client import AsyncClient
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="123")
+    run_id = uuid.uuid4()
+
+    with mock.patch.object(
+        AsyncClient,
+        "_arequest_with_retries",
+        new=mock.AsyncMock(return_value=_share_response(run_id)),
+    ):
+        with pytest.warns(DeprecationWarning) as recorded:
+            await getattr(client, method)(run_id)
+
+    messages = _deprecation_messages(recorded)
+    assert len(messages) == 1, messages
+    assert f"{method}() is deprecated" in messages[0]
+    assert expected in messages[0]
+    assert "#share-and-read-public-runs" in messages[0]
+
+
+async def test_async_run_is_shared_does_not_warn_about_read_run_shared_link() -> None:
+    """Same suppression as the sync client, for the async `await` path."""
+    from langsmith.async_client import AsyncClient
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="123")
+    run_id = uuid.uuid4()
+
+    with mock.patch.object(
+        AsyncClient,
+        "_arequest_with_retries",
+        new=mock.AsyncMock(return_value=_share_response(run_id)),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert await client.run_is_shared(run_id) is True
 
 
 def _gtr_example_id() -> uuid.UUID:

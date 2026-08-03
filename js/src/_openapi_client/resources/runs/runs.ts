@@ -22,6 +22,8 @@ export class Runs extends APIResource {
    * supply the run's project_id and trace_id as query parameters; start_time is
    * optional.
    *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
+   *
    * @example
    * ```ts
    * const response = await client.runs.getURL(
@@ -35,9 +37,11 @@ export class Runs extends APIResource {
   }
 
   /**
-   * **Alpha:** The request and response contract may change; Returns a paginated
-   * list of runs for the given projects within min/max start_time. Supports filters,
-   * cursor pagination, and `selects` to select fields to return.
+   * Returns a paginated list of runs for the given projects within min/max
+   * start_time. Supports filters, cursor pagination, and `selects` to select fields
+   * to return.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts
@@ -61,9 +65,10 @@ export class Runs extends APIResource {
   }
 
   /**
-   * **Alpha:** The request and response contract may change; Returns one run by ID
-   * for the given session. Use the `selects` query parameter (repeatable) to select
-   * fields to return.
+   * Returns one run by ID for the given session. Use the `selects` query parameter
+   * (repeatable) to select fields to return.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts

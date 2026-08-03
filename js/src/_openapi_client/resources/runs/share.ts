@@ -11,6 +11,8 @@ export class Share extends APIResource {
   /**
    * Creates or returns a share token for a run. Child runs share their trace root.
    *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
+   *
    * @example
    * ```ts
    * const share = await client.runs.share.create(
@@ -25,6 +27,8 @@ export class Share extends APIResource {
   /**
    * Deletes the share token for the trace identified by trace_id and session_id.
    * Idempotent: returns 204 whether or not a share token existed.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts

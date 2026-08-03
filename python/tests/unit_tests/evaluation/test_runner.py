@@ -10,6 +10,7 @@ import re
 import sys
 import time
 import uuid
+import warnings
 from datetime import datetime, timezone
 from threading import Lock
 from types import SimpleNamespace
@@ -1786,3 +1787,38 @@ def test_load_traces_uses_v1_unless_smithdb_only(instance_flags, case) -> None:
 
     client.list_runs.assert_called_once_with(project_id=project.id, is_root=True)
     client._get_langsmith_api_sync.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "project_ref", ["by-session", "by-uuid", "by-name"], ids=lambda p: str(p)
+)
+def test_load_traces_does_not_warn_about_list_runs(project_ref) -> None:
+    """evaluate()/aevaluate() are supported; they must not warn about list_runs().
+
+    Uses a real Client so the actual decorated `list_runs` runs — a `Mock` client
+    would make the assertion vacuous.
+    """
+    session = _experiment_session()
+    project: Any = {
+        "by-session": session,
+        "by-uuid": session.id,
+        "by-name": "some-project",
+    }[project_ref]
+
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with (
+        mock.patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Stub only the HTTP fetch, so the real decorated list_runs() still runs.
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+        mock.patch.object(
+            Client, "read_project", return_value=mock.Mock(id=session.id)
+        ),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert _load_traces_for_experiment(project, client, load_nested=False) == []

@@ -43,7 +43,10 @@ export async function loadTracesForExperiment(
   const isRoot = options.loadNested ? undefined : true;
   const runs = (await client._supportsSDBQuery())
     ? await loadTracesV2(client, project, { isRoot })
-    : await client.listRuns({
+    : // Via _listRuns() rather than listRuns(): evaluate() is supported, so
+      // callers have nothing to migrate; how it loads traces is an
+      // implementation detail.
+      await client._listRuns({
         projectId: project.id,
         executionOrder: options.loadNested ? undefined : 1,
       });

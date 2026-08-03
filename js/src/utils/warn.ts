@@ -1,5 +1,20 @@
 const warnedMessages: Record<string, boolean> = {};
 
+/**
+ * Clear the warn-once record so a later call warns again.
+ *
+ * Test-only. `warnedMessages` is module-global and never otherwise reset, so
+ * without this a test asserting "warning X was (not) emitted" depends on whether
+ * an earlier test in the same file already consumed X.
+ *
+ * @internal
+ */
+export function _resetWarnedMessages(): void {
+  for (const key of Object.keys(warnedMessages)) {
+    delete warnedMessages[key];
+  }
+}
+
 export function warnOnce(
   message: string,
   options?: { type?: string; code?: string },

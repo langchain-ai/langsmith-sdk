@@ -94,8 +94,9 @@ class ThreadsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SyncItemsCursorGetPagination[ThreadTrace]:
         """
-        **Alpha:** The request and response contract may change; Retrieve all traces
-        belonging to a specific thread within a project.
+        Retrieve all traces belonging to a specific thread within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the tracing project UUID (required).
@@ -165,10 +166,12 @@ class ThreadsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SyncItemsCursorPostPagination[Thread]:
-        """
-        **Alpha:** The request and response contract may change; Query threads within a
-        project (session), with cursor-based pagination. Returns threads matching the
-        given time range and optional filter.
+        """Query threads within a project (session), with cursor-based pagination.
+
+        Returns
+        threads matching the given time range and optional filter.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Omit on
@@ -257,9 +260,10 @@ class ThreadsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ThreadStats:
         """
-        **Alpha:** The request and response contract may change; Compute aggregate stats
-        for a single thread (turn count, latency percentiles, token/cost sums, and
-        detail breakdowns) within a project.
+        Compute aggregate stats for a single thread (turn count, latency percentiles,
+        token/cost sums, and detail breakdowns) within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which aggregate stats to compute and return (repeatable query
@@ -365,8 +369,9 @@ class AsyncThreadsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> AsyncPaginator[ThreadTrace, AsyncItemsCursorGetPagination[ThreadTrace]]:
         """
-        **Alpha:** The request and response contract may change; Retrieve all traces
-        belonging to a specific thread within a project.
+        Retrieve all traces belonging to a specific thread within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the tracing project UUID (required).
@@ -436,10 +441,12 @@ class AsyncThreadsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> AsyncPaginator[Thread, AsyncItemsCursorPostPagination[Thread]]:
-        """
-        **Alpha:** The request and response contract may change; Query threads within a
-        project (session), with cursor-based pagination. Returns threads matching the
-        given time range and optional filter.
+        """Query threads within a project (session), with cursor-based pagination.
+
+        Returns
+        threads matching the given time range and optional filter.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Omit on
@@ -528,9 +535,10 @@ class AsyncThreadsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ThreadStats:
         """
-        **Alpha:** The request and response contract may change; Compute aggregate stats
-        for a single thread (turn count, latency percentiles, token/cost sums, and
-        detail breakdowns) within a project.
+        Compute aggregate stats for a single thread (turn count, latency percentiles,
+        token/cost sums, and detail breakdowns) within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which aggregate stats to compute and return (repeatable query

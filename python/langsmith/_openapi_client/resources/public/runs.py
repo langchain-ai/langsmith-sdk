@@ -57,10 +57,12 @@ class RunsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> Run:
-        """
-        **Alpha:** The request and response contract may change; Returns one run within
-        the trace identified by the share token. The request supplies only the run ID
-        and that run's exact start_time coordinate.
+        """Returns one run within the trace identified by the share token.
+
+        The request
+        supplies only the run ID and that run's exact start_time coordinate.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: repeatable public run fields to include
@@ -151,10 +153,12 @@ class RunsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> RunQueryResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns all runs within
-        the trace identified by the share token. The share token supplies the tenant,
-        project, and trace scope.
+        """Returns all runs within the trace identified by the share token.
+
+        The share token
+        supplies the tenant, project, and trace scope.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which public run properties to include on each returned run.
@@ -171,7 +175,7 @@ class RunsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `share_token` but received {share_token!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._post(
-            path_template("/api/v2/public/{share_token}/runs/v2/query", share_token=share_token),
+            path_template("/api/v2/public/{share_token}/runs/query", share_token=share_token),
             body=maybe_transform({"selects": selects}, run_query_params.RunQueryParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
@@ -211,10 +215,12 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> Run:
-        """
-        **Alpha:** The request and response contract may change; Returns one run within
-        the trace identified by the share token. The request supplies only the run ID
-        and that run's exact start_time coordinate.
+        """Returns one run within the trace identified by the share token.
+
+        The request
+        supplies only the run ID and that run's exact start_time coordinate.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: repeatable public run fields to include
@@ -305,10 +311,12 @@ class AsyncRunsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> RunQueryResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns all runs within
-        the trace identified by the share token. The share token supplies the tenant,
-        project, and trace scope.
+        """Returns all runs within the trace identified by the share token.
+
+        The share token
+        supplies the tenant, project, and trace scope.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which public run properties to include on each returned run.
@@ -325,7 +333,7 @@ class AsyncRunsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `share_token` but received {share_token!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return await self._post(
-            path_template("/api/v2/public/{share_token}/runs/v2/query", share_token=share_token),
+            path_template("/api/v2/public/{share_token}/runs/query", share_token=share_token),
             body=await async_maybe_transform({"selects": selects}, run_query_params.RunQueryParams),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout

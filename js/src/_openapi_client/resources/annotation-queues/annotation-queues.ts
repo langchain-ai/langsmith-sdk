@@ -85,6 +85,8 @@ export class AnnotationQueues extends APIResource {
 
   /**
    * Create Identity Annotation Queue Run Status
+   *
+   * @deprecated Deprecated: use the annotation queue items create_status method (POST /api/v1/platform/annotation-queues/items/{queue_item_id}/status) instead. Will be removed after Jan 31, 2027.
    */
   createRunStatus(
     annotationQueueRunID: string,
@@ -137,6 +139,8 @@ export class AnnotationQueues extends APIResource {
 
   /**
    * Get a run from an annotation queue
+   *
+   * @deprecated Deprecated: use the annotation queue items list and retrieve_placement methods instead, which call GET /api/v1/platform/annotation-queues/{queue_id}/items and GET /api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement. Will be removed after Jan 31, 2027.
    */
   retrieveRun(
     index: number,
@@ -149,6 +153,8 @@ export class AnnotationQueues extends APIResource {
 
   /**
    * Get Size From Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items retrieve_count method (GET /api/v1/platform/annotation-queues/{queue_id}/items/count) with the desired status instead. Will be removed after Jan 31, 2027.
    */
   retrieveSize(
     queueID: string,
@@ -160,6 +166,8 @@ export class AnnotationQueues extends APIResource {
 
   /**
    * Get Total Archived From Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items retrieve_count method (GET /api/v1/platform/annotation-queues/{queue_id}/items/count?status=archived) instead. Will be removed after Jan 31, 2027.
    */
   retrieveTotalArchived(
     queueID: string,
@@ -171,6 +179,8 @@ export class AnnotationQueues extends APIResource {
 
   /**
    * Get Total Size From Annotation Queue
+   *
+   * @deprecated Deprecated: use the annotation queue items retrieve_count method (GET /api/v1/platform/annotation-queues/{queue_id}/items/count?status=all) instead. Will be removed after Jan 31, 2027.
    */
   retrieveTotalSize(queueID: string, options?: RequestOptions): APIPromise<AnnotationQueueSizeSchema> {
     return this._client.get(path`/api/v1/annotation-queues/${queueID}/total_size`, options);
