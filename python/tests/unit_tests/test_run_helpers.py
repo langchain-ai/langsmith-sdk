@@ -486,10 +486,15 @@ def test_process_outputs_failure_withholds_outputs(mock_client: Client) -> None:
 
     assert result == secret
 
-    # No posted payload may carry the raw (unredacted) outputs.
     datas = _get_data(_get_calls(mock_client, minimum=0))
+    # No posted payload may carry the raw (unredacted) outputs...
     assert all(not payload.get("outputs") for _, payload in datas), (
         "outputs must be withheld when process_outputs fails"
+    )
+    # ...but the run is still ended/patched (parity with the JS SDK), not left
+    # dangling.
+    assert any(payload.get("end_time") for _, payload in datas), (
+        "run must still be ended when process_outputs fails"
     )
 
 

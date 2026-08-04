@@ -1743,9 +1743,20 @@ def _handle_container_end(
     outputs_processor: Optional[Callable[..., dict]] = None,
 ) -> None:
     """Handle the end of run."""
-    try:
-        if outputs_processor is not None:
+    if outputs_processor is not None:
+        try:
             outputs = outputs_processor(outputs)
+        except BaseException as e:
+            # Fail closed: withhold the outputs but still end/patch the run
+            # (matches the JS SDK; otherwise the run is left un-ended).
+            run = container.get("new_run")
+            LOGGER.warning(
+                "process_outputs failed for run %s; withholding outputs: %s",
+                getattr(run, "name", None),
+                e,
+            )
+            outputs = {}
+    try:
         _container_end(container, outputs=outputs, error=error)
     except BaseException as e:
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
