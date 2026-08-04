@@ -82,7 +82,16 @@ test("two ProfileAuth instances refresh the token endpoint only once", async () 
   process.env.LANGSMITH_CONFIG_FILE = configPath;
   try {
     let calls = 0;
-    const fakeFetch = jest.fn(async () => {
+    const fakeFetch = jest.fn(async (url: unknown) => {
+      // The deployment serves no discovery document, so refresh falls back to
+      // the configured mount point. Only the token requests are counted.
+      if (String(url).endsWith("/.well-known/oauth-authorization-server")) {
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+        } as unknown as Response;
+      }
       calls += 1;
       return {
         ok: true,

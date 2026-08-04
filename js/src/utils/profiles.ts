@@ -7,6 +7,7 @@ export const DEFAULT_API_URL = "https://api.smith.langchain.com";
 const OAUTH_CLIENT_ID = "langsmith-cli";
 const TOKEN_REFRESH_LEEWAY_MS = 60_000;
 const TOKEN_REFRESH_TIMEOUT_MS = 10_000;
+const OAUTH_DISCOVERY_TIMEOUT_MS = 5_000;
 
 type LangSmithProfileOAuth = {
   access_token?: string;
@@ -139,6 +140,125 @@ function normalizeConfigUrl(apiUrl: string): string {
   return normalized.endsWith(apiV1Suffix)
     ? normalized.slice(0, -apiV1Suffix.length)
     : normalized;
+}
+
+type OAuthServerMetadata = {
+  issuer?: unknown;
+  device_authorization_endpoint?: unknown;
+  token_endpoint?: unknown;
+};
+
+/**
+ * Metadata base URLs to probe, most specific first: the configured mount point,
+ * then the self-hosted and SaaS locations, so both a bare origin and an
+ * explicit `/api` resolve.
+ */
+function oauthDiscoveryCandidates(apiUrl: string): string[] {
+  const given = normalizeConfigUrl(apiUrl);
+  const origin = given.endsWith("/api")
+    ? given.slice(0, -"/api".length)
+    : given;
+
+  const candidates: string[] = [];
+  for (const candidate of [given, `${origin}/api`, origin]) {
+    if (candidate && candidate !== "/api" && !candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Check the document describes the deployment we probed. RFC 8414 requires the
+ * issuer to match the URL the well-known path was built from, and every
+ * endpoint must share the issuer's origin. Refresh tokens are posted to these
+ * endpoints, so an unvalidated document could redirect credentials elsewhere.
+ */
+function isTrustedOAuthMetadata(
+  doc: OAuthServerMetadata,
+  base: string,
+): boolean {
+  const { issuer } = doc;
+  if (
+    typeof issuer !== "string" ||
+    issuer.replace(/\/+$/, "") !== base.replace(/\/+$/, "")
+  ) {
+    return false;
+  }
+  let issuerUrl: URL;
+  try {
+    issuerUrl = new URL(issuer);
+  } catch {
+    return false;
+  }
+  for (const endpoint of [
+    doc.device_authorization_endpoint,
+    doc.token_endpoint,
+  ]) {
+    if (typeof endpoint !== "string" || !endpoint) {
+      return false;
+    }
+    try {
+      const url = new URL(endpoint);
+      if (url.protocol !== issuerUrl.protocol || url.host !== issuerUrl.host) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function fetchOAuthMetadata(
+  base: string,
+  fetchImplementation: typeof fetch,
+): Promise<OAuthServerMetadata | undefined> {
+  let response: Response;
+  try {
+    response = await fetchImplementation(
+      `${base}/.well-known/oauth-authorization-server`,
+      {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(OAUTH_DISCOVERY_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    return undefined;
+  }
+  if (!response.ok) {
+    return undefined;
+  }
+  let doc: OAuthServerMetadata;
+  try {
+    // Self-hosted answers unknown paths with an HTML 200 from the SPA.
+    doc = (await response.json()) as OAuthServerMetadata;
+  } catch {
+    return undefined;
+  }
+  if (!doc || typeof doc !== "object" || !isTrustedOAuthMetadata(doc, base)) {
+    return undefined;
+  }
+  return doc;
+}
+
+/**
+ * Resolve the token endpoint, preferring the deployment's metadata document.
+ * Falls back to `<mount>/oauth/token`, keeping a trailing `/api` because
+ * self-hosted mounts the authorization server under it.
+ */
+export async function resolveTokenEndpoint(
+  apiUrl: string,
+  fetchImplementation: typeof fetch,
+): Promise<string> {
+  for (const base of oauthDiscoveryCandidates(apiUrl)) {
+    const doc = await fetchOAuthMetadata(base, fetchImplementation);
+    if (doc) {
+      return doc.token_endpoint as string;
+    }
+  }
+  return `${normalizeConfigUrl(apiUrl)}/oauth/token`;
 }
 
 function applyTokenResponse(
@@ -296,17 +416,18 @@ export class ProfileAuth {
         client_id: OAUTH_CLIENT_ID,
         refresh_token: this.state.profile.oauth?.refresh_token ?? refreshToken,
       });
-      const response = await fetchImplementation(
-        `${normalizeConfigUrl(refreshApiUrl)}/oauth/token`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: body.toString(),
-          signal: AbortSignal.timeout(Math.max(0, deadline - Date.now())),
-        },
+      const tokenEndpoint = await resolveTokenEndpoint(
+        refreshApiUrl,
+        fetchImplementation,
       );
+      const response = await fetchImplementation(tokenEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+        signal: AbortSignal.timeout(Math.max(0, deadline - Date.now())),
+      });
       if (!response.ok) {
         return;
       }
