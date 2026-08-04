@@ -191,7 +191,8 @@ if HAVE_AGENTS:
             else:
                 run_name = "Agent workflow"
 
-            # trace.metadata wins over processor defaults; ls_integration force-set.
+            # Merge three sources: processor defaults, trace.metadata (user's
+            # per-run ls_agent_type), and force-set ls_integration.
             merged_metadata = {
                 **(self._metadata or {}),
                 **(getattr(trace, "metadata", None) or {}),

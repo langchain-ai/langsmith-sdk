@@ -587,7 +587,8 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       runName = "Agent workflow";
     }
 
-    // Build metadata; trace.metadata wins over processor defaults, ls_integration force-set.
+    // Merge three sources: processor defaults, trace.metadata (user's per-run
+    // ls_agent_type), and force-set ls_integration.
     const mergedMetadata: Record<string, unknown> = {
       ...this._metadata,
       ...((trace.metadata as Record<string, unknown> | undefined) ?? {}),
