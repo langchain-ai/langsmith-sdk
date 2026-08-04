@@ -1,0 +1,39 @@
+js/src/tests/ls_agent_type.test.ts
+  s_d6ee5c3f3632b0::t_a5b916a4485067 3
+  s_d6ee5c3f3632b0::t_fd9c8033ca337a 62-67
+python/tests/unit_tests/test_ls_agent_type.py
+  s_d6ee5c3f3632b0::t_dab2428a5a0b28 6,12-15
+  s_d6ee5c3f3632b0::t_2ff3a735d8f094 16-17
+python/langsmith/_internal/_ls_agent_type.py
+  s_d6ee5c3f3632b0::t_5bde123495c4cd 17-18
+  s_d6ee5c3f3632b0::t_f9726ebae4de8e 19-21
+js/src/wrappers/openai_agents.ts
+  s_d6ee5c3f3632b0::t_6b9febd0934aff 784
+  s_d6ee5c3f3632b0::t_b6972931f987de 15-18
+js/src/tests/openai_agents_sdk.test.ts
+  s_d6ee5c3f3632b0::t_4ac8658d5a522e 831-841
+  s_d6ee5c3f3632b0::t_928b9f35cb7fbe 749-830,842-865
+  s_d6ee5c3f3632b0::t_a64f99e803a26e 287-346
+js/src/utils/ls_agent_type.ts
+  s_d6ee5c3f3632b0::t_9026da833d2688 12-16
+  s_d6ee5c3f3632b0::t_50d844939d3d3c 10-11
+python/langsmith/integrations/openai_agents_sdk/_openai_agents.py
+  s_d6ee5c3f3632b0::t_118e7108e2a2c5 8-11
+  s_d6ee5c3f3632b0::t_47f5812d0b217c 336-338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "14da2594e04a3074cbb108b2bfe2bef66a8309d4",
+  "prompts": {},
+  "sessions": {
+    "s_d6ee5c3f3632b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "413e7be4-c777-4531-b45f-a0bd84904d84",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}
