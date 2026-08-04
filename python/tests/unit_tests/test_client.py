@@ -6764,6 +6764,11 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
             {},
             {"reference_dataset_id": "DATASET_ID_PLACEHOLDER"},
         ),
+        (
+            {"tag_value_ids": ["550e8400-e29b-41d4-a716-446655440000"]},
+            {},
+            {"tag_value_ids": ["550e8400-e29b-41d4-a716-446655440000"]},
+        ),
         # All parameters together
         (
             {
@@ -6822,6 +6827,32 @@ def test_create_project(kwargs, expected_params, expected_body_fields):
         assert "id" in body
         for field, value in expected_body_fields.items():
             assert body[field] == value
+
+
+def test_create_dataset_with_tag_value_ids():
+    tag_value_ids = [uuid.uuid4(), uuid.uuid4()]
+    with patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": str(uuid.uuid4()),
+            "name": "test-dataset",
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+        mock_session.request.return_value = mock_response
+        mock_session_cls.return_value = mock_session
+
+        client = Client(api_key="test", auto_batch_tracing=False)
+        client.create_dataset("test-dataset", tag_value_ids=tag_value_ids)
+
+        create_call = next(
+            call
+            for call in mock_session.request.call_args_list
+            if call.args[0] == "POST" and call.args[1].endswith("/datasets")
+        )
+        body = json.loads(create_call.kwargs["data"])
+        assert body["tag_value_ids"] == [str(tag_id) for tag_id in tag_value_ids]
 
 
 _MULTIPART_HEADERS = {"Content-Type": "multipart/form-data; boundary=test-boundary"}
