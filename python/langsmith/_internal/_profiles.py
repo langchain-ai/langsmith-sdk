@@ -20,6 +20,7 @@ _OAUTH_CLIENT_ID = "langsmith-cli"
 _TOKEN_REFRESH_LEEWAY = datetime.timedelta(minutes=1)
 _TOKEN_REFRESH_TIMEOUT = 10
 _OAUTH_DISCOVERY_TIMEOUT = 5
+_WELL_KNOWN_OAUTH_PATH = "/.well-known/oauth-authorization-server"
 
 
 class ProfileOAuth(TypedDict, total=False):
@@ -175,10 +176,29 @@ def _validate_oauth_metadata(doc: Mapping[str, Any], base: str) -> bool:
     return True
 
 
-def _fetch_oauth_metadata(base: str, timeout: float) -> Optional[Mapping[str, Any]]:
+def _oauth_metadata_urls(base: str) -> list[str]:
+    """Metadata URLs for an issuer, RFC 8414 form first.
+
+    RFC 8414 inserts the well-known segment between the origin and the issuer
+    path, so ``https://host/api`` is described at
+    ``https://host/.well-known/oauth-authorization-server/api``. Deployments
+    commonly also serve the appended form, and for a path-less issuer the two
+    are identical.
+    """
+    parts = urllib.parse.urlsplit(base)
+    inserted = urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, f"{_WELL_KNOWN_OAUTH_PATH}{parts.path}", "", "")
+    )
+    appended = f"{base}{_WELL_KNOWN_OAUTH_PATH}"
+    return [inserted] if inserted == appended else [inserted, appended]
+
+
+def _fetch_oauth_metadata(
+    url: str, base: str, timeout: float
+) -> Optional[Mapping[str, Any]]:
     try:
         response = requests.get(
-            f"{base}/.well-known/oauth-authorization-server",
+            url,
             headers={"Accept": "application/json"},
             timeout=timeout,
         )
@@ -208,9 +228,10 @@ def _resolve_token_endpoint(
     authorization server under it.
     """
     for base in _oauth_discovery_candidates(api_url):
-        doc = _fetch_oauth_metadata(base, timeout)
-        if doc is not None:
-            return cast(str, doc["token_endpoint"])
+        for url in _oauth_metadata_urls(base):
+            doc = _fetch_oauth_metadata(url, base, timeout)
+            if doc is not None:
+                return cast(str, doc["token_endpoint"])
     return f"{_normalize_profile_api_url(api_url)}/oauth/token"
 
 

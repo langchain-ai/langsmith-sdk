@@ -95,6 +95,27 @@ describe("resolveTokenEndpoint", () => {
     }
   });
 
+  // RFC 8414 inserts the well-known segment before the issuer path; a
+  // deployment serving only that form must still be discovered.
+  it("resolves the RFC 8414 path-inserted form", async () => {
+    const { base, close } = await serve((path, b) =>
+      path === "/.well-known/oauth-authorization-server/api"
+        ? {
+            issuer: `${b}/api`,
+            device_authorization_endpoint: `${b}/api/oauth/device/code`,
+            token_endpoint: `${b}/api/oauth/token`,
+          }
+        : null,
+    );
+    try {
+      expect(await resolveTokenEndpoint(base, fetch)).toBe(
+        `${base}/api/oauth/token`,
+      );
+    } finally {
+      await close();
+    }
+  });
+
   it("keeps the /api mount when no metadata is served", async () => {
     const { base, close } = await serve(() => null);
     try {

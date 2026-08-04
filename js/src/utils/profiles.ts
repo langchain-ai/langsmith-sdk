@@ -8,6 +8,7 @@ const OAUTH_CLIENT_ID = "langsmith-cli";
 const TOKEN_REFRESH_LEEWAY_MS = 60_000;
 const TOKEN_REFRESH_TIMEOUT_MS = 10_000;
 const OAUTH_DISCOVERY_TIMEOUT_MS = 5_000;
+const WELL_KNOWN_OAUTH_PATH = "/.well-known/oauth-authorization-server";
 
 type LangSmithProfileOAuth = {
   access_token?: string;
@@ -210,20 +211,38 @@ function isTrustedOAuthMetadata(
   return true;
 }
 
+/**
+ * Metadata URLs for an issuer, RFC 8414 form first. RFC 8414 inserts the
+ * well-known segment between the origin and the issuer path, so
+ * `https://host/api` is described at
+ * `https://host/.well-known/oauth-authorization-server/api`. Deployments
+ * commonly also serve the appended form, and for a path-less issuer the two are
+ * identical.
+ */
+function oauthMetadataUrls(base: string): string[] {
+  const appended = `${base}${WELL_KNOWN_OAUTH_PATH}`;
+  let inserted: string;
+  try {
+    const url = new URL(base);
+    inserted = `${url.origin}${WELL_KNOWN_OAUTH_PATH}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch {
+    return [appended];
+  }
+  return inserted === appended ? [inserted] : [inserted, appended];
+}
+
 async function fetchOAuthMetadata(
+  url: string,
   base: string,
   fetchImplementation: typeof fetch,
 ): Promise<OAuthServerMetadata | undefined> {
   let response: Response;
   try {
-    response = await fetchImplementation(
-      `${base}/.well-known/oauth-authorization-server`,
-      {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(OAUTH_DISCOVERY_TIMEOUT_MS),
-      },
-    );
+    response = await fetchImplementation(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(OAUTH_DISCOVERY_TIMEOUT_MS),
+    });
   } catch {
     return undefined;
   }
@@ -253,9 +272,11 @@ export async function resolveTokenEndpoint(
   fetchImplementation: typeof fetch,
 ): Promise<string> {
   for (const base of oauthDiscoveryCandidates(apiUrl)) {
-    const doc = await fetchOAuthMetadata(base, fetchImplementation);
-    if (doc) {
-      return doc.token_endpoint as string;
+    for (const url of oauthMetadataUrls(base)) {
+      const doc = await fetchOAuthMetadata(url, base, fetchImplementation);
+      if (doc) {
+        return doc.token_endpoint as string;
+      }
     }
   }
   return `${normalizeConfigUrl(apiUrl)}/oauth/token`;

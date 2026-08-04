@@ -85,7 +85,7 @@ test("two ProfileAuth instances refresh the token endpoint only once", async () 
     const fakeFetch = jest.fn(async (url: unknown) => {
       // The deployment serves no discovery document, so refresh falls back to
       // the configured mount point. Only the token requests are counted.
-      if (String(url).endsWith("/.well-known/oauth-authorization-server")) {
+      if (String(url).includes("/.well-known/oauth-authorization-server")) {
         return {
           ok: false,
           status: 404,

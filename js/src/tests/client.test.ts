@@ -518,7 +518,7 @@ describe("Client", () => {
           // This deployment serves no discovery document, so refresh falls back
           // to the configured mount point.
           if (
-            String(input).endsWith("/.well-known/oauth-authorization-server")
+            String(input).includes("/.well-known/oauth-authorization-server")
           ) {
             return new Response("", { status: 404 });
           }
@@ -621,7 +621,7 @@ describe("Client", () => {
       const mockFetch = jest.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
           if (
-            String(input).endsWith("/.well-known/oauth-authorization-server")
+            String(input).includes("/.well-known/oauth-authorization-server")
           ) {
             return new Response("", { status: 404 });
           }
@@ -657,7 +657,7 @@ describe("Client", () => {
         mockFetch.mock.calls
           .map(([input]) => String(input))
           .filter(
-            (url) => !url.endsWith("/.well-known/oauth-authorization-server"),
+            (url) => !url.includes("/.well-known/oauth-authorization-server"),
           ),
       ).toEqual([
         "https://profile.example.com/oauth/token",

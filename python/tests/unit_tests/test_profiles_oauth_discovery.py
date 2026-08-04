@@ -88,6 +88,30 @@ def test_saas_probes_the_origin_first(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen == [f"{BASE}{WELL_KNOWN}"]
 
 
+def test_rfc8414_path_inserted_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RFC 8414 inserts the well-known segment before the issuer path.
+
+    A deployment serving only that form must still be discovered.
+    """
+
+    def handler(url: str) -> Any:
+        if url == f"{BASE}{WELL_KNOWN}/api":
+            return _response(200, _metadata(f"{BASE}/api", f"{BASE}/api/oauth/token"))
+        return _response(404, None, json_error=True)
+
+    _patch_get(monkeypatch, handler)
+    assert _resolve_token_endpoint(BASE) == f"{BASE}/api/oauth/token"
+
+
+def test_bare_origin_probes_each_url_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """For a path-less issuer both forms are identical, so probe it once."""
+    seen = _patch_get(monkeypatch, lambda _: _response(404, None, json_error=True))
+    _resolve_token_endpoint(BASE)
+    assert seen.count(f"{BASE}{WELL_KNOWN}") == 1
+
+
 def test_fallback_keeps_api_mount(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without metadata the /api mount must survive; the AS lives under it."""
     _patch_get(monkeypatch, lambda _: _response(404, None, json_error=True))
