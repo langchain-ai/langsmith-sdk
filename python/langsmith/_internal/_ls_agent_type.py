@@ -14,6 +14,11 @@ if TYPE_CHECKING:
 
 LsAgentType = Literal["root", "middleware", "subagent", "compaction"]
 
+# Non-root tags: preserved against default/structural stamping.
+NON_ROOT_LS_AGENT_TYPES: frozenset[str] = frozenset(
+    {"middleware", "subagent", "compaction"}
+)
+
 
 def resolve_default_ls_agent_type(
     parent_runtree: Optional[RunTree],

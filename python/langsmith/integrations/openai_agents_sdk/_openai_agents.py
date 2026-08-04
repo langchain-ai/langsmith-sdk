@@ -5,6 +5,10 @@ from typing import Optional
 
 from langsmith import run_trees as rt
 from langsmith._internal import _context
+from langsmith._internal._ls_agent_type import (
+    NON_ROOT_LS_AGENT_TYPES,
+    apply_default_ls_agent_type,
+)
 from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree
 
@@ -187,15 +191,16 @@ if HAVE_AGENTS:
             else:
                 run_name = "Agent workflow"
 
-            # Build metadata
-            run_extra = {
-                "metadata": {
-                    **(self._metadata or {}),
-                    "ls_integration": "openai-agents-sdk",
-                    "ls_integration_version": get_package_version("openai-agents"),
-                    "ls_agent_type": "root",
-                }
+            # Merge three sources: processor defaults, trace.metadata (user's
+            # per-run ls_agent_type), and force-set ls_integration.
+            merged_metadata = {
+                **(self._metadata or {}),
+                **(getattr(trace, "metadata", None) or {}),
+                "ls_integration": "openai-agents-sdk",
+                "ls_integration_version": get_package_version("openai-agents"),
             }
+            apply_default_ls_agent_type(merged_metadata, current_run_tree)
+            run_extra = {"metadata": merged_metadata}
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
@@ -239,7 +244,11 @@ if HAVE_AGENTS:
                 return
 
             trace_dict = trace.export() or {}
-            metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
+            # trace.metadata may have new keys since trace-start; pull them in.
+            metadata = {
+                **(self._metadata or {}),
+                **(trace_dict.get("metadata") or {}),
+            }
 
             try:
                 # Update run with final inputs/outputs
@@ -325,9 +334,9 @@ if HAVE_AGENTS:
                         else None
                     )
                     if parent_span_data_type is tracing.FunctionSpanData:
-                        if "metadata" not in child_run.extra:
-                            child_run.extra["metadata"] = {}
-                        child_run.extra["metadata"]["ls_agent_type"] = "subagent"
+                        metadata = child_run.extra.setdefault("metadata", {})
+                        if metadata.get("ls_agent_type") not in NON_ROOT_LS_AGENT_TYPES:
+                            metadata["ls_agent_type"] = "subagent"
 
                 # Track span data type for parent lookups
                 self._span_data_types[span.span_id] = type(span.span_data)
