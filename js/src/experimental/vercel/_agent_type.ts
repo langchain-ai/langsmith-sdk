@@ -7,9 +7,13 @@ import {
   resolveDefaultLsAgentType,
 } from "../../utils/ls_agent_type.js";
 
-// Vercel composition: AI SDK inner spans bypass traceable's outer_metadata
-// propagation, so we manually inspect the parent runtree. Precedence:
-// non-root parent tag > run_type=tool > inherited root > no-parent default.
+// Vercel builds its traceable's `metadata` config eagerly, before traceable
+// itself runs — this resolver stamps `ls_agent_type` at that moment.
+// Traceable's own propagation would carry a parent's middleware/subagent/
+// compaction/"root" tag down on its own. This resolver is needed
+// for correct default tagging of the root `ls_agent_type` == root 
+// and tagging of subagents. 
+
 export function resolveVercelLsAgentType(
   parentRunTree?: unknown,
 ): LsAgentType | undefined {
