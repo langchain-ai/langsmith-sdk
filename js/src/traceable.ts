@@ -156,10 +156,7 @@ const handleRunInputs = <Args extends unknown[]>(
   };
   try {
     const processed = processInputs(inputs);
-    if (
-      processed != null &&
-      typeof (processed as Promise<KVMap>).then === "function"
-    ) {
+    if (isThenable(processed)) {
       // Make postRun await inputs so a rejection is seen and drops the run.
       runTree._awaitInputsOnPost = true;
       return Promise.resolve(processed).catch(drop);
