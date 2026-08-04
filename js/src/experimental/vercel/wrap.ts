@@ -11,7 +11,7 @@ import {
 import { convertMessageToTracedFormat } from "./utils.js";
 import { isTraceableFunction, traceable } from "../../traceable.js";
 import type { RunTreeConfig } from "../../run_trees.js";
-import { lsAgentTypeMetadata } from "./_agent_type.js";
+import { vercelLsAgentTypeMetadata } from "./_agent_type.js";
 
 const _getModelDisplayName = (
   model: string | Record<string, unknown>,
@@ -428,7 +428,7 @@ const _getGenerateTextWrapperConfig = ({
     name: runName ?? _getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
-      ...lsAgentTypeMetadata(),
+      ...vercelLsAgentTypeMetadata(),
       ai_sdk_method: aiSdkMethodName ?? "ai.generateText",
       ...resolvedLsConfig?.metadata,
     },
@@ -522,7 +522,7 @@ const _getStreamTextWrapperConfig = ({
     name: runName ?? _getModelDisplayName(model),
     ...resolvedLsConfig,
     metadata: {
-      ...lsAgentTypeMetadata(),
+      ...vercelLsAgentTypeMetadata(),
       ai_sdk_method: aiSdkMethodName ?? "ai.streamText",
       ...resolvedLsConfig?.metadata,
     },
@@ -779,7 +779,7 @@ const wrapAISDK = <
           name: _getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
-            ...lsAgentTypeMetadata(),
+            ...vercelLsAgentTypeMetadata(),
             ai_sdk_method: "ai.generateObject",
             ...resolvedLsConfig?.metadata,
           },
@@ -933,7 +933,7 @@ const wrapAISDK = <
           name: _getModelDisplayName(params.model),
           ...resolvedLsConfig,
           metadata: {
-            ...lsAgentTypeMetadata(),
+            ...vercelLsAgentTypeMetadata(),
             ai_sdk_method: "ai.streamObject",
             ...resolvedLsConfig?.metadata,
           },

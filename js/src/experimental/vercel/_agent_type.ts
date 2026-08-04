@@ -1,24 +1,23 @@
 import { isRunTree } from "../../run_trees.js";
 import { getCurrentRunTree } from "../../singletons/traceable.js";
+import {
+  LsAgentType,
+  NON_ROOT_LS_AGENT_TYPES,
+  lsAgentTypeMetadata,
+  resolveDefaultLsAgentType,
+} from "../../utils/ls_agent_type.js";
 
-export type LsAgentType = "root" | "subagent" | "middleware" | "compaction";
-
-const NARROWING_TAGS: ReadonlySet<string> = new Set([
-  "middleware",
-  "subagent",
-  "compaction",
-]);
-
-// Precedence: narrowing tag > run_type=tool > inherited root > root (no parent) > undefined.
-export function resolveLsAgentType(
+// Vercel composition: AI SDK inner spans bypass traceable's outer_metadata
+// propagation, so we manually inspect the parent runtree. Precedence:
+// non-root parent tag > run_type=tool > inherited root > no-parent default.
+export function resolveVercelLsAgentType(
   parentRunTree?: unknown,
 ): LsAgentType | undefined {
   const parent = parentRunTree ?? getCurrentRunTree(true);
-  // ContextPlaceholder (tracingEnabled=false) isn't a RunTree; treat as no parent.
-  if (!isRunTree(parent)) return "root";
+  if (!isRunTree(parent)) return resolveDefaultLsAgentType(parent);
 
   const parentTag = parent.extra?.metadata?.ls_agent_type;
-  if (typeof parentTag === "string" && NARROWING_TAGS.has(parentTag)) {
+  if (typeof parentTag === "string" && NON_ROOT_LS_AGENT_TYPES.has(parentTag)) {
     return parentTag as LsAgentType;
   }
   if (parent.run_type === "tool") return "subagent";
@@ -26,10 +25,6 @@ export function resolveLsAgentType(
   return undefined;
 }
 
-// Spread helper — skips `ls_agent_type` when the resolver returns undefined.
-export function lsAgentTypeMetadata(parentRunTree?: unknown): {
-  ls_agent_type?: LsAgentType;
-} {
-  const tag = resolveLsAgentType(parentRunTree);
-  return tag !== undefined ? { ls_agent_type: tag } : {};
+export function vercelLsAgentTypeMetadata(parentRunTree?: unknown) {
+  return lsAgentTypeMetadata(resolveVercelLsAgentType(parentRunTree));
 }
