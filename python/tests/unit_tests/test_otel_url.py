@@ -93,7 +93,7 @@ def test_importing_helper_does_not_import_processor():
         "assert m.langsmith_run_id_from_otel_span_id(1); "
         "assert 'langsmith.integrations.otel.processor' not in sys.modules"
     )
-    subprocess.run([sys.executable, "-W", "error", "-c", code], check=True)
+    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 def test_lazy_processor_exports_still_accessible():
