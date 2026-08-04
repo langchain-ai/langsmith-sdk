@@ -1,0 +1,32 @@
+js/src/experimental/vercel/wrap.ts
+  s_ff080844706851::t_c35b5791a93a52 782
+  s_ff080844706851::t_857f346137b15b 525
+  s_ff080844706851::t_2c05630fffab22 431
+  s_ff080844706851::t_a7703b2b144e93 936
+  s_ff080844706851::t_8e37284e25b925 14
+js/src/tests/vercel_agent_type.test.ts
+  s_ff080844706851::t_e022b41165c0db 4,6-9,20,24-29,32-33,43-44,51,56,61-63,65,69,74-89
+js/src/experimental/vercel/_agent_type.ts
+  s_ff080844706851::t_1f2d85de09d53f 5-6,19,22-24,26-28,34-36,41,45
+  s_ff080844706851::t_cedd3838faa57e 47-57
+  s_ff080844706851::t_e7b3bf74fa1966 46
+js/src/experimental/vercel/telemetry.ts
+  s_ff080844706851::t_64fc530ab8cc9c 353
+  s_ff080844706851::t_c601a7081553b0 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "f33a718c3f4e3035763656f4cae81e1de6eefd8d",
+  "prompts": {},
+  "sessions": {
+    "s_ff080844706851": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40df46e9-1a8a-41fc-8b66-bb84f7803d70",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}
