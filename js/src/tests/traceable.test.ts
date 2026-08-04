@@ -1887,13 +1887,13 @@ test("SECURITY: traceable processOutputs failure withholds outputs (fail closed)
 
   const result = await login("user1");
 
-  // Function unaffected; the run was already created, so outputs are withheld
-  // (never carry the raw secret) rather than dropping the whole run.
+  // Run already created; only outputs are withheld to avoid eternal pending
   expect(result).toBe("token=super-secret-value");
   const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
   expect(tree.data["login:0"]?.outputs ?? {}).not.toMatchObject({
     outputs: "token=super-secret-value",
   });
+  expect(tree.data["login:0"]?.error).toBeFalsy();
 });
 
 test("traceable async generator with processOutputs", async () => {
