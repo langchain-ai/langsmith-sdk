@@ -1,5 +1,6 @@
 import { RunTree } from "../run_trees.js";
 import {
+  NON_ROOT_LS_AGENT_TYPES,
   defaultLsAgentTypeMetadata,
   lsAgentTypeMetadata,
   resolveDefaultLsAgentType,
@@ -57,4 +58,10 @@ test("defaultLsAgentTypeMetadata preserves null opt-out (returns empty delta)", 
   expect(
     defaultLsAgentTypeMetadata({ ls_agent_type: null }, undefined),
   ).toEqual({});
+});
+
+test("NON_ROOT_LS_AGENT_TYPES has the three non-root tags", () => {
+  expect(NON_ROOT_LS_AGENT_TYPES).toEqual(
+    new Set(["middleware", "subagent", "compaction"]),
+  );
 });

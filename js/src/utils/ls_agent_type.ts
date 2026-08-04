@@ -7,6 +7,13 @@ import { isRunTree } from "../run_trees.js";
 
 export type LsAgentType = "root" | "middleware" | "subagent" | "compaction";
 
+// Non-root tags: preserved against default/structural stamping.
+export const NON_ROOT_LS_AGENT_TYPES: ReadonlySet<string> = new Set([
+  "middleware",
+  "subagent",
+  "compaction",
+]);
+
 // `"root"` at trace root; `undefined` when nested (rely on propagation).
 export function resolveDefaultLsAgentType(
   parentRunTree?: unknown,

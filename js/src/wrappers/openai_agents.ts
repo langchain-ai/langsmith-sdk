@@ -12,7 +12,10 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "../singletons/traceable.js";
-import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
+import {
+  NON_ROOT_LS_AGENT_TYPES,
+  defaultLsAgentTypeMetadata,
+} from "../utils/ls_agent_type.js";
 import type { ContextPlaceholder } from "../singletons/types.js";
 import type {
   AgentSpanData,
@@ -778,9 +781,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
           childRun.extra.metadata = {};
         }
         const meta = childRun.extra.metadata as Record<string, unknown>;
-        // Preserve user middleware/compaction; else apply subagent detection.
-        const current = meta.ls_agent_type;
-        if (current !== "middleware" && current !== "compaction") {
+        if (!NON_ROOT_LS_AGENT_TYPES.has(meta.ls_agent_type as string)) {
           meta.ls_agent_type = "subagent";
         }
       }

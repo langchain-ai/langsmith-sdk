@@ -5,7 +5,10 @@ from typing import Optional
 
 from langsmith import run_trees as rt
 from langsmith._internal import _context
-from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
+from langsmith._internal._ls_agent_type import (
+    NON_ROOT_LS_AGENT_TYPES,
+    apply_default_ls_agent_type,
+)
 from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree
 
@@ -330,14 +333,9 @@ if HAVE_AGENTS:
                         else None
                     )
                     if parent_span_data_type is tracing.FunctionSpanData:
-                        if "metadata" not in child_run.extra:
-                            child_run.extra["metadata"] = {}
-                        # Preserve user middleware/compaction; else stamp subagent.
-                        if child_run.extra["metadata"].get("ls_agent_type") not in (
-                            "middleware",
-                            "compaction",
-                        ):
-                            child_run.extra["metadata"]["ls_agent_type"] = "subagent"
+                        metadata = child_run.extra.setdefault("metadata", {})
+                        if metadata.get("ls_agent_type") not in NON_ROOT_LS_AGENT_TYPES:
+                            metadata["ls_agent_type"] = "subagent"
 
                 # Track span data type for parent lookups
                 self._span_data_types[span.span_id] = type(span.span_data)

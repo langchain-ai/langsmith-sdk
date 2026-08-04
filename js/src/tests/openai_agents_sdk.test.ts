@@ -284,6 +284,66 @@ describe("OpenAIAgentsTracingProcessor", () => {
         expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe("root");
       }
     });
+
+    test("no default stamp when nested under a parent runtree", async () => {
+      const trace = createMockTrace("trace-lst-nested", "Agent");
+      await traceable(
+        async () => {
+          await processor.onTraceStart(trace);
+          await processor.onTraceEnd(trace);
+        },
+        { name: "parent", client },
+      )();
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const agentNode = tree.nodes.find((n) => n.includes("Agent"));
+      if (agentNode) {
+        expect(
+          tree.data[agentNode].extra?.metadata?.ls_agent_type,
+        ).toBeUndefined();
+      }
+    });
+
+    test("trace.metadata wins over processor metadata", async () => {
+      const customProcessor = new OpenAIAgentsTracingProcessor({
+        client,
+        metadata: { env: "test" },
+      });
+      const trace = createMockTrace("trace-lst-prec", "Agent", {
+        metadata: { env: "prod" },
+      });
+      await customProcessor.onTraceStart(trace);
+      await customProcessor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootNode = tree.nodes.find((n) => n.includes("Agent"));
+      if (rootNode) {
+        expect(tree.data[rootNode].extra?.metadata?.env).toBe("prod");
+      }
+    });
+
+    test("trace_end preserves trace.metadata precedence over processor metadata", async () => {
+      const customProcessor = new OpenAIAgentsTracingProcessor({
+        client,
+        metadata: { ls_agent_type: "root" },
+      });
+      const trace = createMockTrace("trace-lst-end", "Agent", {
+        metadata: { ls_agent_type: "middleware" },
+      });
+      await customProcessor.onTraceStart(trace);
+      await customProcessor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const rootNode = tree.nodes.find((n) => n.includes("Agent"));
+      if (rootNode) {
+        expect(tree.data[rootNode].extra?.metadata?.ls_agent_type).toBe(
+          "middleware",
+        );
+      }
+    });
   });
 
   describe("span handling", () => {
@@ -679,6 +739,123 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
       const subagentNode = tree.nodes.find((n) => n.includes("SubAgent"));
       expect(subagentNode).toBeDefined();
+      if (subagentNode) {
+        expect(tree.data[subagentNode].extra?.metadata?.ls_agent_type).toBe(
+          "subagent",
+        );
+      }
+    });
+
+    test("subagent detection overrides inherited root at agent-as-tool site", async () => {
+      const trace = createMockTrace("trace-11d", "Test Agent", {
+        metadata: { ls_agent_type: "root" },
+      });
+      const functionSpan = createMockSpan("trace-11d", "span-fn-d", null, {
+        type: "function",
+        name: "invoke_subagent",
+        input: "{}",
+        output: "{}",
+      });
+      const subagentSpan = createMockSpan(
+        "trace-11d",
+        "span-agent-d",
+        "span-fn-d",
+        { type: "agent", name: "SubAgentD" },
+      );
+
+      await processor.onTraceStart(trace);
+      await processor.onSpanStart(functionSpan);
+      await processor.onSpanStart(subagentSpan);
+      await processor.onSpanEnd(subagentSpan);
+      await processor.onSpanEnd(functionSpan);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const subagentNode = tree.nodes.find((n) => n.includes("SubAgentD"));
+      if (subagentNode) {
+        expect(tree.data[subagentNode].extra?.metadata?.ls_agent_type).toBe(
+          "subagent",
+        );
+      }
+    });
+
+    test.each(["middleware", "compaction"] as const)(
+      "subagent detection preserves user-supplied '%s' at agent-as-tool site",
+      async (userTag) => {
+        const trace = createMockTrace(`trace-11e-${userTag}`, "Test Agent", {
+          metadata: { ls_agent_type: userTag },
+        });
+        const functionSpan = createMockSpan(
+          `trace-11e-${userTag}`,
+          `span-fn-e-${userTag}`,
+          null,
+          {
+            type: "function",
+            name: "invoke_subagent",
+            input: "{}",
+            output: "{}",
+          },
+        );
+        const subagentSpan = createMockSpan(
+          `trace-11e-${userTag}`,
+          `span-agent-e-${userTag}`,
+          `span-fn-e-${userTag}`,
+          { type: "agent", name: `SubAgentE_${userTag}` },
+        );
+
+        await processor.onTraceStart(trace);
+        await processor.onSpanStart(functionSpan);
+        await processor.onSpanStart(subagentSpan);
+        await processor.onSpanEnd(subagentSpan);
+        await processor.onSpanEnd(functionSpan);
+        await processor.onTraceEnd(trace);
+        await client.awaitPendingTraceBatches();
+
+        const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+        const subagentNode = tree.nodes.find((n) =>
+          n.includes(`SubAgentE_${userTag}`),
+        );
+        if (subagentNode) {
+          expect(tree.data[subagentNode].extra?.metadata?.ls_agent_type).toBe(
+            userTag,
+          );
+        }
+      },
+    );
+
+    test("subagent detection is idempotent on existing subagent tag", async () => {
+      const trace = createMockTrace("trace-11f-idem", "Test Agent", {
+        metadata: { ls_agent_type: "subagent" },
+      });
+      const functionSpan = createMockSpan(
+        "trace-11f-idem",
+        "span-fn-idem",
+        null,
+        {
+          type: "function",
+          name: "invoke_subagent",
+          input: "{}",
+          output: "{}",
+        },
+      );
+      const subagentSpan = createMockSpan(
+        "trace-11f-idem",
+        "span-agent-idem",
+        "span-fn-idem",
+        { type: "agent", name: "SubAgentIdem" },
+      );
+
+      await processor.onTraceStart(trace);
+      await processor.onSpanStart(functionSpan);
+      await processor.onSpanStart(subagentSpan);
+      await processor.onSpanEnd(subagentSpan);
+      await processor.onSpanEnd(functionSpan);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const subagentNode = tree.nodes.find((n) => n.includes("SubAgentIdem"));
       if (subagentNode) {
         expect(tree.data[subagentNode].extra?.metadata?.ls_agent_type).toBe(
           "subagent",
