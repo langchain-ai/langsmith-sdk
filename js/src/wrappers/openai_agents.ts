@@ -667,7 +667,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     this._runs.delete(trace.traceId);
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
-    // trace.metadata wins over processor defaults (matches onTraceStart).
+    // trace.metadata may have new keys since onTraceStart; pull them in.
     const metadata: Record<string, unknown> = {
       ...this._metadata,
       ...(traceDict.metadata as Record<string, unknown>),

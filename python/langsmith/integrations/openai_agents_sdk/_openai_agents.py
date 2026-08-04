@@ -244,7 +244,7 @@ if HAVE_AGENTS:
                 return
 
             trace_dict = trace.export() or {}
-            # trace.metadata wins over processor defaults (matches on_trace_start).
+            # trace.metadata may have new keys since trace-start; pull them in.
             metadata = {
                 **(self._metadata or {}),
                 **(trace_dict.get("metadata") or {}),
