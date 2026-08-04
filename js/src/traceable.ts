@@ -271,6 +271,27 @@ async function handleRunOutputs<Return>(params: {
       ? Promise.all(runTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
       : Promise.resolve();
 
+  // Fail closed: the output redactor failed, so end with empty outputs
+  const endOutputsWithheld = async (e: unknown) => {
+    console.error(
+      "Error occurred during processOutputs. Withholding outputs:",
+      e,
+    );
+    try {
+      await childRunEndPromises;
+      await runTree?.end({});
+    } catch (endErr) {
+      console.error("Error occurred during runTree?.end.", endErr);
+    }
+  };
+  const finalize = async () => {
+    try {
+      await handleEnd({ runTree, postRunPromise, on_end, deferredInputs });
+    } catch (e) {
+      console.error("Error occurred during handleEnd.", e);
+    }
+  };
+
   try {
     outputs = processOutputsFn(outputs);
     // TODO: Investigate making this behavior for all returned promises
@@ -282,47 +303,13 @@ async function handleRunOutputs<Return>(params: {
           await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
-        .catch(async (e: unknown) => {
-          // Fail closed: withhold outputs (run already created, so we can't
-          // drop it -- just don't upload the unprocessed outputs).
-          console.error(
-            "Error occurred during processOutputs. Withholding outputs:",
-            e,
-          );
-          try {
-            await childRunEndPromises;
-            await runTree?.end(
-              undefined,
-              "processOutputs failed; outputs withheld",
-            );
-          } catch (e) {
-            console.error("Error occurred during runTree?.end.", e);
-          }
-        })
-        .finally(async () => {
-          try {
-            await handleEnd({
-              runTree,
-              postRunPromise,
-              on_end,
-              deferredInputs,
-            });
-          } catch (e) {
-            console.error("Error occurred during handleEnd.", e);
-          }
-        });
+        .catch(endOutputsWithheld)
+        .finally(finalize);
       return;
     }
   } catch (e) {
-    // Fail closed: `outputs` still holds the raw value, so withhold it (run
-    // already created; drop the outputs, not the whole run).
-    console.error(
-      "Error occurred during processOutputs. Withholding outputs:",
-      e,
-    );
-    // Empty KVMap: withholds the secret, keeps downstream (usage metadata,
-    // end()) working.
-    outputs = {};
+    void endOutputsWithheld(e).then(finalize);
+    return;
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
