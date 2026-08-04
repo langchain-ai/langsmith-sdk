@@ -182,7 +182,9 @@ def _fetch_oauth_metadata(base: str, timeout: float) -> Optional[Mapping[str, An
             headers={"Accept": "application/json"},
             timeout=timeout,
         )
-    except requests.RequestException:
+    except Exception:
+        # Discovery is best effort: any failure falls back to the configured
+        # mount point rather than breaking token refresh.
         return None
     if response.status_code < 200 or response.status_code >= 300:
         return None

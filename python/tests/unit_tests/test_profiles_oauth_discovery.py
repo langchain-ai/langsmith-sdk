@@ -2,149 +2,135 @@
 
 from __future__ import annotations
 
-import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Optional
+from unittest import mock
 
 import pytest
+import requests
 
 from langsmith._internal._profiles import _resolve_token_endpoint
 
-
-def _serve(handler_fn: Callable[[str, str], Any]) -> Iterator[str]:
-    """Run an HTTP server whose handler maps (path, base_url) to a response.
-
-    handler_fn returns either a dict (encoded as JSON), a str (sent as HTML), or
-    None for a 404.
-    """
-    base_holder: dict[str, str] = {}
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
-            result = handler_fn(self.path, base_holder["base"])
-            if result is None:
-                self.send_response(404)
-                self.end_headers()
-                return
-            if isinstance(result, dict):
-                body = json.dumps(result).encode()
-                content_type = "application/json"
-            else:
-                body = str(result).encode()
-                content_type = "text/html"
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *args: Any) -> None:
-            pass
-
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    base_holder["base"] = f"http://127.0.0.1:{server.server_port}"
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield base_holder["base"]
-    finally:
-        server.shutdown()
-        server.server_close()
+BASE = "https://deployment.example.com"
+WELL_KNOWN = "/.well-known/oauth-authorization-server"
 
 
-@pytest.fixture
-def self_hosted() -> Iterator[str]:
-    """Metadata under /api, plus an HTML 200 at the root like the SPA."""
-
-    def handler(path: str, base: str) -> Any:
-        if path == "/api/.well-known/oauth-authorization-server":
-            return {
-                "issuer": f"{base}/api",
-                "device_authorization_endpoint": f"{base}/api/oauth/device/code",
-                "token_endpoint": f"{base}/api/oauth/token",
-            }
-        if path == "/.well-known/oauth-authorization-server":
-            return "<!doctype html><html><body>app</body></html>"
-        return None
-
-    yield from _serve(handler)
+def _response(status: int, payload: Optional[Any], *, json_error: bool = False):
+    response = mock.Mock()
+    response.status_code = status
+    if json_error:
+        response.json.side_effect = ValueError("not json")
+    else:
+        response.json.return_value = payload
+    return response
 
 
-@pytest.fixture
-def saas() -> Iterator[str]:
-    def handler(path: str, base: str) -> Any:
-        if path == "/.well-known/oauth-authorization-server":
-            return {
-                "issuer": base,
-                "device_authorization_endpoint": f"{base}/oauth/device/code",
-                "token_endpoint": f"{base}/oauth/token",
-            }
-        return None
+def _patch_get(
+    monkeypatch: pytest.MonkeyPatch, handler: Callable[[str], Any]
+) -> list[str]:
+    """Route requests.get through handler, recording the URLs probed."""
+    seen: list[str] = []
 
-    yield from _serve(handler)
+    def fake_get(url: str, **_: object) -> Any:
+        seen.append(url)
+        return handler(url)
 
-
-@pytest.fixture
-def no_metadata() -> Iterator[str]:
-    yield from _serve(lambda path, base: None)
+    monkeypatch.setattr(requests, "get", fake_get)
+    return seen
 
 
-def test_self_hosted_bare_origin(self_hosted: str) -> None:
-    assert _resolve_token_endpoint(self_hosted) == f"{self_hosted}/api/oauth/token"
+def _metadata(issuer: str, token_endpoint: str) -> dict[str, str]:
+    return {
+        "issuer": issuer,
+        "device_authorization_endpoint": f"{issuer}/oauth/device/code",
+        "token_endpoint": token_endpoint,
+    }
 
 
-def test_self_hosted_api_suffix(self_hosted: str) -> None:
-    assert (
-        _resolve_token_endpoint(f"{self_hosted}/api")
-        == f"{self_hosted}/api/oauth/token"
-    )
+def _self_hosted(url: str) -> Any:
+    """Metadata under /api, and an HTML 200 at the root like the SPA."""
+    if url == f"{BASE}/api{WELL_KNOWN}":
+        return _response(200, _metadata(f"{BASE}/api", f"{BASE}/api/oauth/token"))
+    if url == f"{BASE}{WELL_KNOWN}":
+        return _response(200, None, json_error=True)
+    return _response(404, None, json_error=True)
 
 
-def test_saas_at_root(saas: str) -> None:
-    assert _resolve_token_endpoint(saas) == f"{saas}/oauth/token"
+def test_self_hosted_bare_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_get(monkeypatch, _self_hosted)
+    assert _resolve_token_endpoint(BASE) == f"{BASE}/api/oauth/token"
 
 
-def test_fallback_keeps_api_mount(no_metadata: str) -> None:
+def test_self_hosted_api_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_get(monkeypatch, _self_hosted)
+    assert _resolve_token_endpoint(f"{BASE}/api") == f"{BASE}/api/oauth/token"
+
+
+def test_saas_at_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(url: str) -> Any:
+        if url == f"{BASE}{WELL_KNOWN}":
+            return _response(200, _metadata(BASE, f"{BASE}/oauth/token"))
+        return _response(404, None, json_error=True)
+
+    _patch_get(monkeypatch, handler)
+    assert _resolve_token_endpoint(BASE) == f"{BASE}/oauth/token"
+
+
+def test_saas_probes_the_origin_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bare origin resolves in one request; no wasted /api probe."""
+
+    def handler(url: str) -> Any:
+        if url == f"{BASE}{WELL_KNOWN}":
+            return _response(200, _metadata(BASE, f"{BASE}/oauth/token"))
+        return _response(404, None, json_error=True)
+
+    seen = _patch_get(monkeypatch, handler)
+    _resolve_token_endpoint(BASE)
+    assert seen == [f"{BASE}{WELL_KNOWN}"]
+
+
+def test_fallback_keeps_api_mount(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without metadata the /api mount must survive; the AS lives under it."""
-    assert (
-        _resolve_token_endpoint(f"{no_metadata}/api")
-        == f"{no_metadata}/api/oauth/token"
-    )
+    _patch_get(monkeypatch, lambda _: _response(404, None, json_error=True))
+    assert _resolve_token_endpoint(f"{BASE}/api") == f"{BASE}/api/oauth/token"
 
 
-def test_fallback_strips_api_v1(no_metadata: str) -> None:
-    assert (
-        _resolve_token_endpoint(f"{no_metadata}/api/v1") == f"{no_metadata}/oauth/token"
-    )
+def test_fallback_strips_api_v1(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_get(monkeypatch, lambda _: _response(404, None, json_error=True))
+    assert _resolve_token_endpoint(f"{BASE}/api/v1") == f"{BASE}/oauth/token"
 
 
-def test_rejects_issuer_mismatch() -> None:
+def test_fallback_when_discovery_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Discovery is best effort; a transport failure must not break refresh."""
+
+    def boom(url: str, **_: object) -> Any:
+        raise RuntimeError("network disabled")
+
+    monkeypatch.setattr(requests, "get", boom)
+    assert _resolve_token_endpoint(f"{BASE}/api") == f"{BASE}/api/oauth/token"
+
+
+def test_rejects_issuer_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Refresh tokens are posted here, so a foreign issuer must be ignored."""
 
-    def handler(path: str, base: str) -> Any:
-        if path == "/.well-known/oauth-authorization-server":
-            return {
-                "issuer": "https://evil.example.com",
-                "device_authorization_endpoint": f"{base}/oauth/device/code",
-                "token_endpoint": f"{base}/oauth/token",
-            }
-        return None
+    def handler(url: str) -> Any:
+        if url == f"{BASE}{WELL_KNOWN}":
+            return _response(
+                200,
+                _metadata("https://evil.example.com", f"{BASE}/oauth/token"),
+            )
+        return _response(404, None, json_error=True)
 
-    for base in _serve(handler):
-        assert _resolve_token_endpoint(base) == f"{base}/oauth/token"
+    _patch_get(monkeypatch, handler)
+    assert _resolve_token_endpoint(BASE) == f"{BASE}/oauth/token"
 
 
-def test_rejects_off_origin_endpoint() -> None:
-    def handler(path: str, base: str) -> Any:
-        if path == "/.well-known/oauth-authorization-server":
-            return {
-                "issuer": base,
-                "device_authorization_endpoint": f"{base}/oauth/device/code",
-                "token_endpoint": "https://evil.example.com/oauth/token",
-            }
-        return None
+def test_rejects_off_origin_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(url: str) -> Any:
+        if url == f"{BASE}{WELL_KNOWN}":
+            return _response(
+                200, _metadata(BASE, "https://evil.example.com/oauth/token")
+            )
+        return _response(404, None, json_error=True)
 
-    for base in _serve(handler):
-        # Falls back rather than trusting the document.
-        assert _resolve_token_endpoint(base) == f"{base}/oauth/token"
+    _patch_get(monkeypatch, handler)
+    assert _resolve_token_endpoint(BASE) == f"{BASE}/oauth/token"
