@@ -696,13 +696,22 @@ await client.deleteSnapshot(snapshot.id);
 ### Sizing and Resources
 
 `createSandbox` accepts optional per-sandbox resource limits. If omitted, the
-server-side defaults are used.
+server-side defaults are used — prefer that unless you have a specific need.
+
+```typescript
+const sandbox = await client.createSandbox({
+  fsCapacityBytes: 5_368_709_120, // 5 GiB
+});
+```
+
+`vCpus` and `memBytes` may also be set, but they are validated together:
+`memBytes` must be within 50% of 4 GiB per vCPU, so a 2-vCPU sandbox accepts
+4–12 GiB. Requests outside that range are rejected.
 
 ```typescript
 const sandbox = await client.createSandbox({
   vCpus: 2,
-  memBytes: 2_147_483_648,        // 2 GiB
-  fsCapacityBytes: 5_368_709_120, // 5 GiB
+  memBytes: 8_589_934_592, // 8 GiB
 });
 ```
 
