@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-import httpx
-
+from langsmith._internal._httpx import httpx
 from langsmith.sandbox._exceptions import (
     SandboxConnectionError,
     SandboxOperationError,

@@ -21,7 +21,7 @@ from typing import (
 from typing_extensions import Awaitable, ParamSpec, override, get_origin
 
 import anyio
-import httpx
+from langsmith._internal._httpx import httpx
 import pydantic
 
 from ._types import NoneType

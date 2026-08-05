@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 from urllib.parse import quote
 
-import httpx
-
 from langsmith import utils as ls_utils
+from langsmith._internal._httpx import httpx
 from langsmith._openapi_client import Langsmith
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,

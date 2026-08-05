@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing_extensions import Literal
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from ..types import issue_list_params
 from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given

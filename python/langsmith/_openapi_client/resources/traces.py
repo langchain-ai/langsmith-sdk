@@ -6,7 +6,7 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from ..types import trace_query_params, trace_list_runs_params
 from .._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given

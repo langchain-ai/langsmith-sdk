@@ -54,7 +54,6 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import httpx as _httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -92,6 +91,7 @@ from langsmith._internal._constants import (
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
+from langsmith._internal._httpx import httpx as _httpx
 from langsmith._internal._hub import (
     HUB,
     REPO_HANDLE_PATTERN,

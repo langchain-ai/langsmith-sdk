@@ -33,10 +33,10 @@ from typing import (
 from typing_extensions import Literal, override, get_origin
 
 import anyio
-import httpx
+from langsmith._internal._httpx import httpx
 import distro
 import pydantic
-from httpx import URL
+from langsmith._internal._httpx import URL
 from pydantic import PrivateAttr
 
 from . import _exceptions
@@ -102,14 +102,14 @@ _StreamT = TypeVar("_StreamT", bound=Stream[Any])
 _AsyncStreamT = TypeVar("_AsyncStreamT", bound=AsyncStream[Any])
 
 if TYPE_CHECKING:
-    from httpx._config import (
-        DEFAULT_TIMEOUT_CONFIG,  # pyright: ignore[reportPrivateImportUsage]
-    )
+    from langsmith._internal._httpx import DEFAULT_TIMEOUT_CONFIG
 
     HTTPX_DEFAULT_TIMEOUT = DEFAULT_TIMEOUT_CONFIG
 else:
     try:
-        from httpx._config import DEFAULT_TIMEOUT_CONFIG as HTTPX_DEFAULT_TIMEOUT
+        from langsmith._internal._httpx import (
+            DEFAULT_TIMEOUT_CONFIG as HTTPX_DEFAULT_TIMEOUT,
+        )
     except ImportError:
         # taken from https://github.com/encode/httpx/blob/3ba5fe0d7ac70222590e759c31442b1cab263791/httpx/_config.py#L366
         HTTPX_DEFAULT_TIMEOUT = Timeout(5.0)

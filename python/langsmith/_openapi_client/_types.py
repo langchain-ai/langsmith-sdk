@@ -31,9 +31,16 @@ from typing_extensions import (
     runtime_checkable,
 )
 
-import httpx
+from langsmith._internal._httpx import httpx
 import pydantic
-from httpx import URL, Proxy, Timeout, Response, BaseTransport, AsyncBaseTransport
+from langsmith._internal._httpx import (
+    AsyncBaseTransport,
+    BaseTransport,
+    Proxy,
+    Response,
+    Timeout,
+    URL,
+)
 
 if TYPE_CHECKING:
     from ._models import BaseModel

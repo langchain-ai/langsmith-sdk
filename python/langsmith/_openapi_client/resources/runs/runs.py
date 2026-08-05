@@ -6,7 +6,7 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from .share import (
     ShareResource,

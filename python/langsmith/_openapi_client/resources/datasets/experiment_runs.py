@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform

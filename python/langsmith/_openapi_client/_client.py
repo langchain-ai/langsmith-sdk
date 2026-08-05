@@ -6,7 +6,7 @@ import os
 from typing import TYPE_CHECKING, Any, Mapping
 from typing_extensions import Self, override
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from . import _exceptions
 from ._qs import Querystring
