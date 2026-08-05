@@ -30,6 +30,38 @@ const execGit = (
   });
 };
 
+function sanitizeRemoteUrl(
+  remoteUrl?: string | null,
+): string | null | undefined {
+  if (remoteUrl == null) {
+    return remoteUrl;
+  }
+  const schemeSeparator = remoteUrl.indexOf("://");
+  if (schemeSeparator === -1) {
+    return remoteUrl;
+  }
+  const scheme = remoteUrl.slice(0, schemeSeparator).toLowerCase();
+  if (scheme !== "http" && scheme !== "https") {
+    return remoteUrl;
+  }
+  const authorityStart = schemeSeparator + "://".length;
+  let authorityEnd = remoteUrl.length;
+  for (const delimiter of ["/", "?", "#"]) {
+    const delimiterIndex = remoteUrl.indexOf(delimiter, authorityStart);
+    if (delimiterIndex !== -1) {
+      authorityEnd = Math.min(authorityEnd, delimiterIndex);
+    }
+  }
+  const authority = remoteUrl.slice(authorityStart, authorityEnd);
+  const userinfoEnd = authority.lastIndexOf("@");
+  if (userinfoEnd === -1) {
+    return remoteUrl;
+  }
+  return `${remoteUrl.slice(0, authorityStart)}${authority.slice(
+    userinfoEnd + 1,
+  )}${remoteUrl.slice(authorityEnd)}`;
+}
+
 export const getGitInfo = async (
   remote = "origin",
 ): Promise<GitInfo | null> => {
@@ -74,7 +106,7 @@ export const getGitInfo = async (
   ]);
 
   return {
-    remoteUrl,
+    remoteUrl: sanitizeRemoteUrl(remoteUrl),
     commit,
     commitTime,
     branch,
