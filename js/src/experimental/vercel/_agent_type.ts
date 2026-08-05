@@ -11,8 +11,8 @@ import {
 // itself runs — this resolver stamps `ls_agent_type` at that moment.
 // Traceable's own propagation would carry a parent's middleware/subagent/
 // compaction/"root" tag down on its own. This resolver is needed
-// for correct default tagging of the root `ls_agent_type` == root 
-// and tagging of subagents. 
+// for correct default tagging of the root `ls_agent_type` == root
+// and tagging of subagents.
 
 export function resolveVercelLsAgentType(
   parentRunTree?: unknown,
