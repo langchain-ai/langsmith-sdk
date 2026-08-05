@@ -1185,7 +1185,7 @@ class trace:
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
             if enabled is True and self._end_on_exit:
-                self.new_run.patch()
+                self.new_run.patch(exclude_inputs=True)
 
             _set_tracing_context(self.old_ctx)
         else:
@@ -1487,7 +1487,9 @@ def _container_end(
     # Patch run if enabled=True (force) or if tracing is enabled globally
     enabled = container.get("enabled")
     if enabled is True or utils.tracing_is_enabled() is True:
-        run_tree.patch()
+        # Inputs are already sent on the initial post() and are not mutated
+        # during the traced call, so skip re-sending them on the patch.
+        run_tree.patch(exclude_inputs=True)
     if (on_end := container.get("on_end")) and callable(on_end):
         try:
             on_end(run_tree)

@@ -152,7 +152,7 @@ class TurnLifecycle:
         """Patch all deferred LLM runs. Call after usage has been set."""
         for run in self._pending_patch:
             try:
-                run.patch()
+                run.patch(exclude_inputs=True)
             except Exception as e:
                 logger.warning(f"Failed to patch LLM run: {e}")
         self._pending_patch.clear()
@@ -621,7 +621,7 @@ def instrument_claude_client(original_class: Any) -> None:
                                             else None,
                                         )
                                         try:
-                                            tool_run.patch()
+                                            tool_run.patch(exclude_inputs=True)
                                         except Exception as e:
                                             logger.warning(
                                                 "Failed to patch"

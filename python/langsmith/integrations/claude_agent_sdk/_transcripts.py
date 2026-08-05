@@ -115,7 +115,7 @@ def _create_missing_subagent_llm_runs(
                 llm_run.end(end_time=ts)
                 try:
                     llm_run.post()
-                    llm_run.patch()
+                    llm_run.patch(exclude_inputs=True)
                 except Exception as e:
                     logger.warning(f"Failed to post/patch subagent LLM run: {e}")
 

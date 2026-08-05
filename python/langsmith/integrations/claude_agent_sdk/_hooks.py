@@ -296,7 +296,7 @@ async def post_tool_use_hook(
         )
 
         try:
-            tool_run.patch()
+            tool_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.warning(f"Failed to patch tool run for {tool_name}: {e}")
 
@@ -361,7 +361,7 @@ async def post_tool_use_failure_hook(
         )
 
         try:
-            tool_run.patch()
+            tool_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.warning(f"Failed to patch failed tool run for {tool_name}: {e}")
 
@@ -506,7 +506,7 @@ async def subagent_stop_hook(
             # No matching Agent tool — just end it now
             subagent_run.end()
             try:
-                subagent_run.patch()
+                subagent_run.patch(exclude_inputs=True)
             except Exception as e:
                 logger.warning(f"Failed to patch subagent run: {e}")
 
@@ -533,7 +533,7 @@ def clear_active_tool_runs(session: Optional[SessionState] = None) -> None:
     for agent_id, subagent_run in session.subagent_runs.items():
         try:
             subagent_run.end(error="Subagent run not completed (conversation ended)")
-            subagent_run.patch()
+            subagent_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.debug(f"Failed to clean up orphaned subagent run {agent_id}: {e}")
 
@@ -541,7 +541,7 @@ def clear_active_tool_runs(session: Optional[SessionState] = None) -> None:
     for tool_use_id, subagent_run in session.ended_subagent_runs.items():
         try:
             subagent_run.end()
-            subagent_run.patch()
+            subagent_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.debug(f"Failed to finalise ended subagent run {tool_use_id}: {e}")
 
@@ -549,7 +549,7 @@ def clear_active_tool_runs(session: Optional[SessionState] = None) -> None:
     for tool_use_id, (tool_run, _) in session.active_tool_runs.items():
         try:
             tool_run.end(error="Tool run not completed (conversation ended)")
-            tool_run.patch()
+            tool_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.debug(f"Failed to clean up orphaned tool run {tool_use_id}: {e}")
 

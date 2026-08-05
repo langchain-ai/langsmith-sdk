@@ -126,7 +126,7 @@ class EventSession:
             return
         msgs = self.messages[self._turn_msg_start :]
         self._current_turn.end(outputs={"messages": msgs} if msgs else {})
-        self._current_turn.patch()
+        self._current_turn.patch(exclude_inputs=True)
         self._current_turn = None
 
     def add_message(self, role: str, content: str) -> None:
@@ -283,7 +283,7 @@ class EventSession:
                 run.end(outputs=scrub(outputs) if outputs is not None else {})
             else:
                 run.end(outputs={} if inbound else payload)
-            run.patch()
+            run.patch(exclude_inputs=True)
 
     def record_llm(
         self,
@@ -332,7 +332,7 @@ class EventSession:
         if usage_metadata is not None:
             run.set(usage_metadata=cast("Any", usage_metadata))
         run.end(outputs=scrub(outputs))
-        run.patch()
+        run.patch(exclude_inputs=True)
 
     def open_span(
         self,
@@ -391,7 +391,7 @@ class EventSession:
             extra["metadata"] = merged
             run.extra = extra
         run.end(outputs=scrub(outputs) if outputs is not None else {})
-        run.patch()
+        run.patch(exclude_inputs=True)
 
     def _audio_exceeds_duration_cap(self) -> bool:
         return session_wav_exceeds_duration_cap(
@@ -445,7 +445,7 @@ class EventSession:
         # the root makes the whole exchange readable in the LangSmith preview
         # pane without expanding a single child span.
         self.run.end(outputs={"messages": self.messages} if self.messages else {})
-        self.run.patch()
+        self.run.patch(exclude_inputs=True)
 
 
 def start_session(
