@@ -1,0 +1,14 @@
+js/src/experimental/vercel/_agent_type.ts
+  h_de4ebb712fa7e8 10-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "d8637592244d168c112f9f76cf3751c674c7ea46",
+  "prompts": {},
+  "humans": {
+    "h_de4ebb712fa7e8": {
+      "author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}

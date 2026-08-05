@@ -1,0 +1,19 @@
+js/src/tests/openai_agents_sdk.test.ts
+  s_ff080844706851::t_e28d85cad2fc18 224,286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "00d5b1339d01562b3d36b1688ac88041d62e7c9e",
+  "prompts": {},
+  "sessions": {
+    "s_ff080844706851": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40df46e9-1a8a-41fc-8b66-bb84f7803d70",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}
