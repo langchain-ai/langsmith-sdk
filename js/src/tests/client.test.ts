@@ -515,6 +515,13 @@ describe("Client", () => {
       });
       const mockFetch = jest.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
+          // This deployment serves no discovery document, so refresh falls back
+          // to the configured mount point.
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
           if (String(input) === "https://profile.example.com/oauth/token") {
             expect(init?.method).toBe("POST");
             expect(String(init?.body)).toContain("grant_type=refresh_token");
@@ -540,8 +547,16 @@ describe("Client", () => {
         headers: (client as any)._mergedHeaders,
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-      const requestInit = mockFetch.mock.calls[1][1] as RequestInit;
+      const tokenCalls = mockFetch.mock.calls.filter(
+        ([input]) =>
+          String(input) === "https://profile.example.com/oauth/token",
+      );
+      expect(tokenCalls).toHaveLength(1);
+      const infoCall = mockFetch.mock.calls.find(
+        ([input]) => String(input) === "https://profile.example.com/info",
+      );
+      expect(infoCall).toBeDefined();
+      const requestInit = infoCall![1] as RequestInit;
       expect(requestInit.headers).toMatchObject({
         Authorization: "Bearer new-access-token",
       });
@@ -605,6 +620,11 @@ describe("Client", () => {
       });
       const mockFetch = jest.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
           if (String(input) === "https://profile.example.com/oauth/token") {
             expect(init?.method).toBe("POST");
             return new Response(
@@ -631,7 +651,15 @@ describe("Client", () => {
         headers: (client as any)._mergedHeaders,
       });
 
-      expect(mockFetch.mock.calls.map(([input]) => String(input))).toEqual([
+      // Discovery probes aside, refresh must target the profile's api_url
+      // rather than the client-level override.
+      expect(
+        mockFetch.mock.calls
+          .map(([input]) => String(input))
+          .filter(
+            (url) => !url.includes("/.well-known/oauth-authorization-server"),
+          ),
+      ).toEqual([
         "https://profile.example.com/oauth/token",
         "https://override.example.com/info",
       ]);
