@@ -652,7 +652,7 @@ class RunTree(ls_schemas.RunBase):
             extra=child_extra,
             parent_run=self,
             project_name=self.session_name,
-            replicas=self.replicas,
+            replicas=self.replicas or _REPLICAS.get(),
             ls_client=self.ls_client,
             tags=tags,
             attachments=attachments or {},  # type: ignore

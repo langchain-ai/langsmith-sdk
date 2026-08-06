@@ -10,6 +10,7 @@ import pytest
 
 from langsmith import Client, compute_run_id_for_secondary_replica
 from langsmith import utils as ls_utils
+from langsmith.run_helpers import tracing_context
 from langsmith.run_trees import (
     ApiKeyAuth,
     AuthHeaders,
@@ -806,6 +807,41 @@ class TestRunTreeReplicas:
         assert calls[1][1]["id"] == compute_run_id_for_secondary_replica(
             run_tree.id, "replica2-project"
         )
+
+    def test_create_child_honors_ambient_replicas_when_parent_has_none(self):
+        """create_child() must fall back to the ambient tracing_context(replicas=...)
+        when the parent itself carries no replicas -- e.g. any distributed-tracing
+        scenario, where the parent is reconstructed via RunTree.from_headers() and
+        starts with an empty replicas list unless the caller explicitly forwarded
+        one via baggage.
+
+        Regression test: create_child() used to pass ``replicas=self.replicas``
+        unconditionally, which is never ``None`` (an empty list, not ``None``), so
+        the contextvar fallback in RunTree's own validator never triggered and the
+        ambient override was silently dropped for every child run.
+        """
+        client = Mock()
+        parent = RunTree(
+            name="parent_run",
+            inputs={"input": "test"},
+            client=client,
+            project_name="test-project",
+        )
+        assert parent.replicas == []  # sanity check: the parent itself has none
+
+        with tracing_context(
+            replicas=[WriteReplica(project_name="ambient-project", primary=True)]
+        ):
+            child = parent.create_child(name="child_run")
+
+        assert len(child.replicas) == 1
+        assert child.replicas[0]["project_name"] == "ambient-project"
+        assert child.replicas[0]["primary"] is True
+
+        child.post()
+
+        assert client.create_run.call_count == 1
+        assert client.create_run.call_args[1]["session_name"] == "ambient-project"
 
     def test_run_tree_with_service_auth_replicas(self):
         """Test RunTree with ServiceAuth replicas."""
