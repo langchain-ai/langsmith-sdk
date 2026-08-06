@@ -5739,7 +5739,7 @@ class Client:
             dataset["outputs_schema_definition"] = outputs_schema
 
         if tag_value_ids is not None:
-            dataset["tag_value_ids"] = tag_value_ids
+            dataset["tag_value_ids"] = [str(tag_id) for tag_id in tag_value_ids]
 
         response = self.request_with_retries(
             "POST",
