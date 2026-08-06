@@ -56,6 +56,7 @@ from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
 from langsmith.client import (
+    _ATTACHMENT_DOWNLOAD_TIMEOUT,
     Client,
     _apply_auth_overrides,
     _apply_optional_api_key,
@@ -5188,7 +5189,8 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_response.raise_for_status.return_value = None
     mock_get.return_value = mock_response
 
-    # Test case 1: api_url=None (existing behavior - presigned_url is already complete URL)
+    # Test case 1: api_url=None leaves no trusted host to compare against, so an
+    # absolute presigned_url is refused rather than fetched
     data_with_complete_url = {
         "attachment_urls": {
             "attachment.test_file": {
@@ -5208,12 +5210,10 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         == "https://foobar.com/bucket/file.txt?signature=xyz"
     )
     assert result["test_file"]["mime_type"] == "text/plain"
-    assert result["test_file"]["reader"].read() == b"test attachment data"
+    with pytest.raises(ls_utils.LangSmithError, match="Blocked attachment download"):
+        result["test_file"]["reader"].read()
 
-    # Verify requests.get was called with the complete URL as-is
-    mock_get.assert_called_with(
-        "https://foobar.com/bucket/file.txt?signature=xyz", stream=True
-    )
+    mock_get.assert_not_called()
 
     # Reset mock for next test case
     mock_get.reset_mock()
@@ -5244,13 +5244,16 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
 
     # Verify requests.get was called with the constructed full URL
     mock_get.assert_called_with(
-        "https://api.langsmith.com/api/public/download?jwt=abc123", stream=True
+        "https://api.langsmith.com/api/public/download?jwt=abc123",
+        stream=True,
+        allow_redirects=False,
+        timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT,
     )
 
     # Reset mock for edge case test
     mock_get.reset_mock()
 
-    # Test case 3: Edge case - api_url provided but presigned_url is already complete URL
+    # Test case 3: an absolute presigned_url on a host other than api_url is refused
     data_with_complete_url_edge_case = {
         "attachment_urls": {
             "attachment.test_file3": {
@@ -5267,10 +5270,10 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     )
 
     assert "test_file3" in result
-    # Verify requests.get was called with the complete URL unchanged
-    mock_get.assert_called_with(
-        "https://example.foobar.com/file.jpg?token=456", stream=True
-    )
+    with pytest.raises(ls_utils.LangSmithError, match="Blocked attachment download"):
+        result["test_file3"]["reader"].read()
+
+    mock_get.assert_not_called()
 
     # Test case 4: No attachments key present
     data_no_attachments = {}
@@ -5315,7 +5318,10 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     assert "invalid_file" not in result
     # Only valid attachment should trigger a request
     mock_get.assert_called_once_with(
-        "https://api.langsmith.com/download/valid", stream=True
+        "https://api.langsmith.com/download/valid",
+        stream=True,
+        allow_redirects=False,
+        timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT,
     )
 
     # Test case 7: Self-hosted backend with relative presigned_url
@@ -5344,6 +5350,8 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_get.assert_called_with(
         "https://self-hosted.example.com/public/download?jwt=test.jwt.token",
         stream=True,
+        allow_redirects=False,
+        timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT,
     )
 
     # Test case 8: Download failure - should raise error when reading
@@ -5360,7 +5368,9 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     }
 
     result = _convert_stored_attachments_to_attachments_dict(
-        data_with_error, attachments_key="attachment_urls", api_url=None
+        data_with_error,
+        attachments_key="attachment_urls",
+        api_url="https://example.com",
     )
 
     assert "failing_file" in result
@@ -5369,6 +5379,175 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     # Reading the failed attachment should raise an error
     with pytest.raises(ls_utils.LangSmithError, match="Failed to download attachment"):
         result["failing_file"]["reader"].read()
+
+
+_ATTACHMENT_API_URL = "https://api.smith.langchain.com"
+
+
+def _attachment_data(presigned_url: str) -> dict:
+    return {
+        "attachment_urls": {
+            "attachment.file": {
+                "presigned_url": presigned_url,
+                "mime_type": "text/plain",
+            }
+        }
+    }
+
+
+def _ok_response() -> mock.Mock:
+    return mock.Mock(content=b"payload", raise_for_status=mock.Mock(return_value=None))
+
+
+@pytest.mark.parametrize(
+    "presigned_url, api_url",
+    [
+        (f"{_ATTACHMENT_API_URL}/public/download?jwt=x", _ATTACHMENT_API_URL),
+        # Implicit and explicit ports must compare equal, in both directions
+        (f"{_ATTACHMENT_API_URL}:443/public/download?jwt=x", _ATTACHMENT_API_URL),
+        (
+            f"{_ATTACHMENT_API_URL}/public/download?jwt=x",
+            f"{_ATTACHMENT_API_URL}:443",
+        ),
+        # Relative URLs are joined onto api_url, so the host is trusted
+        ("/public/download?jwt=x", _ATTACHMENT_API_URL),
+        # A plain-http self-hosted deployment keeps working
+        ("http://localhost:1984/public/download?jwt=x", "http://localhost:1984"),
+    ],
+)
+@mock.patch("langsmith.client.requests.get")
+def test_attachment_url_on_api_host_is_fetched(
+    mock_get: mock.Mock, presigned_url: str, api_url: str
+) -> None:
+    """Attachments served from the configured API host download normally."""
+    mock_get.return_value = _ok_response()
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        _attachment_data(presigned_url),
+        attachments_key="attachment_urls",
+        api_url=api_url,
+    )
+
+    assert result["file"]["reader"].read() == b"payload"
+    assert mock_get.call_args.kwargs["allow_redirects"] is False
+    assert mock_get.call_args.kwargs["timeout"] == _ATTACHMENT_DOWNLOAD_TIMEOUT
+
+
+@pytest.mark.parametrize(
+    "presigned_url",
+    [
+        # The GHSA-4gv4-9xw4-9vcr proof of concept
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "http://127.0.0.1:9997/latest/meta-data/",
+        "http://10.0.0.5/admin",
+        "https://evil.example.com/file.txt",
+        # The API host on another port, e.g. an internal search cluster
+        f"{_ATTACHMENT_API_URL}:9200/_search",
+        # The API host downgraded to plaintext
+        "http://api.smith.langchain.com/public/download?jwt=x",
+        # A scheme that survives _construct_url's "http" prefix shortcut
+        "httpx://api.smith.langchain.com/public/download?jwt=x",
+    ],
+)
+@mock.patch("langsmith.client.requests.get")
+def test_attachment_url_off_api_host_is_blocked(
+    mock_get: mock.Mock, presigned_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Attachments served from anywhere but the API host are never fetched."""
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        result = _convert_stored_attachments_to_attachments_dict(
+            _attachment_data(presigned_url),
+            attachments_key="attachment_urls",
+            api_url=_ATTACHMENT_API_URL,
+        )
+
+    mock_get.assert_not_called()
+    assert "Blocked attachment download" in caplog.text
+    # The URL is still surfaced, so callers see what was refused
+    assert result["file"]["presigned_url"] == presigned_url
+    with pytest.raises(ls_utils.LangSmithError, match="Blocked attachment download"):
+        result["file"]["reader"].read()
+
+
+@mock.patch("langsmith.client.requests.get")
+def test_attachment_host_mismatch_states_the_allowlist_format(
+    mock_get: mock.Mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A host-mismatch block tells the operator how to write the allow-list."""
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        _convert_stored_attachments_to_attachments_dict(
+            _attachment_data("https://attachments.internal.corp:8443/f.txt"),
+            attachments_key="attachment_urls",
+            api_url=_ATTACHMENT_API_URL,
+        )
+
+    mock_get.assert_not_called()
+    assert "LANGSMITH_ATTACHMENT_ALLOWED_HOSTS" in caplog.text
+    assert "comma-separated" in caplog.text
+    assert "host:port" in caplog.text
+
+
+@mock.patch("langsmith.client.requests.get")
+def test_attachment_url_non_http_scheme_is_joined_onto_api_host(
+    mock_get: mock.Mock,
+) -> None:
+    """A non-http scheme is not absolute to _construct_url, so it cannot leave the host."""
+    mock_get.return_value = _ok_response()
+
+    _convert_stored_attachments_to_attachments_dict(
+        _attachment_data("file:///etc/passwd"),
+        attachments_key="attachment_urls",
+        api_url=_ATTACHMENT_API_URL,
+    )
+
+    assert mock_get.call_args.args[0].startswith(f"{_ATTACHMENT_API_URL}/")
+
+
+@pytest.mark.parametrize(
+    "allowed, presigned_url, expect_fetched",
+    [
+        ("minio.internal", "https://minio.internal/bucket/f.txt", True),
+        ("minio.internal", "https://minio.internal:9000/bucket/f.txt", True),
+        ("minio.internal:9000", "https://minio.internal:9000/bucket/f.txt", True),
+        ("other.host, minio.internal", "https://minio.internal/bucket/f.txt", True),
+        # An explicit port in the allowlist does not admit a different port
+        ("minio.internal:9000", "https://minio.internal:9001/bucket/f.txt", False),
+        # An unlisted host stays blocked
+        ("minio.internal", "https://evil.example.com/f.txt", False),
+        # The API host is always allowed and cannot be configured away
+        ("minio.internal", f"{_ATTACHMENT_API_URL}/public/download?jwt=x", True),
+    ],
+)
+@mock.patch("langsmith.client.requests.get")
+def test_attachment_allowed_hosts_env_var(
+    mock_get: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    allowed: str,
+    presigned_url: str,
+    expect_fetched: bool,
+) -> None:
+    """LANGSMITH_ATTACHMENT_ALLOWED_HOSTS additively admits extra attachment hosts."""
+    monkeypatch.setenv("LANGSMITH_ATTACHMENT_ALLOWED_HOSTS", allowed)
+    _clear_env_cache()
+    mock_get.return_value = _ok_response()
+
+    try:
+        result = _convert_stored_attachments_to_attachments_dict(
+            _attachment_data(presigned_url),
+            attachments_key="attachment_urls",
+            api_url=_ATTACHMENT_API_URL,
+        )
+
+        if expect_fetched:
+            assert result["file"]["reader"].read() == b"payload"
+        else:
+            mock_get.assert_not_called()
+            with pytest.raises(
+                ls_utils.LangSmithError, match="Blocked attachment download"
+            ):
+                result["file"]["reader"].read()
+    finally:
+        _clear_env_cache()
 
 
 def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
