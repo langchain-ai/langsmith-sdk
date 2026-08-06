@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+import urllib.parse
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, TypedDict, cast
@@ -18,6 +19,8 @@ from langsmith._internal._oauth_refresh_lock import oauth_refresh_lock
 _OAUTH_CLIENT_ID = "langsmith-cli"
 _TOKEN_REFRESH_LEEWAY = datetime.timedelta(minutes=1)
 _TOKEN_REFRESH_TIMEOUT = 10
+_OAUTH_DISCOVERY_TIMEOUT = 5
+_WELL_KNOWN_OAUTH_PATH = "/.well-known/oauth-authorization-server"
 
 
 class ProfileOAuth(TypedDict, total=False):
@@ -135,6 +138,103 @@ def _normalize_profile_api_url(api_url: str) -> str:
     return api_url
 
 
+def _oauth_discovery_candidates(api_url: str) -> list[str]:
+    """Metadata base URLs to probe, most specific first.
+
+    The configured mount point comes first, then the self-hosted and SaaS
+    locations, so both a bare origin and an explicit ``/api`` resolve.
+    """
+    given = _normalize_profile_api_url(api_url)
+    origin = given[: -len("/api")] if given.endswith("/api") else given
+
+    candidates = []
+    for candidate in (given, f"{origin}/api", origin):
+        if candidate and candidate != "/api" and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _validate_oauth_metadata(doc: Mapping[str, Any], base: str) -> bool:
+    """Check the document describes the deployment we probed.
+
+    RFC 8414 requires the issuer to match the URL the well-known path was built
+    from, and every endpoint must share the issuer's origin. Refresh tokens are
+    posted to these endpoints, so an unvalidated document could redirect
+    credentials to another host.
+    """
+    issuer = doc.get("issuer")
+    if not isinstance(issuer, str) or issuer.rstrip("/") != base.rstrip("/"):
+        return False
+    issuer_parts = urllib.parse.urlsplit(issuer)
+    for key in ("device_authorization_endpoint", "token_endpoint"):
+        endpoint = doc.get(key)
+        if not isinstance(endpoint, str) or not endpoint:
+            return False
+        parts = urllib.parse.urlsplit(endpoint)
+        if (parts.scheme, parts.netloc) != (issuer_parts.scheme, issuer_parts.netloc):
+            return False
+    return True
+
+
+def _oauth_metadata_urls(base: str) -> list[str]:
+    """Metadata URLs for an issuer, RFC 8414 form first.
+
+    RFC 8414 inserts the well-known segment between the origin and the issuer
+    path, so ``https://host/api`` is described at
+    ``https://host/.well-known/oauth-authorization-server/api``. Deployments
+    commonly also serve the appended form, and for a path-less issuer the two
+    are identical.
+    """
+    parts = urllib.parse.urlsplit(base)
+    inserted = urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, f"{_WELL_KNOWN_OAUTH_PATH}{parts.path}", "", "")
+    )
+    appended = f"{base}{_WELL_KNOWN_OAUTH_PATH}"
+    return [inserted] if inserted == appended else [inserted, appended]
+
+
+def _fetch_oauth_metadata(
+    url: str, base: str, timeout: float
+) -> Optional[Mapping[str, Any]]:
+    try:
+        response = requests.get(
+            url,
+            headers={"Accept": "application/json"},
+            timeout=timeout,
+        )
+    except Exception:
+        # Discovery is best effort: any failure falls back to the configured
+        # mount point rather than breaking token refresh.
+        return None
+    if response.status_code < 200 or response.status_code >= 300:
+        return None
+    try:
+        doc = response.json()
+    except ValueError:
+        # Self-hosted answers unknown paths with an HTML 200 from the SPA.
+        return None
+    if not isinstance(doc, Mapping) or not _validate_oauth_metadata(doc, base):
+        return None
+    return doc
+
+
+def _resolve_token_endpoint(
+    api_url: str, timeout: float = _OAUTH_DISCOVERY_TIMEOUT
+) -> str:
+    """Resolve the token endpoint, preferring the deployment's metadata.
+
+    Falls back to ``<mount>/oauth/token`` when no usable document is served. The
+    fallback keeps a trailing ``/api`` because self-hosted mounts the
+    authorization server under it.
+    """
+    for base in _oauth_discovery_candidates(api_url):
+        for url in _oauth_metadata_urls(base):
+            doc = _fetch_oauth_metadata(url, base, timeout)
+            if doc is not None:
+                return cast(str, doc["token_endpoint"])
+    return f"{_normalize_profile_api_url(api_url)}/oauth/token"
+
+
 def _parse_profile_expires_at(expires_at: str) -> Optional[datetime.datetime]:
     try:
         parsed = datetime.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
@@ -167,12 +267,12 @@ def should_refresh_profile_token(profile: ProfileConfig) -> bool:
 def _refresh_profile_oauth_token(
     api_url: Optional[str], refresh_token: str, timeout: float = _TOKEN_REFRESH_TIMEOUT
 ) -> Optional[dict[str, Any]]:
-    refresh_url = _normalize_profile_api_url(
+    token_endpoint = _resolve_token_endpoint(
         api_url or "https://api.smith.langchain.com"
     )
     try:
         response = requests.post(
-            f"{refresh_url}/oauth/token",
+            token_endpoint,
             data={
                 "grant_type": "refresh_token",
                 "client_id": _OAUTH_CLIENT_ID,
