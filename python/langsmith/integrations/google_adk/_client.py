@@ -303,14 +303,14 @@ async def wrap_tool_run_async(
             outputs = {}
         tool_run.end(outputs=outputs)
         try:
-            tool_run.patch()
+            tool_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.debug(f"Failed to patch tool run: {e}")
         return result
     except Exception as e:
         tool_run.end(error=str(e))
         try:
-            tool_run.patch()
+            tool_run.patch(exclude_inputs=True)
         except Exception as patch_e:
             logger.debug(f"Failed to patch tool run on error: {patch_e}")
         raise
@@ -461,7 +461,7 @@ async def wrap_flow_call_llm_async(
 
         llm_run.end(outputs=outputs)
         try:
-            llm_run.patch()
+            llm_run.patch(exclude_inputs=True)
         except Exception as e:
             logger.debug(f"Failed to patch LLM run: {e}")
 
@@ -470,7 +470,7 @@ async def wrap_flow_call_llm_async(
         _capture_inputs_and_post()
         llm_run.end(error=str(e))
         try:
-            llm_run.patch()
+            llm_run.patch(exclude_inputs=True)
         except Exception as patch_e:
             logger.debug(f"Failed to patch LLM run on error: {patch_e}")
         raise

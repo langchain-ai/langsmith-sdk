@@ -522,6 +522,11 @@ class RunTree(ls_schemas.RunBase):
     def add_inputs(self, inputs: dict[str, Any]) -> None:
         """Upsert the given inputs into the run.
 
+        Note: Updated inputs are not going to sent via .patch() requests by
+        default, as a performance optimization. You have to explicitly call
+        `.patch(exclude_inputs=False)` to send the updated inputs after an
+        initial `.post()` call.
+
         Args:
             inputs: A dictionary containing the inputs to be added.
         """

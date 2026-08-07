@@ -811,7 +811,7 @@ class _LangSmithTestSuite:
         )
         run_tree.reference_example_id = example_id
         run_tree.end(outputs=outputs, metadata={"reference_example_id": example_id})
-        run_tree.patch()
+        run_tree.patch(exclude_inputs=True)
 
 
 class _TestCase:
