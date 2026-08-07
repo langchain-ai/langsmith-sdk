@@ -293,30 +293,6 @@ def test_context_hub_mount_omits_optional_fields() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    "mount_path",
-    [
-        "",
-        "memories",
-        "/",
-        "/memories/",
-        "/memories/../etc",
-        "//memories",
-        "/etc",
-        "/usr/local/share",
-    ],
-)
-def test_context_hub_mount_rejects_invalid_mount_paths(mount_path: str) -> None:
-    with pytest.raises(ValueError):
-        context_hub_mount(id="memories", mount_path=mount_path, repo="-/my-agent")
-
-
-@pytest.mark.parametrize("repo", ["", " -/my-agent", "-/my-agent ", "-/my\x00agent"])
-def test_context_hub_mount_rejects_invalid_repos(repo: str) -> None:
-    with pytest.raises(ValueError):
-        context_hub_mount(id="memories", mount_path="/memories", repo=repo)
-
-
 def test_mount_config_accepts_context_hub_mount_without_provider_auth() -> None:
     mount = context_hub_mount(
         id="memories",

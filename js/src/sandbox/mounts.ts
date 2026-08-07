@@ -199,56 +199,6 @@ export function gcsMount({
   return mount;
 }
 
-const PROTECTED_GUEST_PATHS = [
-  "/bin",
-  "/boot",
-  "/dev",
-  "/etc",
-  "/lib",
-  "/lib64",
-  "/proc",
-  "/root",
-  "/run",
-  "/sbin",
-  "/sys",
-  "/usr",
-  "/var",
-];
-
-function requireContextHubMountPath(mountPath: string): string {
-  const path = requireNonEmptyString(mountPath, "mountPath");
-  const segments = path.slice(1).split("/");
-  const isClean =
-    path.startsWith("/") &&
-    segments.every(
-      (segment) => segment !== "" && segment !== "." && segment !== "..",
-    );
-  if (!isClean) {
-    throw new Error("mountPath must be an absolute, clean path");
-  }
-  for (const protectedPath of PROTECTED_GUEST_PATHS) {
-    if (path === protectedPath || path.startsWith(`${protectedPath}/`)) {
-      throw new Error(
-        `mountPath must not be at or under system directory ${protectedPath}`,
-      );
-    }
-  }
-  return path;
-}
-
-function requireContextHubRepo(repo: string): string {
-  if (typeof repo !== "string" || repo === "") {
-    throw new Error("repo must be a non-empty string");
-  }
-  if (repo.trim() !== repo) {
-    throw new Error("repo must not include leading or trailing whitespace");
-  }
-  if (repo.includes(String.fromCharCode(0))) {
-    throw new Error("repo must not contain NUL bytes");
-  }
-  return repo;
-}
-
 export function contextHubMount({
   id,
   mountPath,
@@ -265,9 +215,9 @@ export function contextHubMount({
   const mount: ContextHubMountSpec = {
     id: requireNonEmptyString(id, "id"),
     type: "contexthub",
-    mount_path: requireContextHubMountPath(mountPath),
+    mount_path: requireNonEmptyString(mountPath, "mountPath"),
     contexthub: {
-      repo: requireContextHubRepo(repo),
+      repo: requireNonEmptyString(repo, "repo"),
     },
   };
   if (initialPullOnly !== undefined) {

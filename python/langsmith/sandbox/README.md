@@ -287,7 +287,7 @@ path and kept in sync for the sandbox's lifetime. The caller's API key must have
 access to the repo:
 
 ```python
-from langsmith.sandbox import context_hub_mount, mount_config
+from langsmith.sandbox import AsyncSandboxClient, context_hub_mount, mount_config
 
 mount_cfg = mount_config(
     mounts=[
@@ -299,12 +299,14 @@ mount_cfg = mount_config(
     ],
 )
 
-with client.sandbox(
-    name="context-hub-mount-sandbox",
-    mount_config=mount_cfg,
-) as sb:
-    result = sb.run("ls /memories")
-    print(result.stdout)
+async def main():
+    async with AsyncSandboxClient() as client:
+        async with await client.sandbox(
+            name="context-hub-mount-sandbox",
+            mount_config=mount_cfg,
+        ) as sb:
+            result = await sb.run("ls /memories")
+            print(result.stdout)
 ```
 
 Pass `initial_pull_only=True` to sync once at startup instead of polling for

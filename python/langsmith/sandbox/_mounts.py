@@ -220,52 +220,6 @@ def _copy_git_ref(ref: GitMountRefSpec) -> GitMountRefSpec:
     }
 
 
-_PROTECTED_GUEST_PATHS = (
-    "/bin",
-    "/boot",
-    "/dev",
-    "/etc",
-    "/lib",
-    "/lib64",
-    "/proc",
-    "/root",
-    "/run",
-    "/sbin",
-    "/sys",
-    "/usr",
-    "/var",
-)
-
-
-def _require_context_hub_mount_path(mount_path: str) -> str:
-    """Validate a Context Hub mount path the same way the backend does."""
-    path = _require_non_empty_string(mount_path, "mount_path")
-    if path == "/":
-        raise ValueError("mount_path must not be the filesystem root")
-    # posixpath.normpath preserves a leading "//", which the backend's
-    # filepath.Clean collapses, so check the segments directly instead.
-    if not path.startswith("/") or any(
-        segment in {"", ".", ".."} for segment in path[1:].split("/")
-    ):
-        raise ValueError("mount_path must be an absolute, clean path")
-    for protected in _PROTECTED_GUEST_PATHS:
-        if path == protected or path.startswith(protected + "/"):
-            raise ValueError(
-                f"mount_path must not be at or under system directory {protected}"
-            )
-    return path
-
-
-def _require_context_hub_repo(repo: str) -> str:
-    if not isinstance(repo, str) or repo == "":
-        raise ValueError("repo must be a non-empty string")
-    if repo.strip() != repo:
-        raise ValueError("repo must not include leading or trailing whitespace")
-    if "\x00" in repo:
-        raise ValueError("repo must not contain NUL bytes")
-    return repo
-
-
 def s3_mount(
     *,
     id: str,
@@ -370,14 +324,16 @@ def context_hub_mount(
     The repo's latest commit tree is mirrored into ``mount_path`` and kept in
     sync for the sandbox's lifetime unless ``initial_pull_only`` is set.
     """
-    contexthub: ContextHubMountConfig = {"repo": _require_context_hub_repo(repo)}
+    contexthub: ContextHubMountConfig = {
+        "repo": _require_non_empty_string(repo, "repo"),
+    }
     if initial_pull_only is not None:
         contexthub["initial_pull_only"] = initial_pull_only
 
     mount: ContextHubMountSpec = {
         "id": _require_non_empty_string(id, "id"),
         "type": "contexthub",
-        "mount_path": _require_context_hub_mount_path(mount_path),
+        "mount_path": _require_non_empty_string(mount_path, "mount_path"),
         "contexthub": contexthub,
     }
     if read_only is not None:

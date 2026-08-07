@@ -362,30 +362,6 @@ describe("sandbox proxy config helpers", () => {
     });
   });
 
-  it.each([
-    "",
-    "memories",
-    "/",
-    "/memories/",
-    "/memories/../etc",
-    "//memories",
-    "/etc",
-    "/usr/local/share",
-  ])("contextHubMount rejects invalid mount path %p", (mountPath) => {
-    expect(() =>
-      contextHubMount({ id: "memories", mountPath, repo: "-/my-agent" }),
-    ).toThrow();
-  });
-
-  it.each(["", " -/my-agent", "-/my-agent ", "-/my\0agent"])(
-    "contextHubMount rejects invalid repo %p",
-    (repo) => {
-      expect(() =>
-        contextHubMount({ id: "memories", mountPath: "/memories", repo }),
-      ).toThrow();
-    },
-  );
-
   it("mountConfig accepts Context Hub mounts without provider auth", () => {
     const mount = contextHubMount({
       id: "memories",
