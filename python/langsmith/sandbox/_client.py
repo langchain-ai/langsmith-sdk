@@ -211,7 +211,7 @@ class SandboxClient:
             api_key: API key for authentication. If not provided, uses
                      LANGSMITH_API_KEY environment variable.
             max_retries: Maximum number of retries for transient errors (502, 503,
-                         504), rate limits (429), and connection failures. Set to 0
+                         504), rate limits (429), and transport failures. Set to 0
                          to disable retries. Default: 3.
             headers: Optional default headers attached to every request on this
                      client, including the data-plane ``/execute`` HTTP endpoint
