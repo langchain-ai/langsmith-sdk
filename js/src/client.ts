@@ -4536,12 +4536,14 @@ export class Client implements LangSmithTracingClientInterface {
       inputsSchema,
       outputsSchema,
       metadata,
+      applicationTag,
     }: {
       description?: string;
       dataType?: DataType;
       inputsSchema?: KVMap;
       outputsSchema?: KVMap;
       metadata?: RecordStringAny;
+      applicationTag?: string;
     } = {},
   ): Promise<Dataset> {
     const body: KVMap = {
@@ -4557,6 +4559,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (outputsSchema) {
       body.outputs_schema_definition = outputsSchema;
+    }
+    if (applicationTag) {
+      body.application_tag = applicationTag;
     }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {
@@ -4698,6 +4703,7 @@ export class Client implements LangSmithTracingClientInterface {
     datasetName,
     datasetNameContains,
     metadata,
+    applicationTag,
   }: {
     limit?: number;
     offset?: number;
@@ -4705,6 +4711,7 @@ export class Client implements LangSmithTracingClientInterface {
     datasetName?: string;
     datasetNameContains?: string;
     metadata?: RecordStringAny;
+    applicationTag?: string;
   } = {}): AsyncIterable<Dataset> {
     const path = "/datasets";
     const params = new URLSearchParams({
@@ -4724,6 +4731,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (metadata !== undefined) {
       params.append("metadata", JSON.stringify(metadata));
+    }
+    if (applicationTag !== undefined) {
+      params.append("application_tag", applicationTag);
     }
     for await (const datasets of this._getPaginated<Dataset>(path, params)) {
       yield* datasets;
@@ -6665,6 +6675,7 @@ export class Client implements LangSmithTracingClientInterface {
    * @param options.isArchived - Filter by archived status. Defaults to false (non-archived prompts only).
    * @param options.sortField - Field to sort by. Defaults to "updated_at".
    * @param options.query - Search query to filter prompts by name or description.
+   * @param options.applicationTag - Application tag name to filter prompts by.
    * @returns An async iterable iterator of Prompt objects
    * @example
    * ```typescript
@@ -6689,6 +6700,7 @@ export class Client implements LangSmithTracingClientInterface {
     isArchived?: boolean;
     sortField?: PromptSortField;
     query?: string;
+    applicationTag?: string;
   }): AsyncIterableIterator<Prompt> {
     const params = new URLSearchParams();
     params.append("sort_field", options?.sortField ?? "updated_at");
@@ -6701,6 +6713,10 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (options?.query) {
       params.append("query", options.query);
+    }
+
+    if (options?.applicationTag) {
+      params.append("application_tag", options.applicationTag);
     }
 
     for await (const prompts of this._getPaginated<Prompt, ListPromptsResponse>(
@@ -6765,6 +6781,7 @@ export class Client implements LangSmithTracingClientInterface {
    * @param options.readme - Markdown content for the prompt's README
    * @param options.tags - Array of tags to categorize the prompt
    * @param options.isPublic - Whether the prompt should be public. Requires a LangChain Hub handle.
+   * @param options.applicationTag - Application tag name to assign.
    * @returns A Promise that resolves to the created Prompt object
    * @throws {Error} If creating a public prompt without a LangChain Hub handle, or if owner doesn't match current tenant
    * @example
@@ -6789,6 +6806,7 @@ export class Client implements LangSmithTracingClientInterface {
       readme?: string;
       tags?: string[];
       isPublic?: boolean;
+      applicationTag?: string;
     },
   ): Promise<Prompt> {
     const settings = await this._getSettings();
@@ -6811,6 +6829,9 @@ export class Client implements LangSmithTracingClientInterface {
       ...(options?.description && { description: options.description }),
       ...(options?.readme && { readme: options.readme }),
       ...(options?.tags && { tags: options.tags }),
+      ...(options?.applicationTag && {
+        application_tag: options.applicationTag,
+      }),
       is_public: !!options?.isPublic,
     };
 
@@ -7166,6 +7187,7 @@ export class Client implements LangSmithTracingClientInterface {
       tags?: string[];
       isPublic?: boolean;
       isArchived?: boolean;
+      applicationTag?: string;
     },
   ): Promise<Record<string, any>> {
     if (!(await this.promptExists(promptIdentifier))) {
@@ -7186,8 +7208,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.isPublic !== undefined) payload.is_public = options.isPublic;
     if (options?.isArchived !== undefined)
       payload.is_archived = options.isArchived;
+    if (options?.applicationTag !== undefined)
+      payload.application_tag = options.applicationTag;
 
-    // Check if payload is empty
     if (Object.keys(payload).length === 0) {
       throw new Error("No valid update options provided");
     }
@@ -7409,6 +7432,7 @@ export class Client implements LangSmithTracingClientInterface {
       tags?: string[];
       commitTags?: string | string[];
       commitDescription?: string;
+      applicationTag?: string;
     },
   ): Promise<string> {
     // Create or update prompt metadata
@@ -7424,6 +7448,7 @@ export class Client implements LangSmithTracingClientInterface {
           readme: options?.readme,
           tags: options?.tags,
           isPublic: options?.isPublic,
+          applicationTag: options?.applicationTag,
         });
       }
     } else {
@@ -7432,6 +7457,7 @@ export class Client implements LangSmithTracingClientInterface {
         readme: options?.readme,
         tags: options?.tags,
         isPublic: options?.isPublic,
+        applicationTag: options?.applicationTag,
       });
     }
 
