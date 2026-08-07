@@ -443,6 +443,61 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
             assert body_2["patch"][0]["outputs"]["output"] == expected
 
 
+def test_process_inputs_failure_drops_run(mock_client: Client) -> None:
+    """A failing ``process_inputs`` drops the run: nothing is POSTed, and the
+    wrapped function still returns normally."""
+    secret = "super-secret-value"
+
+    def failing_redactor(inputs: dict) -> dict:
+        raise ValueError("redactor boom")
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_inputs=failing_redactor)
+        def login(username: str, password: str) -> str:
+            return f"Welcome, {username}"
+
+        result = login("user1", secret)
+
+    # The user's function is unaffected by the tracing failure.
+    assert result == "Welcome, user1"
+
+    # Fail closed: no run (and therefore no cleartext) reaches LangSmith.
+    assert _get_calls(mock_client, minimum=0) == [], (
+        "run must be dropped, not posted, when process_inputs fails"
+    )
+
+
+def test_process_outputs_failure_withholds_outputs(mock_client: Client) -> None:
+    """A failing ``process_outputs`` withholds outputs (the run was already
+    created with inputs, so it can't be fully dropped)."""
+    secret = "token=super-secret-value"
+
+    def failing_redactor(outputs: Any) -> dict:
+        raise ValueError("redactor boom")
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_outputs=failing_redactor)
+        def make_token(user: str) -> str:
+            return secret
+
+        result = make_token("user1")
+
+    assert result == secret
+
+    datas = _get_data(_get_calls(mock_client, minimum=0))
+    # No posted payload may carry the raw (unredacted) outputs...
+    assert all(not payload.get("outputs") for _, payload in datas), (
+        "outputs must be withheld when process_outputs fails"
+    )
+    # ...but the run is still ended/patched (parity with the JS SDK), not left
+    # dangling.
+    assert any(payload.get("end_time") for _, payload in datas), (
+        "run must still be ended when process_outputs fails"
+    )
+
+
 @patch("langsmith.run_trees.Client", autospec=True)
 def test_traceable_iterator_noargs(_: MagicMock) -> None:
     @traceable

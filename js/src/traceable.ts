@@ -141,15 +141,29 @@ const handleRunInputs = <Args extends unknown[]>(
   processInputs: (
     inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
-): KVMap => {
-  try {
-    return processInputs(inputs);
-  } catch (e) {
-    console.error(
-      "Error occurred during processInputs. Sending raw inputs:",
+  runTree: RunTree,
+): KVMap | Promise<KVMap> => {
+  // Fail closed: if the redactor throws or rejects, drop the run rather than
+  // upload raw inputs (mirrors the client-level anonymizer).
+  const drop = (e: unknown) => {
+    console.warn(
+      `processInputs failed for run "${runTree.name}" (${runTree.id}); ` +
+        `dropping run to avoid uploading unredacted inputs:`,
       e,
     );
+    runTree.dropped = true;
     return inputs;
+  };
+  try {
+    const processed = processInputs(inputs);
+    if (isThenable(processed)) {
+      // Make postRun await inputs so a rejection is seen and drops the run.
+      runTree._awaitInputsOnPost = true;
+      return Promise.resolve(processed).catch(drop);
+    }
+    return processed;
+  } catch (e) {
+    return drop(e);
   }
 };
 
@@ -254,6 +268,27 @@ async function handleRunOutputs<Return>(params: {
       ? Promise.all(runTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
       : Promise.resolve();
 
+  // Fail closed: the output redactor failed, so end with empty outputs
+  const endOutputsWithheld = async (e: unknown) => {
+    console.error(
+      "Error occurred during processOutputs. Withholding outputs:",
+      e,
+    );
+    try {
+      await childRunEndPromises;
+      await runTree?.end({});
+    } catch (endErr) {
+      console.error("Error occurred during runTree?.end.", endErr);
+    }
+  };
+  const finalize = async () => {
+    try {
+      await handleEnd({ runTree, postRunPromise, on_end, deferredInputs });
+    } catch (e) {
+      console.error("Error occurred during handleEnd.", e);
+    }
+  };
+
   try {
     outputs = processOutputsFn(outputs);
     // TODO: Investigate making this behavior for all returned promises
@@ -265,37 +300,13 @@ async function handleRunOutputs<Return>(params: {
           await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
-        .catch(async (e: unknown) => {
-          console.error(
-            "Error occurred during processOutputs. Sending unprocessed outputs:",
-            e,
-          );
-          try {
-            await childRunEndPromises;
-            await runTree?.end(outputs);
-          } catch (e) {
-            console.error("Error occurred during runTree?.end.", e);
-          }
-        })
-        .finally(async () => {
-          try {
-            await handleEnd({
-              runTree,
-              postRunPromise,
-              on_end,
-              deferredInputs,
-            });
-          } catch (e) {
-            console.error("Error occurred during handleEnd.", e);
-          }
-        });
+        .catch(endOutputsWithheld)
+        .finally(finalize);
       return;
     }
   } catch (e) {
-    console.error(
-      "Error occurred during processOutputs. Sending unprocessed outputs:",
-      e,
-    );
+    void endOutputsWithheld(e).then(finalize);
+    return;
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
@@ -359,10 +370,8 @@ const getTracingRunTree = <Args extends unknown[]>(
       | undefined,
   );
   runTree.attachments = attached;
-  const processedInputs = handleRunInputs<Args>(args, processInputs);
-  if (isAsyncFn(processInputs)) {
-    runTree._awaitInputsOnPost = true;
-  }
+  // handleRunInputs sets _awaitInputsOnPost itself for promise-returning redactors.
+  const processedInputs = handleRunInputs<Args>(args, processInputs, runTree);
   runTree.inputs = processedInputs;
 
   const invocationParams = getInvocationParams?.(...inputs);
