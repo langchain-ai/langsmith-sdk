@@ -10,7 +10,19 @@ export { uuid7FromTime } from "./utils/_uuid.js";
 /**
  * Generate a random UUID v7 string.
  */
-export function uuid7(): string {
+export function uuid7(time: undefined): string;
+
+/**
+ * Generate a random UUID v7 string.
+ * @deprecated Use `uuid7FromTime` instead for generating UUID v7 from a specific time.
+ */
+export function uuid7(): string;
+
+/**
+ * Generate a random UUID v7 string.
+ * @deprecated Use `uuid7FromTime` instead for generating UUID v7 from a specific time.
+ */
+export function uuid7(_?: string): string {
   return uuidv7();
 }
 
