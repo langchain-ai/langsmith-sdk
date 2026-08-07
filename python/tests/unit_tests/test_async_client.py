@@ -7,6 +7,7 @@ import pathlib
 import uuid
 import warnings
 from datetime import datetime
+from typing import Any
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -16,6 +17,7 @@ import pytest
 import requests
 
 from langsmith import AsyncClient
+from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 
@@ -1137,3 +1139,49 @@ async def test_update_example_rejects_attachment_ops_without_flag(
             uuid4(),
             attachments_operations=ls_schemas.AttachmentsOperations(retain=["f"]),
         )
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_update_example_materializes_streaming_multipart_encoder(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    """Over ~20MB the helper returns the encoder itself; httpx only takes bytes."""
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"count": 1}
+    mock_httpx_client.request.return_value = response
+
+    example_id = uuid4()
+    dataset_id = uuid4()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(
+        instance_flags={"dataset_examples_multipart_enabled": True}
+    )
+
+    from requests_toolbelt.multipart import encoder as rqtb_encoder
+
+    def _stream_instead_of_bytes(*args: Any, **kwargs: Any):
+        # Mirrors the >20MB branch: data is the unconsumed encoder, not bytes.
+        enc = rqtb_encoder.MultipartEncoder(
+            [("f", ("f", b"hello", "text/plain"))], boundary="testboundary"
+        )
+        return enc, enc, {}
+
+    with patch.object(ls_client, "_prepare_multipart_data", _stream_instead_of_bytes):
+        await client.update_example(
+            example_id,
+            inputs={"a": 1},
+            dataset_id=dataset_id,
+            attachments={"f": ("text/plain", b"hello")},
+        )
+
+    content = mock_httpx_client.request.call_args.kwargs["content"]
+    assert isinstance(content, bytes)
+    assert b"hello" in content

@@ -1186,6 +1186,11 @@ class AsyncClient:
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
+        # Over ~20MB _prepare_multipart_data returns the encoder itself for the
+        # sync path to stream; httpx rejects that object, and retries could not
+        # rewind it, so materialize.
+        if not isinstance(data, (bytes, str)):
+            data = encoder.to_string()
         try:
             response = await self._arequest_with_retries(
                 "PATCH",
