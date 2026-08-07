@@ -36,6 +36,8 @@ export interface TracerSessionResult extends TracerSession {
   last_run_start_time?: number;
   // Feedback stats for the session.
   feedback_stats?: Record<string, unknown>;
+  // Summary feedback stats for the project.
+  session_feedback_stats?: Record<string, unknown>;
   // Facets for the runs in the session.
   run_facets?: KVMap[];
 }
