@@ -1088,6 +1088,9 @@ class AsyncClient:
         metadata: Optional[dict] = None,
         split: Optional[Union[str, list[str]]] = None,
         dataset_id: Optional[ls_client.ID_TYPE] = None,
+        attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> dict[str, Any]:
         """Update an example.
 
@@ -1100,22 +1103,46 @@ class AsyncClient:
                 'validation'.
             dataset_id: The ID of the dataset the example belongs to. Read from
                 the example when omitted.
+            attachments_operations: The attachments operations to perform.
+            attachments: The attachments to add to the example.
+            dangerously_allow_filesystem: Whether to allow attachments to be
+                read from local filesystem paths.
 
         Returns:
             The updated example.
         """
+        info = await self.info()
+        multipart_enabled = (info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        )
+        if attachments_operations is not None and not multipart_enabled:
+            raise ValueError(
+                "Your LangSmith deployment does not allow using the attachment "
+                "operations, please upgrade your deployment to the latest version."
+            )
         example_dict = dict(
             inputs=inputs,
             outputs=outputs,
             id=example_id,
             metadata=metadata,
             split=split,
+            attachments_operations=attachments_operations,
+            attachments=attachments,
         )
         example = ls_schemas.ExampleUpdate(
             **{k: v for k, v in example_dict.items() if v is not None}
         )
         if dataset_id is None:
             dataset_id = (await self.read_example(example_id)).dataset_id
+
+        if multipart_enabled:
+            return dict(
+                await self._update_examples_multipart(
+                    dataset_id=dataset_id,
+                    updates=[example],
+                    dangerously_allow_filesystem=dangerously_allow_filesystem,
+                )
+            )
 
         response = await self._arequest_with_retries(
             "PATCH",
@@ -1132,6 +1159,43 @@ class AsyncClient:
             ),
         )
         ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    async def _update_examples_multipart(
+        self,
+        *,
+        dataset_id: ls_client.ID_TYPE,
+        updates: Optional[list[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Update examples using the multipart examples endpoint."""
+        info = await self.info()
+        if not (info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith deployment does not allow using the latest examples "
+                "endpoints, please upgrade your deployment to the latest version or "
+                "downgrade your SDK to langsmith<0.3.9."
+            )
+        if updates is None:
+            updates = []
+
+        encoder, data, opened_files_dict = ls_client._prepare_multipart_data(
+            updates,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+        try:
+            response = await self._arequest_with_retries(
+                "PATCH",
+                ls_client._dataset_examples_path(self._api_url, dataset_id),
+                content=data,
+                headers={"Content-Type": encoder.content_type},
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            ls_client._close_files(list(opened_files_dict.values()))
         return response.json()
 
     async def read_example(self, example_id: ls_client.ID_TYPE) -> ls_schemas.Example:

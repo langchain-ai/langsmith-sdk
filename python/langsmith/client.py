@@ -6413,184 +6413,11 @@ class Client:
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
     ) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
-        parts: list[MultipartPart] = []
-        opened_files_dict: dict[str, io.BufferedReader] = {}
-        if include_dataset_id:
-            if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
-                raise ValueError(
-                    "The examples must be of type ExampleUpsertWithAttachments"
-                    " if include_dataset_id is True"
-                )
-            dataset_id = examples[0].dataset_id
-
-        for example in examples:
-            if (
-                not isinstance(example, ls_schemas.ExampleCreate)
-                and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
-                and not isinstance(example, ls_schemas.ExampleUpdate)
-            ):
-                raise ValueError(
-                    "The examples must be of type ExampleCreate"
-                    " or ExampleUpsertWithAttachments"
-                    " or ExampleUpdate"
-                )
-            if example.id is not None:
-                example_id = str(example.id)
-            else:
-                example_id = str(uuid.uuid4())
-
-            if isinstance(example, ls_schemas.ExampleUpdate):
-                created_at = None
-            else:
-                created_at = example.created_at
-
-            if isinstance(example, ls_schemas.ExampleCreate):
-                use_source_run_io = example.use_source_run_io
-                use_source_run_attachments = example.use_source_run_attachments
-                source_run_id = example.source_run_id
-            else:
-                use_source_run_io, use_source_run_attachments, source_run_id = (
-                    None,
-                    None,
-                    None,
-                )
-
-            example_body = {
-                **({"dataset_id": dataset_id} if include_dataset_id else {}),
-                **({"created_at": created_at} if created_at is not None else {}),
-                **(
-                    {"use_source_run_io": use_source_run_io}
-                    if use_source_run_io
-                    else {}
-                ),
-                **(
-                    {"use_source_run_attachments": use_source_run_attachments}
-                    if use_source_run_attachments
-                    else {}
-                ),
-                **({"source_run_id": source_run_id} if source_run_id else {}),
-            }
-            if example.metadata is not None:
-                example_body["metadata"] = example.metadata
-            if example.split is not None:
-                example_body["split"] = example.split
-            valb = _dumps_json(example_body)
-
-            parts.append(
-                (
-                    f"{example_id}",
-                    (
-                        None,
-                        valb,
-                        "application/json",
-                        {},
-                    ),
-                )
-            )
-
-            if example.inputs is not None:
-                inputsb = _dumps_json(example.inputs)
-                parts.append(
-                    (
-                        f"{example_id}.inputs",
-                        (
-                            None,
-                            inputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                )
-
-            if example.outputs is not None:
-                outputsb = _dumps_json(example.outputs)
-                parts.append(
-                    (
-                        f"{example_id}.outputs",
-                        (
-                            None,
-                            outputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                )
-
-            if example.attachments:
-                for name, attachment in example.attachments.items():
-                    if isinstance(attachment, dict):
-                        mime_type = attachment["mime_type"]
-                        attachment_data = attachment["data"]
-                    else:
-                        mime_type, attachment_data = attachment
-                    if isinstance(attachment_data, Path):
-                        if dangerously_allow_filesystem:
-                            try:
-                                file_size = os.path.getsize(attachment_data)
-                                file = open(attachment_data, "rb")
-                            except FileNotFoundError:
-                                logger.warning(
-                                    "Attachment file not found for example %s: %s",
-                                    example_id,
-                                    attachment_data,
-                                )
-                                continue
-                            opened_files_dict[
-                                str(attachment_data) + str(uuid.uuid4())
-                            ] = file
-
-                            parts.append(
-                                (
-                                    f"{example_id}.attachment.{name}",
-                                    (
-                                        None,
-                                        file,  # type: ignore[arg-type]
-                                        f"{mime_type}; length={file_size}",
-                                        {},
-                                    ),
-                                )
-                            )
-                        else:
-                            raise ValueError(
-                                "dangerously_allow_filesystem must be True to upload files from the filesystem"
-                            )
-                    else:
-                        parts.append(
-                            (
-                                f"{example_id}.attachment.{name}",
-                                (
-                                    None,
-                                    attachment_data,
-                                    f"{mime_type}; length={len(attachment_data)}",
-                                    {},
-                                ),
-                            )
-                        )
-
-            if (
-                isinstance(example, ls_schemas.ExampleUpdate)
-                and example.attachments_operations
-            ):
-                attachments_operationsb = _dumps_json(example.attachments_operations)
-                parts.append(
-                    (
-                        f"{example_id}.attachments_operations",
-                        (
-                            None,
-                            attachments_operationsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                )
-
-        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-        if encoder.len <= 20_000_000:  # ~20 MB
-            data = encoder.to_string()
-        else:
-            data = encoder
-
-        return encoder, data, opened_files_dict
+        return _prepare_multipart_data(
+            examples,
+            include_dataset_id=include_dataset_id,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
 
     def update_examples_multipart(
         self,
@@ -11710,6 +11537,191 @@ def _close_files(files: list[io.BufferedReader]) -> None:
         except Exception:
             logger.debug("Could not close file: %s", file.name)
             pass
+
+
+def _prepare_multipart_data(
+    examples: Union[
+        list[ls_schemas.ExampleCreate]
+        | list[ls_schemas.ExampleUpsertWithAttachments]
+        | list[ls_schemas.ExampleUpdate],
+    ],
+    include_dataset_id: bool = False,
+    dangerously_allow_filesystem: bool = False,
+) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
+    parts: list[MultipartPart] = []
+    opened_files_dict: dict[str, io.BufferedReader] = {}
+    if include_dataset_id:
+        if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
+            raise ValueError(
+                "The examples must be of type ExampleUpsertWithAttachments"
+                " if include_dataset_id is True"
+            )
+        dataset_id = examples[0].dataset_id
+
+    for example in examples:
+        if (
+            not isinstance(example, ls_schemas.ExampleCreate)
+            and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
+            and not isinstance(example, ls_schemas.ExampleUpdate)
+        ):
+            raise ValueError(
+                "The examples must be of type ExampleCreate"
+                " or ExampleUpsertWithAttachments"
+                " or ExampleUpdate"
+            )
+        if example.id is not None:
+            example_id = str(example.id)
+        else:
+            example_id = str(uuid.uuid4())
+
+        if isinstance(example, ls_schemas.ExampleUpdate):
+            created_at = None
+        else:
+            created_at = example.created_at
+
+        if isinstance(example, ls_schemas.ExampleCreate):
+            use_source_run_io = example.use_source_run_io
+            use_source_run_attachments = example.use_source_run_attachments
+            source_run_id = example.source_run_id
+        else:
+            use_source_run_io, use_source_run_attachments, source_run_id = (
+                None,
+                None,
+                None,
+            )
+
+        example_body = {
+            **({"dataset_id": dataset_id} if include_dataset_id else {}),
+            **({"created_at": created_at} if created_at is not None else {}),
+            **({"use_source_run_io": use_source_run_io} if use_source_run_io else {}),
+            **(
+                {"use_source_run_attachments": use_source_run_attachments}
+                if use_source_run_attachments
+                else {}
+            ),
+            **({"source_run_id": source_run_id} if source_run_id else {}),
+        }
+        if example.metadata is not None:
+            example_body["metadata"] = example.metadata
+        if example.split is not None:
+            example_body["split"] = example.split
+        valb = _dumps_json(example_body)
+
+        parts.append(
+            (
+                f"{example_id}",
+                (
+                    None,
+                    valb,
+                    "application/json",
+                    {},
+                ),
+            )
+        )
+
+        if example.inputs is not None:
+            inputsb = _dumps_json(example.inputs)
+            parts.append(
+                (
+                    f"{example_id}.inputs",
+                    (
+                        None,
+                        inputsb,
+                        "application/json",
+                        {},
+                    ),
+                )
+            )
+
+        if example.outputs is not None:
+            outputsb = _dumps_json(example.outputs)
+            parts.append(
+                (
+                    f"{example_id}.outputs",
+                    (
+                        None,
+                        outputsb,
+                        "application/json",
+                        {},
+                    ),
+                )
+            )
+
+        if example.attachments:
+            for name, attachment in example.attachments.items():
+                if isinstance(attachment, dict):
+                    mime_type = attachment["mime_type"]
+                    attachment_data = attachment["data"]
+                else:
+                    mime_type, attachment_data = attachment
+                if isinstance(attachment_data, Path):
+                    if dangerously_allow_filesystem:
+                        try:
+                            file_size = os.path.getsize(attachment_data)
+                            file = open(attachment_data, "rb")
+                        except FileNotFoundError:
+                            logger.warning(
+                                "Attachment file not found for example %s: %s",
+                                example_id,
+                                attachment_data,
+                            )
+                            continue
+                        opened_files_dict[str(attachment_data) + str(uuid.uuid4())] = (
+                            file
+                        )
+
+                        parts.append(
+                            (
+                                f"{example_id}.attachment.{name}",
+                                (
+                                    None,
+                                    file,  # type: ignore[arg-type]
+                                    f"{mime_type}; length={file_size}",
+                                    {},
+                                ),
+                            )
+                        )
+                    else:
+                        raise ValueError(
+                            "dangerously_allow_filesystem must be True to upload files from the filesystem"
+                        )
+                else:
+                    parts.append(
+                        (
+                            f"{example_id}.attachment.{name}",
+                            (
+                                None,
+                                attachment_data,
+                                f"{mime_type}; length={len(attachment_data)}",
+                                {},
+                            ),
+                        )
+                    )
+
+        if (
+            isinstance(example, ls_schemas.ExampleUpdate)
+            and example.attachments_operations
+        ):
+            attachments_operationsb = _dumps_json(example.attachments_operations)
+            parts.append(
+                (
+                    f"{example_id}.attachments_operations",
+                    (
+                        None,
+                        attachments_operationsb,
+                        "application/json",
+                        {},
+                    ),
+                )
+            )
+
+    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
+    if encoder.len <= 20_000_000:  # ~20 MB
+        data = encoder.to_string()
+    else:
+        data = encoder
+
+    return encoder, data, opened_files_dict
 
 
 def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:

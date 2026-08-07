@@ -1029,6 +1029,7 @@ async def test_update_example_sends_dataset_id_and_updates(
     mock_httpx_client.request.return_value = response
 
     client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(instance_flags={})
     result = await client.update_example(
         example_id,
         inputs={"a": 1},
@@ -1076,9 +1077,63 @@ async def test_update_example_reads_dataset_id_when_omitted(
     mock_httpx_client.request.side_effect = [read_response, patch_response]
 
     client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(instance_flags={})
     await client.update_example(example_id, inputs={"a": 1})
 
     read_call, patch_call = mock_httpx_client.request.call_args_list
     assert read_call.args[0] == "GET"
     assert patch_call.args[0] == "PATCH"
     assert json.loads(patch_call.kwargs["content"])["dataset_id"] == str(dataset_id)
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_update_example_uses_multipart_when_flag_enabled(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    example_id = uuid4()
+    dataset_id = uuid4()
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"count": 1}
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(
+        instance_flags={"dataset_examples_multipart_enabled": True}
+    )
+    result = await client.update_example(
+        example_id,
+        inputs={"a": 1},
+        dataset_id=dataset_id,
+        attachments={"f": ("text/plain", b"hello")},
+    )
+
+    call = mock_httpx_client.request.call_args
+    assert call.args[0] == "PATCH"
+    assert call.args[1].endswith(f"/platform/datasets/{dataset_id}/examples")
+    assert call.kwargs["headers"]["Content-Type"].startswith("multipart/form-data")
+    assert b"hello" in call.kwargs["content"]
+    assert result == {"count": 1}
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_update_example_rejects_attachment_ops_without_flag(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_client_cls.return_value = AsyncMock()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(instance_flags={})
+
+    with pytest.raises(ValueError, match="attachment"):
+        await client.update_example(
+            uuid4(),
+            attachments_operations=ls_schemas.AttachmentsOperations(retain=["f"]),
+        )
