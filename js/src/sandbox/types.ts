@@ -419,8 +419,37 @@ export interface GitMountSpec {
   git: GitMountConfig;
 }
 
+/** Context Hub configuration for a sandbox mount. */
+export interface ContextHubMountConfig {
+  /**
+   * Context Hub repository to sync, as `owner/repo` (e.g. `-/my-agent`, where
+   * `-` is the current workspace).
+   */
+  repo: string;
+  /** Sync once at startup instead of polling for updates. */
+  initial_pull_only?: boolean;
+}
+
+/** Context Hub-backed sandbox mount specification. */
+export interface ContextHubMountSpec {
+  /** Stable mount identifier. */
+  id: string;
+  /** Mount type. */
+  type: "contexthub";
+  /** Absolute path inside the sandbox where the repo tree appears. */
+  mount_path: string;
+  /** Whether the mount should be pull-only. */
+  read_only?: boolean;
+  /** Context Hub mount configuration. */
+  contexthub: ContextHubMountConfig;
+}
+
 /** Sandbox mount specification. */
-export type SandboxMount = S3MountSpec | GCSMountSpec | GitMountSpec;
+export type SandboxMount =
+  | S3MountSpec
+  | GCSMountSpec
+  | GitMountSpec
+  | ContextHubMountSpec;
 
 /** AWS credentials used by the backend to authenticate S3 mounts. */
 export interface SandboxAwsMountAuthConfig {

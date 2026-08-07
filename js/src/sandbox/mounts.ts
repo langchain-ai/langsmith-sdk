@@ -1,4 +1,5 @@
 import type {
+  ContextHubMountSpec,
   GCSMountSpec,
   GitMountRefSpec,
   GitMountSpec,
@@ -198,6 +199,86 @@ export function gcsMount({
   return mount;
 }
 
+const PROTECTED_GUEST_PATHS = [
+  "/bin",
+  "/boot",
+  "/dev",
+  "/etc",
+  "/lib",
+  "/lib64",
+  "/proc",
+  "/root",
+  "/run",
+  "/sbin",
+  "/sys",
+  "/usr",
+  "/var",
+];
+
+function requireContextHubMountPath(mountPath: string): string {
+  const path = requireNonEmptyString(mountPath, "mountPath");
+  const segments = path.slice(1).split("/");
+  const isClean =
+    path.startsWith("/") &&
+    segments.every(
+      (segment) => segment !== "" && segment !== "." && segment !== "..",
+    );
+  if (!isClean) {
+    throw new Error("mountPath must be an absolute, clean path");
+  }
+  for (const protectedPath of PROTECTED_GUEST_PATHS) {
+    if (path === protectedPath || path.startsWith(`${protectedPath}/`)) {
+      throw new Error(
+        `mountPath must not be at or under system directory ${protectedPath}`,
+      );
+    }
+  }
+  return path;
+}
+
+function requireContextHubRepo(repo: string): string {
+  if (typeof repo !== "string" || repo === "") {
+    throw new Error("repo must be a non-empty string");
+  }
+  if (repo.trim() !== repo) {
+    throw new Error("repo must not include leading or trailing whitespace");
+  }
+  if (repo.includes(String.fromCharCode(0))) {
+    throw new Error("repo must not contain NUL bytes");
+  }
+  return repo;
+}
+
+export function contextHubMount({
+  id,
+  mountPath,
+  repo,
+  initialPullOnly,
+  readOnly,
+}: {
+  id: string;
+  mountPath: string;
+  repo: string;
+  initialPullOnly?: boolean;
+  readOnly?: boolean;
+}): ContextHubMountSpec {
+  const mount: ContextHubMountSpec = {
+    id: requireNonEmptyString(id, "id"),
+    type: "contexthub",
+    mount_path: requireContextHubMountPath(mountPath),
+    contexthub: {
+      repo: requireContextHubRepo(repo),
+    },
+  };
+  if (initialPullOnly !== undefined) {
+    mount.contexthub.initial_pull_only = initialPullOnly;
+  }
+  if (readOnly !== undefined) {
+    mount.read_only = readOnly;
+  }
+  return mount;
+}
+
 function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
   if (!Array.isArray(mounts) || mounts.length === 0) {
     throw new Error("mounts must be a non-empty array of mount objects");
@@ -206,8 +287,15 @@ function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
     if (mount === null || typeof mount !== "object" || Array.isArray(mount)) {
       throw new Error("mounts must be a non-empty array of mount objects");
     }
-    if (mount.type !== "s3" && mount.type !== "gcs" && mount.type !== "git") {
-      throw new Error("mountConfig only supports s3, gcs, and git mounts");
+    if (
+      mount.type !== "s3" &&
+      mount.type !== "gcs" &&
+      mount.type !== "git" &&
+      mount.type !== "contexthub"
+    ) {
+      throw new Error(
+        "mountConfig only supports s3, gcs, git, and contexthub mounts",
+      );
     }
     rejectProviderCredentialsInMount(mount);
     return mount;

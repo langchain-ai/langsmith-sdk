@@ -8,6 +8,7 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     SandboxClient,
     aws_auth,
+    context_hub_mount,
     gcp_auth,
     gcs_mount,
     git_mount,
@@ -255,6 +256,72 @@ def test_mount_config_accepts_git_mount_without_provider_auth() -> None:
         id="repo",
         mount_path="/mnt/repo",
         remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+    )
+
+    assert mount_config(mounts=[mount]) == {
+        "auth": {},
+        "mounts": [mount],
+    }
+
+
+def test_context_hub_mount_serializes_backend_shape() -> None:
+    assert context_hub_mount(
+        id="memories",
+        mount_path="/memories",
+        repo="-/my-agent",
+        initial_pull_only=True,
+        read_only=True,
+    ) == {
+        "id": "memories",
+        "type": "contexthub",
+        "mount_path": "/memories",
+        "read_only": True,
+        "contexthub": {"repo": "-/my-agent", "initial_pull_only": True},
+    }
+
+
+def test_context_hub_mount_omits_optional_fields() -> None:
+    assert context_hub_mount(
+        id="memories",
+        mount_path="/memories",
+        repo="-/my-agent",
+    ) == {
+        "id": "memories",
+        "type": "contexthub",
+        "mount_path": "/memories",
+        "contexthub": {"repo": "-/my-agent"},
+    }
+
+
+@pytest.mark.parametrize(
+    "mount_path",
+    [
+        "",
+        "memories",
+        "/",
+        "/memories/",
+        "/memories/../etc",
+        "//memories",
+        "/etc",
+        "/usr/local/share",
+    ],
+)
+def test_context_hub_mount_rejects_invalid_mount_paths(mount_path: str) -> None:
+    with pytest.raises(ValueError):
+        context_hub_mount(id="memories", mount_path=mount_path, repo="-/my-agent")
+
+
+@pytest.mark.parametrize("repo", ["", " -/my-agent", "-/my-agent ", "-/my\x00agent"])
+def test_context_hub_mount_rejects_invalid_repos(repo: str) -> None:
+    with pytest.raises(ValueError):
+        context_hub_mount(id="memories", mount_path="/memories", repo=repo)
+
+
+def test_mount_config_accepts_context_hub_mount_without_provider_auth() -> None:
+    mount = context_hub_mount(
+        id="memories",
+        mount_path="/memories",
+        repo="-/my-agent",
     )
 
     assert mount_config(mounts=[mount]) == {
