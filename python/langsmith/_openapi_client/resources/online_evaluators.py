@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from ..types import (
     OnlineEvaluatorType,

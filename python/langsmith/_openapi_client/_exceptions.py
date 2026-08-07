@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing_extensions import Literal
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 __all__ = [
     "BadRequestError",

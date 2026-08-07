@@ -7,7 +7,7 @@ from typing import Union, Iterable, Optional
 from datetime import datetime
 from typing_extensions import Literal, overload
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, required_args, maybe_transform, async_maybe_transform

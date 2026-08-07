@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, omit, not_given
 from ..._utils import path_template, maybe_transform, async_maybe_transform

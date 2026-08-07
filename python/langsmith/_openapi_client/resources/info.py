@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
+from langsmith._internal._httpx import httpx
 
 from .._types import Body, Query, Headers, NotGiven, not_given
 from .._compat import cached_property
