@@ -9,6 +9,7 @@ import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
 import {
   awsAuth,
+  contextHubMount,
   gitMount,
   gcpAuth,
   gcsMount,
@@ -320,6 +321,50 @@ describe("sandbox proxy config helpers", () => {
       id: "repo",
       mountPath: "/mnt/repo",
       remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+    });
+
+    expect(mountConfig({ mounts: [mount] })).toEqual({
+      auth: {},
+      mounts: [mount],
+    });
+  });
+
+  it("contextHubMount serializes the backend shape", () => {
+    expect(
+      contextHubMount({
+        id: "memories",
+        mountPath: "/memories",
+        repo: "-/my-agent",
+        initialPullOnly: true,
+      }),
+    ).toEqual({
+      id: "memories",
+      type: "contexthub",
+      mount_path: "/memories",
+      contexthub: { repo: "-/my-agent", initial_pull_only: true },
+    });
+  });
+
+  it("contextHubMount omits optional fields", () => {
+    expect(
+      contextHubMount({
+        id: "memories",
+        mountPath: "/memories",
+        repo: "-/my-agent",
+      }),
+    ).toEqual({
+      id: "memories",
+      type: "contexthub",
+      mount_path: "/memories",
+      contexthub: { repo: "-/my-agent" },
+    });
+  });
+
+  it("mountConfig accepts Context Hub mounts without provider auth", () => {
+    const mount = contextHubMount({
+      id: "memories",
+      mountPath: "/memories",
+      repo: "-/my-agent",
     });
 
     expect(mountConfig({ mounts: [mount] })).toEqual({
