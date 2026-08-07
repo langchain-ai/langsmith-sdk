@@ -21,6 +21,55 @@ import { parseHubIdentifier } from "../utils/prompts.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
 
 describe("Client", () => {
+  describe("resource tags on create", () => {
+    const tagValueIds = [
+      "550e8400-e29b-41d4-a716-446655440000",
+      "550e8400-e29b-41d4-a716-446655440001",
+    ];
+
+    it("includes tag value IDs when creating a project", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createProject({ projectName: "test-project", tagValueIds });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
+        tagValueIds,
+      );
+    });
+
+    it("includes tag value IDs when creating a dataset", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createDataset("test-dataset", { tagValueIds });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
+        tagValueIds,
+      );
+    });
+  });
+
   describe("createFeedback", () => {
     it("can opt out of extending trace retention", async () => {
       const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
