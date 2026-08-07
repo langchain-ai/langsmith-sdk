@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import warnings
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -240,6 +241,28 @@ def _process_chat_completion(outputs: Any):
         return {"output": outputs}
 
 
+def _is_async_or_wraps_async(func: Callable) -> bool:
+    """Check whether *func* or any function in its ``__wrapped__`` chain is async.
+
+    Some instrumentation libraries (e.g. OpenTelemetry via *wrapt*) replace an
+    async method with a synchronous closure that calls the original coroutine
+    function internally and returns the resulting coroutine object.  The sync
+    wrapper hides the async nature from ``inspect.iscoroutinefunction``, but
+    ``wrapt.FunctionWrapper`` (and ``BoundFunctionWrapper``) still expose the
+    original function through the ``__wrapped__`` attribute.  Walking that chain
+    lets ``_get_wrapper`` pick the correct ``acreate`` path even when the outer
+    callable doesn't look async.
+    """
+    seen: set[int] = set()
+    f: Any = func
+    while f is not None and id(f) not in seen:
+        seen.add(id(f))
+        if run_helpers.is_async(f):
+            return True
+        f = getattr(f, "__wrapped__", None)
+    return False
+
+
 def _get_wrapper(
     original_create: Callable,
     name: str,
@@ -279,10 +302,28 @@ def _get_wrapper(
             ),
             **tracing_extra,
         )
-        result = await decorator(original_create)(*args, **kwargs)
+        # When a third-party library (e.g. OpenTelemetry) has already wrapped
+        # original_create with a sync closure that returns a coroutine,
+        # run_helpers.traceable would detect a sync function and record the raw
+        # coroutine object as the trace output instead of the real response.
+        # Normalise to an explicit async function so traceable always takes the
+        # async code path and awaits the result before logging it.
+        if run_helpers.is_async(original_create):
+            traced_fn: Callable = original_create
+        else:
+            @functools.wraps(original_create)
+            async def _async_proxy(*a: Any, **kw: Any) -> Any:
+                result = original_create(*a, **kw)
+                if inspect.iscoroutine(result):
+                    return await result
+                return result
+
+            traced_fn = _async_proxy
+
+        result = await decorator(traced_fn)(*args, **kwargs)
         return result
 
-    return acreate if run_helpers.is_async(original_create) else create
+    return acreate if _is_async_or_wraps_async(original_create) else create
 
 
 def _get_stream_wrapper(
