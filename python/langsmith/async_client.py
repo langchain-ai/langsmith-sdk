@@ -1079,6 +1079,130 @@ class AsyncClient:
         )
         return ls_schemas.Example(**response.json())
 
+    async def update_example(
+        self,
+        example_id: ls_client.ID_TYPE,
+        *,
+        inputs: Optional[dict[str, Any]] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+        attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> dict[str, Any]:
+        """Update an example.
+
+        Args:
+            example_id: The ID of the example to update.
+            inputs: The input values to update.
+            outputs: The output values to update.
+            metadata: The metadata to update.
+            split: The dataset split to update, such as 'train', 'test', or
+                'validation'.
+            dataset_id: The ID of the dataset the example belongs to. Read from
+                the example when omitted.
+            attachments_operations: The attachments operations to perform.
+            attachments: The attachments to add to the example.
+            dangerously_allow_filesystem: Whether to allow attachments to be
+                read from local filesystem paths.
+
+        Returns:
+            The updated example.
+        """
+        info = await self.info()
+        multipart_enabled = (info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        )
+        if attachments_operations is not None and not multipart_enabled:
+            raise ValueError(
+                "Your LangSmith deployment does not allow using the attachment "
+                "operations, please upgrade your deployment to the latest version."
+            )
+        example_dict = dict(
+            inputs=inputs,
+            outputs=outputs,
+            id=example_id,
+            metadata=metadata,
+            split=split,
+            attachments_operations=attachments_operations,
+            attachments=attachments,
+        )
+        example = ls_schemas.ExampleUpdate(
+            **{k: v for k, v in example_dict.items() if v is not None}
+        )
+        if dataset_id is None:
+            dataset_id = (await self.read_example(example_id)).dataset_id
+
+        if multipart_enabled:
+            return dict(
+                await self._update_examples_multipart(
+                    dataset_id=dataset_id,
+                    updates=[example],
+                    dangerously_allow_filesystem=dangerously_allow_filesystem,
+                )
+            )
+
+        response = await self._arequest_with_retries(
+            "PATCH",
+            f"/examples/{ls_client._as_uuid(example_id, 'example_id')}",
+            content=ls_client._dumps_json(
+                {
+                    **{
+                        k: v
+                        for k, v in ls_client.dump_model(example).items()
+                        if v is not None
+                    },
+                    "dataset_id": str(dataset_id),
+                }
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    async def _update_examples_multipart(
+        self,
+        *,
+        dataset_id: ls_client.ID_TYPE,
+        updates: Optional[list[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Update examples using the multipart examples endpoint."""
+        info = await self.info()
+        if not (info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith deployment does not allow using the latest examples "
+                "endpoints, please upgrade your deployment to the latest version or "
+                "downgrade your SDK to langsmith<0.3.9."
+            )
+        if updates is None:
+            updates = []
+
+        encoder, data, opened_files_dict = ls_client._prepare_multipart_data(
+            updates,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+        # Over ~20MB _prepare_multipart_data returns the encoder itself for the
+        # sync path to stream; httpx rejects that object, and retries could not
+        # rewind it, so materialize.
+        if not isinstance(data, (bytes, str)):
+            data = encoder.to_string()
+        try:
+            response = await self._arequest_with_retries(
+                "PATCH",
+                ls_client._dataset_examples_path(self._api_url, dataset_id),
+                content=data,
+                headers={"Content-Type": encoder.content_type},
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            ls_client._close_files(list(opened_files_dict.values()))
+        return response.json()
+
     async def read_example(self, example_id: ls_client.ID_TYPE) -> ls_schemas.Example:
         """Read an example."""
         response = await self._arequest_with_retries(
@@ -1407,6 +1531,40 @@ class AsyncClient:
             ix += 1
             if limit is not None and ix >= limit:
                 break
+
+    async def update_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> None:
+        """Update a feedback by ID.
+
+        Args:
+            feedback_id: The ID of the feedback to update.
+            score: The score to update the feedback with.
+            value: The value to update the feedback with.
+            correction: The correction to update the feedback with.
+            comment: The comment to update the feedback with.
+        """
+        feedback_update: dict[str, Any] = {}
+        if score is not None:
+            feedback_update["score"] = ls_client._format_feedback_score(score)
+        if value is not None:
+            feedback_update["value"] = value
+        if correction is not None:
+            feedback_update["correction"] = correction
+        if comment is not None:
+            feedback_update["comment"] = comment
+        response = await self._arequest_with_retries(
+            "PATCH",
+            f"/feedback/{ls_client._as_uuid(feedback_id, 'feedback_id')}",
+            content=ls_client._dumps_json(feedback_update),
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     async def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID.
