@@ -270,12 +270,10 @@ def test_context_hub_mount_serializes_backend_shape() -> None:
         mount_path="/memories",
         repo="-/my-agent",
         initial_pull_only=True,
-        read_only=True,
     ) == {
         "id": "memories",
         "type": "contexthub",
         "mount_path": "/memories",
-        "read_only": True,
         "contexthub": {"repo": "-/my-agent", "initial_pull_only": True},
     }
 

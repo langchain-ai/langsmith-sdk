@@ -336,13 +336,11 @@ describe("sandbox proxy config helpers", () => {
         mountPath: "/memories",
         repo: "-/my-agent",
         initialPullOnly: true,
-        readOnly: true,
       }),
     ).toEqual({
       id: "memories",
       type: "contexthub",
       mount_path: "/memories",
-      read_only: true,
       contexthub: { repo: "-/my-agent", initial_pull_only: true },
     });
   });

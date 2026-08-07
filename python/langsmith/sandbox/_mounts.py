@@ -113,14 +113,8 @@ class ContextHubMountConfig(ContextHubMountConfigRequired, total=False):
     initial_pull_only: bool
 
 
-class ContextHubMountSpecBase(TypedDict, total=False):
-    """Optional fields applied per Context Hub sandbox mount."""
-
-    read_only: bool
-
-
-class ContextHubMountSpec(ContextHubMountSpecBase):
-    """Context Hub-backed sandbox mount specification."""
+class ContextHubMountSpec(TypedDict):
+    """Read-only Context Hub-backed sandbox mount specification."""
 
     id: str
     type: Literal["contexthub"]
@@ -317,12 +311,13 @@ def context_hub_mount(
     mount_path: str,
     repo: str,
     initial_pull_only: bool | None = None,
-    read_only: bool | None = None,
 ) -> ContextHubMountSpec:
-    """Build a Context Hub-backed sandbox mount specification.
+    """Build a read-only Context Hub-backed sandbox mount specification.
 
     The repo's latest commit tree is mirrored into ``mount_path`` and kept in
-    sync for the sandbox's lifetime unless ``initial_pull_only`` is set.
+    sync for the sandbox's lifetime unless ``initial_pull_only`` is set. The
+    sync is one-way: files written under ``mount_path`` inside the sandbox are
+    never pushed back to the repo, and the next sync overwrites them.
     """
     contexthub: ContextHubMountConfig = {
         "repo": _require_non_empty_string(repo, "repo"),
@@ -336,8 +331,6 @@ def context_hub_mount(
         "mount_path": _require_non_empty_string(mount_path, "mount_path"),
         "contexthub": contexthub,
     }
-    if read_only is not None:
-        mount["read_only"] = read_only
     return mount
 
 

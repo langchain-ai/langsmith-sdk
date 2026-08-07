@@ -292,11 +292,15 @@ Private Git repositories can use low-level `proxyConfig` rules when the remote
 requires proxy-managed auth. There is not yet a high-level private Git auth
 helper.
 
-Context Hub mounts do not require AWS or GCP auth, and unlike bucket and Git
-mounts they can target any path outside the system directories — not just paths
-under `/mnt/mounts`. The repo's latest commit tree is mirrored into the mount
-path and kept in sync for the sandbox's lifetime. The caller's API key must have
-access to the repo:
+Context Hub mounts are **read-only**: the repo's latest commit tree is mirrored
+into the mount path and kept in sync for the sandbox's lifetime, but the sync is
+one-way. Files written under the mount path inside the sandbox are never pushed
+back to the repo, and the next sync overwrites them. Write sandbox output
+somewhere else and push it with the Context Hub SDK if it belongs in the repo.
+
+They do not require AWS or GCP auth, and unlike bucket and Git mounts they can
+target any path outside the system directories — not just paths under
+`/mnt/mounts`. The caller's API key must have access to the repo:
 
 ```typescript
 import { contextHubMount, mountConfig } from "langsmith/sandbox";
@@ -325,7 +329,7 @@ try {
 ```
 
 Pass `initialPullOnly: true` to sync once at startup instead of polling for repo
-updates, and `readOnly: true` to make the mount pull-only.
+updates.
 
 If one sandbox needs S3, GCS, and Git mounts, build one `mountConfig` with the
 bucket provider auth blocks and all mount specs:

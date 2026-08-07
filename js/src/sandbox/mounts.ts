@@ -199,18 +199,21 @@ export function gcsMount({
   return mount;
 }
 
+/**
+ * Build a read-only Context Hub mount. The sync is one-way: files written
+ * under the mount path inside the sandbox are never pushed back to the repo,
+ * and the next sync overwrites them.
+ */
 export function contextHubMount({
   id,
   mountPath,
   repo,
   initialPullOnly,
-  readOnly,
 }: {
   id: string;
   mountPath: string;
   repo: string;
   initialPullOnly?: boolean;
-  readOnly?: boolean;
 }): ContextHubMountSpec {
   const mount: ContextHubMountSpec = {
     id: requireNonEmptyString(id, "id"),
@@ -222,9 +225,6 @@ export function contextHubMount({
   };
   if (initialPullOnly !== undefined) {
     mount.contexthub.initial_pull_only = initialPullOnly;
-  }
-  if (readOnly !== undefined) {
-    mount.read_only = readOnly;
   }
   return mount;
 }

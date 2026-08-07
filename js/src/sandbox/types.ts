@@ -430,7 +430,7 @@ export interface ContextHubMountConfig {
   initial_pull_only?: boolean;
 }
 
-/** Context Hub-backed sandbox mount specification. */
+/** Read-only Context Hub-backed sandbox mount specification. */
 export interface ContextHubMountSpec {
   /** Stable mount identifier. */
   id: string;
@@ -438,8 +438,6 @@ export interface ContextHubMountSpec {
   type: "contexthub";
   /** Absolute path inside the sandbox where the repo tree appears. */
   mount_path: string;
-  /** Whether the mount should be pull-only. */
-  read_only?: boolean;
   /** Context Hub mount configuration. */
   contexthub: ContextHubMountConfig;
 }
