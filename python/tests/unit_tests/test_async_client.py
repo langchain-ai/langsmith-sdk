@@ -982,3 +982,103 @@ async def test_async_client_resource_version_check(
 
     version_warnings = [r for r in caplog.records if r.name == _VERSION_LOGGER]
     assert bool(version_warnings) is expect_warning
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_update_feedback_patches_only_provided_fields(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    response = MagicMock()
+    response.status_code = 200
+    mock_httpx_client.request.return_value = response
+
+    feedback_id = uuid4()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    await client.update_feedback(feedback_id, score=1, comment="looks right")
+
+    call = mock_httpx_client.request.call_args
+    assert call.args[0] == "PATCH"
+    assert call.args[1] == f"/feedback/{feedback_id}"
+    body = json.loads(call.kwargs["content"])
+    assert body == {"score": 1, "comment": "looks right"}
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_update_example_sends_dataset_id_and_updates(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    example_id = uuid4()
+    dataset_id = uuid4()
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"id": str(example_id)}
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    result = await client.update_example(
+        example_id,
+        inputs={"a": 1},
+        outputs={"b": 2},
+        metadata={"granularity": "finding"},
+        dataset_id=dataset_id,
+    )
+
+    call = mock_httpx_client.request.call_args
+    assert call.args[0] == "PATCH"
+    assert call.args[1] == f"/examples/{example_id}"
+    body = json.loads(call.kwargs["content"])
+    assert body["inputs"] == {"a": 1}
+    assert body["outputs"] == {"b": 2}
+    assert body["metadata"] == {"granularity": "finding"}
+    assert body["dataset_id"] == str(dataset_id)
+    assert result == {"id": str(example_id)}
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_update_example_reads_dataset_id_when_omitted(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    example_id = uuid4()
+    dataset_id = uuid4()
+    now = datetime(2024, 1, 1).isoformat()
+    read_response = MagicMock()
+    read_response.status_code = 200
+    read_response.json.return_value = {
+        "id": str(example_id),
+        "dataset_id": str(dataset_id),
+        "inputs": {},
+        "created_at": now,
+    }
+    patch_response = MagicMock()
+    patch_response.status_code = 200
+    patch_response.json.return_value = {"id": str(example_id)}
+    mock_httpx_client.request.side_effect = [read_response, patch_response]
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    await client.update_example(example_id, inputs={"a": 1})
+
+    read_call, patch_call = mock_httpx_client.request.call_args_list
+    assert read_call.args[0] == "GET"
+    assert patch_call.args[0] == "PATCH"
+    assert json.loads(patch_call.kwargs["content"])["dataset_id"] == str(dataset_id)

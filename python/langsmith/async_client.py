@@ -1079,6 +1079,61 @@ class AsyncClient:
         )
         return ls_schemas.Example(**response.json())
 
+    async def update_example(
+        self,
+        example_id: ls_client.ID_TYPE,
+        *,
+        inputs: Optional[dict[str, Any]] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
+    ) -> dict[str, Any]:
+        """Update an example.
+
+        Args:
+            example_id: The ID of the example to update.
+            inputs: The input values to update.
+            outputs: The output values to update.
+            metadata: The metadata to update.
+            split: The dataset split to update, such as 'train', 'test', or
+                'validation'.
+            dataset_id: The ID of the dataset the example belongs to. Read from
+                the example when omitted.
+
+        Returns:
+            The updated example.
+        """
+        example_dict = dict(
+            inputs=inputs,
+            outputs=outputs,
+            id=example_id,
+            metadata=metadata,
+            split=split,
+        )
+        example = ls_schemas.ExampleUpdate(
+            **{k: v for k, v in example_dict.items() if v is not None}
+        )
+        if dataset_id is None:
+            dataset_id = (await self.read_example(example_id)).dataset_id
+
+        response = await self._arequest_with_retries(
+            "PATCH",
+            f"/examples/{ls_client._as_uuid(example_id, 'example_id')}",
+            content=ls_client._dumps_json(
+                {
+                    **{
+                        k: v
+                        for k, v in ls_client.dump_model(example).items()
+                        if v is not None
+                    },
+                    "dataset_id": str(dataset_id),
+                }
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
     async def read_example(self, example_id: ls_client.ID_TYPE) -> ls_schemas.Example:
         """Read an example."""
         response = await self._arequest_with_retries(
@@ -1407,6 +1462,40 @@ class AsyncClient:
             ix += 1
             if limit is not None and ix >= limit:
                 break
+
+    async def update_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> None:
+        """Update a feedback by ID.
+
+        Args:
+            feedback_id: The ID of the feedback to update.
+            score: The score to update the feedback with.
+            value: The value to update the feedback with.
+            correction: The correction to update the feedback with.
+            comment: The comment to update the feedback with.
+        """
+        feedback_update: dict[str, Any] = {}
+        if score is not None:
+            feedback_update["score"] = ls_client._format_feedback_score(score)
+        if value is not None:
+            feedback_update["value"] = value
+        if correction is not None:
+            feedback_update["correction"] = correction
+        if comment is not None:
+            feedback_update["comment"] = comment
+        response = await self._arequest_with_retries(
+            "PATCH",
+            f"/feedback/{ls_client._as_uuid(feedback_id, 'feedback_id')}",
+            content=ls_client._dumps_json(feedback_update),
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     async def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID.
