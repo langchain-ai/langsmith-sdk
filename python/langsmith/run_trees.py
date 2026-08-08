@@ -11,7 +11,7 @@ import threading
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, NamedTuple, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, PrivateAttr, model_validator
@@ -22,8 +22,10 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
-from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 from langsmith.uuid import uuid7_from_datetime
+
+if TYPE_CHECKING:
+    from langsmith.client import ID_TYPE, RUN_TYPE_T, Client
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +183,8 @@ TIMESTAMP_LENGTH = 36
 
 # Note, this is called directly by langchain. Do not remove.
 def get_cached_client(**init_kwargs: Any) -> Client:
+    from langsmith.client import Client  # noqa: PLC0415
+
     global _CLIENT
     if _CLIENT is None:
         with _LOCK:
@@ -611,6 +615,8 @@ class RunTree(ls_schemas.RunBase):
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
+        from langsmith.client import _ensure_uuid  # noqa: PLC0415
+
         # Ensure child start_time is never earlier than parent start_time
         # to prevent timestamp ordering violations in dotted_order
         if start_time is not None and self.start_time is not None:
@@ -1212,6 +1218,8 @@ class _Baggage:
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
+        from langsmith.client import _dumps_json  # noqa: PLC0415
+
         items = []
         if self.metadata:
             serialized_metadata = _dumps_json(self.metadata)
