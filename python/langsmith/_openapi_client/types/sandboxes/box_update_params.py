@@ -34,6 +34,11 @@ class BoxUpdateParams(TypedDict, total=False):
     idle_ttl_seconds: int
 
     mem_bytes: int
+    """New memory for the sandbox, in bytes.
+
+    The 4 GiB per vCPU ratio applies when the sandbox is created; a resize enforces
+    only the maximum of 64 GiB.
+    """
 
     body_name: Annotated[str, PropertyInfo(alias="name")]
 

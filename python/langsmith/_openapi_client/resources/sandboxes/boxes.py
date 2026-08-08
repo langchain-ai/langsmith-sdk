@@ -88,6 +88,11 @@ class BoxesResource(SyncAPIResource):
           labels: Labels are free-form key/value metadata persisted with the sandbox and returned
               on reads. Labels from the source snapshot are inherited unless overridden here.
 
+          mem_bytes: Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+              it and it follows that ratio; set it and it must stay within 50% of the ratio
+              for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+              without CPU derives the CPU from the same ratio. Maximum 64 GiB.
+
           preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
               stop (idle timeout or explicit stop) so the next start resumes from where it
               left off. Default false discards memory and keeps only the filesystem, so the
@@ -199,6 +204,9 @@ class BoxesResource(SyncAPIResource):
         The name must be unique within the tenant.
 
         Args:
+          mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+              sandbox is created; a resize enforces only the maximum of 64 GiB.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -607,6 +615,11 @@ class AsyncBoxesResource(AsyncAPIResource):
           labels: Labels are free-form key/value metadata persisted with the sandbox and returned
               on reads. Labels from the source snapshot are inherited unless overridden here.
 
+          mem_bytes: Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+              it and it follows that ratio; set it and it must stay within 50% of the ratio
+              for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+              without CPU derives the CPU from the same ratio. Maximum 64 GiB.
+
           preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
               stop (idle timeout or explicit stop) so the next start resumes from where it
               left off. Default false discards memory and keeps only the filesystem, so the
@@ -718,6 +731,9 @@ class AsyncBoxesResource(AsyncAPIResource):
         The name must be unique within the tenant.
 
         Args:
+          mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+              sandbox is created; a resize enforces only the maximum of 64 GiB.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
