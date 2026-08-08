@@ -159,6 +159,9 @@ class ThreadsResource(SyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
+        thread_filter: str | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -169,7 +172,7 @@ class ThreadsResource(SyncAPIResource):
         """Query threads within a project (session), with cursor-based pagination.
 
         Returns
-        threads matching the given time range and optional filter.
+        threads matching the given time range and optional filters.
 
         Self-hosted deployments require LangSmith `v0.16` or later.
 
@@ -196,6 +199,25 @@ class ThreadsResource(SyncAPIResource):
 
           project_id: `project_id` is the tracing project UUID.
 
+          thread_filter: `thread_filter` narrows results using a LangSmith filter expression evaluated
+              against each complete thread summary. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          trace_filter: `trace_filter` narrows results to threads containing at least one trace whose
+              root run matches this LangSmith filter expression. Trace-level aggregate fields
+              are evaluated using the complete trace summary. Self-hosted deployments require
+              LangSmith v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          tree_filter: `tree_filter` narrows results to threads containing at least one trace with a
+              matching run anywhere in its run tree. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -215,6 +237,9 @@ class ThreadsResource(SyncAPIResource):
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_id": project_id,
+                    "thread_filter": thread_filter,
+                    "trace_filter": trace_filter,
+                    "tree_filter": tree_filter,
                 },
                 thread_query_params.ThreadQueryParams,
             ),
@@ -434,6 +459,9 @@ class AsyncThreadsResource(AsyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
+        thread_filter: str | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -444,7 +472,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         """Query threads within a project (session), with cursor-based pagination.
 
         Returns
-        threads matching the given time range and optional filter.
+        threads matching the given time range and optional filters.
 
         Self-hosted deployments require LangSmith `v0.16` or later.
 
@@ -471,6 +499,25 @@ class AsyncThreadsResource(AsyncAPIResource):
 
           project_id: `project_id` is the tracing project UUID.
 
+          thread_filter: `thread_filter` narrows results using a LangSmith filter expression evaluated
+              against each complete thread summary. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          trace_filter: `trace_filter` narrows results to threads containing at least one trace whose
+              root run matches this LangSmith filter expression. Trace-level aggregate fields
+              are evaluated using the complete trace summary. Self-hosted deployments require
+              LangSmith v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          tree_filter: `tree_filter` narrows results to threads containing at least one trace with a
+              matching run anywhere in its run tree. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -490,6 +537,9 @@ class AsyncThreadsResource(AsyncAPIResource):
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_id": project_id,
+                    "thread_filter": thread_filter,
+                    "trace_filter": trace_filter,
+                    "tree_filter": tree_filter,
                 },
                 thread_query_params.ThreadQueryParams,
             ),
