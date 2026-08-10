@@ -109,7 +109,15 @@ def _serialize_json(obj: Any) -> Any:
                 try:
                     method = getattr(obj, attr)
                     response = method(**kwargs)
-                    if not isinstance(response, dict):
+                    if isinstance(response, dict):
+                        return response
+                    # A method may legitimately return a JSON-native non-dict
+                    # (e.g. a pydantic RootModel dumps to a list/scalar). Return
+                    # it as-is so orjson emits real JSON instead of stringifying
+                    # it to "[1, 2, 3]". Guard the degenerate case where the
+                    # method hands back the same object, which would re-enter
+                    # this default hook until orjson's recursion limit.
+                    if response is obj:
                         return str(response)
                     return response
                 except Exception as e:
