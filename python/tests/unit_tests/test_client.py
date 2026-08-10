@@ -2420,6 +2420,40 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
     }
 
 
+def test__dumps_json_pydantic_non_serializable_fields():
+    """A pydantic v2 model whose fields hold a class + callables (e.g. a
+    langchain StructuredTool) must serialize without leaking memory addresses
+    and deterministically, so compression can dedup identical payloads.
+
+    On pydantic>=2.9 this goes through model_dump(fallback=...) in a single
+    pass; on older pydantic it uses the exception-driven fallback. Either way
+    the output must be stable and address-free.
+    """
+
+    class Schema(BaseModel):
+        x: int = 0
+
+    def a_func():
+        pass
+
+    class Tool(BaseModel):
+        model_config = {"arbitrary_types_allowed": True}
+        name: str = "ls"
+        args_schema: type = Schema
+        func: Any = a_func
+
+    b1 = _dumps_json(Tool())
+    b2 = _dumps_json(Tool())
+    assert isinstance(b1, bytes)
+    assert b1 == b2  # deterministic
+    assert b"0x" not in b1  # no <function ... at 0x...> address leak
+    payload = _orjson.loads(b1)
+    assert payload["name"] == "ls"
+    # callables + classes map to __qualname__ (stable), never str()/repr()
+    assert payload["args_schema"] == Schema.__qualname__
+    assert payload["func"] == a_func.__qualname__
+
+
 @patch("langsmith.client.requests.Session", autospec=True)
 def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")
