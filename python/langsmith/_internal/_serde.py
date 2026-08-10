@@ -30,6 +30,9 @@ _ORJSON_OPTIONS = (
     | _orjson.OPT_NON_STR_KEYS
 )
 _JSON_KEY_TYPES = (str, int, float, bool, type(None))
+# Matches escaped lone UTF-16 surrogates (e.g. b"\\ud800") in ensure_ascii
+# json.dumps output; used to strip them on the stdlib-json fallback path.
+_SURROGATE_RE = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
 
 
 def _simple_default(obj):
@@ -183,9 +186,7 @@ def _serialize_json_with_normalized_keys(obj: Any) -> Any:
 
 
 def _elide_surrogates(s: bytes) -> bytes:
-    pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
-    result = pattern.sub(b"", s)
-    return result
+    return _SURROGATE_RE.sub(b"", s)
 
 
 def dumps_json(obj: Any) -> bytes:
