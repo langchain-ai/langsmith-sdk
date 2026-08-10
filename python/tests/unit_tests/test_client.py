@@ -2420,6 +2420,16 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
     }
 
 
+def test__dumps_json_serializes_set_as_array():
+    """A bare set serializes to a JSON array via _simple_default.
+
+    _serialize_json no longer special-cases set (only tuple/NamedTuple); sets
+    are handled solely by _simple_default's set->list branch.
+    """
+    result = _orjson.loads(_dumps_json({"s": {1, 2, 3}}))
+    assert sorted(result["s"]) == [1, 2, 3]
+
+
 def test__dumps_json_does_not_swallow_keyboard_interrupt():
     """Serialization must not swallow KeyboardInterrupt/SystemExit.
 

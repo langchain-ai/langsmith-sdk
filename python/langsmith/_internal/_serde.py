@@ -104,11 +104,13 @@ _serialization_methods: list[tuple[str, dict[str, Any]]] = [
 #               rust/crates/langsmith-pyo3/src/serialization/mod.rs
 def _serialize_json(obj: Any) -> Any:
     try:
-        if isinstance(obj, (set, tuple)):
+        if isinstance(obj, tuple):
             if hasattr(obj, "_asdict") and callable(obj._asdict):
                 # NamedTuple
                 return obj._asdict()
             return list(obj)
+        # NB: bare set/frozenset/deque fall through to _simple_default, which
+        # converts them to lists (same result, one owner for that behavior).
 
         for attr, kwargs in _serialization_methods:
             if (
