@@ -1,8 +1,8 @@
 /**
- * Shared helper functions for error handling.
+ * Shared helpers for the sandbox clients: request identity, input validation,
+ * and error-response parsing.
  *
- * These functions are used to parse error responses and raise appropriate
- * exceptions. They contain no I/O operations.
+ * They contain no I/O operations.
  */
 
 import {
