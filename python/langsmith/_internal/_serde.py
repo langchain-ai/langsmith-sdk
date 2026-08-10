@@ -77,13 +77,14 @@ def _simple_default(obj):
 
 
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
-    (
-        "model_dump",
-        {"exclude_none": True, "mode": "json"},
-    ),  # Pydantic V2 with non-serializable fields
-    ("model_dump", {"exclude_none": True}),  # Pydantic V2 without json mode
-    ("dict", {}),  # Pydantic V1 with non-serializable field
-    ("to_dict", {}),  # dataclasses-json
+    # Pydantic v2 primary: coerce fields to JSON-native types.
+    # Raises on truly non-serializable fields -> the next entry handles those.
+    ("model_dump", {"exclude_none": True, "mode": "json"}),
+    # Pydantic v2 fallback: python-mode dump; leaves non-JSON values as objects
+    # for orjson / _simple_default to serialize.
+    ("model_dump", {"exclude_none": True}),
+    ("dict", {}),  # Pydantic v1 .dict()
+    ("to_dict", {}),  # dataclasses-json to_dict()
 ]
 
 
