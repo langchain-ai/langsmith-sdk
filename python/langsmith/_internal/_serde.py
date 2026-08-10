@@ -36,6 +36,12 @@ def _simple_default(obj):
     try:
         # Only need to handle types that orjson doesn't serialize by default
         # https://github.com/ijl/orjson#serialize
+        #
+        # datetime/UUID look redundant with orjson's native encoders, but this
+        # function is reached via two paths that bypass them, so keep them:
+        #   (a) non-str dict keys normalized through _normalize_json_keys, and
+        #   (b) the stdlib json.dumps fallback in dumps_json (surrogate path),
+        #       which routes these *values* through this hook.
         if isinstance(obj, datetime.datetime):
             return obj.isoformat()
         elif isinstance(obj, uuid.UUID):
