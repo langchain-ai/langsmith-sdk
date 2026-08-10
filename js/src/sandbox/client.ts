@@ -439,10 +439,6 @@ export class SandboxClient {
    */
   async _fetch(url: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
-    // Set before the caller's defaults below so an explicit one still wins.
-    if (!headers.has("User-Agent")) {
-      headers.set("User-Agent", sandboxUserAgent());
-    }
     if (this._apiKey) {
       headers.set("X-Api-Key", this._apiKey);
     }
@@ -450,6 +446,11 @@ export class SandboxClient {
       if (!headers.has(name)) {
         headers.set(name, value);
       }
+    }
+    // Last, so it fills in only when neither the request nor the client
+    // defaults named one.
+    if (!headers.has("User-Agent")) {
+      headers.set("User-Agent", sandboxUserAgent());
     }
     return this._caller.call(() =>
       this._fetchImpl(url, {

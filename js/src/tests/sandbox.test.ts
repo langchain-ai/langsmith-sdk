@@ -452,6 +452,57 @@ describe("sandbox proxy config helpers", () => {
   });
 });
 
+describe("SandboxClient - data-plane request headers", () => {
+  const capture = (client: SandboxClient) => {
+    const seen: Headers[] = [];
+    (client as any)._fetchImpl = async (_url: string, init: RequestInit) => {
+      seen.push(init.headers as Headers);
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return seen;
+  };
+
+  it("should identify the SDK and version", async () => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.test",
+      apiKey: "k",
+    });
+    const seen = capture(client);
+    await (client as any)._fetch("https://api.test/x");
+    expect(seen[0].get("User-Agent")).toBe(`langsmith-js/${__version__}`);
+  });
+
+  // Regression: the SDK agent used to be set before the constructor defaults
+  // were merged in, and that merge only fills absent headers — so a caller's
+  // explicit User-Agent was silently dropped.
+  it("should let a constructor-supplied User-Agent win", async () => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.test",
+      apiKey: "k",
+      headers: { "User-Agent": "caller/1.0" },
+    });
+    const seen = capture(client);
+    await (client as any)._fetch("https://api.test/x");
+    expect(seen[0].get("User-Agent")).toBe("caller/1.0");
+  });
+
+  it("should let a per-request User-Agent win", async () => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.test",
+      apiKey: "k",
+      headers: { "User-Agent": "caller/1.0" },
+    });
+    const seen = capture(client);
+    await (client as any)._fetch("https://api.test/x", {
+      headers: { "User-Agent": "per-request/2.0" },
+    });
+    expect(seen[0].get("User-Agent")).toBe("per-request/2.0");
+  });
+});
+
 describe("SandboxClient", () => {
   describe("constructor", () => {
     it("should trim trailing slash from endpoint", () => {

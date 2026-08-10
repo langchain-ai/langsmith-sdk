@@ -116,8 +116,8 @@ export function buildWsUrl(dataplaneUrl: string): string {
   return `${wsUrl}/execute/ws`;
 }
 
-/** Enough of a rejection body to carry a remedy; a hostile peer cannot stream forever. */
-const MAX_REJECTION_BODY_CHUNKS = 16;
+/** Enough of a rejection body to carry a remedy; past this the read is cut short. */
+const MAX_REJECTION_BODY_BYTES = 64 * 1024;
 
 type UnexpectedResponse = { statusCode?: number };
 
@@ -292,9 +292,9 @@ async function connectWs(
         },
       ) => {
         const settleWith = (detail: string) => {
-          req.destroy?.();
           if (settled) return;
           settled = true;
+          req.destroy?.();
           reject(
             new LangSmithSandboxConnectionError(
               rejectedUpgradeMessage(url, res.statusCode, detail),
@@ -309,13 +309,18 @@ async function connectWs(
           settleWith("");
           return;
         }
-        const chunks: string[] = [];
+        // Settle at the byte cap rather than waiting for EOF: a peer that
+        // trickles a rejection body forever would otherwise keep this promise
+        // pending, refreshing any activity-based handshake timeout as it goes.
+        let body = "";
         res.on("data", (chunk) => {
-          if (chunks.length < MAX_REJECTION_BODY_CHUNKS) {
-            chunks.push(String(chunk));
+          if (settled) return;
+          body += String(chunk);
+          if (body.length >= MAX_REJECTION_BODY_BYTES) {
+            settleWith(rejectionDetail(body));
           }
         });
-        res.on("end", () => settleWith(rejectionDetail(chunks.join(""))));
+        res.on("end", () => settleWith(rejectionDetail(body)));
         res.on("error", () => settleWith(""));
       },
     );
