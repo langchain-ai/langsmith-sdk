@@ -2436,6 +2436,12 @@ def test__dumps_json_does_not_swallow_keyboard_interrupt():
         _dumps_json({"x": _RaisesInterrupt()})
 
 
+def test__dumps_json_type_object_serializes_as_str():
+    # A class object has no useful instance serialization method; it must fall
+    # through to _simple_default -> str rather than be probed like an instance.
+    assert isinstance(_orjson.loads(_dumps_json({"cls": dict}))["cls"], str)
+
+
 @patch("langsmith.client.requests.Session", autospec=True)
 def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")
