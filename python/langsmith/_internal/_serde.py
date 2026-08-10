@@ -188,13 +188,11 @@ def dumps_json(obj: Any) -> bytes:
     ----------
     obj : Any
         The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
 
     Returns:
     -------
-    str
-        The JSON formatted string.
+    bytes
+        The JSON formatted string, encoded as UTF-8 bytes.
     """
     try:
         return _orjson.dumps(
