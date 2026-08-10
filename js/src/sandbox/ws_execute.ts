@@ -13,6 +13,7 @@ import {
   LangSmithSandboxServerReloadError,
 } from "./errors.js";
 import type { WsMessage, WsRunOptions } from "./types.js";
+import { sandboxUserAgent } from "./helpers.js";
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
 
 /** Read a WebSocket timeout override, in seconds. `<= 0` disables it. */
@@ -115,14 +116,45 @@ export function buildWsUrl(dataplaneUrl: string): string {
   return `${wsUrl}/execute/ws`;
 }
 
+/** Enough of a rejection body to carry a remedy; a hostile peer cannot stream forever. */
+const MAX_REJECTION_BODY_CHUNKS = 16;
+
+type UnexpectedResponse = { statusCode?: number };
+
 /**
- * Build auth headers for the WebSocket upgrade request.
+ * Server-supplied explanation from a rejected upgrade body, if there is one.
+ */
+export function rejectionDetail(body: string): string {
+  if (!body) return "";
+  try {
+    const detail = JSON.parse(body)?.detail;
+    const message = typeof detail === "string" ? detail : detail?.message;
+    return typeof message === "string" ? message.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Message for a non-101 upgrade response, preferring the server's own remedy. */
+export function rejectedUpgradeMessage(
+  url: string,
+  statusCode: number | undefined,
+  detail: string,
+): string {
+  const base = `WebSocket upgrade to ${url} rejected by server (HTTP ${statusCode})`;
+  return detail ? `${base}: ${detail}` : base;
+}
+
+/**
+ * Build auth and identity headers for the WebSocket upgrade request.
  */
 export function buildAuthHeaders(
   apiKey: string | undefined,
   extraHeaders?: Record<string, string>,
 ): Record<string, string> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    "User-Agent": sandboxUserAgent(),
+  };
   if (apiKey) {
     headers["X-Api-Key"] = apiKey;
   }
@@ -254,17 +286,37 @@ async function connectWs(
       "unexpected-response",
       (
         req: { destroy?: () => void },
-        res: { statusCode?: number; resume?: () => void },
+        res: UnexpectedResponse & {
+          on?: (event: string, cb: (chunk?: unknown) => void) => void;
+          resume?: () => void;
+        },
       ) => {
-        res.resume?.();
-        req.destroy?.();
-        if (settled) return;
-        settled = true;
-        reject(
-          new LangSmithSandboxConnectionError(
-            `WebSocket upgrade to ${url} rejected by server (HTTP ${res.statusCode})`,
-          ),
-        );
+        const settleWith = (detail: string) => {
+          req.destroy?.();
+          if (settled) return;
+          settled = true;
+          reject(
+            new LangSmithSandboxConnectionError(
+              rejectedUpgradeMessage(url, res.statusCode, detail),
+            ),
+          );
+        };
+        // The body is read rather than discarded: a rejection whose purpose is
+        // to redirect the caller (410 for a sandbox that moved) carries the
+        // replacement URL there, and a bare status code strands the user.
+        if (typeof res.on !== "function") {
+          res.resume?.();
+          settleWith("");
+          return;
+        }
+        const chunks: string[] = [];
+        res.on("data", (chunk) => {
+          if (chunks.length < MAX_REJECTION_BODY_CHUNKS) {
+            chunks.push(String(chunk));
+          }
+        });
+        res.on("end", () => settleWith(rejectionDetail(chunks.join(""))));
+        res.on("error", () => settleWith(""));
       },
     );
 

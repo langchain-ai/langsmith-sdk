@@ -34,6 +34,7 @@ import {
 import {
   handleClientHttpError,
   handleSandboxCreationError,
+  sandboxUserAgent,
   validateTtl,
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
@@ -438,6 +439,10 @@ export class SandboxClient {
    */
   async _fetch(url: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
+    // Set before the caller's defaults below so an explicit one still wins.
+    if (!headers.has("User-Agent")) {
+      headers.set("User-Agent", sandboxUserAgent());
+    }
     if (this._apiKey) {
       headers.set("X-Api-Key", this._apiKey);
     }

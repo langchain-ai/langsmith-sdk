@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
+import { __version__ } from "../index.js";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
@@ -23,6 +24,8 @@ import {
   buildAuthHeaders,
   WSStreamControl,
   raiseForWsError,
+  rejectionDetail,
+  rejectedUpgradeMessage,
 } from "../sandbox/ws_execute.js";
 import {
   LangSmithResourceCreationError,
@@ -1470,30 +1473,90 @@ describe("buildWsUrl", () => {
   });
 });
 
-describe("buildAuthHeaders", () => {
-  it("should return X-Api-Key header when key is provided", () => {
-    expect(buildAuthHeaders("test-key")).toEqual({ "X-Api-Key": "test-key" });
+describe("rejected upgrade responses", () => {
+  // A rejection whose whole purpose is to redirect the caller is useless if
+  // only the status code survives.
+  it("should surface the server's remedy from the body", () => {
+    const body = JSON.stringify({
+      detail: {
+        error: "SandboxMoved",
+        message: "Connect to wss://api/x instead.",
+      },
+    });
+    expect(rejectionDetail(body)).toBe("Connect to wss://api/x instead.");
+    expect(rejectedUpgradeMessage("ws://a/b", 410, rejectionDetail(body))).toBe(
+      "WebSocket upgrade to ws://a/b rejected by server (HTTP 410): " +
+        "Connect to wss://api/x instead.",
+    );
   });
 
-  it("should return empty headers when no key", () => {
-    expect(buildAuthHeaders(undefined)).toEqual({});
+  it("should accept a plain string detail", () => {
+    expect(rejectionDetail(JSON.stringify({ detail: "gone for good" }))).toBe(
+      "gone for good",
+    );
+  });
+
+  it.each([
+    ["empty", ""],
+    ["not json", "not json at all"],
+    ["no detail", "{}"],
+    ["no message", JSON.stringify({ detail: {} })],
+    ["non-string message", JSON.stringify({ detail: { message: 42 } })],
+    ["array", "[1,2,3]"],
+    ["null", "null"],
+  ])("should return no detail for %s", (_name, body) => {
+    expect(rejectionDetail(body)).toBe("");
+  });
+
+  it("should fall back to the bare status when there is no detail", () => {
+    expect(rejectedUpgradeMessage("ws://a/b", 502, "")).toBe(
+      "WebSocket upgrade to ws://a/b rejected by server (HTTP 502)",
+    );
+  });
+});
+
+describe("buildAuthHeaders", () => {
+  it("should return X-Api-Key header when key is provided", () => {
+    expect(buildAuthHeaders("test-key")).toMatchObject({
+      "X-Api-Key": "test-key",
+    });
+  });
+
+  it("should omit X-Api-Key when no key", () => {
+    expect(buildAuthHeaders(undefined)["X-Api-Key"]).toBeUndefined();
+  });
+
+  // The upgrade must name the SDK and its version: a server otherwise sees only
+  // the runtime's default agent and cannot attribute the request.
+  it("should identify the SDK and version in User-Agent", () => {
+    expect(buildAuthHeaders("test-key")["User-Agent"]).toBe(
+      `langsmith-js/${__version__}`,
+    );
+  });
+
+  it("should let a caller-supplied User-Agent win", () => {
+    expect(
+      buildAuthHeaders("test-key", { "User-Agent": "caller/1.0" })[
+        "User-Agent"
+      ],
+    ).toBe("caller/1.0");
   });
 
   it("should return extra headers when provided", () => {
-    expect(buildAuthHeaders(undefined, { "X-Service-Key": "svc-jwt" })).toEqual(
-      {
-        "X-Service-Key": "svc-jwt",
-      },
-    );
+    expect(
+      buildAuthHeaders(undefined, { "X-Service-Key": "svc-jwt" }),
+    ).toMatchObject({
+      "X-Service-Key": "svc-jwt",
+    });
   });
 
   it("should merge X-Api-Key with extra headers", () => {
-    expect(buildAuthHeaders("api-key", { "X-Service-Key": "svc-jwt" })).toEqual(
-      {
-        "X-Api-Key": "api-key",
-        "X-Service-Key": "svc-jwt",
-      },
-    );
+    expect(
+      buildAuthHeaders("api-key", { "X-Service-Key": "svc-jwt" }),
+    ).toMatchObject({
+      "X-Api-Key": "api-key",
+      "X-Service-Key": "svc-jwt",
+    });
   });
 });
 

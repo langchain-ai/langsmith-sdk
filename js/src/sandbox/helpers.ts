@@ -18,6 +18,22 @@ import {
   LangSmithSandboxOperationError,
   LangSmithValidationError,
 } from "./errors.js";
+import { __version__ } from "../index.js";
+
+// =============================================================================
+// Request identity
+// =============================================================================
+
+/**
+ * `User-Agent` for a sandbox data-plane request.
+ *
+ * The data-plane paths use `fetch` and `ws` directly rather than the main
+ * `Client`, so without this a server sees only the runtime's default agent and
+ * cannot tell which SDK, or which version of it, a request came from.
+ */
+export function sandboxUserAgent(): string {
+  return `langsmith-js/${__version__}`;
+}
 
 // =============================================================================
 // Input validation

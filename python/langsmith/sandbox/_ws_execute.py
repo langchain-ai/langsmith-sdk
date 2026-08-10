@@ -17,7 +17,7 @@ from langsmith.sandbox._exceptions import (
     SandboxOperationError,
     SandboxServerReloadError,
 )
-from langsmith.sandbox._helpers import merge_headers
+from langsmith.sandbox._helpers import merge_headers, user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +27,14 @@ logger = logging.getLogger(__name__)
 try:
     from websockets.asyncio.client import connect as _ws_connect_async
     from websockets.exceptions import ConnectionClosed, InvalidHandshake
+    from websockets.http11 import USER_AGENT as _WS_TRANSPORT_AGENT
     from websockets.sync.client import connect as _ws_connect_sync
 
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     _ws_connect_async = _ws_connect_sync = None  # type: ignore[assignment,misc]
     ConnectionClosed = InvalidHandshake = None  # type: ignore[assignment,misc]
+    _WS_TRANSPORT_AGENT = ""
     WEBSOCKETS_AVAILABLE = False
 
 
@@ -106,9 +108,11 @@ def _build_ws_url(dataplane_url: str) -> str:
 def _build_auth_headers(
     api_key: Optional[str], headers: Optional[Mapping[str, str]] = None
 ) -> dict[str, str]:
-    """Build auth headers for the WebSocket upgrade request."""
-    auth_headers = {"X-Api-Key": api_key} if api_key else None
-    return merge_headers(auth_headers, headers)
+    """Build auth and identity headers for the WebSocket upgrade request."""
+    base_headers = {"User-Agent": user_agent(_WS_TRANSPORT_AGENT)}
+    if api_key:
+        base_headers["X-Api-Key"] = api_key
+    return merge_headers(base_headers, headers)
 
 
 # =============================================================================
@@ -209,6 +213,26 @@ class _AsyncWSStreamControl:
 # =============================================================================
 
 
+def _handshake_rejection_detail(exc: Exception) -> str:
+    """Server-supplied explanation from a rejected upgrade, if there is one.
+
+    ``str(exc)`` is only ``"server rejected WebSocket connection: HTTP <n>"`` —
+    the response body never reaches it. Without this, a rejection whose whole
+    point is to tell the caller what to do instead (the platform answers a moved
+    sandbox with 410 and the URL to use) surfaces as a bare status code.
+    """
+    body = getattr(getattr(exc, "response", None), "body", None)
+    if not body:
+        return ""
+    try:
+        payload = json.loads(body)
+        detail = payload["detail"]
+        message = detail["message"] if isinstance(detail, dict) else detail
+    except (ValueError, TypeError, KeyError):
+        return ""
+    return message.strip() if isinstance(message, str) else ""
+
+
 def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
     """Raise a clear error when the WebSocket upgrade handshake fails.
 
@@ -231,8 +255,9 @@ def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
             f"Sandbox is not ready for WebSocket command execution: {exc}"
         ) from exc
     if status is not None:
+        detail = _handshake_rejection_detail(exc)
         raise SandboxConnectionError(
-            f"WebSocket upgrade rejected by server (HTTP {status}): {exc}"
+            f"WebSocket upgrade rejected by server (HTTP {status}): {detail or exc}"
         ) from exc
     # No HTTP status at all — the peer didn't return a valid HTTP response,
     # typically a stopped/unreachable sandbox dataplane.

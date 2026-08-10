@@ -51,6 +51,25 @@ class TestSandboxClientInit:
         with SandboxClient(api_endpoint="http://localhost:8080") as client:
             assert client._base_url == "http://localhost:8080"
 
+    def test_user_agent_names_sdk_and_transport(self):
+        """Data-plane requests must be attributable to this SDK and version."""
+        import httpx
+
+        import langsmith
+
+        with SandboxClient(api_endpoint="http://localhost:8080") as client:
+            assert client._http.headers["user-agent"] == (
+                f"langsmith-py/{langsmith.__version__} python-httpx/{httpx.__version__}"
+            )
+
+    def test_caller_user_agent_overrides_default(self):
+        """An explicit User-Agent wins, like any other caller-supplied header."""
+        with SandboxClient(
+            api_endpoint="http://localhost:8080",
+            headers={"User-Agent": "caller/1.0"},
+        ) as client:
+            assert client._http.headers["user-agent"] == "caller/1.0"
+
     def test_derives_endpoint_from_langsmith_endpoint(self):
         """Test endpoint derivation from LANGSMITH_ENDPOINT."""
         with patch(
