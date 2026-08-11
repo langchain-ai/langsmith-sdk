@@ -1,12 +1,16 @@
 """Unit tests for experiment-level metadata in the pytest integration."""
 
+import json
 import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import langsmith.env._git as git_env
+from langsmith.evaluation._runner import _ExperimentManager
 from langsmith.testing._internal import (
     _end_tests,
+    _get_test_suite,
     _LangSmithTestSuite,
     _start_experiment,
 )
@@ -37,6 +41,27 @@ def _make_client(dataset: MagicMock, experiment: MagicMock) -> MagicMock:
     client.read_dataset.return_value = dataset
     client.create_project.return_value = experiment
     return client
+
+
+def _patch_git_remote(monkeypatch: pytest.MonkeyPatch, remote_url: str) -> None:
+    outputs = {
+        ("rev-parse", "--is-inside-work-tree"): "true",
+        ("remote", "get-url", "origin"): remote_url,
+        ("rev-parse", "HEAD"): "abc123",
+        ("log", "-1", "--format=%ct"): "1720000000",
+        ("rev-parse", "--abbrev-ref", "HEAD"): "main",
+        ("describe", "--tags", "--exact-match", "--always", "--dirty"): "abc123",
+        ("status", "--porcelain"): "",
+        ("log", "-1", "--format=%an"): "LangSmith",
+        ("log", "-1", "--format=%ae"): "langsmith@example.com",
+        ("rev-parse", "--show-toplevel"): "/workspace/langsmith-sdk",
+    }
+
+    def fake_exec_git(command: list[str]) -> str | None:
+        return outputs.get(tuple(command))
+
+    monkeypatch.setattr(git_env, "exec_git", fake_exec_git)
+    git_env.get_git_info.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +188,73 @@ def test_end_tests_system_keys_take_precedence():
     metadata = update_kwargs["metadata"]
     assert metadata["__ls_runner"] == "pytest"
     assert metadata["revision_id"] == "sys-rev"
+
+
+def test_git_remote_sanitized_in_test_suite_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_remote_url = "https://user:token@github.com/langchain-ai/langsmith-sdk.git"
+    sanitized_remote_url = "https://github.com/langchain-ai/langsmith-sdk.git"
+    dataset = _make_dataset()
+    experiment = _make_experiment()
+    client = _make_client(dataset, experiment)
+    client.has_dataset.return_value = False
+    client.create_dataset.return_value = dataset
+    _patch_git_remote(monkeypatch, raw_remote_url)
+    try:
+        assert _get_test_suite(client, "my-suite") is dataset
+        _, create_kwargs = client.create_dataset.call_args
+        assert raw_remote_url not in create_kwargs["description"]
+        assert sanitized_remote_url in create_kwargs["description"]
+
+        suite = _LangSmithTestSuite(client, experiment, dataset)
+        suite._executor = MagicMock()
+        suite._executor.shutdown = MagicMock()
+        suite._dataset_version = None
+        _end_tests(suite)
+
+        _, update_kwargs = client.update_project.call_args
+        metadata = update_kwargs["metadata"]
+        assert metadata["remote_url"] == sanitized_remote_url
+        assert raw_remote_url not in json.dumps(metadata, default=str)
+    finally:
+        git_env.get_git_info.cache_clear()
+
+
+def test_git_remote_sanitized_in_evaluation_project_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_remote_url = "https://user:token@github.com/langchain-ai/langsmith-sdk.git"
+    sanitized_remote_url = "https://github.com/langchain-ai/langsmith-sdk.git"
+    dataset_id = uuid.uuid4()
+    example = MagicMock()
+    example.dataset_id = dataset_id
+    example.modified_at = None
+    example.metadata = {}
+    experiment = _make_experiment()
+    experiment.metadata = {}
+    experiment.reference_dataset_id = dataset_id
+    experiment.url = None
+    client = MagicMock()
+    client.create_project.return_value = experiment
+    _patch_git_remote(monkeypatch, raw_remote_url)
+    try:
+        manager = _ExperimentManager(
+            [example], experiment="my-experiment", client=client, num_examples=1
+        )
+        started_manager = manager.start()
+        _, create_kwargs = client.create_project.call_args
+        create_metadata = create_kwargs["metadata"]
+        assert create_metadata["git"]["remote_url"] == sanitized_remote_url
+        assert raw_remote_url not in json.dumps(create_metadata, default=str)
+
+        started_manager._end()
+        _, update_kwargs = client.update_project.call_args
+        update_metadata = update_kwargs["metadata"]
+        assert update_metadata["git"]["remote_url"] == sanitized_remote_url
+        assert raw_remote_url not in json.dumps(update_metadata, default=str)
+    finally:
+        git_env.get_git_info.cache_clear()
 
 
 # ---------------------------------------------------------------------------

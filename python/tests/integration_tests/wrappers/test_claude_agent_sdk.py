@@ -85,7 +85,11 @@ async def test_subagent():
 
     options = ClaudeAgentOptions(
         model="claude-haiku-4-5",
-        system_prompt="You must always call the foo subagent.",
+        system_prompt=(
+            "You must always call the foo subagent, wait for it to finish, and"
+            " report its exact result. You need its result before you can"
+            " respond."
+        ),
         allowed_tools=["Agent"],
         agents={
             "foo": AgentDefinition(
@@ -121,7 +125,7 @@ async def test_subagent():
 
     with patch.object(RunTree, "post", tracked_post):
         async with ClaudeSDKClient(options=options) as client:
-            await client.query("Call foo.")
+            await client.query("Call foo and tell me exactly what it returns.")
             async for message in client.receive_response():
                 pass
 
