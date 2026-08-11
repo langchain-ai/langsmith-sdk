@@ -635,6 +635,7 @@ export type CreateProjectParams = {
   numExamples?: number | null;
   numRepetitions?: number | null;
   evaluatorKeys?: string[] | null;
+  tagValueIds?: string[] | null;
 };
 
 type AutoBatchQueueItem = {
@@ -4169,6 +4170,7 @@ export class Client implements LangSmithTracingClientInterface {
     numExamples = null,
     numRepetitions = null,
     evaluatorKeys = null,
+    tagValueIds = null,
   }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -4192,6 +4194,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (evaluatorKeys != null && evaluatorKeys.length > 0) {
       body["evaluator_keys"] = evaluatorKeys;
+    }
+    if (tagValueIds !== null) {
+      body["tag_value_ids"] = tagValueIds;
     }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {
@@ -4536,12 +4541,14 @@ export class Client implements LangSmithTracingClientInterface {
       inputsSchema,
       outputsSchema,
       metadata,
+      tagValueIds,
     }: {
       description?: string;
       dataType?: DataType;
       inputsSchema?: KVMap;
       outputsSchema?: KVMap;
       metadata?: RecordStringAny;
+      tagValueIds?: string[];
     } = {},
   ): Promise<Dataset> {
     const body: KVMap = {
@@ -4557,6 +4564,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (outputsSchema) {
       body.outputs_schema_definition = outputsSchema;
+    }
+    if (tagValueIds !== undefined) {
+      body.tag_value_ids = tagValueIds;
     }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {
