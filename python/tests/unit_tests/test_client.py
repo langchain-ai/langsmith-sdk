@@ -41,7 +41,7 @@ import httpx
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from requests import HTTPError
 
 import langsmith.env as ls_env
@@ -2418,6 +2418,33 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
         "nested": [{"('a', 'b')": "c"}],
         "custom": {"(1, 2)": "custom"},
     }
+
+
+def test__dumps_json_rootmodel_list_serializes_as_array():
+    # A RootModel wrapping a list dumps to a list; it must serialize as a JSON
+    # array, not the stringified "[1, 2, 3]".
+    class Nums(RootModel):
+        root: List[int]
+
+    assert _orjson.loads(_dumps_json({"v": Nums([1, 2, 3])})) == {"v": [1, 2, 3]}
+
+
+def test__dumps_json_rootmodel_scalar_serializes_as_number():
+    class Scalar(RootModel):
+        root: int
+
+    assert _orjson.loads(_dumps_json({"v": Scalar(7)})) == {"v": 7}
+
+
+def test__dumps_json_self_returning_method_does_not_recurse():
+    # A serialization method that returns the same object must not re-enter the
+    # default hook forever; it falls back to str().
+    class Loop:
+        def model_dump(self, **kwargs):
+            return self
+
+    result = _orjson.loads(_dumps_json({"v": Loop()}))
+    assert isinstance(result["v"], str)
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
