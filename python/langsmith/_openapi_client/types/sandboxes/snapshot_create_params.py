@@ -22,3 +22,6 @@ class SnapshotCreateParams(TypedDict, total=False):
     """
 
     registry_id: str
+
+    tag: str
+    """mutable Docker-style tag; defaults to "latest" """

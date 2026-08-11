@@ -26,4 +26,9 @@ export {
   type SnapshotListResponse,
   type SnapshotResponse,
 } from './sandboxes.js';
-export { Snapshots, type SnapshotCreateParams, type SnapshotListParams } from './snapshots.js';
+export {
+  Snapshots,
+  type SnapshotRetrieveByNameResponse,
+  type SnapshotCreateParams,
+  type SnapshotListParams,
+} from './snapshots.js';

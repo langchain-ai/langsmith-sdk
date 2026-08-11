@@ -14,3 +14,4 @@ from .registry_update_params import RegistryUpdateParams as RegistryUpdateParams
 from .snapshot_create_params import SnapshotCreateParams as SnapshotCreateParams
 from .box_create_snapshot_params import BoxCreateSnapshotParams as BoxCreateSnapshotParams
 from .box_generate_service_url_params import BoxGenerateServiceURLParams as BoxGenerateServiceURLParams
+from .snapshot_retrieve_by_name_response import SnapshotRetrieveByNameResponse as SnapshotRetrieveByNameResponse

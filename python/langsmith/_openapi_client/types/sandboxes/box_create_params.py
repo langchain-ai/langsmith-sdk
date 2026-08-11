@@ -115,9 +115,19 @@ class BoxCreateParams(TypedDict, total=False):
     Applies to this request only.
     """
 
+    snapshot: str
+    """Snapshot is a Docker-style name or name:tag reference to boot from.
+
+    A bare name resolves to name:latest.
+    """
+
     snapshot_id: str
 
     snapshot_name: str
+    """
+    SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+    that predate it. Set one or the other.
+    """
 
     tag_value_ids: SequenceNotStr[str]
 

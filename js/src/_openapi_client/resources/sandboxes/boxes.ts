@@ -12,6 +12,8 @@ export class Boxes extends APIResource {
   /**
    * Create a new sandbox from a snapshot. Provide at most one of `snapshot_id` or
    * `snapshot_name`; if neither is provided, the server uses the default snapshot.
+   * `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+   * name resolves to `name:latest`).
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
     return this._client.post('/api/v2/sandboxes/boxes', { body, ...options });
@@ -165,8 +167,18 @@ export interface BoxCreateParams {
    */
   restore_memory?: boolean;
 
+  /**
+   * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+   * resolves to name:latest.
+   */
+  snapshot?: string;
+
   snapshot_id?: string;
 
+  /**
+   * SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+   * that predate it. Set one or the other.
+   */
   snapshot_name?: string;
 
   tag_value_ids?: Array<string>;
@@ -894,6 +906,11 @@ export interface BoxCreateSnapshotParams {
    * Labels seed the captured snapshot's labels.
    */
   labels?: { [key: string]: string };
+
+  /**
+   * mutable Docker-style tag; defaults to "latest"
+   */
+  tag?: string;
 }
 
 export interface BoxGenerateServiceURLParams {

@@ -64,6 +64,7 @@ class BoxesResource(SyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
@@ -79,6 +80,8 @@ class BoxesResource(SyncAPIResource):
 
         Provide at most one of `snapshot_id` or
         `snapshot_name`; if neither is provided, the server uses the default snapshot.
+        `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+        name resolves to `name:latest`).
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -108,6 +111,12 @@ class BoxesResource(SyncAPIResource):
 
               Applies to this request only.
 
+          snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+              resolves to name:latest.
+
+          snapshot_name: SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+              that predate it. Set one or the other.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -132,6 +141,7 @@ class BoxesResource(SyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
                     "tag_value_ids": tag_value_ids,
@@ -357,6 +367,7 @@ class BoxesResource(SyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -382,6 +393,8 @@ class BoxesResource(SyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          tag: mutable Docker-style tag; defaults to "latest"
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -402,6 +415,7 @@ class BoxesResource(SyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
             ),
@@ -591,6 +605,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
@@ -606,6 +621,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
         Provide at most one of `snapshot_id` or
         `snapshot_name`; if neither is provided, the server uses the default snapshot.
+        `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+        name resolves to `name:latest`).
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -635,6 +652,12 @@ class AsyncBoxesResource(AsyncAPIResource):
 
               Applies to this request only.
 
+          snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+              resolves to name:latest.
+
+          snapshot_name: SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+              that predate it. Set one or the other.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -659,6 +682,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
                     "tag_value_ids": tag_value_ids,
@@ -884,6 +908,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -909,6 +934,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          tag: mutable Docker-style tag; defaults to "latest"
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -929,6 +956,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
             ),
