@@ -80,7 +80,7 @@ def _simple_default(obj):
         elif isinstance(obj, (bytes, bytearray)):
             return base64.b64encode(obj).decode()
         return str(obj)
-    except BaseException as e:
+    except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
     return str(obj)
 
@@ -129,7 +129,7 @@ def _serialize_json(obj: Any) -> Any:
                     )
                     pass
         return _simple_default(obj)
-    except BaseException as e:
+    except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return str(obj)
 

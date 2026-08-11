@@ -2420,6 +2420,22 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
     }
 
 
+def test__dumps_json_does_not_swallow_keyboard_interrupt():
+    """Serialization must not swallow KeyboardInterrupt/SystemExit.
+
+    The serde error handlers catch ``Exception`` (not ``BaseException``), so a
+    system-exiting signal raised while serializing an object propagates instead
+    of being masked as ``str(obj)``.
+    """
+
+    class _RaisesInterrupt:
+        def model_dump(self, **kwargs):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _dumps_json({"x": _RaisesInterrupt()})
+
+
 @patch("langsmith.client.requests.Session", autospec=True)
 def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")
