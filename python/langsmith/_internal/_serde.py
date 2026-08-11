@@ -78,7 +78,11 @@ def _simple_default(obj):
         elif isinstance(obj, re.Pattern):
             return obj.pattern
         elif isinstance(obj, (bytes, bytearray)):
-            return base64.b64encode(obj).decode()
+            try:
+                # Try having bytes as utf-8 human-readable text
+                return bytes(obj).decode("utf-8")
+            except UnicodeDecodeError:
+                return base64.b64encode(obj).decode()
         return str(obj)
     except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
@@ -86,12 +90,10 @@ def _simple_default(obj):
 
 
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
-    # Pydantic v2 primary: coerce fields to JSON-native types.
-    # Raises on truly non-serializable fields -> the next entry handles those.
-    ("model_dump", {"exclude_none": True, "mode": "json"}),
-    # Pydantic v2 fallback: python-mode dump; leaves non-JSON values as objects
-    # for orjson / _simple_default to serialize.
-    ("model_dump", {"exclude_none": True}),
+    # Pydantic v2: python-mode dump only. This leaves non-JSON values as objects
+    # for orjson / _simple_default to serialize, which is cheaper on CPU and
+    # memory than having pydantic coerce every leaf to a JSON-native type.
+    ("model_dump", {"exclude_none": True, "mode": "python"}),
     ("dict", {}),  # Pydantic v1 .dict()
     ("to_dict", {}),  # dataclasses-json to_dict()
 ]
