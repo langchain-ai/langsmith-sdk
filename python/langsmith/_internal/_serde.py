@@ -4,6 +4,7 @@ import base64
 import collections
 import datetime
 import decimal
+import inspect
 import ipaddress
 import json
 import logging
@@ -76,12 +77,55 @@ def _simple_default(obj):
     return str(obj)
 
 
+def _model_dump_fallback(value: Any) -> Any:
+    """Serialize a value pydantic v2 ``model_dump`` cannot handle itself.
+
+    Passed as ``fallback=`` so ``model_dump(mode="json")`` serializes in a
+    single pass instead of raising ``PydanticSerializationError`` on the first
+    unserializable field (e.g. a langchain ``StructuredTool`` whose
+    ``args_schema`` is a model *class* and whose ``func``/``coroutine`` are
+    callables). This removes the exception + second-``model_dump`` retry that
+    dominated the tool-serialization path.
+
+    Callables (and classes, which are callable) map to ``__qualname__`` rather
+    than ``str()`` so we don't emit non-deterministic ``<function … at 0x…>``
+    reprs — stable output lets downstream compression dedup identical payloads.
+    """
+    if callable(value):
+        return (
+            getattr(value, "__qualname__", None)
+            or getattr(value, "__name__", None)
+            or str(value)
+        )
+    return str(value)
+
+
+# pydantic added ``model_dump(fallback=...)`` in 2.9; langsmith supports
+# pydantic>=2, so feature-detect once. On older pydantic we omit the kwarg and
+# fall back to the existing exception-driven retry chain below. Passing an
+# unsupported kwarg would raise TypeError and silently degrade every pydantic
+# model to ``str(obj)``, so the guard is load-bearing, not cosmetic.
+try:
+    from pydantic import BaseModel as _BaseModel
+
+    _MODEL_DUMP_FALLBACK_KWARGS: dict[str, Any] = (
+        {"fallback": _model_dump_fallback}
+        if "fallback" in inspect.signature(_BaseModel.model_dump).parameters
+        else {}
+    )
+except Exception:  # pragma: no cover - pydantic is a hard dependency in practice
+    _MODEL_DUMP_FALLBACK_KWARGS = {}
+
+
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
     (
         "model_dump",
-        {"exclude_none": True, "mode": "json"},
+        {"exclude_none": True, "mode": "json", **_MODEL_DUMP_FALLBACK_KWARGS},
     ),  # Pydantic V2 with non-serializable fields
-    ("model_dump", {"exclude_none": True}),  # Pydantic V2 without json mode
+    (
+        "model_dump",
+        {"exclude_none": True, **_MODEL_DUMP_FALLBACK_KWARGS},
+    ),  # Pydantic V2 without json mode
     ("dict", {}),  # Pydantic V1 with non-serializable field
     ("to_dict", {}),  # dataclasses-json
 ]
