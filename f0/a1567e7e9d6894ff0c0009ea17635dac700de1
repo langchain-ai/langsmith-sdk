@@ -1,0 +1,27 @@
+js/src/tests/wrapped_anthropic_mcp.test.ts
+  s_39a11d0044d84e::t_349b5062cc93e5 1-14,16-35,37-138
+  s_39a11d0044d84e::t_0c7b974c767f3a 15,36
+js/src/wrappers/anthropic.ts
+  s_39a11d0044d84e::t_e842e87568a271 427,511,557
+  s_39a11d0044d84e::t_26a17934f72e35 48
+  s_39a11d0044d84e::t_77674db78016d3 13,18-25,30,32-47
+  s_39a11d0044d84e::t_363fdfa959fcc9 384,388-391,394-396
+  s_39a11d0044d84e::t_38b9dc675de372 17,26-29,31
+  s_39a11d0044d84e::t_754d213d7662d2 387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f0a1567e7e9d6894ff0c0009ea17635dac700de1",
+  "prompts": {},
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
