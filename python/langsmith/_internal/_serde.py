@@ -91,8 +91,7 @@ def _simple_default(obj):
 
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
     # Pydantic v2: python-mode dump only. This leaves non-JSON values as objects
-    # for orjson / _simple_default to serialize, which is cheaper on CPU and
-    # memory than having pydantic coerce every leaf to a JSON-native type.
+    # for orjson / _simple_default to serialize, for better CPU/mem efficiency
     ("model_dump", {"exclude_none": True, "mode": "python"}),
     ("dict", {}),  # Pydantic v1 .dict()
     ("to_dict", {}),  # dataclasses-json to_dict()

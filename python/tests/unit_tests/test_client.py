@@ -53,7 +53,6 @@ from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
 from langsmith._internal._multipart import MultipartPartsAndContext
-from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
 from langsmith.client import (
     Client,
@@ -2221,7 +2220,10 @@ def test_pydantic_serialize() -> None:
         ),
         path_keys={pathlib.Path("foo"): pathlib.Path("bar")},
     )
-    res = json.loads(json.dumps(obj, default=_serialize_json))
+    # Serialize via the production path (dumps_json = orjson + key-normalization
+    # fallbacks), not stdlib json.dumps: under model_dump(mode="python") the hook
+    # returns non-str dict keys (e.g. PosixPath) that only dumps_json coerces.
+    res = _orjson.loads(_dumps_json(obj))
     expected = {
         "foo": "bar",
         "uid": str(test_uuid),
@@ -2235,7 +2237,7 @@ def test_pydantic_serialize() -> None:
     assert res == expected
 
     obj2 = {"output": obj}
-    res2 = json.loads(json.dumps(obj2, default=_serialize_json))
+    res2 = _orjson.loads(_dumps_json(obj2))
     assert res2 == {"output": expected}
 
 
