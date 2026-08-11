@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 import httpx
 
+from langsmith._internal._user_agent import user_agent
 from langsmith.sandbox._exceptions import (
     QuotaExceededError,
     ResourceCreationError,
@@ -46,21 +47,6 @@ def merge_headers(
         for name, value in (headers or {}).items():
             merged[name.lower()] = value
     return merged
-
-
-def user_agent(transport_default: str = "") -> str:
-    """``User-Agent`` for a sandbox data-plane request.
-
-    The data-plane clients are built on httpx and websockets directly rather
-    than on :class:`langsmith.Client`, so without this they send only their
-    transport's default agent and a server cannot tell which SDK, or which
-    version of it, a request came from. ``transport_default`` is appended
-    rather than replaced so that detail survives too.
-    """
-    import langsmith
-
-    agent = f"langsmith-py/{langsmith.__version__}"
-    return f"{agent} {transport_default}" if transport_default else agent
 
 
 def httpx_user_agent() -> str:

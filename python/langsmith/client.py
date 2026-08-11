@@ -66,7 +66,6 @@ from typing_extensions import TypeGuard, deprecated, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
-import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -115,6 +114,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith._internal._user_agent import user_agent
 from langsmith._internal._uuid import uuid7
 from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
 from langsmith._openapi_client import AsyncLangsmith as LangsmithOpenAPIClient
@@ -1821,7 +1821,7 @@ class Client:
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": f"langsmith-py/{langsmith.__version__}",
+            "User-Agent": user_agent(),
             "Accept": "application/json",
         }
         # Merge custom headers first so they don't override required headers

@@ -18,7 +18,7 @@ import {
   LangSmithSandboxOperationError,
   LangSmithValidationError,
 } from "./errors.js";
-import { __version__ } from "../index.js";
+import { userAgent } from "../utils/user_agent.js";
 
 // =============================================================================
 // Request identity
@@ -32,7 +32,7 @@ import { __version__ } from "../index.js";
  * cannot tell which SDK, or which version of it, a request came from.
  */
 export function sandboxUserAgent(): string {
-  return `langsmith-js/${__version__}`;
+  return userAgent();
 }
 
 // =============================================================================

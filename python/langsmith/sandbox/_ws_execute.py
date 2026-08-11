@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any, Callable, Optional
 
 from langsmith import utils as ls_utils
+from langsmith._internal._user_agent import user_agent
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
@@ -17,7 +18,7 @@ from langsmith.sandbox._exceptions import (
     SandboxOperationError,
     SandboxServerReloadError,
 )
-from langsmith.sandbox._helpers import merge_headers, user_agent
+from langsmith.sandbox._helpers import merge_headers
 
 logger = logging.getLogger(__name__)
 
