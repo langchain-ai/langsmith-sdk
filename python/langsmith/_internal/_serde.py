@@ -110,14 +110,14 @@ def _serialize_json(obj: Any) -> Any:
                 return obj._asdict()
             return list(obj)
 
+        # A class object has no useful instance serialization method
+        if isinstance(obj, type):
+            return _simple_default(obj)
+
         for attr, kwargs in _serialization_methods:
-            if (
-                hasattr(obj, attr)
-                and callable(getattr(obj, attr))
-                and not isinstance(obj, type)
-            ):
+            method = getattr(obj, attr, None)
+            if callable(method):
                 try:
-                    method = getattr(obj, attr)
                     response = method(**kwargs)
                     if not isinstance(response, dict):
                         return str(response)
@@ -127,7 +127,6 @@ def _serialize_json(obj: Any) -> Any:
                         f"Failed to use {attr} to serialize {type(obj)} to"
                         f" JSON: {repr(e)}"
                     )
-                    pass
         return _simple_default(obj)
     except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
