@@ -30,12 +30,21 @@ _ORJSON_OPTIONS = (
     | _orjson.OPT_NON_STR_KEYS
 )
 _JSON_KEY_TYPES = (str, int, float, bool, type(None))
+# Matches escaped lone UTF-16 surrogates (e.g. b"\\ud800") in ensure_ascii
+# json.dumps output; used to strip them on the stdlib-json fallback path.
+_SURROGATE_RE = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
 
 
 def _simple_default(obj):
     try:
         # Only need to handle types that orjson doesn't serialize by default
         # https://github.com/ijl/orjson#serialize
+        #
+        # datetime/UUID look redundant with orjson's native encoders, but this
+        # function is reached via two paths that bypass them, so keep them:
+        #   (a) non-str dict keys normalized through _normalize_json_keys, and
+        #   (b) the stdlib json.dumps fallback in dumps_json (surrogate path),
+        #       which routes these *values* through this hook.
         if isinstance(obj, datetime.datetime):
             return obj.isoformat()
         elif isinstance(obj, uuid.UUID):
@@ -71,19 +80,20 @@ def _simple_default(obj):
         elif isinstance(obj, (bytes, bytearray)):
             return base64.b64encode(obj).decode()
         return str(obj)
-    except BaseException as e:
+    except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
     return str(obj)
 
 
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
-    (
-        "model_dump",
-        {"exclude_none": True, "mode": "json"},
-    ),  # Pydantic V2 with non-serializable fields
-    ("model_dump", {"exclude_none": True}),  # Pydantic V2 without json mode
-    ("dict", {}),  # Pydantic V1 with non-serializable field
-    ("to_dict", {}),  # dataclasses-json
+    # Pydantic v2 primary: coerce fields to JSON-native types.
+    # Raises on truly non-serializable fields -> the next entry handles those.
+    ("model_dump", {"exclude_none": True, "mode": "json"}),
+    # Pydantic v2 fallback: python-mode dump; leaves non-JSON values as objects
+    # for orjson / _simple_default to serialize.
+    ("model_dump", {"exclude_none": True}),
+    ("dict", {}),  # Pydantic v1 .dict()
+    ("to_dict", {}),  # dataclasses-json to_dict()
 ]
 
 
@@ -100,14 +110,14 @@ def _serialize_json(obj: Any) -> Any:
                 return obj._asdict()
             return list(obj)
 
+        # A class object has no useful instance serialization method
+        if isinstance(obj, type):
+            return _simple_default(obj)
+
         for attr, kwargs in _serialization_methods:
-            if (
-                hasattr(obj, attr)
-                and callable(getattr(obj, attr))
-                and not isinstance(obj, type)
-            ):
+            method = getattr(obj, attr, None)
+            if callable(method):
                 try:
-                    method = getattr(obj, attr)
                     response = method(**kwargs)
                     if not isinstance(response, dict):
                         return str(response)
@@ -117,9 +127,8 @@ def _serialize_json(obj: Any) -> Any:
                         f"Failed to use {attr} to serialize {type(obj)} to"
                         f" JSON: {repr(e)}"
                     )
-                    pass
         return _simple_default(obj)
-    except BaseException as e:
+    except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return str(obj)
 
@@ -176,9 +185,7 @@ def _serialize_json_with_normalized_keys(obj: Any) -> Any:
 
 
 def _elide_surrogates(s: bytes) -> bytes:
-    pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
-    result = pattern.sub(b"", s)
-    return result
+    return _SURROGATE_RE.sub(b"", s)
 
 
 def dumps_json(obj: Any) -> bytes:
@@ -188,13 +195,11 @@ def dumps_json(obj: Any) -> bytes:
     ----------
     obj : Any
         The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
 
     Returns:
     -------
-    str
-        The JSON formatted string.
+    bytes
+        The JSON formatted string, encoded as UTF-8 bytes.
     """
     try:
         return _orjson.dumps(

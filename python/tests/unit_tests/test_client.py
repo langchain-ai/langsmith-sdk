@@ -2420,6 +2420,41 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
     }
 
 
+def test__dumps_json_does_not_swallow_keyboard_interrupt():
+    """Serialization must not swallow KeyboardInterrupt/SystemExit.
+
+    The serde error handlers catch ``Exception`` (not ``BaseException``), so a
+    system-exiting signal raised while serializing an object propagates instead
+    of being masked as ``str(obj)``.
+    """
+
+    class _RaisesInterrupt:
+        def model_dump(self, **kwargs):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _dumps_json({"x": _RaisesInterrupt()})
+
+
+def test__dumps_json_type_object_serializes_as_str():
+    # A class object has no useful instance serialization method; it must fall
+    # through to _simple_default -> str rather than be probed like an instance.
+    # The probe attribute has to live at the class level (via a metaclass) for
+    # this to distinguish the guarded and unguarded implementations.
+    class Meta(type):
+        def to_dict(cls):
+            return {"meta": "yes"}
+
+    class WithClassLevelToDict(metaclass=Meta):
+        pass
+
+    # Guarded: falls through to _simple_default -> str.
+    # Unguarded: probed like an instance, emits {"meta": "yes"}.
+    assert isinstance(
+        _orjson.loads(_dumps_json({"cls": WithClassLevelToDict}))["cls"], str
+    )
+
+
 @patch("langsmith.client.requests.Session", autospec=True)
 def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")
@@ -6764,6 +6799,11 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
             {},
             {"reference_dataset_id": "DATASET_ID_PLACEHOLDER"},
         ),
+        (
+            {"tag_value_ids": ["550e8400-e29b-41d4-a716-446655440000"]},
+            {},
+            {"tag_value_ids": ["550e8400-e29b-41d4-a716-446655440000"]},
+        ),
         # All parameters together
         (
             {
@@ -6822,6 +6862,32 @@ def test_create_project(kwargs, expected_params, expected_body_fields):
         assert "id" in body
         for field, value in expected_body_fields.items():
             assert body[field] == value
+
+
+def test_create_dataset_with_tag_value_ids():
+    tag_value_ids = [uuid.uuid4(), uuid.uuid4()]
+    with patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": str(uuid.uuid4()),
+            "name": "test-dataset",
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+        mock_session.request.return_value = mock_response
+        mock_session_cls.return_value = mock_session
+
+        client = Client(api_key="test", auto_batch_tracing=False)
+        client.create_dataset("test-dataset", tag_value_ids=tag_value_ids)
+
+        create_call = next(
+            call
+            for call in mock_session.request.call_args_list
+            if call.args[0] == "POST" and call.args[1].endswith("/datasets")
+        )
+        body = json.loads(create_call.kwargs["data"])
+        assert body["tag_value_ids"] == [str(tag_id) for tag_id in tag_value_ids]
 
 
 _MULTIPART_HEADERS = {"Content-Type": "multipart/form-data; boundary=test-boundary"}

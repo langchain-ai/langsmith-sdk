@@ -5200,6 +5200,7 @@ class Client:
         num_examples: Optional[int] = None,
         num_repetitions: Optional[int] = None,
         evaluator_keys: Optional[list[str]] = None,
+        tag_value_ids: Optional[list[ID_TYPE]] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
@@ -5221,6 +5222,8 @@ class Client:
                 row-level evaluators that will run against this project. Used by
                 the backend to populate per-evaluator experiment progress.
                 Transport-only.
+            tag_value_ids (Optional[list[Union[UUID, str]]]): IDs of tag values to
+                apply to the project at creation time.
 
         Returns:
             TracerSession: The created project.
@@ -5246,6 +5249,8 @@ class Client:
             body["num_repetitions"] = num_repetitions
         if evaluator_keys:
             body["evaluator_keys"] = evaluator_keys
+        if tag_value_ids is not None:
+            body["tag_value_ids"] = tag_value_ids
         response = self.request_with_retries(
             "POST",
             endpoint,
@@ -5683,6 +5688,7 @@ class Client:
         outputs_schema: Optional[dict[str, Any]] = None,
         transformations: Optional[list[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
+        tag_value_ids: Optional[list[ID_TYPE]] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -5701,6 +5707,8 @@ class Client:
                 A list of transformations to apply to the dataset.
             metadata (Optional[dict]):
                 Additional metadata to associate with the dataset.
+            tag_value_ids (Optional[list[Union[UUID, str]]]): IDs of tag values to
+                apply to the dataset at creation time.
 
         Returns:
             Dataset: The created dataset.
@@ -5729,6 +5737,9 @@ class Client:
 
         if outputs_schema is not None:
             dataset["outputs_schema_definition"] = outputs_schema
+
+        if tag_value_ids is not None:
+            dataset["tag_value_ids"] = [str(tag_id) for tag_id in tag_value_ids]
 
         response = self.request_with_retries(
             "POST",

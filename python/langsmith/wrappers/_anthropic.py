@@ -18,6 +18,7 @@ from typing_extensions import Self, TypedDict
 from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._orjson import dumps as _dumps
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 from langsmith.schemas import InputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -40,6 +41,36 @@ def _get_not_given() -> Optional[tuple[type, ...]]:
         return None
 
 
+# Keys of Anthropic's MCP server definition that are known to be safe to trace
+_MCP_SERVER_SAFE_KEYS: frozenset[str] = frozenset(
+    {"name", "type", "url", "tool_configuration"}
+)
+
+
+def _redact_mcp_servers(servers: Any) -> Any:
+    """Mask credentials in `mcp_servers` definitions before they are traced.
+
+    Keys outside `_MCP_SERVER_SAFE_KEYS` keep their name but get
+    `SECRET_PLACEHOLDER` as their value: a trace still shows that the field was
+    set, without exposing it.
+
+    Returns new dicts. The caller's `mcp_servers` are also sent to Anthropic and
+    must keep their real values, so nothing is modified in place.
+    """
+    if not isinstance(servers, (list, tuple)):
+        return servers
+
+    redacted: list[Any] = []
+    for server in servers:
+        if isinstance(server, Mapping):
+            server = {
+                key: value if key in _MCP_SERVER_SAFE_KEYS else SECRET_PLACEHOLDER
+                for key, value in server.items()
+            }
+        redacted.append(server)
+    return redacted
+
+
 def _strip_not_given(d: dict) -> dict:
     try:
         if not_given := _get_not_given():
@@ -56,7 +87,11 @@ def _strip_not_given(d: dict) -> dict:
             "messages", []
         )
         d.pop("system")
-    return {k: v for k, v in d.items() if v is not None}
+    result = {k: v for k, v in d.items() if v is not None}
+    # clean up `mcp_servers` to avoid credential leaks
+    if "mcp_servers" in result:
+        result["mcp_servers"] = _redact_mcp_servers(result["mcp_servers"])
+    return result
 
 
 def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
@@ -69,7 +104,6 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
     # Allowlist of safe invocation parameters to include
     # Only include known, non-sensitive parameters
     allowed_invocation_keys = {
-        "mcp_servers",
         "service_tier",
         "tool_choice",
         "top_k",
