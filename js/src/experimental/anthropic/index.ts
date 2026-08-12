@@ -6,6 +6,10 @@ import {
 import { StreamManager, type WrapClaudeAgentSDKConfig } from "./context.js";
 import { convertFromAnthropicMessage, mergeMessagesById } from "./messages.js";
 import type { SDKMessage, SDKUserMessage, QueryOptions } from "./types.js";
+import { mask } from "../../utils/redaction.js";
+
+/** Options that are credentials by construction: `env` is documented as `{ ...process.env }`. */
+const OPTION_SECRET_KEYS = ["env", "extraArgs"] as const;
 
 const WRAPPED_TOOL_SYMBOL = Symbol.for(
   "langsmith:claude_agent_sdk:wrapped_tool",
@@ -108,6 +112,12 @@ function wrapClaudeAgentQuery<
               { name: value.name, type: value.type },
             ]),
           );
+        }
+
+        if (options != null) {
+          for (const key of OPTION_SECRET_KEYS) {
+            if (options[key] != null) options[key] = mask(options[key]);
+          }
         }
 
         return { messages: convertFromAnthropicMessage(prompt), options };
