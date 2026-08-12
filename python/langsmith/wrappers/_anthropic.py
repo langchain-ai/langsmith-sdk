@@ -104,7 +104,6 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
     # Allowlist of safe invocation parameters to include
     # Only include known, non-sensitive parameters
     allowed_invocation_keys = {
-        "mcp_servers",
         "service_tier",
         "tool_choice",
         "top_k",
