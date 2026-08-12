@@ -9,9 +9,12 @@ import io
 import wave
 from unittest.mock import MagicMock
 
+import pytest
+
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice import audio as audio_utils
 from langsmith._internal.voice import helpers
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 
 
 class TestVoiceAudio:
@@ -51,6 +54,67 @@ class TestVoiceHelpers:
             "a": "<2 bytes>",
             "b": ["<1 bytes>"],
         }
+
+    def test_scrub_masks_realtime_session_tool_credentials(self):
+        """Hosted MCP tools in a session carry a bearer token and auth headers."""
+        token = "fake-token-for-tests-only"
+        event = {
+            "type": "session.updated",
+            "session": {
+                "model": "gpt-realtime",
+                "tools": [
+                    {
+                        "type": "mcp",
+                        "server_label": "example",
+                        "server_url": "https://mcp.example.com/sse",
+                        "authorization": token,
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                ],
+            },
+        }
+
+        scrubbed = helpers.scrub(event)
+
+        assert token not in str(scrubbed)
+        tool = scrubbed["session"]["tools"][0]
+        assert tool["authorization"] == SECRET_PLACEHOLDER
+        assert tool["headers"] == {"Authorization": SECRET_PLACEHOLDER}
+        assert tool["server_label"] == "example"
+        assert scrubbed["session"]["model"] == "gpt-realtime"
+
+    @pytest.mark.parametrize(
+        "key",
+        ["authorization", "api_key", "headers", "env", "access_token", "password"],
+    )
+    def test_scrub_masks_credential_keys(self, key):
+        assert helpers.scrub({key: "s3cret"}) == {key: SECRET_PLACEHOLDER}
+
+    def test_scrub_keeps_mapping_key_names_when_masking(self):
+        scrubbed = helpers.scrub({"env": {"ANTHROPIC_API_KEY": "s3cret"}})
+
+        assert scrubbed == {"env": {"ANTHROPIC_API_KEY": SECRET_PLACEHOLDER}}
+
+    @pytest.mark.parametrize(
+        "key", ["max_tokens", "token_count", "input_tokens", "top_logprobs"]
+    )
+    def test_scrub_leaves_lookalike_keys_alone(self, key):
+        """Matching is on exact keys, so `token` substrings survive."""
+        assert helpers.scrub({key: 128}) == {key: 128}
+
+    def test_scrub_masks_inside_lists(self):
+        event = {"items": [{"headers": {"Authorization": "s3cret"}}]}
+
+        assert helpers.scrub(event) == {
+            "items": [{"headers": {"Authorization": SECRET_PLACEHOLDER}}]
+        }
+
+    def test_scrub_does_not_mutate_the_caller(self):
+        event = {"session": {"authorization": "s3cret"}}
+
+        helpers.scrub(event)
+
+        assert event["session"]["authorization"] == "s3cret"
 
     def test_dump_event_variants(self):
         model = MagicMock()
