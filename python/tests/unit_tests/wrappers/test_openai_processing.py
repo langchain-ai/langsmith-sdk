@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from langsmith import run_helpers
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 from langsmith.wrappers._openai import (
     _infer_invocation_params,
+    _process_inputs,
     _traceable_kwargs_with_ls_agent_type,
 )
 
@@ -187,3 +189,112 @@ def test_nested_none_opt_out_overrides_propagated_tag():
     )
     assert "ls_agent_type" in result["child_metadata"]
     assert result["child_metadata"]["ls_agent_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# credential masking
+# ---------------------------------------------------------------------------
+
+FAKE_TOKEN = "fake-token-for-tests-only"
+
+
+def _mcp_tools(**extra) -> list:
+    return [
+        {
+            "type": "mcp",
+            "server_label": "example",
+            "server_url": "https://mcp.example.com/sse",
+            "authorization": FAKE_TOKEN,
+            "headers": {"Authorization": f"Bearer {FAKE_TOKEN}"},
+            **extra,
+        }
+    ]
+
+
+class TestRedactHostedMCPTools:
+    """Responses API `tools` may carry a bearer credential and auth headers."""
+
+    def test_process_inputs_masks_authorization_and_headers(self) -> None:
+        tool = _process_inputs({"model": "gpt-5", "tools": _mcp_tools()})["tools"][0]
+
+        assert tool["authorization"] == SECRET_PLACEHOLDER
+        assert tool["headers"] == SECRET_PLACEHOLDER
+        assert tool["type"] == "mcp"
+        assert tool["server_label"] == "example"
+        assert tool["server_url"] == "https://mcp.example.com/sse"
+
+    def test_infer_invocation_params_never_carries_the_token(self) -> None:
+        """Guards against building invocation params from the raw kwargs."""
+        params = _infer_invocation_params(
+            "chat", "openai", {}, True, {"model": "gpt-5", "tools": _mcp_tools()}
+        )
+
+        assert FAKE_TOKEN not in str(params)
+
+    def test_does_not_mutate_the_callers_tools(self) -> None:
+        """The same objects are sent to OpenAI, so they keep the real token."""
+        tools = _mcp_tools()
+        kwargs = {"model": "gpt-5", "tools": tools}
+
+        _process_inputs(kwargs)
+        _infer_invocation_params("chat", "openai", {}, True, kwargs)
+
+        assert tools[0]["authorization"] == FAKE_TOKEN
+        assert tools[0]["headers"] == {"Authorization": f"Bearer {FAKE_TOKEN}"}
+
+    def test_masks_fields_that_are_not_explicitly_allowed(self) -> None:
+        """A credential field added to the API later is masked by default."""
+        tool = _process_inputs({"tools": _mcp_tools(future_secret="s3cret")})["tools"][
+            0
+        ]
+
+        assert tool["future_secret"] == SECRET_PLACEHOLDER
+
+    def test_function_tools_keep_their_schema(self) -> None:
+        tools = [
+            {
+                "type": "function",
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                },
+            }
+        ]
+
+        assert _process_inputs({"tools": tools})["tools"] == tools
+
+    @pytest.mark.parametrize(
+        ("tools", "expected"),
+        [
+            ("not-a-list", "not-a-list"),
+            ([None], [None]),
+            ([["nested"]], [["nested"]]),
+            ([], []),
+            ((), []),  # tuples are normalized to lists
+        ],
+    )
+    def test_tolerates_unexpected_shapes(self, tools, expected) -> None:
+        assert _process_inputs({"tools": tools})["tools"] == expected
+
+
+class TestRedactTransportOverrides:
+    """`extra_*` are credentials by construction; only key names survive."""
+
+    @pytest.mark.parametrize("key", ["extra_headers", "extra_body", "extra_query"])
+    def test_masks_values_but_keeps_key_names(self, key) -> None:
+        result = _process_inputs({key: {"Authorization": f"Bearer {FAKE_TOKEN}"}})
+
+        assert result[key] == {"Authorization": SECRET_PLACEHOLDER}
+
+    def test_does_not_mutate_the_callers_headers(self) -> None:
+        headers = {"Authorization": f"Bearer {FAKE_TOKEN}"}
+        kwargs = {"model": "gpt-5", "extra_headers": headers}
+
+        _process_inputs(kwargs)
+
+        assert headers["Authorization"] == f"Bearer {FAKE_TOKEN}"
+        assert kwargs["extra_headers"] is headers
+
+    def test_unset_overrides_are_left_alone(self) -> None:
+        assert _process_inputs({"model": "gpt-5"}) == {"model": "gpt-5"}
