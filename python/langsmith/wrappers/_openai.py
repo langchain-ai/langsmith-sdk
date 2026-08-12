@@ -18,6 +18,7 @@ from typing_extensions import TypedDict
 from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
+from langsmith._internal._redaction import mask, redact_outside
 
 # ``_create_usage_metadata`` lives in a non-deprecated internal module so
 # integrations can reuse it without importing the ``wrappers`` package (whose
@@ -69,9 +70,65 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
+# Keys of OpenAI's hosted MCP tool entry that are safe to trace
+# (`openai.types.responses.tool_param.Mcp`). `authorization`, `headers`, and any
+# credential field added later are masked.
+_MCP_TOOL_SAFE_KEYS: frozenset[str] = frozenset(
+    {
+        "type",
+        "server_label",
+        "server_description",
+        "server_url",
+        "connector_id",
+        "tunnel_id",
+        "require_approval",
+        "allowed_tools",
+        "allowed_callers",
+        "defer_loading",
+    }
+)
+
+# Per-request transport overrides: credentials by construction, and of no
+# diagnostic value in a trace, so only their key names survive.
+_TRANSPORT_SECRET_KEYS = ("extra_headers", "extra_body", "extra_query")
+
+
+def _redact_tools(tools: Any) -> Any:
+    """Mask credentials in hosted MCP tool entries before they are traced.
+
+    Only ``type == "mcp"`` entries are touched. Function tools carry the
+    caller's JSON schema, which is the useful part of the trace.
+    """
+    if not isinstance(tools, (list, tuple)):
+        return tools
+
+    redacted: list[Any] = []
+    for tool in tools:
+        if isinstance(tool, Mapping) and tool.get("type") == "mcp":
+            tool = redact_outside(tool, _MCP_TOOL_SAFE_KEYS)
+        redacted.append(tool)
+    return redacted
+
+
+def _redact_secrets(d: dict) -> dict:
+    """Mask credential-bearing request params. Returns a new dict.
+
+    The caller's kwargs go on to the OpenAI API and must keep real values, so
+    nothing is modified in place.
+    """
+    redacted = dict(d)
+    if "tools" in redacted:
+        redacted["tools"] = _redact_tools(redacted["tools"])
+    for key in _TRANSPORT_SECRET_KEYS:
+        if redacted.get(key) is not None:
+            redacted[key] = mask(redacted[key])
+    return redacted
+
+
 def _process_inputs(d: dict) -> dict:
-    """Strip `NotGiven` values and serialize `text_format` to JSON schema."""
+    """Strip `NotGiven` values, mask credentials, serialize `text_format`."""
     d = _strip_not_given(d)
+    d = _redact_secrets(d)
 
     # Convert text_format (Pydantic model) to JSON schema if present
     if "text_format" in d:

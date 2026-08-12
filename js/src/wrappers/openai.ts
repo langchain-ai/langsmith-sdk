@@ -9,6 +9,76 @@ import {
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
 import { getCurrentRunTree } from "../singletons/traceable.js";
 import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
+import { mask, overParams, redactOutside } from "../utils/redaction.js";
+
+/**
+ * Keys of OpenAI's hosted MCP tool entry that are safe to trace
+ * (`OpenAI.Responses.Tool.Mcp`). `authorization`, `headers`, and any credential
+ * field added later are masked.
+ */
+const MCP_TOOL_SAFE_KEYS: ReadonlySet<string> = new Set([
+  "type",
+  "server_label",
+  "server_description",
+  "server_url",
+  "connector_id",
+  "tunnel_id",
+  "require_approval",
+  "allowed_tools",
+  "allowed_callers",
+  "defer_loading",
+]);
+
+/**
+ * Request-transport keys that are credentials by construction. They carry no
+ * diagnostic value in a trace, so only their key names survive.
+ */
+const TRANSPORT_SECRET_KEYS: ReadonlySet<string> = new Set([
+  "headers",
+  "query",
+  "extra_headers",
+  "extra_body",
+  "extra_query",
+]);
+
+/**
+ * Mask credentials in OpenAI request params before they are traced.
+ *
+ * Returns a new object; the caller's params are also sent to OpenAI and must
+ * keep their real values.
+ */
+function redactOpenAIParams(params: KVMap): KVMap {
+  const processed: KVMap = { ...params };
+
+  if (Array.isArray(processed.tools)) {
+    processed.tools = processed.tools.map((tool) =>
+      typeof tool === "object" &&
+      tool !== null &&
+      !Array.isArray(tool) &&
+      (tool as KVMap).type === "mcp"
+        ? redactOutside(tool, MCP_TOOL_SAFE_KEYS)
+        : tool,
+    );
+  }
+
+  for (const key of TRANSPORT_SECRET_KEYS) {
+    if (processed[key] != null) {
+      processed[key] = mask(processed[key]);
+    }
+  }
+
+  return processed;
+}
+
+/**
+ * `traceable` hands `processInputs` either the params object itself or, for any
+ * call with a second argument, `{ args: [params, requestOptions] }`. Redact
+ * every object argument so the shape of the call cannot defeat masking, and so
+ * a credential in the request options is masked too.
+ */
+function processTracedInputs(inputs: KVMap): KVMap {
+  return overParams(inputs, redactOpenAIParams);
+}
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -121,7 +191,9 @@ function _combineChatCompletionChoices(
     }
   }
   const toolCalls: {
-    [key: number]: Partial<OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall>[];
+    [
+      key: number
+    ]: Partial<OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall>[];
   } = {};
   for (const c of choices) {
     if (c.delta.content) {
@@ -253,8 +325,7 @@ function isChatCompletionUsage(
 
 function processChatCompletion(outputs: KVMap): KVMap {
   const openAICompletion = outputs as
-    | OpenAI.ChatCompletion
-    | OpenAI.Responses.Response;
+    OpenAI.ChatCompletion | OpenAI.Responses.Response;
   const recognizedServiceTier = ["priority", "flex"].includes(
     openAICompletion.service_tier ?? "",
   )
@@ -459,6 +530,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
     run_type: "llm",
     aggregator: chatAggregator,
     argsConfigPath: [1, "langsmithExtra"],
+    processInputs: processTracedInputs,
     getInvocationParams: getChatModelInvocationParamsFn(
       provider,
       prepopulatedInvocationParams,
@@ -571,6 +643,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       run_type: "llm",
       aggregator: textAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      processInputs: processTracedInputs,
       getInvocationParams: (payload: unknown) => {
         if (typeof payload !== "object" || payload == null) return undefined;
         // we can safely do so, as the types are not exported in TSC
@@ -629,6 +702,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processTracedInputs,
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
@@ -651,6 +725,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processTracedInputs,
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
@@ -673,6 +748,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processTracedInputs,
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
