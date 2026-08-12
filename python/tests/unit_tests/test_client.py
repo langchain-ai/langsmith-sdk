@@ -2423,9 +2423,9 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
 def test__dumps_json_coerces_json_native_dict_keys():
     """Keys orjson can coerce must still round-trip to their string form.
 
-    The fast path omits ``OPT_NON_STR_KEYS``, so these now reach the
-    normalizing fallback rather than being coerced by orjson directly. The
-    output must not change either way.
+    The fast path omits ``OPT_NON_STR_KEYS``, so these are coerced by the
+    retry with the full options rather than on the first attempt. The output
+    must not change either way.
     """
     serialized_json = _dumps_json(
         {1: "int", 2.5: "float", None: "none", date(2020, 1, 2): "date"}
@@ -2439,6 +2439,28 @@ def test__dumps_json_coerces_json_native_dict_keys():
     }
     # `True` is kept apart: it would collide with the `1` key above (True == 1).
     assert _orjson.loads(_dumps_json({True: "bool"})) == {"true": "bool"}
+
+
+def test__dumps_json_coerces_enum_dict_keys_by_value():
+    """Enum keys must serialize as their value, not ``str(member)``.
+
+    orjson does this coercion itself, but only with ``OPT_NON_STR_KEYS``; the
+    normalizing fallback would emit ``"StrValued.FOO"`` instead.
+    """
+
+    class StrValued(Enum):
+        FOO = "foo"
+
+    class IntValued(Enum):
+        BAR = 3
+
+    class BytesValued(Enum):
+        BAZ = b"x"
+
+    assert _orjson.loads(_dumps_json({StrValued.FOO: 1})) == {"foo": 1}
+    assert _orjson.loads(_dumps_json({IntValued.BAR: 1})) == {"3": 1}
+    # A value orjson can't use as a key falls back to the member name.
+    assert _orjson.loads(_dumps_json({BytesValued.BAZ: 1})) == {"BytesValued.BAZ": 1}
 
 
 def test__dumps_json_honors_json_only_field_serializer():

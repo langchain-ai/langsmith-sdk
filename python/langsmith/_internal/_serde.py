@@ -263,6 +263,15 @@ def dumps_json(obj: Any) -> bytes:
     except TypeError as e:
         # Usually caused by UTF surrogate characters or non-str dict keys
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        try:
+            # Let orjson coerce non-str keys. Only stringify the ones it can't handle.
+            return _orjson.dumps(
+                obj,
+                default=_serialize_json,
+                option=_ORJSON_OPTIONS,
+            )
+        except TypeError:
+            pass
         normalized_obj = _normalize_json_keys(obj)
         try:
             return _orjson.dumps(
