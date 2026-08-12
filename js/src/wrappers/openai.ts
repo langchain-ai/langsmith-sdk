@@ -9,6 +9,60 @@ import {
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
 import { getCurrentRunTree } from "../singletons/traceable.js";
 import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
+import { mask, overParams, redactOutside } from "../utils/redaction.js";
+
+/** Keys of `OpenAI.Responses.Tool.Mcp` that are safe to trace. */
+const MCP_TOOL_SAFE_KEYS: ReadonlySet<string> = new Set([
+  "type",
+  "server_label",
+  "server_description",
+  "server_url",
+  "connector_id",
+  "tunnel_id",
+  "require_approval",
+  "allowed_tools",
+  "allowed_callers",
+  "defer_loading",
+]);
+
+/** Request-transport keys that are credentials by construction. */
+const TRANSPORT_SECRET_KEYS: ReadonlySet<string> = new Set([
+  "headers",
+  "query",
+  "extra_headers",
+  "extra_body",
+  "extra_query",
+]);
+
+/** Mask credentials in OpenAI request params. Only hosted MCP tools are touched;
+ * function tools carry the caller's schema. */
+function redactOpenAIParams(params: KVMap): KVMap {
+  // Copy first: `params` also goes to the API and must keep its real values.
+  const processed: KVMap = { ...params };
+
+  if (Array.isArray(processed.tools)) {
+    processed.tools = processed.tools.map((tool) =>
+      typeof tool === "object" &&
+      tool !== null &&
+      !Array.isArray(tool) &&
+      (tool as KVMap).type === "mcp"
+        ? redactOutside(tool, MCP_TOOL_SAFE_KEYS)
+        : tool,
+    );
+  }
+
+  for (const key of TRANSPORT_SECRET_KEYS) {
+    if (processed[key] != null) {
+      processed[key] = mask(processed[key]);
+    }
+  }
+
+  return processed;
+}
+
+function processTracedInputs(inputs: KVMap): KVMap {
+  return overParams(inputs, redactOpenAIParams);
+}
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -459,6 +513,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
     run_type: "llm",
     aggregator: chatAggregator,
     argsConfigPath: [1, "langsmithExtra"],
+    processInputs: processTracedInputs,
     getInvocationParams: getChatModelInvocationParamsFn(
       provider,
       prepopulatedInvocationParams,
@@ -571,6 +626,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       run_type: "llm",
       aggregator: textAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      processInputs: processTracedInputs,
       getInvocationParams: (payload: unknown) => {
         if (typeof payload !== "object" || payload == null) return undefined;
         // we can safely do so, as the types are not exported in TSC
@@ -629,6 +685,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processTracedInputs,
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
@@ -651,6 +708,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processTracedInputs,
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
@@ -673,6 +731,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
+          processInputs: processTracedInputs,
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
