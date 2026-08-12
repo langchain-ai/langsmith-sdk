@@ -5,6 +5,7 @@ import {
   type TraceableConfig,
 } from "../traceable.js";
 import { KVMap, InvocationParamsSchema } from "../schemas.js";
+import { mask, overParams, redactOutside } from "../utils/redaction.js";
 import type {
   Content,
   GenerateContentParameters,
@@ -169,7 +170,98 @@ const chatAggregator = (input: unknown): KVMap => {
   return result;
 };
 
+/** Keys of `@google/genai`'s `HttpOptions` that are safe to trace. */
+const HTTP_OPTIONS_SAFE_KEYS: ReadonlySet<string> = new Set([
+  "baseUrl",
+  "baseUrlResourceScope",
+  "apiVersion",
+  "timeout",
+  "retryOptions",
+]);
+
+/** Keys of `@google/genai`'s `StreamableHttpTransport` that are safe to trace. */
+const MCP_TRANSPORT_SAFE_KEYS: ReadonlySet<string> = new Set([
+  "url",
+  "timeout",
+  "sseReadTimeout",
+  "terminateOnClose",
+]);
+
+/**
+ * Credential-bearing paths inside a `Tool`, masked outright. Enumerated from the
+ * google-genai type graph; the Python twin has a test that fails if a release
+ * adds one that is not listed. Paths absent from the installed version are
+ * simply skipped, so listing one early is harmless.
+ */
+const TOOL_SECRET_PATHS: ReadonlyArray<readonly string[]> = [
+  ["exaAiSearch", "apiKey"],
+  ["googleMaps", "authConfig"],
+  ["parallelAiSearch", "apiKey"],
+  ["retrieval", "externalApi", "apiAuth"], // deprecated by `authConfig`
+  ["retrieval", "externalApi", "authConfig"],
+];
+
+/** Copy `obj` with the value at `path` masked; unchanged if absent. */
+function maskPath(obj: unknown, path: readonly string[]): unknown {
+  const [key, ...rest] = path;
+  const value = (obj as KVMap)?.[key];
+  if (value == null) return obj;
+  return {
+    ...(obj as KVMap),
+    [key]: rest.length > 0 ? maskPath(value, rest) : mask(value),
+  };
+}
+
+/** Allowlist the MCP transport, so a credential added to it later fails closed. */
+function redactMcpServer(server: unknown): unknown {
+  const transport = (server as KVMap)?.streamableHttpTransport;
+  if (transport == null) return server;
+  return {
+    ...(server as KVMap),
+    streamableHttpTransport: redactOutside(transport, MCP_TRANSPORT_SAFE_KEYS),
+  };
+}
+
+/**
+ * Mask only the credential-bearing subtrees of one `Tool`.
+ *
+ * Untouched subtrees are never walked, so a caller's `functionDeclarations`
+ * schema — which may legitimately declare a property named `headers` — and any
+ * variant `@google/genai` adds later reach the trace intact.
+ */
+function redactTool(tool: unknown): unknown {
+  let redacted = tool;
+  for (const path of TOOL_SECRET_PATHS) redacted = maskPath(redacted, path);
+  const servers = (redacted as KVMap)?.mcpServers;
+  if (!Array.isArray(servers)) return redacted;
+  return { ...(redacted as KVMap), mcpServers: servers.map(redactMcpServer) };
+}
+
+/** Mask the known credential sites in the caller's `config`. Returns a new object. */
+function redactGeminiConfig(inputs: KVMap): KVMap {
+  const config = inputs?.config as KVMap | undefined;
+  if (config == null || typeof config !== "object") return inputs;
+
+  const redacted: KVMap = { ...config };
+  if (redacted.httpOptions != null) {
+    redacted.httpOptions = redactOutside(
+      redacted.httpOptions,
+      HTTP_OPTIONS_SAFE_KEYS,
+    );
+  }
+  if (Array.isArray(redacted.tools)) {
+    redacted.tools = redacted.tools.map(redactTool);
+  }
+  return { ...inputs, config: redacted };
+}
+
 function processGeminiInputs(inputs: KVMap): KVMap {
+  return overParams(inputs, (params) =>
+    redactGeminiConfig(normalizeGeminiInputs(params)),
+  );
+}
+
+function normalizeGeminiInputs(inputs: KVMap): KVMap {
   const { contents, ...rest } = inputs as GenerateContentParameters;
   if (!contents) return inputs;
 
