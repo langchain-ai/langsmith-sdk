@@ -873,7 +873,7 @@ class AsyncSandboxClient:
         self,
         name: str,
         dockerfile: Union[str, os.PathLike[str]],
-        fs_capacity_bytes: int,
+        fs_capacity_bytes: Optional[int] = None,
         *,
         context: Union[str, os.PathLike[str]] = ".",
         build_args: Optional[Mapping[str, str]] = None,
@@ -886,6 +886,7 @@ class AsyncSandboxClient:
     ) -> Snapshot:
         """Build a snapshot from a local Dockerfile context.
 
+        When ``fs_capacity_bytes`` is omitted, the server applies its default.
         ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
         build runs BuildKit plus the native snapshotter's layer copies inside
         it, which contend for a single core by default, so giving the builder

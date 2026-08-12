@@ -2150,7 +2150,7 @@ describe("SandboxClient - snapshot operations", () => {
     }
   });
 
-  it("createSnapshotFromDockerfile should forward vCpus/memBytes to the builder", async () => {
+  it("createSnapshotFromDockerfile should default capacity and forward builder size", async () => {
     const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
     const client = createClientWithMock(jest.fn<typeof fetch>());
     const fakeSandbox = {
@@ -2170,29 +2170,35 @@ describe("SandboxClient - snapshot operations", () => {
     const createSandboxSpy = jest
       .spyOn(client, "createSandbox")
       .mockResolvedValue(fakeSandbox as any);
-    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
-      id: "snap-1",
-      name: "snap",
-      status: "ready",
-      fs_capacity_bytes: 4294967296,
-    });
+    const captureSnapshotSpy = jest
+      .spyOn(client, "captureSnapshot")
+      .mockResolvedValue({
+        id: "snap-1",
+        name: "snap",
+        status: "ready",
+        fs_capacity_bytes: 4294967296,
+      });
 
     try {
       await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
 
-      await client.createSnapshotFromDockerfile(
-        "snap",
-        "Dockerfile",
-        4294967296,
-        {
-          context,
-          vCpus: 2,
-          memBytes: 8589934592,
-        },
-      );
+      await client.createSnapshotFromDockerfile("snap", "Dockerfile", {
+        context,
+        vCpus: 2,
+        memBytes: 8589934592,
+      });
 
       expect(createSandboxSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ vCpus: 2, memBytes: 8589934592 }),
+        expect.objectContaining({
+          vCpus: 2,
+          memBytes: 8589934592,
+          fsCapacityBytes: undefined,
+        }),
+      );
+      expect(captureSnapshotSpy).toHaveBeenCalledWith(
+        "builder",
+        "snap",
+        expect.objectContaining({ fsCapacityBytes: undefined }),
       );
     } finally {
       await rm(context, { recursive: true, force: true });
