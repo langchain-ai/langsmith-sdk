@@ -13,6 +13,14 @@ class Issue(BaseModel):
 
     actions: Optional[object] = None
 
+    auto_resolution_evidence: Optional[object] = None
+
+    auto_resolution_state: Optional[str] = None
+    """Nil unless eligible: "auto_close" or "prompt".
+
+    Evidence carries the deciding gate.
+    """
+
     created_at: Optional[str] = None
 
     description: Optional[str] = None
