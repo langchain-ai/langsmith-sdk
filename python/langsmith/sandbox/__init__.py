@@ -48,6 +48,7 @@ from langsmith.sandbox._exceptions import (
     SandboxConnectTimeoutError,
     SandboxNotReadyError,
     SandboxOperationError,
+    SandboxRetryableConnectionError,
     SandboxServerReloadError,
     TunnelConnectionRefusedError,
     TunnelError,
@@ -151,6 +152,7 @@ __all__ = [
     "SandboxAPIError",
     "SandboxAuthenticationError",
     "SandboxConnectionError",
+    "SandboxRetryableConnectionError",
     "SandboxConnectTimeoutError",
     "SandboxServerReloadError",
     # Resource errors (type-based with resource_type attribute)
