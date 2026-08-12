@@ -1148,12 +1148,12 @@ class TestSnapshotOperations:
             snapshot = client.create_snapshot_from_dockerfile(
                 "snap",
                 "Dockerfile",
-                4294967296,
                 context=tmp_path,
             )
 
         assert snapshot.id == "snap-1"
         sandbox_mock.assert_called_once()
+        assert sandbox_mock.call_args.kwargs["fs_capacity_bytes"] is None
         # Build scratch must live on the capacity-backed root filesystem, not
         # the RAM-backed /tmp tmpfs that fs_capacity_bytes does not size.
         assert len(fake_sandbox.writes) == 1
@@ -1173,7 +1173,7 @@ class TestSnapshotOperations:
         assert args[0] == "builder"
         assert args[1] == "snap"
         assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
-        assert kwargs["fs_capacity_bytes"] == 4294967296
+        assert kwargs["fs_capacity_bytes"] is None
 
     def test_create_snapshot_from_dockerfile_forwards_builder_size(
         self, client: SandboxClient, tmp_path

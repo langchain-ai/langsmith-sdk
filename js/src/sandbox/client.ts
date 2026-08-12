@@ -952,17 +952,25 @@ export class SandboxClient {
    *
    * @param name - Snapshot name.
    * @param dockerfile - Local Dockerfile path, relative to context by default.
-   * @param fsCapacityBytes - Filesystem capacity in bytes.
-   * @param options - Build context, args, target, build log callback, builder
-   *   vCPUs/memory, timeout.
+   * @param fsCapacityBytesOrOptions - Optional filesystem capacity in bytes, or
+   *   build options. When omitted, the server applies its default capacity.
+   * @param options - Build options when capacity is passed separately.
    * @returns Snapshot in "ready" status.
    */
   async createSnapshotFromDockerfile(
     name: string,
     dockerfile: string,
-    fsCapacityBytes: number,
+    fsCapacityBytesOrOptions?: number | CreateDockerfileSnapshotOptions,
     options: CreateDockerfileSnapshotOptions = {},
   ): Promise<Snapshot> {
+    const fsCapacityBytes =
+      typeof fsCapacityBytesOrOptions === "number"
+        ? fsCapacityBytesOrOptions
+        : undefined;
+    const resolvedOptions =
+      typeof fsCapacityBytesOrOptions === "number"
+        ? options
+        : (fsCapacityBytesOrOptions ?? options);
     const {
       context = ".",
       buildArgs,
@@ -971,7 +979,7 @@ export class SandboxClient {
       vCpus,
       memBytes,
       timeout = 60,
-    } = options;
+    } = resolvedOptions;
     const { contextPath, dockerfileRel } = await resolveDockerfileContext(
       dockerfile,
       context,
