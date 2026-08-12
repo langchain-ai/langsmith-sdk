@@ -52,6 +52,19 @@ export class LangSmithSandboxConnectionError extends LangSmithSandboxError {
   }
 }
 
+/**
+ * Raised when a transient connection failure occurs before a command starts.
+ *
+ * `run()` retries this error with the same command ID so the server can
+ * deduplicate an attempt whose outcome is unknown.
+ */
+export class LangSmithSandboxRetryableConnectionError extends LangSmithSandboxConnectionError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithSandboxRetryableConnectionError";
+  }
+}
+
 // =============================================================================
 // Resource Errors (type-based, with resourceType property)
 // =============================================================================
@@ -318,12 +331,10 @@ export class LangSmithStreamEndedBeforeStartedError extends LangSmithSandboxOper
 /**
  * Thrown when the socket fails or times out before the WebSocket handshake.
  *
- * Distinct from its parent because it is safely retryable: the execute frame
- * was never sent, so re-issuing the same command_id cannot double-run a
- * command. run() retries this with backoff; a plain connection error (a
- * rejected handshake) is permanent and propagates immediately.
+ * The execute frame was never sent, so re-issuing the same command ID cannot
+ * double-run a command.
  */
-export class LangSmithSandboxConnectTimeoutError extends LangSmithSandboxConnectionError {
+export class LangSmithSandboxConnectTimeoutError extends LangSmithSandboxRetryableConnectionError {
   constructor(message: string) {
     super(message);
     this.name = "LangSmithSandboxConnectTimeoutError";
