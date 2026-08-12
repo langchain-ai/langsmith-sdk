@@ -19,6 +19,7 @@ from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._orjson import dumps as _dumps
+from langsmith._internal._redaction import redact_keys, redact_outside
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -50,7 +51,83 @@ def _to_dict(obj: Any) -> Any:
     return obj
 
 
+# Credential keys anywhere inside a google-genai `config`: `Tool` is a union of a
+# dozen variants, so secrets sit at many paths rather than one.
+_CONFIG_SECRET_KEYS: frozenset[str] = frozenset(
+    {
+        "headers",
+        "api_key",
+        "apiKey",
+        "auth_config",
+        "authConfig",
+        "api_auth",
+        "apiAuth",
+        "client_args",
+        "clientArgs",
+        "async_client_args",
+        "asyncClientArgs",
+        "extra_body",
+        "extraBody",
+        "access_token",
+        "accessToken",
+    }
+)
+
+# Keys of google-genai's `StreamableHttpTransport` that are safe to trace.
+_MCP_TRANSPORT_SAFE_KEYS: frozenset[str] = frozenset(
+    {"url", "timeout", "sse_read_timeout", "terminate_on_close"}
+)
+
+
+def _redact_mcp_transports(config: Any) -> Any:
+    """Allowlist the MCP transport, so a credential added to it later fails shut.
+
+    Runs after `redact_keys`, which has already normalized models to dicts.
+    """
+    if not isinstance(config, Mapping):
+        return config
+    tools = config.get("tools")
+    if not isinstance(tools, list):
+        return config
+
+    def redact_server(server: Any) -> Any:
+        if not isinstance(server, Mapping):
+            return server
+        transport = server.get("streamable_http_transport")
+        if transport is None:
+            return server
+        return {
+            **server,
+            "streamable_http_transport": redact_outside(
+                transport, _MCP_TRANSPORT_SAFE_KEYS
+            ),
+        }
+
+    def redact_tool(tool: Any) -> Any:
+        if not isinstance(tool, Mapping):
+            return tool
+        servers = tool.get("mcp_servers")
+        if not isinstance(servers, list):
+            return tool
+        return {**tool, "mcp_servers": [redact_server(s) for s in servers]}
+
+    return {**config, "tools": [redact_tool(t) for t in tools]}
+
+
+def _redact_config(inputs: dict) -> dict:
+    """Mask credentials in the caller's `config`. Returns a new dict."""
+    if inputs.get("config") is None:
+        return inputs
+    config = redact_keys(inputs["config"], _CONFIG_SECRET_KEYS)
+    return {**inputs, "config": _redact_mcp_transports(config)}
+
+
 def _process_gemini_inputs(inputs: dict) -> dict:
+    """Normalize Gemini inputs for tracing, with credentials masked."""
+    return _redact_config(_normalize_gemini_inputs(inputs))
+
+
+def _normalize_gemini_inputs(inputs: dict) -> dict:
     r"""Process Gemini inputs to normalize them for LangSmith tracing.
 
     Example:

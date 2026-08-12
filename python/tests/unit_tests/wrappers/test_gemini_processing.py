@@ -1,6 +1,10 @@
 """Unit tests for Gemini wrapper processing functions."""
 
+import pytest
+
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 from langsmith.wrappers._gemini import (
+    _convert_config_for_tracing,
     _create_usage_metadata,
     _infer_invocation_params,
     _process_gemini_inputs,
@@ -735,3 +739,230 @@ class TestProcessGeminiInputsWithObjects:
         result = _process_gemini_inputs(inputs)
 
         assert result["messages"][0]["content"] == "from part object"
+
+
+# ---------------------------------------------------------------------------
+# credential masking
+# ---------------------------------------------------------------------------
+
+FAKE_TOKEN = "fake-token-for-tests-only"
+
+
+def _auth_headers() -> dict:
+    return {"Authorization": f"Bearer {FAKE_TOKEN}"}
+
+
+class TestRedactConfigCredentials:
+    """google-genai `config` carries credentials in several subtrees."""
+
+    def test_masks_http_options_headers(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "model": "gemini-2.5-flash",
+                "config": {"http_options": {"headers": _auth_headers()}},
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+        assert result["config"]["http_options"]["headers"] == {
+            "Authorization": SECRET_PLACEHOLDER
+        }
+
+    @pytest.mark.parametrize("key", ["client_args", "async_client_args", "extra_body"])
+    def test_masks_other_http_options_secrets(self, key) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {"http_options": {key: {"auth": FAKE_TOKEN}}},
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+
+    def test_masks_mcp_server_transport_headers(self) -> None:
+        """Remote MCP servers authenticate with a bearer token in the transport."""
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "mcp_servers": [
+                                {
+                                    "name": "example",
+                                    "streamable_http_transport": {
+                                        "url": "https://mcp.example.com/mcp",
+                                        "headers": _auth_headers(),
+                                    },
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+        transport = result["config"]["tools"][0]["mcp_servers"][0][
+            "streamable_http_transport"
+        ]
+        assert transport["headers"] == SECRET_PLACEHOLDER
+        assert transport["url"] == "https://mcp.example.com/mcp"
+
+    def test_masks_transport_fields_that_are_not_allowed(self) -> None:
+        """A credential field added to the transport later is masked."""
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "mcp_servers": [
+                                {
+                                    "streamable_http_transport": {
+                                        "url": "u",
+                                        "future_secret": "s3cret",
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        )
+
+        transport = result["config"]["tools"][0]["mcp_servers"][0][
+            "streamable_http_transport"
+        ]
+        assert transport["future_secret"] == SECRET_PLACEHOLDER
+        assert transport["url"] == "u"
+
+    def test_masks_google_maps_auth_config(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [{"google_maps": {"auth_config": {"api_key": FAKE_TOKEN}}}]
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+
+    def test_masks_retrieval_api_auth(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "retrieval": {
+                                "external_api": {
+                                    "api_auth": {
+                                        "api_key_config": {"api_key_string": FAKE_TOKEN}
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+
+    def test_does_not_mutate_the_callers_config(self) -> None:
+        """The same config is sent to Gemini, so it keeps the real values."""
+        headers = _auth_headers()
+        config = {"http_options": {"headers": headers}}
+
+        _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert headers["Authorization"] == f"Bearer {FAKE_TOKEN}"
+        assert config["http_options"]["headers"] is headers
+
+    def test_leaves_non_secret_config_untouched(self) -> None:
+        config = {"temperature": 0.5, "max_output_tokens": 100, "top_k": 4}
+
+        result = _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert result["config"] == config
+
+    def test_does_not_walk_user_content(self) -> None:
+        """`contents` is user data; a key named `headers` there is not a secret."""
+        contents = [
+            {
+                "role": "user",
+                "parts": [{"text": "call it with headers: {'api_key': 'abc'}"}],
+            }
+        ]
+
+        result = _process_gemini_inputs({"contents": contents, "model": "m"})
+
+        assert "abc" in str(result["messages"])
+
+    def test_masks_when_contents_is_absent(self) -> None:
+        """The early-return path must redact too."""
+        result = _process_gemini_inputs(
+            {"config": {"http_options": {"headers": _auth_headers()}}}
+        )
+
+        assert FAKE_TOKEN not in str(result)
+
+    @pytest.mark.parametrize("config", [None, "not-a-mapping", 42])
+    def test_tolerates_unexpected_config_shapes(self, config) -> None:
+        result = _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert result["config"] == config
+
+    def test_tolerates_unexpected_tool_shapes(self) -> None:
+        config = {"tools": "not-a-list"}
+
+        result = _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert result["config"]["tools"] == "not-a-list"
+
+    def test_masks_credentials_on_real_pydantic_config_objects(self) -> None:
+        """The wrapper receives model instances, not dicts, in normal use.
+
+        `google.genai` is imported lazily to keep it out of this module's imports.
+        """
+        types = pytest.importorskip("google.genai").types
+
+        config = types.GenerateContentConfig(
+            temperature=0.5,
+            http_options=types.HttpOptions(headers=_auth_headers()),
+            tools=[
+                types.Tool(
+                    mcp_servers=[
+                        types.McpServer(
+                            name="example",
+                            streamable_http_transport=(
+                                types.StreamableHttpTransport(
+                                    url="https://mcp.example.com/mcp",
+                                    headers=_auth_headers(),
+                                )
+                            ),
+                        )
+                    ]
+                )
+            ],
+        )
+        kwargs = {"model": "m", "contents": "hi", "config": config}
+        _convert_config_for_tracing(kwargs)
+
+        result = _process_gemini_inputs(kwargs)
+
+        assert FAKE_TOKEN not in str(result)
+        assert result["config"]["temperature"] == 0.5
+        transport = result["config"]["tools"][0]["mcp_servers"][0][
+            "streamable_http_transport"
+        ]
+        assert transport["url"] == "https://mcp.example.com/mcp"
+        # The caller's config still goes to the API and keeps its real values.
+        assert config.http_options.headers == _auth_headers()
+        assert (
+            config.tools[0].mcp_servers[0].streamable_http_transport.headers
+            == _auth_headers()
+        )
