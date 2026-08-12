@@ -19,7 +19,6 @@ from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._exceptions import (
     SandboxConnectionError,
     SandboxConnectTimeoutError,
-    SandboxNotReadyError,
     SandboxRetryableConnectionError,
 )
 from langsmith.sandbox._models import (
@@ -118,7 +117,7 @@ class TestSyncRetry:
         "error",
         [
             SandboxRetryableConnectionError("HTTP 502"),
-            SandboxNotReadyError("HTTP 503"),
+            SandboxRetryableConnectionError("HTTP 503"),
         ],
     )
     def test_retries_transient_rejected_handshake(self, monkeypatch, error):
@@ -277,7 +276,7 @@ class TestAsyncRetry:
         "error",
         [
             SandboxRetryableConnectionError("HTTP 502"),
-            SandboxNotReadyError("HTTP 503"),
+            SandboxRetryableConnectionError("HTTP 503"),
         ],
     )
     async def test_retries_transient_rejected_handshake(self, monkeypatch, error):

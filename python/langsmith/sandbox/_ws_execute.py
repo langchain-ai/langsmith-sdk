@@ -13,7 +13,6 @@ from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
     SandboxConnectTimeoutError,
-    SandboxNotReadyError,
     SandboxOperationError,
     SandboxRetryableConnectionError,
     SandboxServerReloadError,
@@ -210,7 +209,7 @@ class _AsyncWSStreamControl:
 # =============================================================================
 
 
-_TRANSIENT_HANDSHAKE_STATUSES = frozenset({500, 502, 504})
+_TRANSIENT_HANDSHAKE_STATUSES = frozenset({500, 502, 503, 504})
 _MAX_HANDSHAKE_ERROR_BYTES = 16 * 1024
 
 
@@ -258,10 +257,6 @@ def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
             f"(endpoint {ws_url} returned 404). Ensure the server is updated "
             f"to a version that supports the /execute/ws endpoint, or use "
             f"run() without wait=False or callbacks."
-        ) from exc
-    if status == 503:
-        raise SandboxNotReadyError(
-            f"Sandbox is not ready for WebSocket command execution{suffix}"
         ) from exc
     if status in _TRANSIENT_HANDSHAKE_STATUSES:
         raise SandboxRetryableConnectionError(

@@ -11,7 +11,6 @@ import pytest
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
-    SandboxNotReadyError,
     SandboxOperationError,
     SandboxRetryableConnectionError,
     SandboxServerReloadError,
@@ -1025,7 +1024,7 @@ class TestRaiseForInvalidHandshake:
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
-    def test_503_raises_not_ready(self):
+    def test_503_is_retryable(self):
         from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
@@ -1042,7 +1041,7 @@ class TestRaiseForInvalidHandshake:
         exc = Exception("server rejected WebSocket connection: HTTP 503")
         exc.response = mock_response
 
-        with pytest.raises(SandboxNotReadyError, match="error_id=err-503"):
+        with pytest.raises(SandboxRetryableConnectionError, match="error_id=err-503"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
     @pytest.mark.parametrize("status", [500, 502, 504])

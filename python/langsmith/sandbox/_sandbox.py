@@ -11,7 +11,6 @@ import httpx
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
-    SandboxNotReadyError,
     SandboxRetryableConnectionError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
@@ -436,7 +435,6 @@ class Sandbox:
             except (
                 _StreamEndedBeforeStarted,
                 SandboxRetryableConnectionError,
-                SandboxNotReadyError,
             ):
                 # Idempotent re-issue (same command_id): neither an early close
                 # nor a failed connect can have started a second command.
