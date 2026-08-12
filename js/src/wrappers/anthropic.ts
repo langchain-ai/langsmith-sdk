@@ -10,7 +10,7 @@ import {
 } from "../traceable.js";
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
-import { SECRET_PLACEHOLDER } from "../anonymizer/index.js";
+import { mask, overParams, redactOutside } from "../utils/redaction.js";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
 
@@ -24,27 +24,29 @@ const MCP_SERVER_SAFE_KEYS = new Set([
 
 /**
  * Mask credentials in `mcp_servers` before tracing. Anything outside
- * {@link MCP_SERVER_SAFE_KEYS} keeps its name but gets
- * {@link SECRET_PLACEHOLDER} as its value, so the trace shows the field was set
- * without exposing it, and fields the API adds later are masked by default.
+ * {@link MCP_SERVER_SAFE_KEYS} keeps its name but gets the shared secret
+ * placeholder as its value, so the trace shows the field was set without
+ * exposing it, and fields the API adds later are masked by default.
  *
  * Returns new objects; the caller's are also sent to Anthropic.
  */
 function redactMcpServers(servers: unknown): unknown {
   if (!Array.isArray(servers)) return servers;
 
-  return servers.map((server) => {
-    if (typeof server !== "object" || server == null || Array.isArray(server)) {
-      return server;
-    }
-    return Object.fromEntries(
-      Object.entries(server).map(([key, value]) => [
-        key,
-        MCP_SERVER_SAFE_KEYS.has(key) ? value : SECRET_PLACEHOLDER,
-      ]),
-    );
-  });
+  return servers.map((server) => redactOutside(server, MCP_SERVER_SAFE_KEYS));
 }
+
+/**
+ * Request-transport keys that are credentials by construction. They carry no
+ * diagnostic value in a trace, so only their key names survive.
+ */
+const TRANSPORT_SECRET_KEYS: ReadonlySet<string> = new Set([
+  "headers",
+  "query",
+  "extra_headers",
+  "extra_body",
+  "extra_query",
+]);
 
 type ExtraRunTreeConfig = Pick<
   Partial<RunTreeConfig>,
@@ -377,11 +379,12 @@ export const wrapAnthropic = <T extends AnthropicType>(
   };
 
   /**
-   * Transform system parameter into visible message for playground editability.
-   * This provides parity with the Python SDK behavior and enables system prompts
-   * to be viewed and edited in the LangSmith playground.
+   * Mask credentials, and transform the system parameter into a visible message
+   * for playground editability. The latter provides parity with the Python SDK
+   * behavior and enables system prompts to be viewed and edited in the
+   * LangSmith playground.
    */
-  function processTracedInputs(
+  function redactAnthropicParams(
     params: Record<string, unknown>,
   ): Record<string, unknown> {
     // Copy first: `params` also goes to the API and must keep its real values.
@@ -389,6 +392,12 @@ export const wrapAnthropic = <T extends AnthropicType>(
 
     if (processed.mcp_servers != null) {
       processed.mcp_servers = redactMcpServers(processed.mcp_servers);
+    }
+
+    for (const key of TRANSPORT_SECRET_KEYS) {
+      if (processed[key] != null) {
+        processed[key] = mask(processed[key]);
+      }
     }
 
     if (!params.system) {
@@ -414,6 +423,16 @@ export const wrapAnthropic = <T extends AnthropicType>(
     delete processed.system;
 
     return processed;
+  }
+
+  /**
+   * `traceable` hands `processInputs` either the params object itself or, for
+   * any call with a second argument, `{ args: [params, requestOptions] }`.
+   * Redact every object argument so the shape of the call cannot defeat
+   * masking.
+   */
+  function processTracedInputs(inputs: KVMap): KVMap {
+    return overParams(inputs, redactAnthropicParams);
   }
 
   // Common configuration for messages.create
