@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+  schedule:
+    # Nightly at 03:17 UTC. A scheduled run behaves like a dispatch with
+    # integration-environment=all: every job runs against every environment,
+    # path filters are ignored, and a failure is posted to Slack.
+    - cron: "17 3 * * *"
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -45,7 +50,9 @@ on:
           - "true"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The event name is part of the group so a push to main can't cancel the
+  # nightly run (and vice versa), since both share github.ref.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -62,8 +69,9 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      python: ${{ steps.filter.outputs.python }}
-      js: ${{ steps.filter.outputs.js }}
+      # A scheduled run has no diff to filter on, so it opts everything in.
+      python: ${{ github.event_name == 'schedule' || steps.filter.outputs.python == 'true' }}
+      js: ${{ github.event_name == 'schedule' || steps.filter.outputs.js == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
@@ -518,7 +526,16 @@ jobs:
           fetch-depth: 0
       - name: Check for file changes
         id: check-changes
+        env:
+          # A scheduled run sits on main with nothing to diff, so it opts in to
+          # both suites instead of filtering.
+          RUN_EVERYTHING: ${{ github.event_name == 'schedule' }}
         run: |
+          if [ "$RUN_EVERYTHING" = "true" ]; then
+            echo "python_changed=true" >> $GITHUB_OUTPUT
+            echo "js_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           if git diff --name-only origin/main HEAD | grep -E "^python/.*\.py$"; then
             echo "python_changed=true" >> $GITHUB_OUTPUT
           else
@@ -530,14 +547,15 @@ jobs:
             echo "js_changed=false" >> $GITHUB_OUTPUT
           fi
 
-  # Builds the Python and JS integration matrices so a workflow_dispatch run can
-  # target one (or all) of the LangSmith environments. Anything other than a
-  # dispatch keeps the previous behavior: beta only.
+  # Builds the Python and JS integration matrices so a workflow_dispatch or
+  # scheduled run can target one (or all) of the LangSmith environments.
+  # Anything else keeps the previous behavior: beta only.
   integration-matrix:
     name: "Integration Matrix"
     needs: integration-changes
     if: >
       (github.event_name == 'push') ||
+      (github.event_name == 'schedule') ||
       (github.event_name == 'pull_request' && (
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.integration-changes.outputs.python_changed == 'true' ||
@@ -555,7 +573,11 @@ jobs:
       - name: Build matrix
         id: build-matrix
         env:
-          SELECTED_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.integration-environment || 'beta' }}
+          # Nightly covers every environment; a dispatch picks one (or all).
+          SELECTED_ENVIRONMENT: >-
+            ${{ github.event_name == 'schedule' && 'all'
+             || (github.event_name == 'workflow_dispatch' && github.event.inputs.integration-environment)
+             || 'beta' }}
         run: |
           python3 <<'EOF' >> "$GITHUB_OUTPUT"
           import json
@@ -634,6 +656,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.integration-changes.outputs.python_changed == 'true'
       )) ||
+      (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-integration == 'true')
     runs-on: ubuntu-latest
     strategy:
@@ -656,8 +679,11 @@ jobs:
              || (matrix.environment == 'beta' && secrets.LANGSMITH_API_KEY_BETA)
              || '' }}
           pytest-addopts: ${{ matrix.pytest_addopts }}
-          # Push/PR runs keep -x; a dispatch can clear it to see every failure.
-          exit-first: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.python-integration-exit-first == 'true' }}
+          # Push/PR runs keep -x; a dispatch can clear it to see every failure,
+          # and the nightly always clears it so one bad test doesn't mask the rest.
+          exit-first: >-
+            ${{ github.event_name != 'schedule'
+             && (github.event_name != 'workflow_dispatch' || github.event.inputs.python-integration-exit-first == 'true') }}
           langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -675,6 +701,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.integration-changes.outputs.js_changed == 'true'
       )) ||
+      (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
     runs-on: ubuntu-latest
     strategy:
@@ -724,6 +751,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.integration-changes.outputs.js_changed == 'true'
       )) ||
+      (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
     runs-on: ubuntu-latest
     strategy:
@@ -830,3 +858,31 @@ jobs:
             exit 1
           fi
           echo "CI passed - all jobs succeeded or were skipped"
+
+  # ============================================================================
+  # Nightly Failure Notification
+  # ============================================================================
+  # Only the scheduled run notifies: push and PR failures are already visible to
+  # whoever pushed them, so posting those would just be noise in the channel.
+  notify-slack-on-failure:
+    name: "Notify Slack on nightly failure"
+    needs: [ci-success]
+    if: ${{ always() && github.event_name == 'schedule' && needs.ci-success.result != 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Post failure to Slack
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.INGESTION_CI_BOT_TOKEN }}
+          errors: true
+          payload: |
+            channel: ${{ toJSON(vars.INGESTION_TEAM_SLACK_CHANNEL_ID) }}
+            text: |
+              *Nightly SDK integration tests failed*
+
+              *Workflow:* ${{ github.workflow }}
+              *Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              *Environments:* beta, v16-ch-only, v16-dual, v16-smithdb-only
