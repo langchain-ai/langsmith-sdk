@@ -1,7 +1,7 @@
 js/src/tests/wrapped_openai_mcp.test.ts
-  h_f1ecc43c8f43eb 1-192
+  h_f1ecc43c8f43eb 1-192,1-62,67-192
 js/src/wrappers/openai.ts
-  h_f1ecc43c8f43eb 12-81,194-196,328,533,646,705,728,751
+  h_f1ecc43c8f43eb 12-81,12-13,19-31,36-43,50,51-72,79-81,194-196,328,533,646,705,728,751
 ---
 {
   "schema_version": "authorship/3.0.0",
