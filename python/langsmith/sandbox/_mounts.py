@@ -101,7 +101,28 @@ class GitMountSpec(TypedDict):
     git: GitMountConfig
 
 
-SandboxMount = Union[S3MountSpec, GCSMountSpec, GitMountSpec]
+class ContextHubMountConfigRequired(TypedDict):
+    """Required Context Hub configuration for a sandbox mount."""
+
+    repo: str
+
+
+class ContextHubMountConfig(ContextHubMountConfigRequired, total=False):
+    """Context Hub configuration for a sandbox mount."""
+
+    initial_pull_only: bool
+
+
+class ContextHubMountSpec(TypedDict):
+    """Read-only Context Hub-backed sandbox mount specification."""
+
+    id: str
+    type: Literal["contexthub"]
+    mount_path: str
+    contexthub: ContextHubMountConfig
+
+
+SandboxMount = Union[S3MountSpec, GCSMountSpec, GitMountSpec, ContextHubMountSpec]
 
 
 class AWSMountAuthConfig(TypedDict):
@@ -284,6 +305,35 @@ def gcs_mount(
     return mount
 
 
+def context_hub_mount(
+    *,
+    id: str,
+    mount_path: str,
+    repo: str,
+    initial_pull_only: bool | None = None,
+) -> ContextHubMountSpec:
+    """Build a read-only Context Hub-backed sandbox mount specification.
+
+    The repo's latest commit tree is mirrored into ``mount_path`` and kept in
+    sync for the sandbox's lifetime unless ``initial_pull_only`` is set. The
+    sync is one-way: files written under ``mount_path`` inside the sandbox are
+    never pushed back to the repo, and the next sync overwrites them.
+    """
+    contexthub: ContextHubMountConfig = {
+        "repo": _require_non_empty_string(repo, "repo"),
+    }
+    if initial_pull_only is not None:
+        contexthub["initial_pull_only"] = initial_pull_only
+
+    mount: ContextHubMountSpec = {
+        "id": _require_non_empty_string(id, "id"),
+        "type": "contexthub",
+        "mount_path": _require_non_empty_string(mount_path, "mount_path"),
+        "contexthub": contexthub,
+    }
+    return mount
+
+
 def _normalize_mounts(mounts: Sequence[SandboxMount]) -> list[SandboxMount]:
     if isinstance(mounts, dict) or isinstance(mounts, str) or not mounts:
         raise ValueError("mounts must be a non-empty list of mount dictionaries")
@@ -292,8 +342,10 @@ def _normalize_mounts(mounts: Sequence[SandboxMount]) -> list[SandboxMount]:
         if not isinstance(mount, dict) or not mount:
             raise ValueError("mounts must be a non-empty list of mount dictionaries")
         mount_type = mount.get("type")
-        if mount_type not in {"s3", "gcs", "git"}:
-            raise ValueError("mount_config only supports s3, gcs, and git mounts")
+        if mount_type not in {"s3", "gcs", "git", "contexthub"}:
+            raise ValueError(
+                "mount_config only supports s3, gcs, git, and contexthub mounts"
+            )
         _reject_provider_credentials_in_mount(mount)
         normalized.append(mount)
     return normalized

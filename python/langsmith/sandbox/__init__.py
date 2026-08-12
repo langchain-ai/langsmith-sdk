@@ -67,6 +67,8 @@ from langsmith.sandbox._models import (
 )
 from langsmith.sandbox._mounts import (
     AWSMountAuthConfig,
+    ContextHubMountConfig,
+    ContextHubMountSpec,
     GCPMountAuthConfig,
     GCSMountConfig,
     GCSMountSpec,
@@ -80,6 +82,7 @@ from langsmith.sandbox._mounts import (
     SandboxMountAuth,
     SandboxMountAuthConfig,
     SandboxMountConfig,
+    context_hub_mount,
     gcs_mount,
     git_mount,
     mount_config,
@@ -122,6 +125,8 @@ __all__ = [
     "SandboxMountAuthConfig",
     "SandboxMountConfig",
     "AWSMountAuthConfig",
+    "ContextHubMountConfig",
+    "ContextHubMountSpec",
     "GCPMountAuthConfig",
     "MountCacheConfig",
     "GCSMountConfig",
@@ -132,6 +137,7 @@ __all__ = [
     "S3MountConfig",
     "S3MountSpec",
     "aws_auth",
+    "context_hub_mount",
     "git_mount",
     "gcp_auth",
     "gcs_mount",
