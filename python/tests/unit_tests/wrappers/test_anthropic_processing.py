@@ -284,11 +284,11 @@ class TestRedactMCPServers:
         assert server["url"] == "https://mcp.example.com/sse"
         assert server["name"] == "example"
 
-    def test_infer_ls_params_masks_authorization_token(self) -> None:
+    def test_infer_ls_params_never_carries_the_token(self) -> None:
+        """Guards against building invocation params from the raw kwargs."""
         params = _infer_ls_params({}, {"model": "m", "mcp_servers": _mcp_servers()})
 
-        server = params["ls_invocation_params"]["mcp_servers"][0]
-        assert server["authorization_token"] == SECRET_PLACEHOLDER
+        assert FAKE_TOKEN not in str(params)
 
     def test_does_not_mutate_the_callers_servers(self) -> None:
         """The same objects are sent to Anthropic, so they keep the real token."""
