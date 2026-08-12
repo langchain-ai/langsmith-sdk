@@ -1,0 +1,16 @@
+js/src/tests/wrapped_openai_mcp.test.ts
+  h_f1ecc43c8f43eb 1-192
+js/src/wrappers/openai.ts
+  h_f1ecc43c8f43eb 12-81,194-196,328,533,646,705,728,751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "df5fd1dbe71f0b50c030e41202f260ae22ff8a1d",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
