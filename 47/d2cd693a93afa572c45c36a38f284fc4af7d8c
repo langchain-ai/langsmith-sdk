@@ -1,0 +1,33 @@
+js/src/tests/wrapped_gemini_config.test.ts
+  h_f1ecc43c8f43eb 1-69,1-63,65,72-78,74-76,80,82-91,83-85,89-90,93-149,94-143,145,151-157,154-157,163-164,177-178,177,182,230,233,241,243,249,252,254-316,255-316
+  h_f1ecc43c8f43eb 70-71,79,81,92,150,158-162,208-229,231-232,234-240,242,244-248,250-251,253
+js/src/wrappers/gemini.ts
+  h_f1ecc43c8f43eb 8,173,180-188,180-189,214-223,215,223-224,228,238-243,241,245,247-249,253,255-257,256-257,259-264,357,494
+  h_f1ecc43c8f43eb 174-179,189,196,198,202-213,224-227,229-237,244,246,250-252,254
+js/src/tests/wrapped_anthropic_mcp.test.ts
+  h_f1ecc43c8f43eb 51-54,61-71,77-81,152-207
+js/src/utils/redaction.ts
+  h_f1ecc43c8f43eb 1-3,4-31,32-49
+js/src/wrappers/anthropic.ts
+  h_f1ecc43c8f43eb 13,25,29,32-40,371-372,382-387,413-416
+js/src/tests/wrapped_openai_mcp.test.ts
+  h_f1ecc43c8f43eb 1-189
+js/src/wrappers/openai.ts
+  h_f1ecc43c8f43eb 12-39,41-65,178-180,312,517,630,689,712,735
+  h_f1ecc43c8f43eb 40
+js/src/experimental/anthropic/index.ts
+  h_f1ecc43c8f43eb 9-12,99,115-120
+js/src/tests/claude_agent_sdk_secrets.test.ts
+  h_f1ecc43c8f43eb 1-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "47d2cd693a93afa572c45c36a38f284fc4af7d8c",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
