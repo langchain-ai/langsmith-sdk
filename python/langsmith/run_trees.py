@@ -145,14 +145,16 @@ def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
 def _exclude_inputs_on_patch() -> bool:
     """Whether `RunTree.patch()` should omit `inputs` by default.
 
-    Controlled by ``LANGSMITH_EXCLUDE_INPUTS_ON_PATCH``; defaults to ``False``, i.e.
-    inputs are re-sent on every patch. Enabling it skips serializing and uploading
-    the inputs a second time, which is a meaningful saving for large payloads, but
-    it also means inputs first set *after* `post()` are never persisted.
+    Controlled by ``LANGSMITH_EXCLUDE_INPUTS_ON_PATCH``; defaults to ``True``, i.e.
+    inputs are not re-sent on patch. Skipping them avoids serializing and uploading
+    a second copy of what `post()` already sent, which is a meaningful saving for
+    large payloads, but it also means inputs first set *after* `post()` are never
+    persisted. Set the variable to ``false`` to re-send them.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return utils.is_truish(utils.get_env_var("EXCLUDE_INPUTS_ON_PATCH"))
+    env = utils.get_env_var("EXCLUDE_INPUTS_ON_PATCH")
+    return True if env is None else utils.is_truish(env)
 
 
 LANGSMITH_PREFIX = "langsmith-"
@@ -536,7 +538,7 @@ class RunTree(ls_schemas.RunBase):
     def add_inputs(self, inputs: dict[str, Any]) -> None:
         """Upsert the given inputs into the run.
 
-        Note: if `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` is enabled, inputs added
+        Note: unless `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` is disabled, inputs added
         after the initial `post()` are not sent by `patch()`. Call
         `patch(exclude_inputs=False)` explicitly to persist them.
 
@@ -845,7 +847,7 @@ class RunTree(ls_schemas.RunBase):
             exclude_inputs: Whether to exclude inputs from the patch request.
                 Defaults to `None`, meaning the value of the
                 `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` environment variable is used
-                (itself defaulting to `False`). Pass an explicit `True` or `False`
+                (itself defaulting to `True`). Pass an explicit `True` or `False`
                 to override the environment for this call.
         """
         if exclude_inputs is None:
