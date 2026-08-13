@@ -287,6 +287,13 @@ export interface SandboxAwsAuthRule {
   type: "aws";
   /** Whether the rule is enabled. */
   enabled?: boolean;
+  /**
+   * Plaintext environment variables set for every command in the sandbox while
+   * the rule is enabled, for tools that refuse to run unless a credential
+   * variable is present even though the proxy injects the real credential on
+   * the wire.
+   */
+  env_vars?: Record<string, string>;
   /** AWS credentials used by the proxy signer. */
   aws: {
     access_key_id: SandboxProxySecret;
@@ -302,6 +309,13 @@ export interface SandboxGcpAuthRule {
   type: "gcp";
   /** Whether the rule is enabled. */
   enabled?: boolean;
+  /**
+   * Plaintext environment variables set for every command in the sandbox while
+   * the rule is enabled, for tools that refuse to run unless a credential
+   * variable is present even though the proxy injects the real credential on
+   * the wire.
+   */
+  env_vars?: Record<string, string>;
   /** GCP service-account credential and OAuth scopes. */
   gcp: {
     service_account_json: SandboxProxySecret;
