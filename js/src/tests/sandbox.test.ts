@@ -149,6 +149,15 @@ describe("sandbox proxy config helpers", () => {
     ).not.toHaveProperty("env_vars");
   });
 
+  it("preserves surrounding whitespace in env var values", () => {
+    expect(
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+        envVars: { PREFIX: "  /opt/bin  " },
+      }).env_vars,
+    ).toEqual({ PREFIX: "  /opt/bin  " });
+  });
+
   it.each<Record<string, string>>([{}, { "": "value" }, { NAME: "" }])(
     "rejects invalid env vars %j",
     (envVars) => {

@@ -33,12 +33,12 @@ def _require_non_empty_string_list(values: Sequence[str], field: str) -> list[st
 def _require_env_vars(env_vars: Mapping[str, str]) -> dict[str, str]:
     if not isinstance(env_vars, Mapping) or not env_vars:
         raise ValueError("env_vars must be a non-empty mapping of names to values")
-    return {
-        _require_non_empty_string(name, "env_vars name"): _require_non_empty_string(
-            value, f"env_vars[{name}]"
-        )
-        for name, value in env_vars.items()
-    }
+    resolved: dict[str, str] = {}
+    for name, value in env_vars.items():
+        # Validated on the trimmed form, stored verbatim: whitespace can be significant.
+        _require_non_empty_string(value, f"env_vars[{name}]")
+        resolved[_require_non_empty_string(name, "env_vars name")] = value
+    return resolved
 
 
 def workspace_secret(name: str) -> SandboxProxySecret:

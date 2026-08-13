@@ -86,6 +86,15 @@ def test_gcp_auth_includes_env_vars() -> None:
     assert rule["env_vars"] == {"GOOGLE_API_KEY": "dummy"}
 
 
+def test_env_vars_preserve_surrounding_whitespace_in_values() -> None:
+    rule = gcp_auth(
+        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+        env_vars={"PREFIX": "  /opt/bin  "},
+    )
+
+    assert rule["env_vars"] == {"PREFIX": "  /opt/bin  "}
+
+
 def test_provider_rules_omit_env_vars_when_unset() -> None:
     rule = gcp_auth(service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"))
 

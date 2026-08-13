@@ -36,10 +36,11 @@ function requireEnvVars(
     throw new Error("envVars must be a non-empty object of names to values");
   }
   return Object.fromEntries(
-    entries.map(([name, value]) => [
-      requireNonEmptyString(name, "envVars name"),
-      requireNonEmptyString(value, `envVars[${name}]`),
-    ]),
+    entries.map(([name, value]) => {
+      // Validated on the trimmed form, stored verbatim: whitespace can be significant.
+      requireNonEmptyString(value, `envVars[${name}]`);
+      return [requireNonEmptyString(name, "envVars name"), value];
+    }),
   );
 }
 
