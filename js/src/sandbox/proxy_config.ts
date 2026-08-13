@@ -21,6 +21,28 @@ function requireNonEmptyStringArray(values: string[], field: string): string[] {
   return values.map((value) => requireNonEmptyString(value, field));
 }
 
+function requireEnvVars(
+  envVars: Record<string, string>,
+): Record<string, string> {
+  if (
+    envVars === null ||
+    typeof envVars !== "object" ||
+    Array.isArray(envVars)
+  ) {
+    throw new Error("envVars must be a non-empty object of names to values");
+  }
+  const entries = Object.entries(envVars);
+  if (entries.length === 0) {
+    throw new Error("envVars must be a non-empty object of names to values");
+  }
+  return Object.fromEntries(
+    entries.map(([name, value]) => [
+      requireNonEmptyString(name, "envVars name"),
+      requireNonEmptyString(value, `envVars[${name}]`),
+    ]),
+  );
+}
+
 function requireProxyRules(
   rules: SandboxProxyRule[] | undefined,
 ): SandboxProxyRule[] {
@@ -103,13 +125,15 @@ export function awsAuth({
   secretAccessKey,
   name = "aws",
   enabled = true,
+  envVars,
 }: {
   accessKeyId: SandboxProxySecret;
   secretAccessKey: SandboxProxySecret;
   name?: string;
   enabled?: boolean;
+  envVars?: Record<string, string>;
 }): SandboxAwsAuthRule {
-  return {
+  const rule: SandboxAwsAuthRule = {
     name: requireNonEmptyString(name, "name"),
     type: "aws",
     enabled,
@@ -118,6 +142,10 @@ export function awsAuth({
       secret_access_key: secretAccessKey,
     },
   };
+  if (envVars !== undefined) {
+    rule.env_vars = requireEnvVars(envVars);
+  }
+  return rule;
 }
 
 /** Build a sandbox proxy rule that injects GCP OAuth bearer auth. */
@@ -126,11 +154,13 @@ export function gcpAuth({
   scopes,
   name = "gcp",
   enabled = true,
+  envVars,
 }: {
   serviceAccountJson: SandboxProxySecret;
   scopes?: string[];
   name?: string;
   enabled?: boolean;
+  envVars?: Record<string, string>;
 }): SandboxGcpAuthRule {
   const gcp: SandboxGcpAuthRule["gcp"] = {
     service_account_json: serviceAccountJson,
@@ -138,10 +168,14 @@ export function gcpAuth({
   if (scopes !== undefined) {
     gcp.scopes = requireNonEmptyStringArray(scopes, "scopes");
   }
-  return {
+  const rule: SandboxGcpAuthRule = {
     name: requireNonEmptyString(name, "name"),
     type: "gcp",
     enabled,
     gcp,
   };
+  if (envVars !== undefined) {
+    rule.env_vars = requireEnvVars(envVars);
+  }
+  return rule;
 }

@@ -127,6 +127,41 @@ describe("sandbox proxy config helpers", () => {
     });
   });
 
+  it("provider rules carry env vars and omit them when unset", () => {
+    expect(
+      awsAuth({
+        accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+        secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+        envVars: { AWS_ACCESS_KEY_ID: "dummy" },
+      }).env_vars,
+    ).toEqual({ AWS_ACCESS_KEY_ID: "dummy" });
+
+    const gcpRule = gcpAuth({
+      serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      envVars: { GOOGLE_API_KEY: "dummy" },
+    });
+    expect(gcpRule.env_vars).toEqual({ GOOGLE_API_KEY: "dummy" });
+
+    expect(
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      }),
+    ).not.toHaveProperty("env_vars");
+  });
+
+  it.each<Record<string, string>>([{}, { "": "value" }, { NAME: "" }])(
+    "rejects invalid env vars %j",
+    (envVars) => {
+      expect(() =>
+        awsAuth({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+          envVars,
+        }),
+      ).toThrow();
+    },
+  );
+
   it("gcpAuth builds a GCP auth rule with built-in Google API host matching", () => {
     expect(
       gcpAuth({

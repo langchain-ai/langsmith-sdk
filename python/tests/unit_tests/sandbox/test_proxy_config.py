@@ -67,6 +67,41 @@ def test_aws_auth_builds_aws_rule() -> None:
     }
 
 
+def test_aws_auth_includes_env_vars() -> None:
+    rule = aws_auth(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+        env_vars={"AWS_ACCESS_KEY_ID": "dummy"},
+    )
+
+    assert rule["env_vars"] == {"AWS_ACCESS_KEY_ID": "dummy"}
+
+
+def test_gcp_auth_includes_env_vars() -> None:
+    rule = gcp_auth(
+        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+        env_vars={"GOOGLE_API_KEY": "dummy"},
+    )
+
+    assert rule["env_vars"] == {"GOOGLE_API_KEY": "dummy"}
+
+
+def test_provider_rules_omit_env_vars_when_unset() -> None:
+    rule = gcp_auth(service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"))
+
+    assert "env_vars" not in rule
+
+
+@pytest.mark.parametrize("env_vars", [{}, {"": "value"}, {"NAME": ""}])
+def test_env_vars_rejects_empty_names_and_values(env_vars: dict[str, str]) -> None:
+    with pytest.raises(ValueError):
+        aws_auth(
+            access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+            env_vars=env_vars,
+        )
+
+
 def test_gcp_auth_builds_gcp_rule_with_builtin_google_api_host_matching() -> None:
     rule = gcp_auth(
         service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
