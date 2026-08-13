@@ -1,0 +1,14 @@
+.github/workflows/ci.yml
+  h_f1ecc43c8f43eb 510-513,515
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "53ea504dd6f79d693446d0094d2e242aef4bc4c6",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
