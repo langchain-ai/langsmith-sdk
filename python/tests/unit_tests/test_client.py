@@ -2395,6 +2395,29 @@ def test__dumps_json():
     assert "\\uDC00" not in serialized_str
 
 
+def test__dumps_json_preserves_ints_larger_than_64_bits():
+    """Integers >= 2**64 must survive the stdlib-json fallback path exactly.
+
+    orjson can't serialize them (TypeError -> stdlib fallback), and orjson.loads
+    parses them as floats, so the fallback's surrogate-detection round-trip must
+    be skipped when no surrogates are present or distinct values collapse to the
+    same float (e.g. 2**64 and 2**64 + 1 both become 1.8446744073709552e+19).
+    """
+    for value in (2**64, 2**64 + 1, 19_876_543_210_987_654_321, -(2**80)):
+        serialized = _dumps_json({"v": value})
+        deserialized = json.loads(serialized)["v"]
+        assert isinstance(deserialized, int)
+        assert deserialized == value
+    assert _dumps_json({"v": 2**64}) != _dumps_json({"v": 2**64 + 1})
+
+    # Non-BMP characters are escaped as valid surrogate pairs by ensure_ascii,
+    # which must not re-trigger the lossy re-encode alongside a big int.
+    serialized = _dumps_json({"emoji": "\U0001f600", "v": 2**70})
+    deserialized = json.loads(serialized)
+    assert deserialized["emoji"] == "\U0001f600"
+    assert deserialized["v"] == 2**70
+
+
 def test__dumps_json_normalizes_unsupported_dict_keys():
     class TupleKeyedDict:
         def to_dict(self) -> Dict:
