@@ -4,13 +4,15 @@
  * run() sends a client-generated command_id and the server does get-or-create
  * keyed on it, so re-issuing a command whose tunnel closed before 'started' —
  * or whose connect never completed — reattaches to the same session instead of
- * spawning a second one. A rejected handshake is permanent and must not retry.
+ * spawning a second one. Transient 5xx handshake rejections are safe to retry;
+ * permanent 4xx rejections still propagate immediately.
  */
 import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 import type { WsMessage } from "../sandbox/types.js";
 import {
   LangSmithSandboxConnectionError,
   LangSmithSandboxConnectTimeoutError,
+  LangSmithSandboxRetryableConnectionError,
 } from "../sandbox/errors.js";
 
 // Virtual clock so budget assertions do not depend on real elapsed time.
@@ -113,6 +115,38 @@ describe("run() early-close retry", () => {
     runWsStream
       .mockImplementationOnce((..._args: unknown[]) => [
         failingStream(new LangSmithSandboxConnectTimeoutError("timed out")),
+        null,
+      ])
+      .mockImplementationOnce((...args: unknown[]) => {
+        const opts = args[3] as { commandId: string };
+        return [
+          makeStream([
+            { type: "started", command_id: opts.commandId, pid: 1 },
+            { type: "exit", exit_code: 0 },
+          ]),
+          null,
+        ];
+      });
+
+    const result = await sandbox.run("echo hi");
+
+    expect(result.exit_code).toBe(0);
+    expect(runWsStream).toHaveBeenCalledTimes(2);
+    const first = runWsStream.mock.calls[0][3] as { commandId: string };
+    const second = runWsStream.mock.calls[1][3] as { commandId: string };
+    expect(first.commandId).toBe(second.commandId);
+  });
+
+  it("retries a transient rejected handshake with the same command_id", async () => {
+    const sandbox = makeSandbox();
+
+    runWsStream
+      .mockImplementationOnce((..._args: unknown[]) => [
+        failingStream(
+          new LangSmithSandboxRetryableConnectionError(
+            "WebSocket upgrade rejected by server (HTTP 503)",
+          ),
+        ),
         null,
       ])
       .mockImplementationOnce((...args: unknown[]) => {

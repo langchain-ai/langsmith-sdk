@@ -98,6 +98,7 @@ export {
   LangSmithSandboxAPIError,
   LangSmithSandboxAuthenticationError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxRetryableConnectionError,
   LangSmithSandboxConnectTimeoutError,
   LangSmithSandboxServerReloadError,
   // Resource errors (type-based with resourceType attribute)
