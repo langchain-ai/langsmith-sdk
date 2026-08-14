@@ -4881,7 +4881,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (usesCreateModel) {
       if (referenceOutputs !== undefined || options !== undefined) {
         throw new Error(
-          "Cannot provide referenceOutputs or options when using ExampleCreate object",
+          "Cannot provide outputs or options when using ExampleCreate object",
         );
       }
     }

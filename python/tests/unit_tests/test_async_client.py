@@ -1011,8 +1011,11 @@ async def test_create_example_reference_outputs_alias(argument_name: str) -> Non
         )
 
     payload = json.loads(request.call_args.kwargs["content"])
-    assert payload["reference_outputs"] == reference_outputs
-    assert "outputs" not in payload
+    assert payload[argument_name] == reference_outputs
+    other_name = (
+        "outputs" if argument_name == "reference_outputs" else "reference_outputs"
+    )
+    assert other_name not in payload
     await client.aclose()
 
 

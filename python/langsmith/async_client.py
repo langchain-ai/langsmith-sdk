@@ -1075,17 +1075,20 @@ class AsyncClient:
         """
         if reference_outputs is not None and outputs is not None:
             raise ValueError("Cannot specify both 'reference_outputs' and 'outputs'.")
-        if reference_outputs is None:
-            reference_outputs = outputs
         if dataset_id is None and dataset_name is None:
             raise ValueError("Either dataset_id or dataset_name must be provided")
         if dataset_id is None:
             dataset = await self.read_dataset(dataset_name=dataset_name)
             dataset_id = dataset.id
 
+        outputs_data = (
+            {"reference_outputs": reference_outputs}
+            if reference_outputs is not None
+            else {"outputs": outputs}
+        )
         data = {
             "inputs": inputs,
-            "reference_outputs": reference_outputs,
+            **outputs_data,
             "dataset_id": str(dataset_id),
             **kwargs,
         }

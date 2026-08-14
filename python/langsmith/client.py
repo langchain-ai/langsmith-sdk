@@ -6513,11 +6513,12 @@ class Client:
                     )
                 )
 
-            outputs = (
-                example.reference_outputs
-                if isinstance(example, ls_schemas.ExampleCreate)
-                else example.outputs
-            )
+            outputs = example.outputs
+            if (
+                isinstance(example, ls_schemas.ExampleCreate)
+                and example.reference_outputs is not None
+            ):
+                outputs = example.reference_outputs
             if outputs is not None:
                 outputsb = _dumps_json(outputs)
                 parts.append(
@@ -6702,8 +6703,13 @@ class Client:
 
         if example.inputs:
             size += len(_dumps_json(example.inputs))
-        if example.reference_outputs:
-            size += len(_dumps_json(example.reference_outputs))
+        outputs = (
+            example.reference_outputs
+            if example.reference_outputs is not None
+            else example.outputs
+        )
+        if outputs:
+            size += len(_dumps_json(outputs))
         if example.metadata:
             size += len(_dumps_json(example.metadata))
 
@@ -6995,21 +7001,23 @@ class Client:
                         f"Length of {arg_name} ({len(arg_value)}) does not match"
                         f" length of inputs ({input_len})"
                     )
+            outputs_field = (
+                "reference_outputs" if "reference_outputs" in kwargs else "outputs"
+            )
             uploads = [
                 ls_schemas.ExampleCreate(
                     **{
                         "inputs": in_,
-                        "reference_outputs": reference_outputs_,
+                        outputs_field: outputs_,
                         "metadata": metadata_,
                         "split": split_,
                         "id": id_ or str(uuid.uuid4()),
                         "source_run_id": source_run_id_,
                     }
                 )
-                for in_, reference_outputs_, metadata_, split_, id_, source_run_id_ in zip(
+                for in_, outputs_, metadata_, split_, id_, source_run_id_ in zip(
                     inputs,
-                    (kwargs.get("reference_outputs") or kwargs.get("outputs"))
-                    or (None for _ in range(input_len)),
+                    kwargs.get(outputs_field) or (None for _ in range(input_len)),
                     kwargs.get("metadata") or (None for _ in range(input_len)),
                     kwargs.get("splits") or (None for _ in range(input_len)),
                     kwargs.get("ids") or (None for _ in range(input_len)),
@@ -7167,8 +7175,6 @@ class Client:
         """
         if reference_outputs is not None and outputs is not None:
             raise ValueError("Cannot specify both 'reference_outputs' and 'outputs'.")
-        if reference_outputs is None:
-            reference_outputs = outputs
 
         if inputs is None and not use_source_run_io:
             raise ValueError("Must provide either inputs or use_source_run_io")
@@ -7176,10 +7182,15 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
+        outputs_data = (
+            {"reference_outputs": reference_outputs}
+            if reference_outputs is not None
+            else {"outputs": outputs}
+        )
         data = ls_schemas.ExampleCreate(
             **{
                 "inputs": inputs,
-                "reference_outputs": reference_outputs,
+                **outputs_data,
                 "metadata": metadata,
                 "split": split,
                 "source_run_id": source_run_id,

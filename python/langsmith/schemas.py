@@ -107,6 +107,9 @@ class ExampleCreate(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     inputs: Optional[dict[str, Any]] = Field(default=None)
     reference_outputs: Optional[dict[str, Any]] = Field(default=None)
+    outputs: Optional[dict[str, Any]] = Field(
+        default=None, description="Deprecated: use reference_outputs instead."
+    )
     metadata: Optional[dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, list[str]]] = None
     attachments: Optional[dict[str, _AttachmentLike]] = None
@@ -118,18 +121,7 @@ class ExampleCreate(BaseModel):
         """Initialize from dict."""
         if "reference_outputs" in data and "outputs" in data:
             raise ValueError("Cannot specify both 'reference_outputs' and 'outputs'.")
-        if "outputs" in data:
-            data["reference_outputs"] = data.pop("outputs")
         super().__init__(**data)
-
-    @property
-    def outputs(self) -> Optional[dict[str, Any]]:
-        """Deprecated alias for reference_outputs."""
-        return self.reference_outputs
-
-    @outputs.setter
-    def outputs(self, value: Optional[dict[str, Any]]) -> None:
-        self.reference_outputs = value
 
 
 ExampleUploadWithAttachments = ExampleCreate

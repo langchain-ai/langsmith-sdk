@@ -1283,11 +1283,9 @@ def test_example_create_reference_outputs_aliases() -> None:
     assert "outputs" not in canonical.model_dump(exclude_none=True)
 
     legacy = ls_schemas.ExampleCreate(outputs=reference_outputs)
-    assert legacy.reference_outputs == reference_outputs
+    assert legacy.reference_outputs is None
     assert legacy.outputs == reference_outputs
-    assert (
-        legacy.model_dump(exclude_none=True)["reference_outputs"] == reference_outputs
-    )
+    assert legacy.model_dump(exclude_none=True)["outputs"] == reference_outputs
 
     with pytest.raises(ValueError, match="both 'reference_outputs' and 'outputs'"):
         ls_schemas.ExampleCreate(
@@ -1332,8 +1330,11 @@ def test_create_example_legacy_json_reference_outputs(
         call for call in mock_session.request.call_args_list if call.args[0] == "POST"
     )
     payload = json.loads(request.kwargs["data"])
-    assert payload["reference_outputs"] == reference_outputs
-    assert "outputs" not in payload
+    assert payload[argument_name] == reference_outputs
+    other_name = (
+        "outputs" if argument_name == "reference_outputs" else "reference_outputs"
+    )
+    assert other_name not in payload
 
 
 @pytest.mark.parametrize("argument_name", ["reference_outputs", "outputs"])
@@ -1360,11 +1361,12 @@ def test_create_examples_reference_outputs_alias(argument_name: str) -> None:
         )
 
     example = upload.call_args.args[0][0][0]
-    assert example.reference_outputs == reference_outputs[0]
-    assert (
-        example.model_dump(exclude_none=True)["reference_outputs"]
-        == reference_outputs[0]
+    assert getattr(example, argument_name) == reference_outputs[0]
+    other_name = (
+        "outputs" if argument_name == "reference_outputs" else "reference_outputs"
     )
+    assert getattr(example, other_name) is None
+    assert example.model_dump(exclude_none=True)[argument_name] == reference_outputs[0]
 
 
 def test_create_examples_rejects_reference_outputs_conflict() -> None:
