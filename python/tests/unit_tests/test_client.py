@@ -7865,3 +7865,28 @@ def test_get_test_results_joins_reference_examples(instance_flags, expect_v2) ->
     assert row["outputs.a"] == "yo"
     assert row["feedback.correctness"] == 0.75
     assert row["execution_time"] == 5.0
+
+
+def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default to a single zstd worker; the env var (including "0") still wins."""
+    import importlib
+
+    from langsmith._internal import _compressed_traces
+
+    def _reload() -> int:
+        _clear_env_cache()
+        return importlib.reload(_compressed_traces).compression_threads
+
+    try:
+        monkeypatch.delenv("LANGSMITH_RUN_COMPRESSION_THREADS", raising=False)
+        monkeypatch.delenv("LANGCHAIN_RUN_COMPRESSION_THREADS", raising=False)
+        assert _reload() == 1
+
+        monkeypatch.setenv("LANGSMITH_RUN_COMPRESSION_THREADS", "0")
+        assert _reload() == 0
+
+        monkeypatch.setenv("LANGSMITH_RUN_COMPRESSION_THREADS", "4")
+        assert _reload() == 4
+    finally:
+        monkeypatch.undo()
+        _reload()
