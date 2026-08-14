@@ -41,6 +41,14 @@ export interface Issue {
 
   actions?: unknown;
 
+  auto_resolution_evidence?: unknown;
+
+  /**
+   * Nil unless eligible: "auto_close" or "prompt". Evidence carries the deciding
+   * gate.
+   */
+  auto_resolution_state?: string;
+
   created_at?: string;
 
   description?: string;

@@ -21,7 +21,12 @@ import {
   RegistryUpdateParams,
 } from './registries.js';
 import * as SnapshotsAPI from './snapshots.js';
-import { SnapshotCreateParams, SnapshotListParams, Snapshots } from './snapshots.js';
+import {
+  SnapshotCreateParams,
+  SnapshotListParams,
+  SnapshotRetrieveByNameResponse,
+  Snapshots,
+} from './snapshots.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
@@ -632,6 +637,12 @@ export interface SnapshotResponse {
 
   status_message?: string;
 
+  /**
+   * Tags currently resolving to this snapshot, under Name. A snapshot with no tags
+   * is dangling — addressable only by id.
+   */
+  tags?: Array<string>;
+
   updated_at?: string;
 }
 
@@ -669,6 +680,7 @@ export declare namespace Sandboxes {
 
   export {
     Snapshots as Snapshots,
+    type SnapshotRetrieveByNameResponse as SnapshotRetrieveByNameResponse,
     type SnapshotCreateParams as SnapshotCreateParams,
     type SnapshotListParams as SnapshotListParams,
   };

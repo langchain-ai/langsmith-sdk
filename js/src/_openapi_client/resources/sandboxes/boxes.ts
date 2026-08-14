@@ -12,6 +12,8 @@ export class Boxes extends APIResource {
   /**
    * Create a new sandbox from a snapshot. Provide at most one of `snapshot_id` or
    * `snapshot_name`; if neither is provided, the server uses the default snapshot.
+   * `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+   * name resolves to `name:latest`).
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
     return this._client.post('/api/v2/sandboxes/boxes', { body, ...options });
@@ -131,6 +133,12 @@ export interface BoxCreateParams {
    */
   labels?: { [key: string]: string };
 
+  /**
+   * Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+   * it and it follows that ratio; set it and it must stay within 50% of the ratio
+   * for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+   * without CPU derives the CPU from the same ratio. Maximum 64 GiB.
+   */
   mem_bytes?: number;
 
   mount_config?: BoxCreateParams.MountConfig;
@@ -159,8 +167,18 @@ export interface BoxCreateParams {
    */
   restore_memory?: boolean;
 
+  /**
+   * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+   * resolves to name:latest.
+   */
+  snapshot?: string;
+
   snapshot_id?: string;
 
+  /**
+   * SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+   * that predate it. Set one or the other.
+   */
   snapshot_name?: string;
 
   tag_value_ids?: Array<string>;
@@ -672,6 +690,10 @@ export interface BoxUpdateParams {
 
   idle_ttl_seconds?: number;
 
+  /**
+   * New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+   * sandbox is created; a resize enforces only the maximum of 64 GiB.
+   */
   mem_bytes?: number;
 
   name?: string;
@@ -884,6 +906,11 @@ export interface BoxCreateSnapshotParams {
    * Labels seed the captured snapshot's labels.
    */
   labels?: { [key: string]: string };
+
+  /**
+   * mutable Docker-style tag; defaults to "latest"
+   */
+  tag?: string;
 }
 
 export interface BoxGenerateServiceURLParams {

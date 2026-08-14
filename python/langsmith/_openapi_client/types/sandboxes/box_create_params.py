@@ -82,6 +82,13 @@ class BoxCreateParams(TypedDict, total=False):
     """
 
     mem_bytes: int
+    """Memory for the sandbox, in bytes.
+
+    Memory is tied to CPU at 4 GiB per vCPU: omit it and it follows that ratio; set
+    it and it must stay within 50% of the ratio for the requested CPU, so a 1 vCPU
+    sandbox accepts 2-6 GiB. Setting memory without CPU derives the CPU from the
+    same ratio. Maximum 64 GiB.
+    """
 
     mount_config: MountConfig
 
@@ -108,9 +115,19 @@ class BoxCreateParams(TypedDict, total=False):
     Applies to this request only.
     """
 
+    snapshot: str
+    """Snapshot is a Docker-style name or name:tag reference to boot from.
+
+    A bare name resolves to name:latest.
+    """
+
     snapshot_id: str
 
     snapshot_name: str
+    """
+    SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+    that predate it. Set one or the other.
+    """
 
     tag_value_ids: SequenceNotStr[str]
 
