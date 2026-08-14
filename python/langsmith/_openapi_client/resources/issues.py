@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing_extensions import Literal
 
-import httpx
-
 from ..types import issue_list_params
+from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
 from .._utils import path_template, maybe_transform
 from .._compat import cached_property

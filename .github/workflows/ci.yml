@@ -507,9 +507,12 @@ jobs:
           uv venv
           uv pip install -e .
       - name: Install deepagents
-        run: uv pip install deepagents
+        # pytest is installed here rather than coming from the dev group, because
+        # the smoke test runs with --no-sync: otherwise `uv run` resyncs .venv from
+        # uv.lock and downgrades langchain-core underneath deepagents.
+        run: uv pip install deepagents pytest
       - name: Run smoke test
-        run: uv run python -m pytest tests/external/test_deepagent_compat.py -v --noconftest
+        run: uv run --no-sync python -m pytest tests/external/test_deepagent_compat.py -v --noconftest
 
   # ============================================================================
   # Integration Tests

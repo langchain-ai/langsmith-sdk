@@ -763,8 +763,8 @@ def _reset_exclude_inputs_cache():
 @pytest.mark.parametrize(
     "env_name, env_value, explicit, expect_inputs",
     [
-        # Unset env var keeps today's behaviour: inputs are re-sent on patch.
-        (None, None, None, True),
+        # Unset env var: inputs are not re-sent on patch.
+        (None, None, None, False),
         ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true", None, False),
         ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "TRUE", None, False),
         ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "1", None, False),
@@ -836,13 +836,13 @@ def test_patch_exclude_inputs_flag_is_cached(monkeypatch, _reset_exclude_inputs_
         name="test_run", run_type="chain", inputs={"a": 1}, client=client
     )
     run_tree.patch()
-    assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}
+    assert client.update_run.call_args.kwargs["inputs"] is None
 
     # Flipping the env var mid-process has no effect until the cache is cleared.
-    monkeypatch.setenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true")
+    monkeypatch.setenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "false")
     run_tree.patch()
-    assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}
+    assert client.update_run.call_args.kwargs["inputs"] is None
 
     _reset_exclude_inputs_cache()
     run_tree.patch()
-    assert client.update_run.call_args.kwargs["inputs"] is None
+    assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}

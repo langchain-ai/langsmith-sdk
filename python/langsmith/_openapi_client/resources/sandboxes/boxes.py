@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-import httpx
-
+from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform, async_maybe_transform
 from ..._compat import cached_property
@@ -64,6 +63,7 @@ class BoxesResource(SyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
@@ -79,6 +79,8 @@ class BoxesResource(SyncAPIResource):
 
         Provide at most one of `snapshot_id` or
         `snapshot_name`; if neither is provided, the server uses the default snapshot.
+        `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+        name resolves to `name:latest`).
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -87,6 +89,11 @@ class BoxesResource(SyncAPIResource):
 
           labels: Labels are free-form key/value metadata persisted with the sandbox and returned
               on reads. Labels from the source snapshot are inherited unless overridden here.
+
+          mem_bytes: Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+              it and it follows that ratio; set it and it must stay within 50% of the ratio
+              for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+              without CPU derives the CPU from the same ratio. Maximum 64 GiB.
 
           preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
               stop (idle timeout or explicit stop) so the next start resumes from where it
@@ -102,6 +109,12 @@ class BoxesResource(SyncAPIResource):
               false → never: always cold-boot.
 
               Applies to this request only.
+
+          snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+              resolves to name:latest.
+
+          snapshot_name: SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+              that predate it. Set one or the other.
 
           extra_headers: Send extra headers
 
@@ -127,6 +140,7 @@ class BoxesResource(SyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
                     "tag_value_ids": tag_value_ids,
@@ -199,6 +213,9 @@ class BoxesResource(SyncAPIResource):
         The name must be unique within the tenant.
 
         Args:
+          mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+              sandbox is created; a resize enforces only the maximum of 64 GiB.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -349,6 +366,7 @@ class BoxesResource(SyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -374,6 +392,8 @@ class BoxesResource(SyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          tag: mutable Docker-style tag; defaults to "latest"
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -394,6 +414,7 @@ class BoxesResource(SyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
             ),
@@ -583,6 +604,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
@@ -598,6 +620,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
         Provide at most one of `snapshot_id` or
         `snapshot_name`; if neither is provided, the server uses the default snapshot.
+        `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+        name resolves to `name:latest`).
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -606,6 +630,11 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           labels: Labels are free-form key/value metadata persisted with the sandbox and returned
               on reads. Labels from the source snapshot are inherited unless overridden here.
+
+          mem_bytes: Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+              it and it follows that ratio; set it and it must stay within 50% of the ratio
+              for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+              without CPU derives the CPU from the same ratio. Maximum 64 GiB.
 
           preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
               stop (idle timeout or explicit stop) so the next start resumes from where it
@@ -621,6 +650,12 @@ class AsyncBoxesResource(AsyncAPIResource):
               false → never: always cold-boot.
 
               Applies to this request only.
+
+          snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+              resolves to name:latest.
+
+          snapshot_name: SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+              that predate it. Set one or the other.
 
           extra_headers: Send extra headers
 
@@ -646,6 +681,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
                     "tag_value_ids": tag_value_ids,
@@ -718,6 +754,9 @@ class AsyncBoxesResource(AsyncAPIResource):
         The name must be unique within the tenant.
 
         Args:
+          mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+              sandbox is created; a resize enforces only the maximum of 64 GiB.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -868,6 +907,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -893,6 +933,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          tag: mutable Docker-style tag; defaults to "latest"
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -913,6 +955,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
             ),

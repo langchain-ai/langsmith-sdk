@@ -21,9 +21,9 @@ from typing import (
 from typing_extensions import Awaitable, ParamSpec, override, get_origin
 
 import anyio
-import httpx
 import pydantic
 
+from ._httpx import httpx
 from ._types import NoneType
 from ._utils import is_given, extract_type_arg, is_annotated_type, is_type_alias_type, extract_type_var_from_base
 from ._models import BaseModel, is_basemodel

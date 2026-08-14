@@ -6,10 +6,9 @@ import os
 from typing import TYPE_CHECKING, Any, Mapping
 from typing_extensions import Self, override
 
-import httpx
-
 from . import _exceptions
 from ._qs import Querystring
+from ._httpx import httpx
 from ._types import (
     Omit,
     Headers,
