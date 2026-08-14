@@ -1,5 +1,6 @@
 import type { RunTreeConfig } from "../index.js";
 import { traceable } from "../traceable.js";
+import { wrapWithGatewayResponseMetadata } from "./utils/gateway_metadata.js";
 
 export const _wrapClient = <T extends object>(
   sdk: T,
@@ -10,11 +11,14 @@ export const _wrapClient = <T extends object>(
     get(target, propKey, receiver) {
       const originalValue = target[propKey as keyof T];
       if (typeof originalValue === "function") {
-        return traceable(originalValue.bind(target), {
-          run_type: "llm",
-          ...options,
-          name: [runName, propKey.toString()].join("."),
-        });
+        return traceable(
+          wrapWithGatewayResponseMetadata(originalValue.bind(target)),
+          {
+            run_type: "llm",
+            ...options,
+            name: [runName, propKey.toString()].join("."),
+          },
+        );
       } else if (
         originalValue != null &&
         !Array.isArray(originalValue) &&

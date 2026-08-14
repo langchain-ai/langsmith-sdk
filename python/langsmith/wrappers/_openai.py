@@ -23,6 +23,7 @@ from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
 # integrations can reuse it without importing the ``wrappers`` package (whose
 # ``__init__`` warns at import time). Re-exported here for backwards compat.
 from langsmith._internal._usage import _create_usage_metadata
+from langsmith.wrappers._gateway import install_gateway_response_hook
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
@@ -454,6 +455,7 @@ def wrap_openai(
         Support for `with_raw_response` API added.
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
+    install_gateway_response_hook(client)
 
     # Extract ls_invocation_params from metadata
     metadata = dict(tracing_extra.get("metadata") or {})
