@@ -22,7 +22,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
             },
           }),
         text: () => Promise.resolve(""),
-      })
+      }),
     );
     overriddenFetch = jest.fn(() =>
       Promise.resolve({
@@ -34,7 +34,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
             },
           }),
         text: () => Promise.resolve(""),
-      })
+      }),
     );
     expectedFetchMock =
       description === "mocked" ? overriddenFetch : globalFetchMock;
@@ -109,7 +109,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
           yield char;
         }
       },
-      { tracingEnabled: true, client }
+      { tracingEnabled: true, client },
     );
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

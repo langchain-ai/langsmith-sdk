@@ -13,7 +13,12 @@ from typing import Optional, TypeVar
 import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
-from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal import _v2_migration_utils
+from langsmith._internal._beta_decorator import (
+    deprecated,
+    suppress_deprecation_warning,
+    warn_beta,
+)
 from langsmith.client import Client
 
 
@@ -135,9 +140,7 @@ def convert_runs_to_test(
     if not load_child_runs:
         runs_to_copy = runs
     else:
-        runs_to_copy = [
-            client.read_run(r.id, load_child_runs=load_child_runs) for r in runs
-        ]
+        runs_to_copy = [client._load_child_runs(r) for r in runs]
 
     test_project_name = test_project_name or f"prod-baseline-{uuid.uuid4().hex[:6]}"
 
@@ -175,7 +178,16 @@ def convert_runs_to_test(
 
 
 def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Run]:
-    runs = client.list_runs(project_name=project_name)
+    # v1 `/runs/query` returns 501 when ClickHouse query support is disabled;
+    # only then fall back to v2. Dual backends keep using the legacy path.
+    backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
+    if backend == _v2_migration_utils.QueryBackend.SMITHDB_ONLY:
+        return _v2_migration_utils._load_nested_traces_v2(project_name, client)
+
+    # Suppressed: compute_test_metrics() already warned, and it points at
+    # create_feedback() rather than list_runs()'s runs.query().
+    with suppress_deprecation_warning():
+        runs = client.list_runs(project_name=project_name)
     treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
         collections.defaultdict(list)
     )
@@ -200,6 +212,11 @@ def _outer_product(list1: list[T], list2: list[U]) -> list[tuple[T, U]]:
     return list(itertools.product(list1, list2))
 
 
+@deprecated(
+    "compute_test_metrics() is deprecated and will be removed after Jan 31, 2027. "
+    "There is no replacement: run the evaluators yourself and log the results "
+    "with client.create_feedback()."
+)
 @warn_beta
 def compute_test_metrics(
     project_name: str,
@@ -209,6 +226,12 @@ def compute_test_metrics(
     client: Optional[Client] = None,
 ) -> None:
     """Compute test metrics for a given test name using a list of evaluators.
+
+    .. admonition:: Deprecated
+
+        There is no replacement: run the evaluators yourself and log the results
+        with :meth:`langsmith.Client.create_feedback`.
+        Will be removed after Jan 31, 2027.
 
     Args:
         project_name (str): The name of the test project to evaluate.

@@ -100,13 +100,24 @@ export class LangSmithNotFoundError extends Error {
 }
 
 export function isLangSmithNotFoundError(
-  error: unknown
+  error: unknown,
 ): error is LangSmithNotFoundError {
   return (
     error != null &&
     typeof error === "object" &&
     "name" in error &&
     error?.name === "LangSmithNotFoundError"
+  );
+}
+
+export function isLangSmithConflictError(
+  error: unknown,
+): error is LangSmithConflictError {
+  return (
+    error != null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error?.name === "LangSmithConflictError"
   );
 }
 
@@ -121,7 +132,7 @@ export function isLangSmithNotFoundError(
 export async function raiseForStatus(
   response: Response,
   context: string,
-  consumeOnSuccess?: boolean
+  consumeOnSuccess?: boolean,
 ): Promise<void> {
   let errorBody;
   if (response.ok) {
@@ -144,9 +155,9 @@ export async function raiseForStatus(
           "or set LANGSMITH_WORKSPACE_ID environment variable.";
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
+    } catch (_e: any) {
       const errorWithStatus = new Error(
-        `${response.status} ${response.statusText}`
+        `${response.status} ${response.statusText}`,
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (errorWithStatus as any).status = response?.status;
@@ -157,7 +168,7 @@ export async function raiseForStatus(
     try {
       errorBody = await response.text();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
+    } catch (_e: any) {
       errorBody = "";
     }
   }
@@ -184,13 +195,13 @@ export class ConflictingEndpointsError extends Error {
   constructor() {
     super(
       "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT " +
-        "and LANGSMITH_RUNS_ENDPOINTS."
+        "and LANGSMITH_RUNS_ENDPOINTS.",
     );
     this.name = "ConflictingEndpointsError"; // helpful in logs
   }
 }
 export function isConflictingEndpointsError(
-  err: unknown
+  err: unknown,
 ): err is ConflictingEndpointsError {
   return (
     typeof err === "object" &&

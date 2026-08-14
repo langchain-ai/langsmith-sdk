@@ -7,6 +7,8 @@ import {
   TraceableConfig,
 } from "../traceable.js";
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
+import { getCurrentRunTree } from "../singletons/traceable.js";
+import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -49,12 +51,16 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
       create: {
         (
           arg: OpenAI.ChatCompletionCreateParamsStreaming,
-          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
+          arg2?: OpenAI.RequestOptions & {
+            langsmithExtra?: ExtraRunTreeConfig;
+          },
         ): APIPromise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
       } & {
         (
           arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
-          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
+          arg2?: OpenAI.RequestOptions & {
+            langsmithExtra?: ExtraRunTreeConfig;
+          },
         ): APIPromise<OpenAI.ChatCompletion>;
       };
     };
@@ -63,12 +69,12 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
     create: {
       (
         arg: OpenAI.CompletionCreateParamsStreaming,
-        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig },
       ): APIPromise<AsyncGenerator<OpenAI.Completion>>;
     } & {
       (
         arg: OpenAI.CompletionCreateParamsNonStreaming,
-        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig },
       ): APIPromise<OpenAI.Completion>;
     };
   };
@@ -99,7 +105,7 @@ const TRACED_INVOCATION_KEYS = [
 ];
 
 function _combineChatCompletionChoices(
-  choices: OpenAI.ChatCompletionChunk.Choice[]
+  choices: OpenAI.ChatCompletionChunk.Choice[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   const reversedChoices = choices.slice().reverse();
@@ -115,9 +121,7 @@ function _combineChatCompletionChoices(
     }
   }
   const toolCalls: {
-    [
-      key: number
-    ]: Partial<OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall>[];
+    [key: number]: Partial<OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall>[];
   } = {};
   for (const c of choices) {
     if (c.delta.content) {
@@ -197,7 +201,7 @@ const chatAggregator = (chunks: OpenAI.ChatCompletionChunk[]) => {
 
   const aggregatedOutput = chunks[chunks.length - 1];
   aggregatedOutput.choices = Object.values(choicesByIndex).map((choices) =>
-    _combineChatCompletionChoices(choices)
+    _combineChatCompletionChoices(choices),
   );
 
   return aggregatedOutput;
@@ -220,7 +224,7 @@ const responsesAggregator = (events: any[]) => {
 };
 
 const textAggregator = (
-  allChunks: OpenAI.Completions.Completion[]
+  allChunks: OpenAI.Completions.Completion[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Record<string, any> => {
   if (allChunks.length === 0) {
@@ -242,7 +246,7 @@ const textAggregator = (
 };
 
 function isChatCompletionUsage(
-  usage: OpenAI.ChatCompletion["usage"] | OpenAI.Responses.Response["usage"]
+  usage: OpenAI.ChatCompletion["usage"] | OpenAI.Responses.Response["usage"],
 ): usage is OpenAI.ChatCompletion["usage"] {
   return usage != null && typeof usage === "object" && "prompt_tokens" in usage;
 }
@@ -252,7 +256,7 @@ function processChatCompletion(outputs: KVMap): KVMap {
     | OpenAI.ChatCompletion
     | OpenAI.Responses.Response;
   const recognizedServiceTier = ["priority", "flex"].includes(
-    openAICompletion.service_tier ?? ""
+    openAICompletion.service_tier ?? "",
   )
     ? openAICompletion.service_tier
     : undefined;
@@ -337,7 +341,7 @@ function processChatCompletion(outputs: KVMap): KVMap {
 const getChatModelInvocationParamsFn = (
   provider: string,
   prepopulatedInvocationParams: Record<string, unknown>,
-  useResponsesApi: boolean
+  useResponsesApi: boolean,
 ) => {
   return (payload: unknown) => {
     if (typeof payload !== "object" || payload == null) return undefined;
@@ -358,7 +362,15 @@ const getChatModelInvocationParamsFn = (
       ls_invocation_params.use_responses_api = true;
     }
 
+    const requestMetadata =
+      typeof params.metadata === "object" &&
+      params.metadata !== null &&
+      !Array.isArray(params.metadata)
+        ? (params.metadata as Record<string, unknown>)
+        : {};
+
     return {
+      ...requestMetadata,
       ls_provider: provider,
       ls_model_type: "chat",
       ls_model_name: params.model,
@@ -370,6 +382,7 @@ const getChatModelInvocationParamsFn = (
         ...prepopulatedInvocationParams,
         ...ls_invocation_params,
       },
+      ...defaultLsAgentTypeMetadata(requestMetadata, getCurrentRunTree(true)),
     } as InvocationParamsSchema;
   };
 };
@@ -405,14 +418,14 @@ const getChatModelInvocationParamsFn = (
  */
 export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
-  options?: Partial<RunTreeConfig>
+  options?: Partial<RunTreeConfig>,
 ): PatchedOpenAIClient<T> => {
   if (
     isTraceableFunction(openai.chat.completions.create) ||
     isTraceableFunction(openai.completions.create)
   ) {
     throw new Error(
-      "This instance of OpenAI client has been already wrapped once."
+      "This instance of OpenAI client has been already wrapped once.",
     );
   }
 
@@ -449,7 +462,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
     getInvocationParams: getChatModelInvocationParamsFn(
       provider,
       prepopulatedInvocationParams,
-      false
+      false,
     ),
     processOutputs: processChatCompletion,
     ...cleanedOptions,
@@ -465,7 +478,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
     ) {
       tracedOpenAIClient.beta.chat.completions.parse = traceable(
         openai.beta.chat.completions.parse.bind(openai.beta.chat.completions),
-        chatCompletionParseMetadata
+        chatCompletionParseMetadata,
       );
     }
   }
@@ -515,14 +528,14 @@ export const wrapOpenAI = <T extends OpenAIType>(
   // Wrap chat.completions.create
   tracedOpenAIClient.chat.completions.create = traceable(
     openai.chat.completions.create.bind(openai.chat.completions),
-    chatCompletionParseMetadata
+    chatCompletionParseMetadata,
   );
 
   // Wrap chat.completions.parse if it exists
   if (typeof openai.chat.completions.parse === "function") {
     tracedOpenAIClient.chat.completions.parse = traceable(
       openai.chat.completions.parse.bind(openai.chat.completions),
-      chatCompletionParseMetadata
+      chatCompletionParseMetadata,
     );
   }
 
@@ -530,9 +543,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
   if (typeof openai.chat.completions.stream === "function") {
     tracedOpenAIClient.chat.completions.stream = traceable(
       wrapStreamMethod(
-        openai.chat.completions.stream.bind(openai.chat.completions)
+        openai.chat.completions.stream.bind(openai.chat.completions),
       ),
-      chatCompletionParseMetadata
+      chatCompletionParseMetadata,
     );
   }
 
@@ -545,9 +558,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
   ) {
     tracedOpenAIClient.beta.chat.completions.stream = traceable(
       wrapStreamMethod(
-        openai.beta.chat.completions.stream.bind(openai.beta.chat.completions)
+        openai.beta.chat.completions.stream.bind(openai.beta.chat.completions),
       ),
-      chatCompletionParseMetadata
+      chatCompletionParseMetadata,
     );
   }
 
@@ -585,6 +598,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             ...prepopulatedInvocationParams,
             ...ls_invocation_params,
           },
+          ...defaultLsAgentTypeMetadata({}, getCurrentRunTree(true)),
         };
       },
       ...cleanedOptions,
@@ -595,7 +609,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
   if (openai.responses) {
     // Create a new object with the same prototype to preserve all methods
     tracedOpenAIClient.responses = Object.create(
-      Object.getPrototypeOf(openai.responses)
+      Object.getPrototypeOf(openai.responses),
     );
 
     // Copy all own properties
@@ -618,11 +632,11 @@ export const wrapOpenAI = <T extends OpenAIType>(
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
-            true
+            true,
           ),
           processOutputs: processChatCompletion,
           ...cleanedOptions,
-        }
+        },
       );
     }
 
@@ -640,11 +654,11 @@ export const wrapOpenAI = <T extends OpenAIType>(
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
-            true
+            true,
           ),
           processOutputs: processChatCompletion,
           ...cleanedOptions,
-        }
+        },
       );
     }
 
@@ -662,11 +676,11 @@ export const wrapOpenAI = <T extends OpenAIType>(
           getInvocationParams: getChatModelInvocationParamsFn(
             provider,
             prepopulatedInvocationParams,
-            true
+            true,
           ),
           processOutputs: processChatCompletion,
           ...cleanedOptions,
-        }
+        },
       );
     }
   }

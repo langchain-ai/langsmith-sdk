@@ -1,10 +1,13 @@
 """Tests for AsyncSandbox class."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
     AsyncSandboxClient,
+    AsyncServiceURL,
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
     SandboxConnectionError,
@@ -28,7 +31,6 @@ def sandbox(client: AsyncSandboxClient):
     return AsyncSandbox.from_dict(
         data={
             "name": "test-sandbox",
-            "template_name": "test-template",
             "dataplane_url": "https://sandbox-router.example.com/sb-123",
         },
         client=client,
@@ -43,65 +45,78 @@ class TestAsyncSandboxProperties:
         """Test name property."""
         assert sandbox.name == "test-sandbox"
 
-    def test_template_name_property(self, sandbox):
-        """Test template_name property."""
-        assert sandbox.template_name == "test-template"
-
     def test_dataplane_url_property(self, sandbox):
         """Test dataplane_url property."""
         assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
 
 
-class TestAsyncSandboxTTLFields:
-    """Tests for TTL fields on AsyncSandbox."""
+class TestAsyncSandboxRetentionFields:
+    """Tests for the two-stage retention fields on AsyncSandbox."""
 
-    def test_from_dict_with_ttl(self, client):
-        """Test from_dict parses TTL fields."""
+    def test_from_dict_with_retention(self, client):
+        """from_dict parses idle_ttl_seconds, delete_after_stop_seconds,
+        and stopped_at."""
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
-                "ttl_seconds": 3600,
                 "idle_ttl_seconds": 600,
-                "expires_at": "2026-03-24T12:00:00Z",
+                "delete_after_stop_seconds": 86400,
+                "stopped_at": "2026-03-24T12:00:00Z",
             },
             client=client,
             auto_delete=False,
         )
-        assert sb.ttl_seconds == 3600
         assert sb.idle_ttl_seconds == 600
-        assert sb.expires_at == "2026-03-24T12:00:00Z"
+        assert sb.delete_after_stop_seconds == 86400
+        assert sb.stopped_at == "2026-03-24T12:00:00Z"
 
-    def test_from_dict_without_ttl(self, client):
-        """Test from_dict defaults TTL fields to None when absent."""
+    def test_from_dict_without_retention(self, client):
+        """Retention fields default to None when absent."""
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=False,
         )
-        assert sb.ttl_seconds is None
         assert sb.idle_ttl_seconds is None
-        assert sb.expires_at is None
+        assert sb.delete_after_stop_seconds is None
+        assert sb.stopped_at is None
 
-    def test_from_dict_with_zero_ttl(self, client):
-        """Test from_dict handles zero TTL values (TTL disabled)."""
+    def test_from_dict_with_zero_retention(self, client):
+        """Zero values are preserved (each disables that retention stage)."""
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
-                "ttl_seconds": 0,
                 "idle_ttl_seconds": 0,
-                "expires_at": None,
+                "delete_after_stop_seconds": 0,
+                "stopped_at": None,
             },
             client=client,
             auto_delete=False,
         )
-        assert sb.ttl_seconds == 0
         assert sb.idle_ttl_seconds == 0
-        assert sb.expires_at is None
+        assert sb.delete_after_stop_seconds == 0
+        assert sb.stopped_at is None
+
+    def test_from_dict_silently_ignores_legacy_fields(self, client):
+        """Older smith-go responses may include the now-removed
+        ttl_seconds/expires_at fields; the SDK should silently drop them."""
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "ttl_seconds": 3600,
+                "expires_at": "2026-03-24T12:00:00Z",
+                "idle_ttl_seconds": 600,
+            },
+            client=client,
+            auto_delete=False,
+        )
+        assert sb.idle_ttl_seconds == 600
+        assert sb.delete_after_stop_seconds is None
+        assert sb.stopped_at is None
+        assert not hasattr(sb, "ttl_seconds")
+        assert not hasattr(sb, "expires_at")
 
 
 class TestAsyncSandboxStatusFields:
@@ -112,7 +127,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "status": "provisioning",
                 "status_message": None,
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
@@ -128,7 +142,6 @@ class TestAsyncSandboxStatusFields:
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=False,
@@ -136,54 +149,82 @@ class TestAsyncSandboxStatusFields:
         assert sb.status == "ready"
         assert sb.status_message is None
 
-    async def test_provisioning_sandbox_blocks_run(self, client):
-        """Test that run() raises SandboxNotReadyError for non-ready sandbox."""
+    async def test_dataplane_op_not_gated_on_status(
+        self, client, httpx_mock: HTTPXMock, monkeypatch
+    ):
+        """The client does not pre-check status: a stopped sandbox still runs;
+        the platform resumes it when the dataplane request arrives."""
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "ok\n", "stderr": "", "exit_code": 0},
+        )
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
-                "status": "provisioning",
+                "status": "stopped",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             client=client,
             auto_delete=False,
         )
-        with pytest.raises(SandboxNotReadyError, match="not ready"):
+        result = await sb.run("echo ok")
+        assert result.stdout == "ok\n"
+
+    async def test_missing_dataplane_url_raises_regardless_of_status(self, client):
+        """Without a dataplane_url, dataplane ops raise
+        DataplaneNotConfiguredError — the only client-side precondition."""
+        sb = AsyncSandbox.from_dict(
+            data={"name": "test-sandbox", "status": "stopped"},
+            client=client,
+            auto_delete=False,
+        )
+        with pytest.raises(DataplaneNotConfiguredError):
             await sb.run("echo hello")
-
-    async def test_provisioning_sandbox_blocks_write(self, client):
-        """Test that write() raises SandboxNotReadyError for non-ready sandbox."""
-        sb = AsyncSandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-                "template_name": "test-template",
-                "status": "provisioning",
-                "dataplane_url": "https://sandbox-router.example.com/sb-123",
-            },
-            client=client,
-            auto_delete=False,
-        )
-        with pytest.raises(SandboxNotReadyError):
+        with pytest.raises(DataplaneNotConfiguredError):
             await sb.write("/tmp/test.txt", "hello")
+        with pytest.raises(DataplaneNotConfiguredError):
+            await sb.read("/tmp/test.txt")
 
-    async def test_provisioning_sandbox_blocks_read(self, client):
-        """Test that read() raises SandboxNotReadyError for non-ready sandbox."""
+    async def test_stop_preserves_dataplane_url(self, client, httpx_mock: HTTPXMock):
+        """stop() must not clear dataplane_url: it stays valid across
+        stop/start and a request on it resumes the sandbox."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/test-sandbox/stop",
+            json={},
+        )
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
-                "status": "provisioning",
+                "status": "ready",
                 "dataplane_url": "https://sandbox-router.example.com/sb-123",
             },
             client=client,
             auto_delete=False,
         )
-        with pytest.raises(SandboxNotReadyError):
-            await sb.read("/tmp/test.txt")
+        await sb.stop()
+        assert sb.status == "stopped"
+        assert sb.dataplane_url == "https://sandbox-router.example.com/sb-123"
 
 
 class TestAsyncSandboxRun:
-    """Tests for async sandbox run command."""
+    """AsyncSandbox.run() over the HTTP fallback path.
+
+    run() uses WebSocket by default; these cases pin the request/response
+    shaping of the blocking HTTP endpoint it falls back to when the websockets
+    library is unavailable.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ws_unavailable(self, monkeypatch):
+        """Force the missing-websockets condition so run() takes the HTTP path."""
+        monkeypatch.setattr(
+            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
+        )
 
     async def test_run_command_success(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a successful command."""
@@ -230,12 +271,30 @@ class TestAsyncSandboxRun:
         with pytest.raises(SandboxConnectionError):
             await sandbox.run("echo hello")
 
+    async def test_run_starting_sandbox_raises_not_ready(
+        self, sandbox, httpx_mock: HTTPXMock
+    ):
+        """Test run maps router startup refusals to SandboxNotReadyError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            status_code=503,
+            json={
+                "detail": {
+                    "error": "ServiceUnavailable",
+                    "message": "Sandbox is starting: sb-123",
+                }
+            },
+        )
+
+        with pytest.raises(SandboxNotReadyError, match="Sandbox is starting"):
+            await sandbox.run("echo hello")
+
     async def test_run_without_dataplane_url(self, client: AsyncSandboxClient):
         """Test run raises error when dataplane_url is not configured."""
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": None,
             },
             client=client,
@@ -263,6 +322,26 @@ class TestAsyncSandboxRun:
         request = httpx_mock.get_request()
         payload = json.loads(request.content)
         assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
+
+    async def test_run_with_custom_headers(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with per-request headers."""
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
+        )
+
+        await sandbox.run(
+            "echo hello",
+            headers={
+                "X-Api-Key": "override-key",
+                "X-Test-Header": "sandbox-run",
+            },
+        )
+
+        request = httpx_mock.get_request()
+        assert request.headers.get("X-Api-Key") == "override-key"
+        assert request.headers.get("X-Test-Header") == "sandbox-run"
 
     async def test_run_with_cwd(self, sandbox, httpx_mock: HTTPXMock):
         """Test running a command with custom working directory."""
@@ -373,12 +452,28 @@ class TestAsyncSandboxWrite:
         content_type = request.headers.get("content-type", "")
         assert content_type.startswith("multipart/form-data")
 
+    async def test_write_with_custom_headers(self, sandbox, httpx_mock: HTTPXMock):
+        """Test writing a file with per-request headers."""
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/upload?path=%2Fapp%2Ftest.txt",
+            json={"path": "/app/test.txt", "written": 5},
+        )
+
+        await sandbox.write(
+            "/app/test.txt",
+            "hello",
+            headers={"X-Test-Header": "sandbox-write"},
+        )
+
+        request = httpx_mock.get_request()
+        assert request.headers.get("X-Test-Header") == "sandbox-write"
+
     async def test_write_without_dataplane_url(self, client: AsyncSandboxClient):
         """Test write raises error when dataplane_url is not configured."""
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": None,
             },
             client=client,
@@ -440,7 +535,6 @@ class TestAsyncSandboxRead:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
                 "dataplane_url": None,
             },
             client=client,
@@ -469,7 +563,6 @@ class TestAsyncSandboxContextManager:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=True,
@@ -490,7 +583,6 @@ class TestAsyncSandboxContextManager:
         sandbox = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
-                "template_name": "test-template",
             },
             client=client,
             auto_delete=False,
@@ -502,3 +594,33 @@ class TestAsyncSandboxContextManager:
         # Verify no delete request
         requests = httpx_mock.get_requests()
         assert len(requests) == 0
+
+
+class TestAsyncSandboxService:
+    """Tests for AsyncSandbox.service() convenience method."""
+
+    async def test_service_delegates_to_client(self, client: AsyncSandboxClient):
+        """Test service() calls client.service() with sandbox name."""
+        mock_svc = AsyncServiceURL(
+            browser_url="http://b",
+            service_url="http://s/",
+            token="t",
+            expires_at="2026-04-01T12:10:00Z",
+        )
+        client.service = AsyncMock(return_value=mock_svc)  # type: ignore[method-assign]
+
+        sb = AsyncSandbox.from_dict(
+            data={
+                "name": "test-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/sb-123",
+            },
+            client=client,
+            auto_delete=False,
+        )
+
+        result = await sb.service(port=3000, expires_in_seconds=1800)
+
+        client.service.assert_called_once_with(
+            "test-sandbox", 3000, expires_in_seconds=1800, headers=None
+        )
+        assert result is mock_svc

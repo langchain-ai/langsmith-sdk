@@ -8,7 +8,7 @@ This package contains the TypeScript client for interacting with the [LangSmith 
 To install:
 
 ```bash
-yarn add langsmith
+pnpm add langsmith
 ```
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchainjs), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
@@ -24,6 +24,224 @@ A typical workflow looks like:
 3. Debug, Create Datasets, and Evaluate Runs.
 
 We'll walk through these steps in more detail below.
+
+## Sandbox AWS Auth Proxy
+
+When sandbox code needs to call AWS services, use the sandbox AWS auth proxy.
+The proxy keeps the real AWS credentials outside the sandbox and signs supported
+AWS HTTPS requests with SigV4, so code in the sandbox can use AWS SDKs normally
+without storing long-lived AWS keys in files, environment variables, shell
+history, or logs.
+
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then create the sandbox with an AWS auth proxy config:
+
+```ts
+import {
+  SandboxClient,
+  awsAuth,
+  proxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "aws-sandbox",
+  proxyConfig: authConfig,
+});
+
+try {
+  const result = await sandbox.run("node your-aws-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Use `opaqueSecret("...")` instead of `workspaceSecret(...)` when your application
+needs to pass short-lived write-only AWS credentials at sandbox creation time.
+Plaintext AWS credential values are not accepted directly; wrap them as
+`opaqueSecret(...)` values.
+
+## Sandbox GCP Auth Proxy
+
+When sandbox code needs to call Google APIs, use the sandbox GCP auth proxy.
+The proxy keeps the service account JSON outside the sandbox and injects OAuth
+bearer tokens for Google API hosts matched automatically by the sandbox proxy.
+
+Store the service account JSON as a LangSmith workspace secret. Then create the
+sandbox with a GCP auth proxy config:
+
+```ts
+import {
+  SandboxClient,
+  gcpAuth,
+  proxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+const authConfig = proxyConfig({
+  rules: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "gcp-sandbox",
+  proxyConfig: authConfig,
+});
+
+try {
+  const result = await sandbox.run("node your-gcp-script.js");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Use `opaqueSecret("...")` for short-lived write-only service account JSON.
+Plaintext service account JSON is not accepted directly.
+
+## Sandbox Mounts
+
+When you create a LangSmith sandbox that needs filesystem access to external
+data such as object storage buckets or public Git repositories, pass a
+`mountConfig` on sandbox creation. Mount specs contain only the mount target.
+Provider credentials stay in `mountConfig.auth`; the backend expands them into
+runtime proxy auth rules. You can also pass `proxyConfig` for non-mount proxy
+behavior such as custom headers, callbacks, access control, and generic egress
+rules. Explicit AWS/GCP proxy auth rules conflict with `mountConfig` auth for
+the same provider.
+
+S3 mounts require AWS auth:
+
+```ts
+import {
+  awsAuth,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      endpointUrl: "https://s3.amazonaws.com",
+      pathStyle: false,
+      readOnly: false,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "s3-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+GCS mounts require GCP auth:
+
+```ts
+import {
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+    }),
+  ],
+  mounts: [
+    gcsMount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "gcs-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Public Git mounts do not require AWS or GCP auth:
+
+```ts
+import { gitMount, mountConfig } from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  mounts: [
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "branch", name: "main" },
+      refreshIntervalSeconds: 60,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "git-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/repo");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+Private Git repositories can use low-level `proxyConfig` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
 
 ## 1. Connect to LangSmith
 
@@ -43,7 +261,7 @@ You can log traces natively in your LangChain application or using a LangSmith R
 LangSmith seamlessly integrates with the JavaScript LangChain library to record traces from your LLM applications.
 
 ```bash
-yarn add langchain
+pnpm add langchain
 ```
 
 1. **Copy the environment variables from the Settings Page and add them to your application.**

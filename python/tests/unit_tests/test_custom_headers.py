@@ -100,6 +100,68 @@ def test_no_custom_headers(
 
 
 @mock.patch("langsmith.client.requests.Session")
+def test_custom_headers_property_setter(
+    mock_session: mock.Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that headers can be dynamically updated via property setter."""
+    _clear_env_cache()
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+
+    with mock.patch.dict("os.environ", {}, clear=True):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="test-api-key",
+            headers={"X-Initial-Header": "initial-value"},
+        )
+
+        # Check initial state
+        assert client._headers["X-Initial-Header"] == "initial-value"
+        assert "X-New-Header" not in client._headers
+
+        # Update headers via property setter
+        client.headers = {
+            "X-New-Header": "new-value",
+            "X-Another-Header": "another-value",
+        }
+
+        # Check that headers are updated
+        assert "X-Initial-Header" not in client._headers
+        assert client._headers["X-New-Header"] == "new-value"
+        assert client._headers["X-Another-Header"] == "another-value"
+
+        # Check that default headers are still present
+        assert "User-Agent" in client._headers
+        assert "Accept" in client._headers
+        assert "x-api-key" in client._headers
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_custom_headers_property_getter(
+    mock_session: mock.Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that headers property getter returns the custom headers."""
+    _clear_env_cache()
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+
+    with mock.patch.dict("os.environ", {}, clear=True):
+        custom_headers = {"X-Custom-Header": "custom-value"}
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="test-api-key",
+            headers=custom_headers,
+        )
+
+        # Check that the getter returns the custom headers
+        assert client.headers == custom_headers
+
+        # Check that modifying the returned dict affects the client
+        # (since it's a reference)
+        client.headers["X-Modified"] = "modified-value"
+        object.__setattr__(client, "_headers", client._compute_headers())
+        assert client._headers["X-Modified"] == "modified-value"
+
+
+@mock.patch("langsmith.client.requests.Session")
 def test_workspace_id_with_custom_headers(
     mock_session: mock.Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:

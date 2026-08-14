@@ -2,7 +2,7 @@ import { LangChainBaseMessage } from "../schemas.js";
 
 export function isLangChainMessage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  message?: any
+  message?: any,
 ): message is LangChainBaseMessage {
   return typeof message?._getType === "function";
 }
@@ -15,7 +15,7 @@ interface ConvertedData {
 }
 
 export function convertLangChainMessageToExample(
-  message: LangChainBaseMessage
+  message: LangChainBaseMessage,
 ) {
   const converted: { type: string; data: ConvertedData } = {
     type: message._getType(),

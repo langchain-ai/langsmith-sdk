@@ -9,7 +9,10 @@ Example:
     # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
     client = SandboxClient()
 
-    with client.sandbox(template_name="python-sandbox") as sb:
+    snapshot = client.create_snapshot(
+        docker_image="python:3.12-slim", name="python-snapshot"
+    )
+    with client.sandbox(snapshot_id=snapshot.id) as sb:
         result = sb.run("python --version")
         print(result.stdout)
 
@@ -17,7 +20,10 @@ Example:
     from langsmith.sandbox import AsyncSandboxClient
 
     async with AsyncSandboxClient() as client:
-        async with await client.sandbox(template_name="python-sandbox") as sb:
+        snapshot = await client.create_snapshot(
+            docker_image="python:3.12-slim", name="python-snapshot"
+        )
+        async with await client.sandbox(snapshot_id=snapshot.id) as sb:
             result = await sb.run("python --version")
             print(result.stdout)
 """
@@ -39,6 +45,7 @@ from langsmith.sandbox._exceptions import (
     SandboxAuthenticationError,
     SandboxClientError,
     SandboxConnectionError,
+    SandboxConnectTimeoutError,
     SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
@@ -50,15 +57,46 @@ from langsmith.sandbox._exceptions import (
 )
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
+    AsyncServiceURL,
     CommandHandle,
     ExecutionResult,
     OutputChunk,
-    Pool,
-    ResourceSpec,
     ResourceStatus,
-    SandboxTemplate,
-    Volume,
-    VolumeMountSpec,
+    ServiceURL,
+    Snapshot,
+)
+from langsmith.sandbox._mounts import (
+    AWSMountAuthConfig,
+    ContextHubMountConfig,
+    ContextHubMountSpec,
+    GCPMountAuthConfig,
+    GCSMountConfig,
+    GCSMountSpec,
+    GitMountConfig,
+    GitMountRefSpec,
+    GitMountSpec,
+    MountCacheConfig,
+    S3MountConfig,
+    S3MountSpec,
+    SandboxMount,
+    SandboxMountAuth,
+    SandboxMountAuthConfig,
+    SandboxMountConfig,
+    context_hub_mount,
+    gcs_mount,
+    git_mount,
+    mount_config,
+    s3_mount,
+)
+from langsmith.sandbox._proxy_config import (
+    SandboxProxyConfig,
+    SandboxProxyRule,
+    SandboxProxySecret,
+    aws_auth,
+    gcp_auth,
+    opaque_secret,
+    proxy_config,
+    workspace_secret,
 )
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
@@ -70,22 +108,50 @@ __all__ = [
     "Sandbox",
     "AsyncSandbox",
     # Models
-    "SandboxTemplate",
     "ResourceStatus",
-    "ResourceSpec",
     "ExecutionResult",
-    "Volume",
-    "VolumeMountSpec",
-    "Pool",
+    "Snapshot",
+    "ServiceURL",
+    "AsyncServiceURL",
     # WebSocket streaming models
     "CommandHandle",
     "AsyncCommandHandle",
     "OutputChunk",
+    "SandboxProxyConfig",
+    "SandboxProxyRule",
+    "SandboxProxySecret",
+    "SandboxMount",
+    "SandboxMountAuth",
+    "SandboxMountAuthConfig",
+    "SandboxMountConfig",
+    "AWSMountAuthConfig",
+    "ContextHubMountConfig",
+    "ContextHubMountSpec",
+    "GCPMountAuthConfig",
+    "MountCacheConfig",
+    "GCSMountConfig",
+    "GCSMountSpec",
+    "GitMountConfig",
+    "GitMountRefSpec",
+    "GitMountSpec",
+    "S3MountConfig",
+    "S3MountSpec",
+    "aws_auth",
+    "context_hub_mount",
+    "git_mount",
+    "gcp_auth",
+    "gcs_mount",
+    "mount_config",
+    "opaque_secret",
+    "proxy_config",
+    "s3_mount",
+    "workspace_secret",
     # Base and connection errors
     "SandboxClientError",
     "SandboxAPIError",
     "SandboxAuthenticationError",
     "SandboxConnectionError",
+    "SandboxConnectTimeoutError",
     "SandboxServerReloadError",
     # Resource errors (type-based with resource_type attribute)
     "ResourceCreationError",
@@ -110,13 +176,3 @@ __all__ = [
     "TunnelConnectionRefusedError",
     "TunnelUnsupportedVersionError",
 ]
-
-# Emit warning on import
-import warnings
-
-warnings.warn(
-    "langsmith.sandbox is in alpha. "
-    "This feature is experimental, and breaking changes are expected.",
-    FutureWarning,
-    stacklevel=2,
-)

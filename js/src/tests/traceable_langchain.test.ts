@@ -38,7 +38,7 @@ describe("to langchain", () => {
         tracingEnabled: true,
         tags: ["welcome"],
         metadata: { hello: "world" },
-      }
+      },
     );
 
     const result = await main({ text: "Hello world" });
@@ -47,7 +47,7 @@ describe("to langchain", () => {
     await awaitAllCallbacks();
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "main:0",
@@ -84,7 +84,7 @@ describe("to langchain", () => {
           yield token;
         }
       },
-      { client, tracingEnabled: true }
+      { client, tracingEnabled: true },
     );
 
     const result = [];
@@ -94,7 +94,7 @@ describe("to langchain", () => {
 
     expect(result).toEqual(["Hello world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "main:0",
@@ -119,10 +119,10 @@ describe("to langchain", () => {
       async (input: { texts: string[] }) => {
         return chain.batch(
           input.texts.map((text) => ({ text })),
-          { callbacks: await getLangchainCallbacks() }
+          { callbacks: await getLangchainCallbacks() },
         );
       },
-      { name: "main", client, tracingEnabled: true }
+      { name: "main", client, tracingEnabled: true },
     );
 
     const result = await main({ texts: ["Hello world", "Who are you?"] });
@@ -130,7 +130,7 @@ describe("to langchain", () => {
     await awaitAllCallbacks();
     expect(result).toEqual(["Hello world", "Who are you?"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "main:0",
@@ -170,7 +170,7 @@ describe("to traceable", () => {
     const addValueTraceable = traceable(
       (msg: BaseMessage) =>
         new HumanMessage({ content: msg.content + " world" }),
-      { name: "add_negligible_value" }
+      { name: "add_negligible_value" },
     );
 
     const chain = prompt
@@ -183,7 +183,7 @@ describe("to traceable", () => {
     const tracer = new LangChainTracer({ client });
     const response = await chain.invoke(
       { text: "Hello" },
-      { callbacks: [tracer] }
+      { callbacks: [tracer] },
     );
 
     // callbacks are backgrounded by default
@@ -191,7 +191,7 @@ describe("to traceable", () => {
 
     expect(response).toEqual("Hello world");
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "RunnableSequence:0",
@@ -215,7 +215,7 @@ describe("to traceable", () => {
     const source = RunnableTraceable.from(
       traceable(function (input: { text: string }) {
         return input.text.split(" ");
-      })
+      }),
     );
 
     const tokens: unknown[] = [];
@@ -223,14 +223,14 @@ describe("to traceable", () => {
       { text: "Hello world" },
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore client might be of different type
-      { callbacks: [new LangChainTracer({ client })] }
+      { callbacks: [new LangChainTracer({ client })] },
     )) {
       tokens.push(chunk);
     }
 
     expect(tokens).toEqual([["Hello", "world"]]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
@@ -246,7 +246,7 @@ describe("to traceable", () => {
         for (const chunk of chunks) {
           yield chunk;
         }
-      })
+      }),
     );
 
     const tokens: unknown[] = [];
@@ -254,14 +254,14 @@ describe("to traceable", () => {
       { text: "Hello world" },
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore client might be of different type
-      { callbacks: [new LangChainTracer({ client })] }
+      { callbacks: [new LangChainTracer({ client })] },
     )) {
       tokens.push(chunk);
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
@@ -283,7 +283,7 @@ describe("to traceable", () => {
         });
 
         return readStream;
-      })
+      }),
     );
 
     const tokens: unknown[] = [];
@@ -291,14 +291,14 @@ describe("to traceable", () => {
       { text: "Hello world" },
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore client might be of different type
-      { callbacks: [new LangChainTracer({ client })] }
+      { callbacks: [new LangChainTracer({ client })] },
     )) {
       tokens.push(chunk);
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
@@ -313,7 +313,7 @@ describe("to traceable", () => {
         for (const chunk of chunks) {
           yield chunk;
         }
-      })
+      }),
     );
 
     const tokens: unknown[] = [];
@@ -323,14 +323,14 @@ describe("to traceable", () => {
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore client might be of different type
         callbacks: [new LangChainTracer({ client })],
-      }
+      },
     )) {
       tokens.push(chunk);
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
@@ -355,10 +355,10 @@ test("explicit nested", async () => {
 
         return chain.invoke(
           { text: `Wrapped input: ${value.input}` },
-          { callbacks }
+          { callbacks },
         );
       },
-      { name: "wrappedModel" }
+      { name: "wrappedModel" },
     ),
   });
 
@@ -368,16 +368,16 @@ test("explicit nested", async () => {
         response: [
           await wrappedModel.invoke(
             { input: "Are you ready?" },
-            { callbacks: await getLangchainCallbacks() }
+            { callbacks: await getLangchainCallbacks() },
           ),
           await wrappedModel.invoke(
             { input: "I said, Are. You. Ready?" },
-            { callbacks: await getLangchainCallbacks() }
+            { callbacks: await getLangchainCallbacks() },
           ),
         ],
       };
     },
-    { name: "main", client, tracingEnabled: true }
+    { name: "main", client, tracingEnabled: true },
   );
 
   const result = await main();
@@ -391,7 +391,7 @@ test("explicit nested", async () => {
   });
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: [
       "main:0",
@@ -437,11 +437,11 @@ describe("LangChain context variables", () => {
         },
         {
           client,
-        }
+        },
       );
       await main();
       await awaitAllCallbacks();
-    }
+    },
   );
 
   test.each(["true", "false"])(
@@ -464,11 +464,11 @@ describe("LangChain context variables", () => {
         },
         {
           client,
-        }
+        },
       );
       await main();
       await awaitAllCallbacks();
-    }
+    },
   );
 
   test.each(["true", "false"])(
@@ -484,7 +484,7 @@ describe("LangChain context variables", () => {
         },
         {
           client,
-        }
+        },
       );
 
       const main = RunnableLambda.from(async () => {
@@ -494,7 +494,7 @@ describe("LangChain context variables", () => {
       });
       await main.invoke({});
       await awaitAllCallbacks();
-    }
+    },
   );
 });
 
@@ -515,7 +515,7 @@ describe.skip("automatic tracing", () => {
 
     const childB = traceable(
       async () => [await lc.invoke({}), await ls()].join("\n"),
-      { name: "childB" }
+      { name: "childB" },
     );
 
     const rootLC = RunnableLambda.from(async () => {
@@ -528,19 +528,19 @@ describe.skip("automatic tracing", () => {
     expect(
       await rootLC.invoke(
         {},
-        { callbacks: [langChainTracer], runName: "rootLC" }
-      )
+        { callbacks: [langChainTracer], runName: "rootLC" },
+      ),
     ).toEqual(
       [
         "Hello from LangChain",
         "Hello from LangSmith",
         "Hello from LangChain",
         "Hello from LangSmith",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "rootLC:0",
@@ -577,7 +577,7 @@ describe.skip("automatic tracing", () => {
 
     const childB = traceable(
       async () => [await lc.invoke({}), await ls()].join("\n"),
-      { name: "childB" }
+      { name: "childB" },
     );
 
     const rootLS = traceable(
@@ -587,7 +587,7 @@ describe.skip("automatic tracing", () => {
           await childB(),
         ].join("\n");
       },
-      { name: "rootLS", client, tracingEnabled: true }
+      { name: "rootLS", client, tracingEnabled: true },
     );
 
     expect(await rootLS()).toEqual(
@@ -596,11 +596,11 @@ describe.skip("automatic tracing", () => {
         "Hello from LangSmith",
         "Hello from LangChain",
         "Hello from LangSmith",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
     ).toMatchObject({
       nodes: [
         "rootLS:0",

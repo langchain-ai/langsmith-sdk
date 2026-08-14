@@ -43,7 +43,7 @@ def configure_google_adk(
 
     try:
         import google.adk  # noqa: F401
-        from wrapt import wrap_function_wrapper
+        from wrapt import wrap_function_wrapper  # type: ignore[import-untyped]
     except ImportError as e:
         logger.warning(f"Missing dependency: {e}")
         return False

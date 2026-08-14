@@ -1,6 +1,6 @@
 // Should not import any OTEL packages to avoid pulling in optional deps.
 
-import { getOtelEnabled } from "../utils/env.js";
+import { resolveTracingMode } from "../utils/env.js";
 
 interface OTELTraceInterface {
   getTracer: (name: string, version?: string) => any;
@@ -26,10 +26,11 @@ class MockTracer {
   private hasWarned = false;
 
   startActiveSpan<T>(_name: string, ...args: any[]): T | undefined {
-    if (!this.hasWarned && getOtelEnabled()) {
+    if (!this.hasWarned && resolveTracingMode() === "otel") {
       console.warn(
-        "You have enabled OTEL export via the `OTEL_ENABLED` or `LANGSMITH_OTEL_ENABLED` environment variable, but have not initialized the required OTEL instances. " +
-          'Please add:\n```\nimport { initializeOTEL } from "langsmith/experimental/otel/setup";\ninitializeOTEL();\n```\nat the beginning of your code.'
+        "OTel tracing mode is active (via LANGSMITH_TRACING_MODE, OTEL_ENABLED, or " +
+          "LANGSMITH_OTEL_ENABLED), but the required OTEL instances have not been initialized. " +
+          'Please add:\n```\nimport { initializeOTEL } from "langsmith/experimental/otel/setup";\ninitializeOTEL();\n```\nat the beginning of your code.',
       );
       this.hasWarned = true;
     }
@@ -100,7 +101,7 @@ class MockOTELContext implements OTELContextInterface {
 const OTEL_TRACE_KEY = Symbol.for("ls:otel_trace");
 const OTEL_CONTEXT_KEY = Symbol.for("ls:otel_context");
 const OTEL_GET_DEFAULT_OTLP_TRACER_PROVIDER_KEY = Symbol.for(
-  "ls:otel_get_default_otlp_tracer_provider"
+  "ls:otel_get_default_otlp_tracer_provider",
 );
 
 const mockOTELTrace = new MockOTELTrace();

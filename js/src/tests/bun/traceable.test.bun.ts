@@ -3,7 +3,7 @@ import { test, expect } from "bun:test";
 import { traceable } from "../../traceable.js";
 import { Client } from "../../client.js";
 import { waitUntilRunFound } from "../utils.js";
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7 } from "../../utils/uuid/src/index.js";
 
 test("Simple Bun tracing integration test", async () => {
   const client = new Client();
@@ -17,7 +17,7 @@ test("Simple Bun tracing integration test", async () => {
       name: "bun_tracing_test",
       client,
       id: runId,
-    }
+    },
   )({ text: "Hello world" });
 
   // Wait for the run to be found in the backend

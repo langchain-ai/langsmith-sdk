@@ -595,6 +595,7 @@ def with_cache(
     from langsmith._internal import _patch as patch_urllib3
 
     patch_urllib3.patch_urllib3()
+    patch_urllib3.patch_vcr_aiohttp()
 
     cache_dir, cache_file = os.path.split(path)
 
@@ -697,8 +698,11 @@ def is_version_greater_or_equal(current_version: str, target_version: str) -> bo
     """Check if the current version is greater or equal to the target version."""
     from packaging import version
 
-    current = version.parse(current_version)
-    target = version.parse(target_version)
+    try:
+        current = version.parse(current_version)
+        target = version.parse(target_version)
+    except version.InvalidVersion:
+        return False
     return current >= target
 
 
@@ -735,6 +739,23 @@ def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
         if not owner_name:
             raise ValueError(get_invalid_prompt_identifier_msg(identifier))
         return "-", owner_name, commit
+
+
+def parse_hub_identifier(identifier: str) -> tuple[str, str, str]:
+    """Parse a hub repo identifier (``owner/name:hash``, ``name``, etc.).
+
+    Agents, skills, and prompts share the same identifier grammar on Hub.
+
+    Args:
+        identifier: The hub identifier to parse.
+
+    Returns:
+        A tuple containing ``(owner, name, hash)``.
+
+    Raises:
+        ValueError: If the identifier doesn't match the expected formats.
+    """
+    return parse_prompt_identifier(identifier)
 
 
 P = ParamSpec("P")
@@ -845,6 +866,11 @@ def get_workspace_id(workspace_id: Optional[str]) -> Optional[str]:
     return workspace_id_.strip().strip('"').strip("'")
 
 
+_LOCALHOST_NAMES = frozenset(
+    {"localhost", "127.0.0.1", "0.0.0.0", "::1", "0:0:0:0:0:0:0:1"}
+)
+
+
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
 
@@ -859,10 +885,13 @@ def _is_localhost(url: str) -> bool:
         True if the URL is localhost, False otherwise.
     """
     try:
-        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
+        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0].lower().strip("[]")
+        if netloc in _LOCALHOST_NAMES:
+            return True
         ip = socket.gethostbyname(netloc)
         return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
-    except socket.gaierror:
+    except (socket.gaierror, RuntimeError):
+        # RuntimeError catches pytest-socket's SocketBlockedError in test environments
         return False
 
 
@@ -882,6 +911,10 @@ def get_host_url(web_url: Optional[str], api_url: str):
         link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
     elif str(parsed_url.netloc).startswith("eu."):
         link = "https://eu.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("aws."):
+        link = "https://aws.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("apac."):
+        link = "https://apac.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("dev."):
         link = "https://dev.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("beta."):

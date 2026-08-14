@@ -13,7 +13,11 @@ import socket
 import struct
 import threading
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional
+
+from langsmith.sandbox._helpers import merge_headers
+from langsmith.sandbox._ws_execute import WS_OPEN_TIMEOUT
 
 if TYPE_CHECKING:
     from langsmith.sandbox._yamux import YamuxSession, YamuxStream
@@ -160,8 +164,9 @@ def _ensure_websockets():
         return ws_connect
     except ImportError:
         raise ImportError(
-            "TCP tunnel requires the 'websockets' package. "
-            "Install it with: pip install 'langsmith[sandbox]'"
+            "TCP tunnel requires the 'websockets' package, which ships "
+            "with langsmith by default. Reinstall with: "
+            "pip install --upgrade langsmith"
         ) from None
 
 
@@ -195,9 +200,11 @@ class Tunnel:
         *,
         local_port: int = 0,
         max_reconnects: int = 3,
+        headers: Optional[Mapping[str, str]] = None,
     ) -> None:
         self._dataplane_url = dataplane_url
         self._api_key = api_key
+        self._headers = headers
         self._remote_port = remote_port
         self._requested_local_port = local_port or remote_port
         self._local_port = self._requested_local_port
@@ -299,14 +306,15 @@ class Tunnel:
 
         ws_connect = _ensure_websockets()
         ws_url = self._build_ws_url()
-        headers: dict[str, str] = {}
-        if self._api_key:
-            headers["X-Api-Key"] = self._api_key
+        headers = merge_headers(
+            {"X-Api-Key": self._api_key} if self._api_key else None,
+            self._headers,
+        )
 
         self._ws = ws_connect(
             ws_url,
             additional_headers=headers,
-            open_timeout=15,
+            open_timeout=WS_OPEN_TIMEOUT,
             close_timeout=5,
             ping_interval=None,  # yamux handles keepalive
         )
@@ -445,6 +453,7 @@ class AsyncTunnel:
         *,
         local_port: int = 0,
         max_reconnects: int = 3,
+        headers: Optional[Mapping[str, str]] = None,
     ) -> None:
         self._tunnel = Tunnel(
             dataplane_url,
@@ -452,6 +461,7 @@ class AsyncTunnel:
             remote_port,
             local_port=local_port,
             max_reconnects=max_reconnects,
+            headers=headers,
         )
 
     @property

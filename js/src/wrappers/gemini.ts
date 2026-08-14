@@ -11,8 +11,8 @@ import type {
   GenerateContentResponse,
   GenerateContentResponseUsageMetadata,
   SafetyRating,
-  UsageMetadata,
 } from "@google/genai";
+import { createGeminiUsageMetadata } from "./gemini.utils.js";
 
 type GoogleGenAIType = {
   models: {
@@ -28,67 +28,6 @@ type PatchedGeminiClient<T extends GoogleGenAIType> = T & {
     generateContent: T["models"]["generateContent"];
     generateContentStream: T["models"]["generateContentStream"];
   };
-};
-
-interface LangSmithUsageMetadata {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  input_token_details?: {
-    cache_read?: number;
-    cache_read_over_200k?: number;
-    over_200k?: number;
-  };
-  output_token_details?: {
-    reasoning?: number;
-    over_200k?: number;
-  };
-}
-
-const _createUsageMetadata = (
-  usage: UsageMetadata | GenerateContentResponseUsageMetadata
-): KVMap => {
-  const usageMetadata: LangSmithUsageMetadata = {
-    input_tokens: usage.promptTokenCount || 0,
-    output_tokens: (() => {
-      if ("responseTokenCount" in usage) {
-        return usage.responseTokenCount || 0;
-      }
-
-      if ("candidatesTokenCount" in usage) {
-        return usage.candidatesTokenCount || 0;
-      }
-
-      return 0;
-    })(),
-    total_tokens: usage.totalTokenCount || 0,
-  };
-
-  // Add input token details if available
-  usageMetadata.input_token_details = {
-    ...(usage.cachedContentTokenCount && {
-      cache_read_over_200k: Math.max(0, usage.cachedContentTokenCount - 200000),
-    }),
-    ...(usage.promptTokenCount && {
-      over_200k: Math.max(0, usage.promptTokenCount - 200000),
-    }),
-    ...(usage.cachedContentTokenCount && {
-      cache_read: usage.cachedContentTokenCount,
-    }),
-  };
-
-  // Add output token details if available
-  usageMetadata.output_token_details = {
-    ...("candidatesTokenCount" in usage &&
-      usage.candidatesTokenCount != null && {
-        over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
-      }),
-    ...(usage.thoughtsTokenCount && {
-      reasoning: usage.thoughtsTokenCount,
-    }),
-  };
-
-  return usageMetadata;
 };
 
 const chatAggregator = (input: unknown): KVMap => {
@@ -224,7 +163,7 @@ const chatAggregator = (input: unknown): KVMap => {
   }
 
   if (usageMetadata) {
-    result.usage_metadata = _createUsageMetadata(usageMetadata);
+    result.usage_metadata = createGeminiUsageMetadata(usageMetadata);
   }
 
   return result;
@@ -258,7 +197,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
         };
 
         const role = "role" in content ? content.role : "user";
-        const parts = isContent(content) ? content.parts ?? [] : [content];
+        const parts = isContent(content) ? (content.parts ?? []) : [content];
 
         const textParts: string[] = [];
         const contentParts: Array<Record<string, unknown>> = [];
@@ -301,18 +240,18 @@ function processGeminiInputs(inputs: KVMap): KVMap {
           contentParts.every((p) => p.type === "text")
             ? textParts.join("\n")
             : contentParts.length > 0
-            ? contentParts
-            : "";
+              ? contentParts
+              : "";
 
         return { role, content: messageContent };
       })
       .filter(
         (
-          msg
+          msg,
         ): msg is {
           role: string;
           content: string | Record<string, unknown>[];
-        } => msg !== null
+        } => msg !== null,
       );
 
     return { messages, ...rest };
@@ -450,7 +389,7 @@ function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
   }
 
   if ("usageMetadata" in response && response.usageMetadata) {
-    result.usage_metadata = _createUsageMetadata(response.usageMetadata);
+    result.usage_metadata = createGeminiUsageMetadata(response.usageMetadata);
   }
 
   return result;
@@ -458,7 +397,7 @@ function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
 
 function _getGeminiInvocationParams(
   prepopulatedInvocationParams: Record<string, unknown>,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): InvocationParamsSchema {
   const config = (payload?.[0] || payload) as
     | GenerateContentParameters
@@ -507,7 +446,7 @@ function _getGeminiInvocationParams(
  */
 export function wrapGemini<T extends GoogleGenAIType>(
   gemini: T,
-  options?: Partial<RunTreeConfig>
+  options?: Partial<RunTreeConfig>,
 ): PatchedGeminiClient<T> {
   // Prevent double wrapping
   if (
@@ -516,7 +455,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
   ) {
     throw new Error(
       "This Google Gen AI client has already been wrapped. " +
-        "Wrapping a client multiple times is not supported."
+        "Wrapping a client multiple times is not supported.",
     );
   }
 
@@ -564,11 +503,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
     ...gemini.models,
     generateContent: traceable(
       gemini.models.generateContent.bind(gemini.models),
-      geminiTraceConfig
+      geminiTraceConfig,
     ),
     generateContentStream: traceable(
       gemini.models.generateContentStream.bind(gemini.models),
-      geminiStreamTraceConfig
+      geminiStreamTraceConfig,
     ),
   };
 

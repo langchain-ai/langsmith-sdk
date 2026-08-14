@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Dataset, TracerSession, Example } from "../../schemas.js";
 import { Client, CreateProjectParams } from "../../client.js";
 import { getEnvironmentVariable } from "../env.js";
-import { isTracingEnabled } from "../../env.js";
+import { isEnvTracingEnabled } from "../../env.js";
 import { RunTree } from "../../run_trees.js";
 import { SimpleEvaluationResult } from "./types.js";
 
@@ -22,6 +22,7 @@ export type TestWrapperAsyncLocalStorageData = {
   suiteName: string;
   testRootRunTree?: RunTree;
   setupPromise?: Promise<void>;
+  syncExamplePromises?: Map<string, Promise<Example>>;
 };
 
 export const testWrapperAsyncLocalStorageInstance =
@@ -34,11 +35,10 @@ export function trackingEnabled(context: TestWrapperAsyncLocalStorageData) {
   if (getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "false") {
     return false;
   }
-  return isTracingEnabled();
+  return isEnvTracingEnabled();
 }
 
 export const evaluatorLogFeedbackPromises = new Set();
-export const syncExamplePromises = new Map();
 
 export function _logTestFeedback(params: {
   exampleId?: string;
@@ -52,25 +52,32 @@ export function _logTestFeedback(params: {
   if (trackingEnabled(context)) {
     if (exampleId === undefined) {
       throw new Error(
-        "Could not log feedback to LangSmith: missing example id. Please contact us for help."
+        "Could not log feedback to LangSmith: missing example id. Please contact us for help.",
       );
     }
     if (runTree === undefined) {
       throw new Error(
-        "Could not log feedback to LangSmith: missing run information. Please contact us for help."
+        "Could not log feedback to LangSmith: missing run information. Please contact us for help.",
       );
     }
     evaluatorLogFeedbackPromises.add(
       (async () => {
-        await syncExamplePromises.get(exampleId);
-        await client?.logEvaluationFeedback(
-          feedback,
-          runTree,
-          sourceRunId !== undefined
-            ? { __run: { run_id: sourceRunId } }
-            : undefined
-        );
-      })()
+        if (context.project == null) {
+          throw new Error(
+            "Could not log feedback to LangSmith: missing project information. Please contact us for help.",
+          );
+        }
+        await context.syncExamplePromises?.get(exampleId);
+        await client?.logEvaluationFeedback({
+          evaluatorResponse: feedback,
+          run: runTree,
+          projectId: context.project.id,
+          sourceInfo:
+            sourceRunId !== undefined
+              ? { __run: { run_id: sourceRunId } }
+              : undefined,
+        });
+      })(),
     );
   }
   context.onFeedbackLogged?.(feedback);

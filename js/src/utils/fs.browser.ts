@@ -20,7 +20,7 @@ export async function mkdir(_dir: string): Promise<void> {}
 
 export async function writeFileAtomic(
   _filePath: string,
-  _content: string
+  _content: string,
 ): Promise<void> {}
 
 export async function readdir(_dir: string): Promise<string[]> {
@@ -52,3 +52,15 @@ export function unlinkSync(_filePath: string): void {}
 export function readFileSync(_filePath: string): string {
   return "";
 }
+
+// ---------------------------------------------------------------------------
+// Lock primitives – no-op / safe defaults in browser
+// ---------------------------------------------------------------------------
+
+export async function mkdirExclusive(_dir: string): Promise<void> {}
+
+export function statMtimeMs(_filePath: string): number | undefined {
+  return undefined;
+}
+
+export async function rmRecursive(_filePath: string): Promise<void> {}

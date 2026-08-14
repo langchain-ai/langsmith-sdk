@@ -1,7 +1,7 @@
 # LangSmith Client SDK
 
 [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
-[![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
+[![Python Downloads](https://img.shields.io/pypi/dm/langsmith)](https://pypi.org/project/langsmith/)
 
 This package contains the Python client for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
@@ -47,6 +47,203 @@ A typical workflow looks like:
 3. Run benchmark evaluations and continuously improve with the collected data.
 
 We'll walk through these steps in more detail below.
+
+## Sandbox AWS Auth Proxy
+
+When sandbox code needs to call AWS services, use the sandbox AWS auth proxy.
+The proxy keeps the real AWS credentials outside the sandbox and signs supported
+AWS HTTPS requests with SigV4, so code in the sandbox can use AWS SDKs normally
+without storing long-lived AWS keys in files, environment variables, shell
+history, or logs.
+
+Store AWS credentials as LangSmith workspace secrets using names that make sense
+for your workspace. Then create the sandbox with an AWS auth proxy config:
+
+```python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth,
+    proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+auth_config = proxy_config(
+    rules=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+)
+
+with client.sandbox(
+    name="aws-sandbox",
+    proxy_config=auth_config,
+) as sandbox:
+    result = sandbox.run("python your_aws_script.py")
+    print(result.stdout)
+```
+
+Use `opaque_secret("...")` instead of `workspace_secret(...)` when your
+application needs to pass short-lived write-only AWS credentials at sandbox
+creation time. Plaintext AWS credential values are not accepted directly; wrap
+them as `opaque_secret(...)` values.
+
+## Sandbox GCP Auth Proxy
+
+When sandbox code needs to call Google APIs, use the sandbox GCP auth proxy.
+The proxy keeps the service account JSON outside the sandbox and injects OAuth
+bearer tokens for Google API hosts matched automatically by the sandbox proxy.
+
+Store the service account JSON as a LangSmith workspace secret. Then create the
+sandbox with a GCP auth proxy config:
+
+```python
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth,
+    proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+auth_config = proxy_config(
+    rules=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        )
+    ],
+)
+
+with client.sandbox(
+    name="gcp-sandbox",
+    proxy_config=auth_config,
+) as sandbox:
+    result = sandbox.run("python your_gcp_script.py")
+    print(result.stdout)
+```
+
+Use `opaque_secret("...")` for short-lived write-only service account JSON.
+Plaintext service account JSON is not accepted directly.
+
+## Sandbox Mounts
+
+When you create a LangSmith sandbox that needs filesystem access to external
+data such as object storage buckets or public Git repositories, pass a
+`mount_config` on sandbox creation. Mount specs contain only the mount target.
+Provider credentials stay in `mount_config.auth`; the backend expands them into
+runtime proxy auth rules. You can also pass `proxy_config` for non-mount proxy
+behavior such as custom headers, callbacks, access control, and generic egress
+rules. Explicit AWS/GCP proxy auth rules conflict with `mount_config` auth for
+the same provider.
+
+S3 mounts require AWS auth:
+
+```python
+from langsmith.sandbox import (
+    aws_auth,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            endpoint_url="https://s3.amazonaws.com",
+            path_style=False,
+            read_only=False,
+        )
+    ],
+)
+
+with client.sandbox(
+    name="s3-mount-sandbox",
+    mount_config=mount_cfg,
+) as sandbox:
+    result = sandbox.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
+
+GCS mounts require GCP auth:
+
+```python
+from langsmith.sandbox import (
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            )
+        )
+    ],
+    mounts=[
+        gcs_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+        )
+    ],
+)
+
+with client.sandbox(
+    name="gcs-mount-sandbox",
+    mount_config=mount_cfg,
+) as sandbox:
+    result = sandbox.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
+
+Public Git mounts do not require AWS or GCP auth:
+
+```python
+from langsmith.sandbox import git_mount, mount_config
+
+mount_cfg = mount_config(
+    mounts=[
+        git_mount(
+            id="repo",
+            mount_path="/mnt/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+            ref={"type": "branch", "name": "main"},
+            refresh_interval_seconds=60,
+        )
+    ],
+)
+
+with client.sandbox(
+    name="git-mount-sandbox",
+    mount_config=mount_cfg,
+) as sandbox:
+    result = sandbox.run("ls /mnt/repo")
+    print(result.stdout)
+```
+
+Private Git repositories can use low-level `proxy_config` rules when the remote
+requires proxy-managed auth. There is not yet a high-level private Git auth
+helper.
 
 ## 1. Connect to LangSmith
 

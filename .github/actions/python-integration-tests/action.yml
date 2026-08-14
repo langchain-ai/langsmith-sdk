@@ -4,9 +4,21 @@ inputs:
   python-version:
     description: "Python version"
     required: true
-  langchain-api-key-beta:
-    description: "LangSmith Beta Key"
+  langsmith-endpoint:
+    description: "LangSmith API endpoint to run the tests against"
+    required: false
+    default: "https://beta.api.smith.langchain.com"
+  langsmith-api-key:
+    description: "LangSmith API key for langsmith-endpoint"
     required: true
+  pytest-addopts:
+    description: "Extra pytest options, e.g. -m 'not require_clickhouse' for SmithDB-only backends"
+    required: false
+    default: ""
+  exit-first:
+    description: "Stop at the first failure (-x). Set to false to report every failure in the shard."
+    required: false
+    default: "true"
   langchain-api-key-prod:
     description: "LangSmith Key"
     required: true
@@ -34,11 +46,22 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Check LangSmith credentials
+      env:
+        LANGSMITH_ENDPOINT: ${{ inputs.langsmith-endpoint }}
+        LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
+      run: |
+        if [ -z "$LANGSMITH_API_KEY" ]; then
+          echo "::error::No API key configured for $LANGSMITH_ENDPOINT"
+          exit 1
+        fi
+      shell: bash
+
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       with:
         python-version: ${{ inputs.python-version }}
         working-directory: python
@@ -55,16 +78,19 @@ runs:
       if: inputs.test-type == 'integration' || inputs.test-type == 'all'
       env:
         LANGSMITH_TRACING_V2: "true"
-        LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
-        LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-beta }}
+        LANGSMITH_ENDPOINT: ${{ inputs.langsmith-endpoint }}
+        LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
+        PYTEST_ADDOPTS: ${{ inputs.pytest-addopts }}
         PYTEST_SHARD_TOTAL: ${{ inputs.shard-total }}
         PYTEST_SHARD_INDEX: ${{ inputs.shard-index }}
-      run: make integration_tests_fast
+        # Empty drops -x so the shard reports every failure, not just the first.
+        PYTEST_EXIT_FIRST: ${{ inputs.exit-first == 'true' && '-x' || '' }}
+      run: make integration_tests_fast PYTEST_EXIT_FIRST="$PYTEST_EXIT_FIRST"
       shell: bash
       working-directory: python
 
@@ -72,13 +98,15 @@ runs:
       if: inputs.test-type == 'evals' || inputs.test-type == 'all'
       env:
           LANGSMITH_TRACING: "true"
-          LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
-          LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-beta }}
+          LANGSMITH_ENDPOINT: ${{ inputs.langsmith-endpoint }}
+          LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
           OPENAI_API_KEY: ${{ inputs.openai-api-key }}
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
           GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
           GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make evals
+          PYTEST_ADDOPTS: ${{ inputs.pytest-addopts }}
+          PYTEST_EXIT_FIRST: ${{ inputs.exit-first == 'true' && '-x' || '' }}
+      run: make evals PYTEST_EXIT_FIRST="$PYTEST_EXIT_FIRST"
       shell: bash
       working-directory: python

@@ -16,7 +16,7 @@ function levenshteinDistance(a: string, b: string): number {
       matrix[j][i] = Math.min(
         matrix[j][i - 1] + 1,
         matrix[j - 1][i] + 1,
-        matrix[j - 1][i - 1] + substitutionCost
+        matrix[j - 1][i - 1] + substitutionCost,
       );
     }
   }
@@ -31,13 +31,13 @@ export type RelativeCloseToMatcherOptions = {
 export async function toBeRelativeCloseTo(
   received: string,
   expected: string,
-  options: RelativeCloseToMatcherOptions = {}
+  options: RelativeCloseToMatcherOptions = {},
 ) {
   const { threshold = 0.1, algorithm = "levenshtein" } = options;
 
   if (threshold < 0 || threshold > 1) {
     throw new Error(
-      "Relative distance is normalized, and threshold must be between 0 and 1."
+      "Relative distance is normalized, and threshold must be between 0 and 1.",
     );
   }
 
@@ -74,7 +74,7 @@ export type AbsoluteCloseToMatcherOptions = {
 export async function toBeAbsoluteCloseTo(
   received: string,
   expected: string,
-  options: AbsoluteCloseToMatcherOptions = {}
+  options: AbsoluteCloseToMatcherOptions = {},
 ) {
   const { threshold = 3, algorithm = "levenshtein" } = options;
 
@@ -108,7 +108,7 @@ export type SemanticCloseToMatcherOptions = {
 export async function toBeSemanticCloseTo(
   received: string,
   expected: string,
-  options: SemanticCloseToMatcherOptions
+  options: SemanticCloseToMatcherOptions,
 ) {
   const { threshold = 0.2, embeddings, algorithm = "cosine" } = options;
 
@@ -125,13 +125,13 @@ export async function toBeSemanticCloseTo(
       // Compute cosine similarity
       const dotProduct = receivedEmbedding.reduce(
         (sum, a, i) => sum + a * expectedEmbedding[i],
-        0
+        0,
       );
       const receivedMagnitude = Math.sqrt(
-        receivedEmbedding.reduce((sum, a) => sum + a * a, 0)
+        receivedEmbedding.reduce((sum, a) => sum + a * a, 0),
       );
       const expectedMagnitude = Math.sqrt(
-        expectedEmbedding.reduce((sum, a) => sum + a * a, 0)
+        expectedEmbedding.reduce((sum, a) => sum + a * a, 0),
       );
       similarity = dotProduct / (receivedMagnitude * expectedMagnitude);
       break;
@@ -140,7 +140,7 @@ export async function toBeSemanticCloseTo(
       // Compute dot product similarity
       similarity = receivedEmbedding.reduce(
         (sum, a, i) => sum + a * expectedEmbedding[i],
-        0
+        0,
       );
       break;
     }

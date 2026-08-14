@@ -7,7 +7,7 @@ import inspect
 import logging
 import uuid
 from abc import abstractmethod
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Coroutine, Sequence
 from functools import wraps
 from typing import (
     Any,
@@ -23,9 +23,25 @@ from typing_extensions import TypedDict
 
 from langsmith import run_helpers as rh
 from langsmith import schemas
+from langsmith.evaluation._key_extraction import _safe_extract_feedback_keys
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async_evaluator_sync(
+    awaitable_factory: Callable[[], Coroutine[Any, Any, Any]],
+    method_name: str,
+    async_method_name: str,
+) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable_factory())
+    raise RuntimeError(
+        f"Cannot call `{method_name}` on an async run evaluator from within a "
+        f"running event loop. Use `{async_method_name}` instead."
+    )
 
 
 class Category(TypedDict):
@@ -153,6 +169,21 @@ class RunEvaluator:
 
         return await asyncio.get_running_loop().run_in_executor(None, _run_with_context)
 
+    @property
+    def feedback_keys(self) -> list[str]:
+        """Feedback keys this evaluator emits, when statically known.
+
+        Used to render per-evaluator experiment progress and to synthesize error
+        feedback when the evaluator raises. Best-effort: empty when the keys can't
+        be determined without running the evaluator. Subclasses that know their
+        keys should override this. The default also resolves evaluators that wrap
+        a single named inner evaluator exposed as ``.evaluator`` (e.g. the
+        LangChain string-evaluator integration).
+        """
+        inner = getattr(self, "evaluator", None)
+        name = getattr(inner, "evaluation_name", None)
+        return [name] if name else []
+
 
 _RUNNABLE_OUTPUT = Union[EvaluationResult, EvaluationResults, dict]
 
@@ -211,6 +242,7 @@ class DynamicRunEvaluator(RunEvaluator):
             func (Callable): A function that takes a `Run` and an optional `Example` as
             arguments, and returns a dict or `ComparisonEvaluationResult`.
         """
+        self._feedback_keys = _safe_extract_feedback_keys(func)
         (func, prepare_inputs) = _normalize_evaluator_func(func)
         if afunc:
             (afunc, prepare_inputs) = _normalize_evaluator_func(afunc)  # type: ignore[assignment]
@@ -319,6 +351,15 @@ class DynamicRunEvaluator(RunEvaluator):
         """
         return hasattr(self, "afunc")
 
+    @property
+    def feedback_keys(self) -> list[str]:
+        """Feedback keys this evaluator emits, statically inferred from its source.
+
+        Best-effort: empty when keys can't be determined without running the
+        function (e.g. a dynamically computed key or unavailable source).
+        """
+        return self._feedback_keys
+
     def evaluate_run(
         self,
         run: Run,
@@ -337,14 +378,11 @@ class DynamicRunEvaluator(RunEvaluator):
             Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
         """  # noqa: E501
         if not hasattr(self, "func"):
-            running_loop = asyncio.get_event_loop()
-            if running_loop.is_running():
-                raise RuntimeError(
-                    "Cannot call `evaluate_run` on an async run evaluator from"
-                    " within an running event loop. Use `aevaluate_run` instead."
-                )
-            else:
-                return running_loop.run_until_complete(self.aevaluate_run(run, example))
+            return _run_async_evaluator_sync(
+                lambda: self.aevaluate_run(run, example),
+                "evaluate_run",
+                "aevaluate_run",
+            )
         if evaluator_run_id is None:
             evaluator_run_id = uuid.uuid4()
         metadata: dict[str, Any] = {"target_run_id": run.id}
@@ -521,16 +559,11 @@ class DynamicComparisonRunEvaluator:
 
         """  # noqa: E501
         if not hasattr(self, "func"):
-            running_loop = asyncio.get_event_loop()
-            if running_loop.is_running():
-                raise RuntimeError(
-                    "Cannot call `evaluate_run` on an async run evaluator from"
-                    " within an running event loop. Use `aevaluate_run` instead."
-                )
-            else:
-                return running_loop.run_until_complete(
-                    self.acompare_runs(runs, example)
-                )
+            return _run_async_evaluator_sync(
+                lambda: self.acompare_runs(runs, example),
+                "compare_runs",
+                "acompare_runs",
+            )
         source_run_id = uuid.uuid4()
         tags = self._get_tags(runs)
         # TODO: Add metadata for the "comparison experiment" here

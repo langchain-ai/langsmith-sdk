@@ -40,7 +40,7 @@ repos:
       # JS - auto-format with prettier
       - id: js-format
         name: JS Prettier Format
-        entry: bash -c 'cd js && yarn run format'
+        entry: bash -c 'cd js && pnpm run format'
         language: system
         files: ^js/src/.*\.(ts|tsx|mts)$
         pass_filenames: false
@@ -48,7 +48,7 @@ repos:
       # JS - lint and auto-fix with eslint
       - id: js-lint
         name: JS ESLint
-        entry: bash -c 'cd js && yarn run lint:fix'
+        entry: bash -c 'cd js && pnpm run lint:fix'
         language: system
         files: ^js/src/.*\.(ts|js)$
         pass_filenames: false
@@ -56,7 +56,7 @@ repos:
       # JS - type check with TypeScript (cannot auto-fix)
       - id: js-typecheck
         name: JS TypeScript Type Check
-        entry: bash -c 'cd js && yarn run check:types'
+        entry: bash -c 'cd js && pnpm run check:types'
         language: system
         files: ^js/src/.*\.(ts|tsx|mts)$
         pass_filenames: false

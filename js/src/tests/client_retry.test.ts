@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { v4 } from "uuid";
+import { v4 } from "../utils/uuid/src/index.js";
 import { createServer, Server } from "http";
 import { Client } from "../client.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -36,7 +36,7 @@ describe("Client timeout and retry behavior", () => {
             status: "success",
             start_time: new Date().toISOString(),
             end_time: new Date().toISOString(),
-          })
+          }),
         );
       } else if (testMode === "429_retry") {
         if (requestCount <= 2) {
@@ -57,7 +57,7 @@ describe("Client timeout and retry behavior", () => {
             status: "success",
             start_time: new Date().toISOString(),
             end_time: new Date().toISOString(),
-          })
+          }),
         );
       } else if (testMode === "400_no_retry") {
         // Return 400 Bad Request status (should not retry)

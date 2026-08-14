@@ -325,10 +325,6 @@ export interface RawExample extends BaseExample {
 
 export interface ExampleUpdateWithId extends ExampleUpdate {}
 
-export interface ExampleSearch extends BaseExample {
-  id: string;
-}
-
 export interface BaseDataset {
   name: string;
   description: string;
@@ -499,6 +495,11 @@ export interface PromptCommit {
   commit_hash: string;
   manifest: Record<string, any>;
   examples: Array<Record<any, any>>;
+  description?: string;
+  /** The model configuration for the prompt. */
+  hub_model_config?: Record<string, any>;
+  /** The model provider (e.g. ChatOpenAI) */
+  hub_model_provider?: string;
 }
 
 export interface Prompt {
@@ -544,6 +545,68 @@ export type PromptSortField =
 
 export interface LikePromptResponse {
   likes: number;
+}
+
+export interface FileEntry {
+  type: "file";
+  content: string;
+}
+
+export interface AgentEntry {
+  type: "agent";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export interface SkillEntry {
+  type: "skill";
+  repo_handle: string;
+  commit_id?: string;
+  owner?: string;
+  commit_hash?: string;
+}
+
+export type Entry = FileEntry | AgentEntry | SkillEntry;
+
+/** The type of a non-prompt hub repo. */
+export type HubRepoType = "agent" | "skill";
+
+/**
+ * An agent pulled from hub.
+ */
+export interface AgentContext {
+  /** The commit ID. */
+  commit_id: string;
+  /** The commit hash. */
+  commit_hash: string;
+  /** The files in the agent. */
+  files: Record<string, Entry>;
+}
+
+/**
+ * A skill pulled from hub.
+ */
+export interface SkillContext {
+  /** The commit ID. */
+  commit_id: string;
+  /** The commit hash. */
+  commit_hash: string;
+  /** The files in the skill. */
+  files: Record<string, Entry>;
+}
+
+/** Response body for `POST /directories/commits`. */
+export interface DirectoryCommitResponse {
+  commit: {
+    /** The commit ID. */
+    id: string;
+    /** The commit hash. */
+    commit_hash: string;
+    /** When the commit was created. */
+    created_at: string;
+  };
 }
 
 export interface LangSmithSettings {
@@ -598,6 +661,22 @@ export interface AnnotationQueueWithDetails extends AnnotationQueue {
   rubric_items?: AnnotationQueueRubricItem[];
 }
 
+/**
+ * A run identified by its full lookup key, for adding to an annotation queue.
+ * Unlike a bare run ID, this carries the partition key (`sessionId` and
+ * `startTime`) so the run can be located directly, without a scan.
+ */
+export interface RunKey {
+  /** The ID of the run to add to the queue. */
+  runId: string;
+  /** The ID of the project/session the run belongs to (partition key). */
+  sessionId: string;
+  /** The start time of the run (partition key): a Date, epoch ms, or ISO string. */
+  startTime: string | number | Date;
+  /** Optional back-pointer to the issues-agent proposed example that seeded this queue item. */
+  sourceProposedExampleId?: string;
+}
+
 export interface FeedbackConfigSchema {
   /** The unique key identifying this feedback configuration. */
   feedback_key: string;
@@ -615,7 +694,10 @@ export interface FeedbackConfigSchema {
   is_lower_score_better?: boolean | null;
 }
 
-export interface RunWithAnnotationQueueInfo extends BaseRun {
+export interface RunWithAnnotationQueueInfo extends Exclude<BaseRun, "id"> {
+  /** An unique identifier for the run. */
+  id: string;
+
   /** The last time this run was reviewed. */
   last_reviewed_time?: string;
 

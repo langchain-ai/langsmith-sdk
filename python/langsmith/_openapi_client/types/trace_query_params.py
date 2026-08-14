@@ -1,0 +1,70 @@
+# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+from __future__ import annotations
+
+from typing import List, Union
+from datetime import datetime
+from typing_extensions import Annotated, TypedDict
+
+from .._types import SequenceNotStr
+from .._utils import PropertyInfo
+from .run_select_field import RunSelectField
+
+__all__ = ["TraceQueryParams"]
+
+
+class TraceQueryParams(TypedDict, total=False):
+    cursor: str
+    """`cursor` is the opaque string returned in a previous response's `next_cursor`."""
+
+    max_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """
+    `max_start_time` is the exclusive upper bound for the root-run start time scan
+    (RFC3339). Defaults to the request time when omitted.
+    """
+
+    min_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """
+    `min_start_time` is the inclusive lower bound for the root-run start time scan
+    (RFC3339). Defaults to 24 hours before the request when omitted.
+    """
+
+    page_size: int
+    """`page_size` is the maximum number of traces to return per page.
+
+    Defaults to 20; must be between 1 and 100 when set.
+    """
+
+    project_id: str
+    """`project_id` is the UUID of the tracing project that owns the traces. Required."""
+
+    selects: List[RunSelectField]
+    """`selects` lists which properties to include on each returned trace.
+
+    Properties listed here are routed to the appropriate sub-object on each item:
+    `total_tokens`, `total_cost`, and `first_token_time` appear under
+    `trace_aggregates`; everything else appears under `root_run`. If omitted, only
+    `id` is returned on `root_run`.
+    """
+
+    trace_filter: str
+    """
+    `trace_filter` narrows results to traces whose root run matches this LangSmith
+    filter expression. This filter targets root runs only — `is_root = true` is
+    implied. See
+    https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+    for syntax.
+    """
+
+    trace_ids: SequenceNotStr[str]
+    """`trace_ids` is an optional fast-path restriction to a known set of trace UUIDs.
+
+    Equivalent in result to including each UUID in a `trace_filter`, but more
+    efficient at scale.
+    """
+
+    tree_filter: str
+    """
+    `tree_filter` narrows results to traces containing at least one run anywhere in
+    the run tree (root or descendant) that matches this LangSmith filter expression.
+    """

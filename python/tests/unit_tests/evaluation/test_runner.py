@@ -2,6 +2,7 @@
 
 import asyncio
 import functools
+import inspect
 import itertools
 import json
 import random
@@ -9,8 +10,10 @@ import re
 import sys
 import time
 import uuid
+import warnings
 from datetime import datetime, timezone
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
@@ -20,12 +23,24 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.evaluation._runner import _get_target_args
+from langsmith._internal._v2_migration_utils import _v2_run_to_schema
+from langsmith.evaluation._runner import (
+    ComparativeExperimentResults,
+    _build_comparative_url,
+    _collect_evaluator_keys,
+    _get_target_args,
+    _load_traces_for_experiment,
+)
 from langsmith.evaluation.evaluator import (
+    DynamicRunEvaluator,
+    EvaluationResult,
+    EvaluationResults,
+    RunEvaluator,
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
     _normalize_summary_evaluator,
 )
+from langsmith.evaluation.string_evaluator import StringEvaluator
 from tests.unit_tests.conftest import parse_request_data
 
 
@@ -33,6 +48,7 @@ class FakeRequest:
     def __init__(self, ds_id, ds_name, ds_examples, tenant_id):
         self.created_session = None
         self.runs = {}
+        self.feedbacks = []
         self.should_fail = False
         self.ds_id = ds_id
         self.ds_name = ds_name
@@ -105,6 +121,7 @@ class FakeRequest:
                 }
                 return res
             elif endpoint == "http://localhost:1984/feedback":
+                self.feedbacks.append(json.loads(kwargs["data"]))
                 response = MagicMock()
                 response.json.return_value = {}
                 return response
@@ -167,6 +184,79 @@ def _create_example(idx: int) -> Tuple[ls_schemas.Example, Dict[str, Any]]:
     }
 
 
+def _fake_client_for_examples(
+    examples: list[dict[str, Any]], ds_id: str, ds_name: str
+) -> tuple[Client, FakeRequest]:
+    tenant_id = str(uuid.uuid4())
+    session = mock.Mock()
+    fake_request = FakeRequest(ds_id, ds_name, examples, tenant_id)
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = uuid.UUID(tenant_id)
+    return client, fake_request
+
+
+def test_evaluate_feedback_includes_experiment_session_id_and_run_start_time() -> None:
+    example, example_payload = _create_example(0)
+    client, fake_request = _fake_client_for_examples(
+        [example_payload], str(example.dataset_id), "my-dataset"
+    )
+
+    def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    results = evaluate(
+        predict,
+        data=[example],
+        evaluators=[score],
+        client=client,
+        blocking=True,
+        max_concurrency=0,
+    )
+    assert len(list(results)) == 1
+    _wait_until(lambda: len(fake_request.feedbacks) == 1)
+
+    feedback = fake_request.feedbacks[0]
+    _wait_until(lambda: feedback["run_id"] in fake_request.runs)
+    run = fake_request.runs[feedback["run_id"]]
+    assert feedback["session_id"] == fake_request.created_session["id"]
+    assert feedback["start_time"] == run["start_time"]
+
+
+@pytest.mark.asyncio
+async def test_aevaluate_feedback_includes_experiment_id_and_start_time() -> None:
+    example, example_payload = _create_example(0)
+    client, fake_request = _fake_client_for_examples(
+        [example_payload], str(example.dataset_id), "my-dataset"
+    )
+
+    async def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    async def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    results = await aevaluate(
+        predict,
+        data=[example],
+        evaluators=[score],
+        client=client,
+        blocking=True,
+        max_concurrency=0,
+    )
+    assert len([row async for row in results]) == 1
+    _wait_until(lambda: len(fake_request.feedbacks) == 1)
+
+    feedback = fake_request.feedbacks[0]
+    _wait_until(lambda: feedback["run_id"] in fake_request.runs)
+    run = fake_request.runs[feedback["run_id"]]
+    assert feedback["session_id"] == fake_request.created_session["id"]
+    assert feedback["start_time"] == run["start_time"]
+
+
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("as_runnable", [False, True])
@@ -202,7 +292,7 @@ def test_evaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -497,7 +587,7 @@ async def test_aevaluate_results(
             )
         ),
     )
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     ordering_of_stuff: List[str] = []
     locked = False
@@ -997,7 +1087,7 @@ def test_passing_kwargs_is_working():
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     def _valid_mixed_positional_and_keyword_with_reference_outputs(
         inputs, outputs, *, reference_outputs, optional=None
@@ -1044,7 +1134,7 @@ async def test_normalize_evaluator_func_valid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     if is_async:
         await aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
@@ -1070,7 +1160,7 @@ def test_normalize_evaluator_func_invalid(func, is_async):
     )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-    client._tenant_id = tenant_id  # type: ignore
+    client._tenant_id = uuid.UUID(tenant_id)
 
     with pytest.raises(ValueError, match="Invalid evaluator function"):
         if is_async:
@@ -1079,6 +1169,104 @@ def test_normalize_evaluator_func_invalid(func, is_async):
             )
         else:
             evaluate(target, data=ds_examples, evaluators=[func], client=client)
+
+
+def _legacy_run_example_eval(run, example):
+    return {"key": "legacy_key", "score": 1}
+
+
+def _modern_eval(inputs, outputs, reference_outputs):
+    return {"key": "correctness", "score": 1}
+
+
+def _modern_subset_eval(outputs, reference_outputs):
+    return {"key": "relevance", "score": 0}
+
+
+async def _modern_async_eval(inputs, outputs):
+    return {"key": "helpfulness", "score": 1}
+
+
+def _modern_multi_key_eval(inputs, outputs):
+    return EvaluationResults(
+        results=[
+            EvaluationResult(key="k1", score=1),
+            EvaluationResult(key="k2", score=0),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "func,expected",
+    [
+        (_legacy_run_example_eval, ["legacy_key"]),
+        (_modern_eval, ["correctness"]),
+        (_modern_subset_eval, ["relevance"]),
+        (_modern_async_eval, ["helpfulness"]),
+        (_modern_multi_key_eval, ["k1", "k2"]),
+    ],
+)
+def test_feedback_keys_read_from_user_func_not_wrapper(func, expected):
+    """Feedback keys are read from the user's function, not the (run, example) wrapper.
+
+    Documented (inputs, outputs, reference_outputs) evaluators are rewritten into
+    a wrapper by _normalize_evaluator_func, which previously caused key extraction
+    to fall back to the name "wrapper".
+    """
+    evaluator = DynamicRunEvaluator(func)
+    assert evaluator.feedback_keys == expected
+    # The wrapper must still present a (run, example) interface to the runner.
+    target = evaluator.func if getattr(evaluator, "func", None) else evaluator.afunc
+    assert list(inspect.signature(target).parameters)[:2] == ["run", "example"]
+
+
+def test_collect_evaluator_keys_mixes_legacy_and_modern():
+    """The aggregate sent to create_project resolves keys for both styles."""
+    assert _collect_evaluator_keys(
+        [_modern_eval, _modern_subset_eval, _legacy_run_example_eval]
+    ) == ["correctness", "relevance", "legacy_key"]
+
+
+def test_dynamic_run_evaluator_exposes_feedback_keys_property():
+    """feedback_keys is public, so callers read it directly without a private attr."""
+    assert DynamicRunEvaluator(_modern_eval).feedback_keys == ["correctness"]
+
+
+def test_base_run_evaluator_feedback_keys_default_empty():
+    """An evaluator with no statically known keys resolves to an empty list."""
+
+    class _Bare(RunEvaluator):
+        def evaluate_run(self, run, example=None, evaluator_run_id=None):
+            return EvaluationResult(key="x", score=1)
+
+    assert _Bare().feedback_keys == []
+
+
+def test_feedback_keys_resolves_named_inner_evaluator():
+    """Wrappers exposing a named inner evaluator as ``.evaluator`` report its name.
+
+    Covers the LangChain string-evaluator integration shape without that class
+    needing to know about feedback_keys.
+    """
+
+    class _Inner:
+        evaluation_name = "lc_score"
+
+    class _Wrapper(RunEvaluator):
+        evaluator = _Inner()
+
+        def evaluate_run(self, run, example=None, evaluator_run_id=None):
+            return EvaluationResult(key="x", score=1)
+
+    assert _Wrapper().feedback_keys == ["lc_score"]
+
+
+def test_string_evaluator_feedback_keys():
+    evaluator = StringEvaluator(
+        evaluation_name="accuracy",
+        grading_function=lambda *_: {"score": 1},
+    )
+    assert evaluator.feedback_keys == ["accuracy"]
 
 
 def summary_eval_runs_examples(runs_, examples_):
@@ -1299,3 +1487,338 @@ async def test_invalid_aevaluate_args() -> None:
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
         await aevaluate((lambda x: x), data="data", load_nested=True)
+
+
+def test_evaluate_infers_num_examples_from_list() -> None:
+    """When ``data`` is a sized iterable (list/tuple), the SDK should auto-resolve
+    ``num_examples`` from ``len(data)`` and forward it on the POST /sessions
+    body so the backend can populate ``extra.__progress`` for UI loading state.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+    num_examples = 5
+    num_repetitions = 3
+
+    ds_example_responses = [_create_example(i) for i in range(num_examples)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = uuid.UUID(tenant_id)
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=examples,
+        client=client,
+        num_repetitions=num_repetitions,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert fake_request.created_session["num_examples"] == num_examples
+    assert fake_request.created_session["num_repetitions"] == num_repetitions
+
+
+def test_evaluate_omits_num_examples_for_generator() -> None:
+    """When ``data`` is a lazy generator, the SDK cannot infer size without
+    consuming it, so ``num_examples`` should be omitted from the create-project
+    payload and the backend falls back to resolving it from the dataset.
+    """
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(3)]
+    examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = uuid.UUID(tenant_id)
+
+    evaluate(
+        (lambda inputs: {"output": inputs["in"] + 1}),
+        data=(e for e in examples),
+        client=client,
+        blocking=True,
+    )
+
+    assert fake_request.created_session is not None
+    assert "num_examples" not in fake_request.created_session
+    assert fake_request.created_session.get("num_repetitions") == 1
+
+
+def _make_session(host_url, tenant_id, dataset_id, name):
+    return ls_schemas.TracerSessionResult(
+        _host_url=host_url,
+        id=uuid.uuid4(),
+        name=name,
+        tenant_id=tenant_id,
+        reference_dataset_id=dataset_id,
+        start_time=datetime.now(timezone.utc),
+    )
+
+
+def _make_comparative_experiment(tenant_id, dataset_id):
+    return ls_schemas.ComparativeExperiment(
+        id=uuid.uuid4(),
+        name="a vs. b",
+        tenant_id=tenant_id,
+        reference_dataset_id=dataset_id,
+        created_at=datetime.now(timezone.utc),
+        modified_at=datetime.now(timezone.utc),
+    )
+
+
+def test_build_comparative_url() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    host = "https://smith.langchain.com"
+    exp_a = _make_session(host, tenant_id, dataset_id, "a")
+    exp_b = _make_session(host, tenant_id, dataset_id, "b")
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    url = _build_comparative_url((exp_a, exp_b), comparative_experiment)
+
+    assert url is not None
+    assert url.startswith(f"{host}/o/{tenant_id}/datasets/{dataset_id}/compare?")
+    assert f"selectedSessions={exp_a.id}%2C{exp_b.id}" in url
+    assert f"comparativeExperiment={comparative_experiment.id}" in url
+
+
+def test_build_comparative_url_no_host_returns_none() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    # Sessions without a host URL cannot produce a comparison link.
+    exp_a = _make_session(None, tenant_id, dataset_id, "a")
+    exp_b = _make_session(None, tenant_id, dataset_id, "b")
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    assert _build_comparative_url((exp_a, exp_b), comparative_experiment) is None
+
+
+def test_comparative_experiment_results_exposes_url_and_experiment() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    comparative_experiment = _make_comparative_experiment(tenant_id, dataset_id)
+
+    results = ComparativeExperimentResults(
+        results={},
+        examples={},
+        comparative_experiment=comparative_experiment,
+        url="https://smith.langchain.com/compare",
+    )
+    assert results.url == "https://smith.langchain.com/compare"
+    assert results.comparative_experiment is comparative_experiment
+
+    # Existing callers that omit the new args still work, defaulting to None.
+    legacy = ComparativeExperimentResults(results={}, examples={})
+    assert legacy.url is None
+    assert legacy.comparative_experiment is None
+
+
+def test_v2_run_to_schema_maps_generated_fields() -> None:
+    """Generated v2 Run (project_id, parent_run_ids) → ls_schemas.Run."""
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    project_id = uuid.uuid4()
+    parent_id = uuid.uuid4()
+    example_id = uuid.uuid4()
+    start = datetime.now(timezone.utc)
+    # SimpleNamespace, not Mock: `name` is a reserved Mock kwarg.
+    generated = SimpleNamespace(
+        id=str(run_id),
+        name="root",
+        run_type="chain",
+        start_time=start,
+        end_time=None,
+        trace_id=str(trace_id),
+        project_id=str(project_id),
+        parent_run_ids=[str(uuid.uuid4()), str(parent_id)],
+        dotted_order="20240101T000000000000Z" + str(run_id),
+        reference_example_id=str(example_id),
+        inputs={"a": 1},
+        outputs={"b": 2},
+        error=None,
+        status="SUCCESS",
+    )
+
+    run = _v2_run_to_schema(generated)
+
+    assert run.id == run_id
+    assert run.trace_id == trace_id
+    # project_id → session_id, last parent_run_ids entry → parent_run_id
+    assert run.session_id == project_id
+    assert run.parent_run_id == parent_id
+    assert run.reference_example_id == example_id
+    assert run.outputs == {"b": 2}
+    assert run.status == "success"
+
+
+def test_v2_run_to_schema_handles_root_run() -> None:
+    """A root run (no parents) maps to parent_run_id=None."""
+    generated = SimpleNamespace(
+        id=str(uuid.uuid4()),
+        name="root",
+        run_type="chain",
+        start_time=datetime.now(timezone.utc),
+        end_time=None,
+        trace_id=str(uuid.uuid4()),
+        project_id=str(uuid.uuid4()),
+        parent_run_ids=[],
+        dotted_order=None,
+        reference_example_id=None,
+        inputs=None,
+        outputs=None,
+        error=None,
+        status=None,
+    )
+    run = _v2_run_to_schema(generated)
+    assert run.parent_run_id is None
+    assert run.inputs == {}
+
+
+def _make_generated_run() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        name="root",
+        run_type="chain",
+        start_time=datetime.now(timezone.utc),
+        end_time=None,
+        trace_id=str(uuid.uuid4()),
+        project_id=str(uuid.uuid4()),
+        parent_run_ids=[],
+        dotted_order=None,
+        reference_example_id=str(uuid.uuid4()),
+        inputs={},
+        outputs={},
+        error=None,
+        status="SUCCESS",
+    )
+
+
+def _experiment_session() -> ls_schemas.TracerSession:
+    return ls_schemas.TracerSession(
+        id=uuid.uuid4(),
+        name="exp",
+        tenant_id=uuid.uuid4(),
+        reference_dataset_id=uuid.uuid4(),
+        start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def test_load_traces_uses_v2_when_smithdb_only() -> None:
+    """ClickHouse off + SmithDB on → query_v2 (/v2/runs/query), never v1 list_runs."""
+    project = _experiment_session()
+    gen_runs = [_make_generated_run(), _make_generated_run()]
+
+    def _query_v2(**kwargs):
+        # Verify the query is scoped to this experiment, root-only, with a window.
+        assert kwargs["project_ids"] == [str(project.id)]
+        assert kwargs["is_root"] is True
+        assert kwargs["min_start_time"] == project.start_time
+        assert "selects" in kwargs
+        return iter(gen_runs)  # sync paginator auto-iterates with a plain for-loop
+
+    client = mock.Mock()
+    client.info.instance_flags = {
+        "ch_query_enabled": False,
+        "sdb_query_enabled": True,
+    }
+    client._get_langsmith_api_sync.return_value.runs.query_v2 = _query_v2
+
+    runs = _load_traces_for_experiment(project, client, load_nested=False)
+
+    assert len(runs) == 2
+    assert all(isinstance(r, ls_schemas.Run) for r in runs)
+    client.list_runs.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("instance_flags", "case"),
+    [
+        ({}, "clickhouse-only (sdb_query_enabled absent)"),
+        ({"ch_query_enabled": True}, "clickhouse-only (explicit)"),
+        # Dual: SmithDB is available but ClickHouse still serves queries, so the
+        # legacy path stays in use until ClickHouse is actually switched off.
+        ({"ch_query_enabled": True, "sdb_query_enabled": True}, "dual"),
+    ],
+)
+def test_load_traces_uses_v1_unless_smithdb_only(instance_flags, case) -> None:
+    """Keep the v1 client.list_runs path whenever ClickHouse can serve queries."""
+    project = _experiment_session()
+    client = mock.Mock()
+    client.info.instance_flags = instance_flags
+    client.list_runs.return_value = iter([])
+
+    _load_traces_for_experiment(project, client, load_nested=False)
+
+    client.list_runs.assert_called_once_with(project_id=project.id, is_root=True)
+    client._get_langsmith_api_sync.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "project_ref", ["by-session", "by-uuid", "by-name"], ids=lambda p: str(p)
+)
+def test_load_traces_does_not_warn_about_list_runs(project_ref) -> None:
+    """evaluate()/aevaluate() are supported; they must not warn about list_runs().
+
+    Uses a real Client so the actual decorated `list_runs` runs — a `Mock` client
+    would make the assertion vacuous.
+    """
+    session = _experiment_session()
+    project: Any = {
+        "by-session": session,
+        "by-uuid": session.id,
+        "by-name": "some-project",
+    }[project_ref]
+
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with (
+        mock.patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Stub only the HTTP fetch, so the real decorated list_runs() still runs.
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+        mock.patch.object(
+            Client, "read_project", return_value=mock.Mock(id=session.id)
+        ),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert _load_traces_for_experiment(project, client, load_nested=False) == []

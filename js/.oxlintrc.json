@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "node", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": [
+    "scripts",
+    "src/utils/lodash/*",
+    "src/utils/console-table-printer/*",
+    "src/utils/chalk/*",
+    "src/utils/simple-wcswidth/*",
+    "node_modules",
+    "dist",
+    "dist-cjs",
+    "*.js",
+    "*.cjs",
+    "*.d.ts"
+  ],
+  "rules": {
+    "node/no-process-env": "error",
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-non-null-assertion": "warn",
+    "typescript/no-use-before-define": "error",
+    "no-use-before-define": "off",
+    "no-unused-vars": [
+      "warn",
+      {
+        "args": "none",
+        "argsIgnorePattern": "^_",
+        "caughtErrors": "all",
+        "caughtErrorsIgnorePattern": "^_",
+        "destructuredArrayIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "no-unused-expressions": "off",
+    "no-constant-binary-expression": "off",
+    "no-eval": "off",
+    "new-cap": ["error", { "properties": false, "capIsNew": false }]
+  }
+}

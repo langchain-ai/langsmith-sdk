@@ -35,7 +35,7 @@ class RetryTransport(httpx.BaseTransport):
     Retries on:
     - 502/503/504 with exponential backoff
     - 429 with Retry-After header support
-    - Connection errors with exponential backoff
+    - Connection errors/timeouts with exponential backoff
 
     After exhausting retries, the last response is returned (for status errors)
     or SandboxConnectionError is raised (for connection errors).
@@ -94,7 +94,7 @@ class RetryTransport(httpx.BaseTransport):
 
                 return response
 
-            except httpx.ConnectError as exc:
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
                 if not is_last_attempt:
                     sleep_time = _compute_backoff(attempt)
                     logger.debug(
@@ -180,7 +180,7 @@ class AsyncRetryTransport(httpx.AsyncBaseTransport):
 
                 return response
 
-            except httpx.ConnectError as exc:
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
                 if not is_last_attempt:
                     sleep_time = _compute_backoff(attempt)
                     logger.debug(

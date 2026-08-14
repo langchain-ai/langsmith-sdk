@@ -4,8 +4,20 @@ inputs:
   node-version:
     description: "Node version"
     required: true
-  langchain-api-key-beta:
-    description: "Langchain"
+  exit-first:
+    description: "Stop at the first failing test (--bail). Defaults to off so a run reports every failure."
+    required: false
+    default: "false"
+  exclude-markers:
+    description: "Comma-separated markers to skip, e.g. require_v2 for deployments that don't serve the v2 endpoints"
+    required: false
+    default: ""
+  langsmith-endpoint:
+    description: "LangSmith API endpoint to run the tests against"
+    required: false
+    default: "https://beta.api.smith.langchain.com"
+  langsmith-api-key:
+    description: "LangSmith API key for langsmith-endpoint"
     required: true
   openai-api-key:
     description: "OpenAI API key"
@@ -13,32 +25,55 @@ inputs:
   gemini-api-key:
     description: "Gemini API key"
     required: false
+  anthropic-api-key:
+    description: "Anthropic API key"
+    required: false
 runs:
   using: "composite"
   steps:
+    - name: Check LangSmith credentials
+      env:
+        LANGSMITH_ENDPOINT: ${{ inputs.langsmith-endpoint }}
+        LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
+      run: |
+        if [ -z "$LANGSMITH_API_KEY" ]; then
+          echo "::error::No API key configured for $LANGSMITH_ENDPOINT"
+          exit 1
+        fi
+      shell: bash
+
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: 10
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "yarn"
-        cache-dependency-path: "js/yarn.lock"
+        cache: pnpm
+        cache-dependency-path: js/pnpm-lock.yaml
 
-    - name: Install Yarn dependencies
-      run: yarn install
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
       shell: bash
       working-directory: js
 
     - name: Run JS integration tests
-      run: yarn test:integration
+      # JEST_BAIL is either the literal --bail or empty, so leaving it unquoted
+      # drops the argument entirely rather than passing jest an empty pattern.
+      run: pnpm test:integration $JEST_BAIL
       shell: bash
       working-directory: js
       env:
+        JEST_BAIL: ${{ inputs.exit-first == 'true' && '--bail' || '' }}
+        LANGSMITH_TEST_EXCLUDE_MARKERS: ${{ inputs.exclude-markers }}
         LANGSMITH_TRACING_V2: "true"
-        LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
-        LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-beta }}
+        LANGSMITH_ENDPOINT: ${{ inputs.langsmith-endpoint }}
+        LANGSMITH_API_KEY: ${{ inputs.langsmith-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}

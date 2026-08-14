@@ -21,7 +21,7 @@ export async function mkdir(dir: string): Promise<void> {
 
 export async function writeFileAtomic(
   filePath: string,
-  content: string
+  content: string,
 ): Promise<void> {
   const tempPath = `${filePath}.tmp`;
   await nodeFsPromises.writeFile(tempPath, content, {
@@ -69,4 +69,26 @@ export function unlinkSync(filePath: string): void {
 
 export function readFileSync(filePath: string): string {
   return nodeFs.readFileSync(filePath, "utf-8");
+}
+
+// ---------------------------------------------------------------------------
+// Lock primitives (used by the OAuth refresh directory lock)
+// ---------------------------------------------------------------------------
+
+export async function mkdirExclusive(dir: string): Promise<void> {
+  // Non-recursive mkdir throws EEXIST if the directory already exists, which
+  // is the atomic test-and-set the cross-process lock relies on.
+  await nodeFsPromises.mkdir(dir, { mode: 0o700 });
+}
+
+export function statMtimeMs(filePath: string): number | undefined {
+  try {
+    return nodeFs.statSync(filePath).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function rmRecursive(filePath: string): Promise<void> {
+  await nodeFsPromises.rm(filePath, { recursive: true, force: true });
 }

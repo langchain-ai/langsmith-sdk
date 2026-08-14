@@ -33,6 +33,13 @@ dependencies = [
     "packaging>=23.2",
     "uuid-utils>=0.12.0,<1.0",
     "xxhash>=3.0.0",
+    "websockets>=15.0",
+    # Imported at runtime by the generated _openapi_client; must be declared
+    # explicitly so distro builds that only install Requires-Dist don't fail.
+    "anyio>=3.5.0",
+    "distro>=1.7.0",
+    "sniffio>=1.1",
+    "typing_extensions>=4.0.0",
 ]
 
 [project.urls]
@@ -51,6 +58,38 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
 ]
 
+# Enabled via `pip install langsmith[pipecat]`
+# pipecat-ai requires Python >=3.11; the marker keeps universal resolution
+# satisfiable on 3.10 (the extra is simply unavailable there).
+pipecat = [
+    "pipecat-ai>=1.0; python_version>='3.11'",
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-api>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "cachetools>=5.0.0",
+]
+
+# Enabled via `pip install langsmith[livekit]`
+livekit = [
+    "livekit-agents>=1.0",
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-api>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "cachetools>=5.0.0",
+]
+
+# Enabled via `pip install langsmith[openai-realtime]`
+# Covers both OpenAI Realtime wrappers: the raw connection (wrap_realtime) and
+# the Agents SDK session (wrap_realtime_session).
+openai-realtime = [
+    "openai>=1.50",
+    "openai-agents>=0.0.3",
+]
+
+# Enabled via `pip install langsmith[gemini-live]`
+# Raw Gemini Live WebSocket tracing via ``wrap_gemini_live``.
+gemini-live = ["google-genai>=1.75"]
+
 # Enabled via `pip install langsmith[openai-agents]`
 openai-agents = ["openai-agents>=0.0.3"]
 
@@ -60,21 +99,38 @@ claude-agent-sdk = ["claude-agent-sdk>=0.1.0; python_version>='3.10'"]
 # Enabled via `pip install langsmith[google-adk]`
 google-adk = ["google-adk>=1.0.0", "wrapt>=1.16.0"]
 
+# Enabled via `pip install langsmith[google-adk-live]`
+# ADK Live (Gemini Live voice) tracing via LangSmithGoogleADKLivePlugin. Needs the
+# plugin API (``google.adk.plugins.base_plugin``, first shipped in 1.7.0); the
+# >=2.3.0 floor is for model-cost capture — earlier releases pass Gemini's live
+# usage through under `response_token_count`, which is dropped when coerced to
+# the response type, silently losing output-token counts. 2.3.0 remaps it.
+google-adk-live = ["google-adk>=2.3.0"]
+
+# Enabled via `pip install langsmith[strands-agents]`
+strands-agents = [
+    "strands-agents>=0.1.0",
+    "strands-agents-tools>=0.2.0",
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-api>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+]
+
 # Enabled via `pip install langsmith[pytest]`
 pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
 
 # VCR support
 vcr = ["vcrpy>=7.0.0"]
 
-# Enabled via `pip install langsmith[sandbox]`
-sandbox = ["websockets>=15.0"]
+# Kept for backward compatibility; `websockets` is now a core dependency.
+sandbox = []
 
 [dependency-groups]
 # Development dependencies
 dev = [
     "pytest>=8.3.5",
     "mypy>=1.9.0",
-    "ruff>=0.6.9",
+    "ruff>=0.6.9,<0.16.0",
     "types-requests>=2.31.0.1",
     "pandas-stubs>=2.0.1.230501",
     "types-pyyaml>=6.0.12.10",
@@ -103,19 +159,23 @@ dev = [
     "opentelemetry-sdk>=1.34.1",
     "opentelemetry-exporter-otlp-proto-http>=1.34.1",
     "opentelemetry-api>=1.34.1",
+    "cachetools>=5.0.0",
     "bump2version>=1.0.1",
     "openai-agents>=0.2.4",
     "claude-agent-sdk>=0.1.0; python_version>='3.10'",
-    "langchain-core>=1.0.0",
-    "langchain-openai>=1.0.0",
-    "langchain-anthropic>=1.0.0",
+    "strands-agents>=0.1.0",
+    "strands-agents-tools>=0.2.0",
+    "langchain-core>=1.0.0,<1.5.0",
+    "langchain-openai>=1.0.0,<1.4.0",
+    "langchain-anthropic>=1.0.0,<1.5.0",
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.18",
+    "ty==0.0.65",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
+    "pytest-timeout>=2.3.1",
 ]
 
 # Linting dependencies
@@ -133,6 +193,16 @@ test = [
 [project.entry-points."pytest11"]
 langsmith_plugin = "langsmith.pytest_plugin"
 
+[tool.uv]
+exclude-newer = "P1D"
+# Force `json-repair` past the patched 0.60.1 floor everywhere. `livekit-agents`
+# pins the vulnerable `json-repair==0.59.10`; uv's `override-dependencies` takes a
+# flat list of PEP 508 requirements (not a per-package map), so a global override
+# is the supported way to force the patched version over that pin.
+override-dependencies = [
+    "json-repair>=0.60.1",
+]
+
 [tool.hatch.version]
 path = "langsmith/__init__.py"
 
@@ -143,6 +213,7 @@ exclude = [".test", ".venv*"]
 packages = ["langsmith"]
 
 [tool.ruff]
+exclude = ["_openapi_client"]
 lint.select = [
   "E",    # pycodestyle
   "F",    # pyflakes
@@ -188,6 +259,16 @@ plugins = ["pydantic.mypy"]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
 
+[[tool.mypy.overrides]]
+module = "langsmith._openapi_client.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = ["slow: long-running tests"]
+markers = [
+  "slow: long-running tests",
+  "require_clickhouse: test calls a legacy (pre-SmithDB) SDK method directly, so it only passes against a ClickHouse-backed deployment",
+  "require_v2: test uses the autogenerated OpenAPI client (client.runs/traces/threads/public/datasets/evaluators), so it needs a deployment serving the v2 endpoints",
+]
+timeout = 120
+timeout_method = "thread"

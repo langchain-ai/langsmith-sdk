@@ -1,5 +1,9 @@
 """Test the AsyncClient."""
 
+import asyncio
+import json
+import logging
+import pathlib
 import uuid
 import warnings
 from datetime import datetime
@@ -7,10 +11,675 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
+import requests
 
 from langsmith import AsyncClient
 from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
+
+_VERSION_LOGGER = "langsmith._internal._backend_version"
+
+
+def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    ls_utils.get_env_var.cache_clear()
+    for key in (
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_ENDPOINT",
+        "LANGSMITH_ENDPOINT",
+        "LANGSMITH_PROFILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_custom_headers(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        headers={
+            "X-Custom-Header": "custom-value",
+            "X-Another-Header": "another-value",
+        },
+    )
+
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["X-Custom-Header"] == "custom-value"
+    assert passed_headers["X-Another-Header"] == "another-value"
+    assert passed_headers["Content-Type"] == "application/json"
+    assert passed_headers["x-api-key"] == "test-api-key"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_headers_dont_override_required(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="correct-api-key",
+        headers={
+            "x-api-key": "wrong-key",
+            "X-Custom-Header": "custom-value",
+        },
+    )
+
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["x-api-key"] == "correct-api-key"
+    assert passed_headers["X-Custom-Header"] == "custom-value"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_headers_property_setter(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        headers={"X-Initial-Header": "initial-value"},
+    )
+
+    client.headers = {
+        "X-New-Header": "new-value",
+        "X-Another-Header": "another-value",
+    }
+
+    assert client._headers["x-new-header"] == "new-value"
+    assert client._headers["x-another-header"] == "another-value"
+    assert client._headers["x-api-key"] == "test-api-key"
+    assert "x-initial-header" not in client._headers
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_headers_property_getter(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    custom_headers = {"X-Custom-Header": "custom-value"}
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        headers=custom_headers,
+    )
+
+    assert client.headers == custom_headers
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_no_custom_headers(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+    )
+
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["Content-Type"] == "application/json"
+    assert passed_headers["x-api-key"] == "test-api-key"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_profile_config_uses_oauth_access_token(
+    mock_client_cls: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    _clear_profile_env(monkeypatch)
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {"access_token": "profile-access-token"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    AsyncClient()
+
+    assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["Authorization"] == "Bearer profile-access-token"
+    assert "x-api-key" not in passed_headers
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_profile_config_uses_api_key_before_oauth_access_token(
+    mock_client_cls: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    _clear_profile_env(monkeypatch)
+    mock_httpx_client = mock.AsyncMock()
+    mock_httpx_client.headers = httpx.Headers()
+    response = mock.Mock()
+    response.status_code = 200
+    mock_httpx_client.request.return_value = response
+    mock_client_cls.return_value = mock_httpx_client
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_key": "profile-key",
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "profile-access-token",
+                            "refresh_token": "profile-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+    mock_post = mock.Mock()
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    client = AsyncClient()
+    await client._arequest_with_retries("GET", "/info")
+
+    assert mock_client_cls.call_args.kwargs["base_url"] == "https://profile.example.com"
+    passed_headers = mock_client_cls.call_args.kwargs["headers"]
+    assert passed_headers["x-api-key"] == "profile-key"
+    assert "Authorization" not in passed_headers
+    mock_httpx_client.request.assert_awaited_once()
+    mock_post.assert_not_called()
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_profile_refresh_replaces_snapshotted_auth_headers(
+    mock_client_cls: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    _clear_profile_env(monkeypatch)
+    mock_httpx_client = mock.AsyncMock()
+    mock_httpx_client.headers = httpx.Headers()
+    response = mock.Mock()
+    response.status_code = 200
+    mock_httpx_client.request.return_value = response
+    mock_client_cls.return_value = mock_httpx_client
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "default": {
+                        "api_url": "https://profile.example.com",
+                        "oauth": {
+                            "access_token": "old-access-token",
+                            "refresh_token": "old-refresh-token",
+                            "expires_at": "2000-01-01T00:00:00Z",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+    def mock_post(url: str, **kwargs: object) -> mock.Mock:
+        response = mock.Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 300,
+        }
+        return response
+
+    monkeypatch.setattr(requests, "post", mock_post)
+    client = AsyncClient()
+    snapshotted_headers = dict(mock_client_cls.call_args.kwargs["headers"])
+
+    await client._arequest_with_retries(
+        "GET",
+        "/info",
+        headers=snapshotted_headers,
+    )
+
+    request_headers = mock_httpx_client.request.call_args.kwargs["headers"]
+    assert request_headers["Authorization"] == "Bearer new-access-token"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_arequest_with_retries_retries_on_502(
+    mock_raise_for_status: mock.Mock,
+    _mock_sleep: AsyncMock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+
+    first_response = MagicMock()
+    first_response.status_code = 502
+
+    second_response = MagicMock()
+    second_response.status_code = 200
+    mock_httpx_client.request.side_effect = [first_response, second_response]
+
+    def _raise_for_status(response):
+        if response.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "status error",
+                request=httpx.Request("GET", "http://test"),
+                response=response,
+            )
+
+    mock_raise_for_status.side_effect = _raise_for_status
+
+    client = AsyncClient(retry_config={"max_retries": 2})
+    response = await client._arequest_with_retries("GET", "/repos/-/test")
+    assert response == second_response
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_create_feedback_forwards_trace_id(
+    mock_raise_for_status: mock.Mock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_raise_for_status.return_value = None
+
+    run_id = uuid4()
+    trace_id = uuid4()
+    now = datetime(2024, 1, 1).isoformat()
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {
+        "id": str(uuid4()),
+        "created_at": now,
+        "modified_at": now,
+        "run_id": str(run_id),
+        "trace_id": str(trace_id),
+        "key": "quality",
+    }
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    await client.create_feedback(
+        run_id, key="quality", score=1, trace_id=trace_id, session_id=uuid4()
+    )
+
+    call = mock_httpx_client.request.call_args
+    assert call.args[0] == "POST"
+    assert call.args[1] == "/feedback"
+    body = json.loads(call.kwargs["content"])
+    assert uuid.UUID(body["run_id"]) == run_id
+    assert uuid.UUID(body["trace_id"]) == trace_id
+    assert body["key"] == "quality"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@patch("langsmith.async_client.ls_utils.raise_for_status_with_text")
+async def test_create_feedback_retries_on_not_found(
+    mock_raise_for_status: mock.Mock,
+    _mock_sleep: AsyncMock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+
+    run_id = uuid4()
+    trace_id = uuid4()
+    now = datetime(2024, 1, 1).isoformat()
+
+    not_found = MagicMock()
+    not_found.status_code = 404
+    success = MagicMock()
+    success.status_code = 200
+    success.json.return_value = {
+        "id": str(uuid4()),
+        "created_at": now,
+        "modified_at": now,
+        "run_id": str(run_id),
+        "trace_id": str(trace_id),
+        "key": "quality",
+    }
+    mock_httpx_client.request.side_effect = [not_found, success]
+
+    def _raise_for_status(response: mock.Mock) -> None:
+        if response.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "status error",
+                request=httpx.Request("POST", "http://test"),
+                response=response,
+            )
+
+    mock_raise_for_status.side_effect = _raise_for_status
+
+    client = AsyncClient(
+        api_url="http://localhost:1984",
+        api_key="test",
+        retry_config={"max_retries": 2},
+    )
+    feedback = await client.create_feedback(
+        run_id, key="quality", trace_id=trace_id, session_id=uuid4()
+    )
+
+    # A 404 (run not yet ingested) is retried, unlike other 4xx.
+    assert mock_httpx_client.request.call_count == 2
+    assert str(feedback.run_id) == str(run_id)
+    assert mock_httpx_client.request.call_count == 2
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_includes_trace_id_and_feedback_id(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    feedback_id = uuid.uuid4()
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={
+            "id": str(feedback_id),
+            "run_id": str(run_id),
+            "trace_id": str(trace_id),
+            "key": "test_key",
+            "score": 0.9,
+            "value": "test_value",
+            "comment": "test_comment",
+            "created_at": datetime.now().isoformat(),
+            "modified_at": datetime.now().isoformat(),
+        },
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(
+        run_id=run_id,
+        trace_id=trace_id,
+        feedback_id=feedback_id,
+        key="test_key",
+        score=0.9,
+        value="test_value",
+        comment="test_comment",
+    )
+
+    assert feedback.id == feedback_id
+    assert feedback.run_id == run_id
+    assert feedback.trace_id == trace_id
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert body["id"] == str(feedback_id)
+    assert body["run_id"] == str(run_id)
+    assert body["trace_id"] == str(trace_id)
+    assert body["key"] == "test_key"
+    assert body["score"] == 0.9
+    assert body["value"] == "test_value"
+    assert body["comment"] == "test_comment"
+    assert body["feedback_source"]["type"] == "api"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_requires_session_id_on_smithdb(
+    mock_client_cls: mock.Mock,
+) -> None:
+    """SmithDB-only backends cannot locate the run without session_id."""
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+    client._info = ls_schemas.LangSmithInfo(
+        instance_flags={"ch_query_enabled": False, "sdb_query_enabled": True}
+    )
+
+    with pytest.raises(ValueError, match="session_id must be provided"):
+        await client.create_feedback(uuid4(), key="quality")
+    mock_httpx_client.request.assert_not_called()
+
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={
+            "id": str(uuid4()),
+            "key": "quality",
+            "created_at": datetime.now().isoformat(),
+            "modified_at": datetime.now().isoformat(),
+        },
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client._info = ls_schemas.LangSmithInfo(instance_flags={"ch_query_enabled": True})
+    with pytest.warns(ls_utils.LangSmithWarning, match="smithdb-sdk-migration"):
+        await client.create_feedback(uuid4(), key="quality")
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_matches_sync_payload_fields(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    source_run_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    comparative_experiment_id = uuid.uuid4()
+    feedback_group_id = uuid.uuid4()
+    start_time = datetime.now()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(
+        run_id=run_id,
+        trace_id=trace_id,
+        key="test_key",
+        score=0.123456,
+        value="test_value",
+        correction={"expected": "answer"},
+        feedback_config={"type": "continuous", "min": 0, "max": 1},
+        feedback_source_type="model",
+        source_info={"source": "evaluator"},
+        source_run_id=source_run_id,
+        comparative_experiment_id=comparative_experiment_id,
+        feedback_group_id=feedback_group_id,
+        extra={"extra_key": "extra_value"},
+        error=True,
+        session_id=session_id,
+        start_time=start_time,
+    )
+
+    assert feedback.run_id == run_id
+    assert feedback.trace_id == trace_id
+    assert feedback.score == 0.1235
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert body["run_id"] == str(run_id)
+    assert body["trace_id"] == str(trace_id)
+    assert body["score"] == 0.1235
+    assert body["correction"] == {"expected": "answer"}
+    assert body["feedback_config"] == {"type": "continuous", "min": 0, "max": 1}
+    assert body["feedback_source"] == {
+        "type": "model",
+        "metadata": {
+            "source": "evaluator",
+            "__run": {"run_id": str(source_run_id)},
+        },
+    }
+    assert body["comparative_experiment_id"] == str(comparative_experiment_id)
+    assert body["feedback_group_id"] == str(feedback_group_id)
+    assert body["extra"] == {"extra_key": "extra_value"}
+    assert body["error"] is True
+    assert body["session_id"] == str(session_id)
+    assert body["start_time"] == start_time.isoformat()
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_project_feedback_validation(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    project_id = uuid.uuid4()
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(project_id=project_id, key="test_key")
+
+    assert feedback.run_id is None
+    assert feedback.session_id == project_id
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert "run_id" not in body
+    assert body["session_id"] == str(project_id)
+
+    with pytest.raises(ValueError, match="project_id cannot be provided"):
+        await client.create_feedback(
+            run_id=uuid.uuid4(),
+            project_id=project_id,
+            key="test_key",
+        )
+
+    with pytest.raises(ValueError, match="One of run_id, trace_id, or project_id"):
+        await client.create_feedback(key="test_key")
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_warns_and_ignores_unused_kwargs(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    with pytest.warns(DeprecationWarning, match="no longer used"):
+        await client.create_feedback(
+            run_id=uuid.uuid4(),
+            key="test_key",
+            session_id=uuid.uuid4(),
+            unused_argument="unused",
+        )
+
+    request_kwargs = mock_httpx_client.request.call_args.kwargs
+    body = json.loads(request_kwargs["content"])
+    assert "unused_argument" not in body
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_create_feedback_warns_when_session_id_missing(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.return_value = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("POST", "http://localhost:1984/feedback"),
+    )
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    with pytest.warns(ls_utils.LangSmithWarning, match="smithdb-sdk-migration"):
+        await client.create_feedback(run_id=uuid.uuid4(), key="test_key")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ls_utils.LangSmithWarning)
+        # No warning when session_id is provided
+        await client.create_feedback(
+            run_id=uuid.uuid4(), key="test_key", session_id=uuid.uuid4()
+        )
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_create_feedback_retries_on_not_found(
+    mock_sleep: AsyncMock,
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    feedback_id = uuid.uuid4()
+    request = httpx.Request("POST", "http://localhost:1984/feedback")
+    mock_httpx_client.request.side_effect = [
+        httpx.Response(404, text="not found", request=request),
+        httpx.Response(
+            200,
+            json={
+                "id": str(feedback_id),
+                "run_id": str(run_id),
+                "trace_id": str(trace_id),
+                "key": "test_key",
+                "created_at": datetime.now().isoformat(),
+                "modified_at": datetime.now().isoformat(),
+            },
+            request=request,
+        ),
+    ]
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test-api-key")
+
+    feedback = await client.create_feedback(
+        run_id=run_id,
+        trace_id=trace_id,
+        feedback_id=feedback_id,
+        key="test_key",
+        session_id=uuid.uuid4(),
+        stop_after_attempt=2,
+    )
+
+    assert feedback.id == feedback_id
+    assert mock_httpx_client.request.call_count == 2
+    mock_sleep.assert_awaited_once()
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
@@ -38,11 +707,11 @@ async def test_list_runs_child_run_ids_deprecation_warning(
         ):
             pass
 
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
+    # Overall list_runs deprecation fires; child_run_ids-specific warning must not
+    with pytest.warns(DeprecationWarning) as warning_list:
         async for _ in client.list_runs(project_id=uuid4(), select=["id", "name"]):
             pass
+    assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
@@ -208,3 +877,108 @@ async def test_push_prompt_forwards_commit_tags(
     mock_create_commit.assert_awaited_once()
     _, kwargs = mock_create_commit.call_args
     assert kwargs["tags"] == commit_tags
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_repr_hides_sensitive_info(mock_client_cls: mock.Mock) -> None:
+    """Test that __repr__ does not expose sensitive information like API keys."""
+    mock_httpx_client = mock.Mock()
+    mock_httpx_client.base_url = "https://api.smith.langchain.com"
+    mock_httpx_client.headers = httpx.Headers()
+    mock_client_cls.return_value = mock_httpx_client
+
+    client = AsyncClient(
+        api_url="https://api.smith.langchain.com",
+        api_key="super-secret-api-key-12345",
+    )
+
+    repr_str = repr(client)
+    # Ensure API key is NOT in the repr
+    assert "super-secret-api-key-12345" not in repr_str
+    # Ensure the repr shows the API URL
+    assert "https://api.smith.langchain.com" in repr_str
+    # Ensure it's properly formatted
+    assert repr_str == "AsyncClient (API URL: https://api.smith.langchain.com)"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_info_caches_result(mock_client_cls: mock.Mock) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
+    mock_httpx_client.headers = httpx.Headers()
+    mock_httpx_client.timeout = httpx.Timeout(10)
+    mock_client_cls.return_value = mock_httpx_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"version": "0.16.0"}
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    info1 = await client.info()
+    info2 = await client.info()
+
+    assert info1 is info2
+    assert mock_httpx_client.request.call_count == 1
+    assert info1.version == "0.16.0"
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_async_client_info_falls_back_on_error(
+    mock_client_cls: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
+    mock_httpx_client.headers = httpx.Headers()
+    mock_httpx_client.timeout = httpx.Timeout(10)
+    mock_client_cls.return_value = mock_httpx_client
+
+    mock_httpx_client.request.side_effect = Exception("connection refused")
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    info = await client.info()
+
+    assert info.version == ""
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "version,expect_warning", [("0.15.9", True), ("0.16.0", False)]
+)
+async def test_async_client_resource_version_check(
+    mock_client_cls: mock.Mock,
+    version: str,
+    expect_warning: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Accessing a v2 resource schedules the check against its min version.
+
+    The full version matrix lives in `test_check_backend_version`; this covers
+    the wiring: the property schedules one background check per min version.
+    """
+    mock_httpx_client = AsyncMock()
+    mock_httpx_client.base_url = httpx.URL("http://localhost:1984")
+    mock_httpx_client.headers = httpx.Headers()
+    mock_httpx_client.timeout = httpx.Timeout(10)
+    mock_client_cls.return_value = mock_httpx_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"version": version}
+    mock_httpx_client.request.return_value = response
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _ = client.runs
+        assert len(client._version_check_tasks) == 1, "runs did not schedule a check"
+        _ = client.threads
+        assert len(client._version_check_tasks) == 1, (
+            "same min version must be checked once"
+        )
+        await asyncio.gather(*client._version_check_tasks)
+
+    version_warnings = [r for r in caplog.records if r.name == _VERSION_LOGGER]
+    assert bool(version_warnings) is expect_warning

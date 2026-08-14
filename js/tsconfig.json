@@ -5,6 +5,7 @@
     "lib": [
       "ES2021",
       "ES2022.Object",
+      "ES2022.Array",
       "DOM"
     ],
     "module": "NodeNext",
@@ -20,6 +21,8 @@
     "stripInternal": true,
     "allowJs": true,
     "strict": true,
+    "types": ["jest", "node"],
+    "rootDir": "./src",
     "outDir": "dist"
   },
   "include": [
@@ -28,7 +31,8 @@
   "exclude": [
     "node_modules",
     "dist",
-    "coverage"
+    "coverage",
+    "src/_openapi_client"
   ],
   "includeVersion": true,
   "typedocOptions": {
@@ -48,6 +52,7 @@
       "src/wrappers/anthropic.ts",
       "src/wrappers/openai.ts",
       "src/wrappers/gemini.ts",
+      "src/wrappers/openai_agents.ts",
       "src/singletons/traceable.ts",
       "src/utils/jestlike/index.ts",
       "src/experimental/otel/setup.ts",
@@ -55,7 +60,8 @@
       "src/experimental/otel/processor.ts",
       "src/experimental/vercel/index.ts",
       "src/experimental/anthropic/index.ts",
-      "src/experimental/sandbox/index.ts"
+      "src/sandbox/index.ts",
+      "src/sandbox/index.ts"
     ]
   }
 }

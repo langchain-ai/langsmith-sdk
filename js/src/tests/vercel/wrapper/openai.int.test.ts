@@ -2,7 +2,7 @@
 import { openai } from "@ai-sdk/openai";
 import * as ai from "ai";
 import z from "zod";
-import { v4 } from "uuid";
+import { v4 } from "../../../utils/uuid/src/index.js";
 import * as fs from "fs/promises";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -15,6 +15,7 @@ import {
 import { generateLongContext, waitUntilRunFound } from "../../utils.js";
 import { mockClient } from "../../utils/mock_client.js";
 import { traceable } from "../../../traceable.js";
+import { requiresClickhouse } from "../../utils/markers.js";
 
 const { tool, stepCountIs } = ai;
 
@@ -81,7 +82,7 @@ test("wrap generateText with tool class", async () => {
     tools: {
       listOrders: new MyTool(
         z.object({ userId: z.string() }),
-        "list all orders"
+        "list all orders",
       ),
     },
     stopWhen: stepCountIs(10),
@@ -119,29 +120,29 @@ test("wrap generateText with flex service tier", async () => {
   await client.awaitPendingTraceBatches();
   const patchBodies = await Promise.all(
     callSpy.mock.calls
-      .filter((call) => call[1]!.method === "PATCH")
-      .map((call) => new Response(call[1]!.body).json())
+      .filter((call: any) => call[1]!.method === "PATCH")
+      .map((call: any) => new Response(call[1]!.body).json()),
   );
   const childRunPatchBodies = patchBodies.filter(
-    (body) => body.parent_run_id != null
+    (body) => body.parent_run_id != null,
   );
 
   expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
 
   const llmChildRun = childRunPatchBodies.find(
-    (body) => body.extra?.metadata?.usage_metadata
+    (body) => body.extra?.metadata?.usage_metadata,
   );
   expect(llmChildRun).toBeDefined();
 
   const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
-    usageMetadata.input_tokens
+    usageMetadata.input_tokens,
   );
   expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
   expect(
     usageMetadata.output_token_details.flex +
-      usageMetadata.output_token_details.flex_reasoning
+      usageMetadata.output_token_details.flex_reasoning,
   ).toEqual(usageMetadata.output_tokens);
 });
 
@@ -197,29 +198,29 @@ test("wrap streamText with service tier", async () => {
   await result.consumeStream();
   const patchBodies = await Promise.all(
     callSpy.mock.calls
-      .filter((call) => call[1]!.method === "PATCH")
-      .map((call) => new Response(call[1]!.body).json())
+      .filter((call: any) => call[1]!.method === "PATCH")
+      .map((call: any) => new Response(call[1]!.body).json()),
   );
   const childRunPatchBodies = patchBodies.filter(
-    (body) => body.parent_run_id != null
+    (body) => body.parent_run_id != null,
   );
 
   expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
 
   const llmChildRun = childRunPatchBodies.find(
-    (body) => body.extra?.metadata?.usage_metadata
+    (body) => body.extra?.metadata?.usage_metadata,
   );
   expect(llmChildRun).toBeDefined();
 
   const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
-    usageMetadata.input_tokens
+    usageMetadata.input_tokens,
   );
   expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
   expect(
     usageMetadata.output_token_details.flex +
-      usageMetadata.output_token_details.flex_reasoning
+      usageMetadata.output_token_details.flex_reasoning,
   ).toEqual(usageMetadata.output_tokens);
 });
 
@@ -318,7 +319,7 @@ test.skip("wrap streamObject", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
-test("can set run id", async () => {
+requiresClickhouse.test("can set run id", async () => {
   const runId = v4();
   const client = new Client();
   const { generateText } = wrapAISDK(ai, { id: runId });
@@ -377,18 +378,21 @@ test("should reuse tool def without double wrapping tool traces", async () => {
   expect(result2.providerMetadata).toBeDefined();
 });
 
-test("image and file data normalization", async () => {
+// Skipped: data: URL in image part triggers SSRF validation bug in
+// @ai-sdk/provider-utils@4.0.21. Fix merged upstream (vercel/ai#13376)
+// but not yet released. Re-enable once a patched version is available.
+test.skip("image and file data normalization", async () => {
   const pathname = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
     "..",
     "test_data",
-    "parrot-icon.png"
+    "parrot-icon.png",
   );
   const imgBuffer = await fs.readFile(pathname);
   const imgArrayBuffer = imgBuffer.buffer.slice(
     imgBuffer.byteOffset,
-    imgBuffer.byteOffset + imgBuffer.byteLength
+    imgBuffer.byteOffset + imgBuffer.byteLength,
   ) as ArrayBuffer;
   const imgBase64 = imgBuffer.toString("base64");
   const imgUrl = "https://smith.langchain.com/og_image.png";
@@ -406,7 +410,7 @@ test("image and file data normalization", async () => {
           { type: "image", image: imgArrayBuffer }, // ArrayBuffer
           { type: "image", image: imgBase64 }, // Base64 string
           { type: "image", image: imgUrl }, // HTTP URL string
-          { type: "image", image: imgDataUrl }, // Existing data URL
+          { type: "image", image: imgDataUrl }, // Data URL
           { type: "image", image: imgUrlObject }, // URL object
           {
             type: "file",
@@ -471,7 +475,7 @@ test("process inputs and outputs", async () => {
   expect(text).not.toContain("REDACTED");
 });
 
-test("generateText with experimental_output should display as structured object in LangSmith", async () => {
+test("generateText with output should display as structured object in LangSmith", async () => {
   const outputSchema = z.object({
     city: z.string(),
     temperature: z.number().nullable(),
@@ -484,21 +488,19 @@ test("generateText with experimental_output should display as structured object 
   const result = await wrappedGenerateText({
     model: openai("gpt-5-nano"),
     prompt: "What's the weather in Prague? Return a structured response.",
-    experimental_output: ai.Output.object({
-      schema: outputSchema,
-    }),
+    output: ai.Output.object({ schema: outputSchema }),
   });
 
   // Verify the output is returned correctly and can be parsed
-  expect(result.experimental_output).toBeDefined();
-  const parsedOutput = outputSchema.parse(result.experimental_output);
+  expect(result.output).toBeDefined();
+  const parsedOutput = outputSchema.parse(result.output);
   expect(parsedOutput.city).toBeDefined();
   expect(parsedOutput.temperature).toBeDefined();
   expect(parsedOutput.unit).toBeDefined();
   expect(parsedOutput.conditions).toBeDefined();
 });
 
-test("streamText with experimental_output should display as structured object in LangSmith", async () => {
+test("streamText with output should display as structured object in LangSmith", async () => {
   const outputSchema = z.object({
     city: z.string(),
     temperature: z.number().nullable(),
@@ -511,7 +513,7 @@ test("streamText with experimental_output should display as structured object in
   const result = wrappedStreamText({
     model: openai("gpt-5-nano"),
     prompt: "What's the weather in Paris? Return a structured response.",
-    experimental_output: ai.Output.object({
+    output: ai.Output.object({
       schema: outputSchema,
     }),
   });
@@ -587,7 +589,7 @@ it.skip("openai cache with large prompt for automatic caching", async () => {
       name: "OpenAI Cache Test Wrapper",
       metadata: { testKey: meta },
       client,
-    }
+    },
   );
 
   await wrapper();
@@ -674,7 +676,7 @@ it.skip("openai cache with streamText", async () => {
       name: "OpenAI Cache StreamText Test Wrapper",
       metadata: { testKey: meta },
       client,
-    }
+    },
   );
 
   await wrapper();

@@ -53,7 +53,8 @@ def get_otlp_tracer_provider() -> "TracerProvider":
       Langsmith-Project header if project is configured
 
     These defaults can be overridden by setting the environment variables before
-    calling this function.
+    calling this function. Values are passed directly to the exporter constructor
+    rather than written to os.environ.
 
     Returns:
         TracerProvider: The OTLP tracer provider.
@@ -73,20 +74,28 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         BatchSpanProcessor,
     ) = otel_imports
 
-    if "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ:
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
         ls_endpoint = ls_utils.get_api_url(None)
-        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{ls_endpoint}/otel"
+        endpoint = f"{ls_endpoint}/otel"
 
-    # Configure headers with API key and project if available
-    if "OTEL_EXPORTER_OTLP_HEADERS" not in os.environ:
-        api_key = ls_utils.get_api_key(None)
-        headers = f"x-api-key={api_key}"
+    # Configure headers with API key and project if available.
+    # Build a dict because OTLPSpanExporter expects a mapping, not a string.
+    headers_env = os.environ.get("OTEL_EXPORTER_OTLP_HEADERS")
+    if headers_env:
+        headers = {
+            k.strip(): v.strip()
+            for k, v in (
+                pair.split("=", 1) for pair in headers_env.split(",") if "=" in pair
+            )
+        }
+    else:
+        api_key = ls_utils.get_api_key(None) or ""
+        headers = {"x-api-key": api_key}
 
         project = ls_utils.get_tracer_project()
         if project:
-            headers += f",Langsmith-Project={project}"
-
-        os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = headers
+            headers["Langsmith-Project"] = project
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "langsmith")
     resource = Resource(
@@ -99,7 +108,7 @@ def get_otlp_tracer_provider() -> "TracerProvider":
 
     tracer_provider = TracerProvider(resource=resource)
 
-    otlp_exporter = OTLPSpanExporter()
+    otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
     span_processor = BatchSpanProcessor(otlp_exporter)
     tracer_provider.add_span_processor(span_processor)
 

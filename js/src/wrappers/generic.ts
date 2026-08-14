@@ -4,7 +4,7 @@ import { traceable } from "../traceable.js";
 export const _wrapClient = <T extends object>(
   sdk: T,
   runName: string,
-  options?: Omit<RunTreeConfig, "name">
+  options?: Omit<RunTreeConfig, "name">,
 ): T => {
   return new Proxy(sdk, {
     get(target, propKey, receiver) {
@@ -25,7 +25,7 @@ export const _wrapClient = <T extends object>(
         return _wrapClient(
           originalValue,
           [runName, propKey.toString()].join("."),
-          options
+          options,
         );
       } else {
         return Reflect.get(target, propKey, receiver);
@@ -56,7 +56,7 @@ type WrapSDKOptions = Partial<
  */
 export const wrapSDK = <T extends object>(
   sdk: T,
-  options?: WrapSDKOptions
+  options?: WrapSDKOptions,
 ): T => {
   const traceableOptions = options ? { ...options } : undefined;
   if (traceableOptions != null) {
@@ -67,6 +67,6 @@ export const wrapSDK = <T extends object>(
   return _wrapClient(
     sdk,
     options?.name ?? options?.runName ?? sdk.constructor?.name,
-    traceableOptions
+    traceableOptions,
   );
 };

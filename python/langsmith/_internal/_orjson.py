@@ -73,6 +73,8 @@ except ImportError:
         return json.dumps(obj, cls=CustomEncoder).encode("utf-8")
 
     def loads(payload: Union[bytes, bytearray, memoryview, str], /) -> Any:
+        if isinstance(payload, memoryview):
+            payload = payload.tobytes()
         return json.loads(payload)
 
 

@@ -1,7 +1,7 @@
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import * as constants from "./constants.js";
-import { isTracingEnabled } from "../../env.js";
+import { isEnvTracingEnabled } from "../../env.js";
 import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
@@ -51,7 +51,7 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * @returns A transformed version of the span.
    */
   transformExportedSpan?: (
-    span: ReadableSpan
+    span: ReadableSpan,
   ) => ReadableSpan | Promise<ReadableSpan>;
 
   /**
@@ -87,7 +87,7 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
  */
 export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
   private transformExportedSpan?: (
-    span: ReadableSpan
+    span: ReadableSpan,
   ) => ReadableSpan | Promise<ReadableSpan>;
 
   private projectName?: string;
@@ -128,9 +128,9 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
 
   export(
     spans: ReadableSpan[],
-    resultCallback: Parameters<OTLPTraceExporter["export"]>[1]
+    resultCallback: Parameters<OTLPTraceExporter["export"]>[1],
   ): void {
-    if (!isTracingEnabled()) {
+    if (!isEnvTracingEnabled()) {
       return resultCallback({ code: 0 });
     }
     const runExport = async () => {
@@ -211,7 +211,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         if (
           typeof span.attributes["ai.operationId"] === "string" &&
           constants.AI_SDK_LLM_OPERATIONS.includes(
-            span.attributes["ai.operationId"]
+            span.attributes["ai.operationId"],
           )
         ) {
           span.attributes[constants.LANGSMITH_RUN_TYPE] = "llm";
@@ -221,7 +221,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         } else if (
           typeof span.attributes["ai.operationId"] === "string" &&
           constants.AI_SDK_TOOL_OPERATIONS.includes(
-            span.attributes["ai.operationId"]
+            span.attributes["ai.operationId"],
           )
         ) {
           span.attributes[constants.LANGSMITH_RUN_TYPE] = "tool";

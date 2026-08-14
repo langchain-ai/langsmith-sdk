@@ -20,7 +20,7 @@ class LangSmithEvalReporter extends DefaultReporter {
   async onTestRunEnd(
     testModules: VitestTestModule[],
     unhandledErrors: unknown[],
-    reason: "passed" | "interrupted" | "failed"
+    reason: "passed" | "interrupted" | "failed",
   ) {
     // @ts-expect-error Vitest 4.x introduces a new `onTestRunEnd` method
     super.onTestRunEnd(testModules, unhandledErrors, reason);

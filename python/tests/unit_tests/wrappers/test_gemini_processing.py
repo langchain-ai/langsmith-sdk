@@ -257,8 +257,8 @@ class TestProcessGenerateContentResponse:
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
         assert result["usage_metadata"]["input_tokens"] == 200050
-        assert result["usage_metadata"]["input_token_details"]["over_200k"] == 50
-        assert result["usage_metadata"]["input_token_details"]["cache_read"] == 200050
+        assert result["usage_metadata"]["input_token_details"]["over_200k"] == 0
+        assert result["usage_metadata"]["input_token_details"]["cache_read"] == 200000
         assert (
             result["usage_metadata"]["input_token_details"]["cache_read_over_200k"]
             == 50
@@ -601,6 +601,32 @@ class TestCreateUsageMetadata:
         assert result["output_tokens"] == 20
         assert result["total_tokens"] == 30
         assert result["input_token_details"]["cache_read"] == 5
+
+    def test_with_cached_tokens_over_200k(self):
+        gemini_usage = {
+            "prompt_token_count": 1000000,
+            "candidates_token_count": 500000,
+            "cached_content_token_count": 250000,
+            "total_token_count": 1500000,
+        }
+        result = _create_usage_metadata(gemini_usage)
+
+        assert result["input_token_details"]["cache_read"] == 200000
+        assert result["input_token_details"]["cache_read_over_200k"] == 50000
+        assert result["input_token_details"]["over_200k"] == 550000
+
+    def test_with_cached_tokens_all_over_200k_cached(self):
+        gemini_usage = {
+            "prompt_token_count": 200050,
+            "candidates_token_count": 20,
+            "cached_content_token_count": 200050,
+            "total_token_count": 200070,
+        }
+        result = _create_usage_metadata(gemini_usage)
+
+        assert result["input_token_details"]["cache_read"] == 200000
+        assert result["input_token_details"]["cache_read_over_200k"] == 50
+        assert result["input_token_details"]["over_200k"] == 0
 
     def test_with_reasoning_tokens(self):
         gemini_usage = {

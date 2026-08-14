@@ -26,7 +26,7 @@ class LangSmithEvalReporter extends DefaultReporter {
   async onTestRunEnd(
     testModules: VitestTestModule[],
     unhandledErrors: { message: string; name?: string }[],
-    reason: "passed" | "interrupted" | "failed"
+    reason: "passed" | "interrupted" | "failed",
   ) {
     super.onTestRunEnd(testModules, unhandledErrors, reason);
     this.skipOnFinished = true;

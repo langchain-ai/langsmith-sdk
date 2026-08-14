@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from html import escape as _html_escape
 from pathlib import Path
 from typing import (
     Annotated,
@@ -55,7 +56,7 @@ class Attachment(NamedTuple):
 
 
 Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
-"""Attachments associated with the run. 
+"""Attachments associated with the run.
 
 Each entry is a tuple of `(mime_type, bytes)`, or `(mime_type, file_path)`
 """
@@ -175,12 +176,6 @@ class Example(ExampleBase):
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
-
-
-class ExampleSearch(ExampleBase):
-    """Example returned via search."""
-
-    id: UUID
 
 
 class AttachmentsOperations(BaseModel):
@@ -366,7 +361,7 @@ class RunBase(BaseModel):
         default_factory=dict
     )
     """Attachments associated with the run.
-    
+
     Each entry is a tuple of `(mime_type, bytes)`.
     """
 
@@ -689,6 +684,8 @@ class FeedbackCreate(FeedbackBase):
     """The source of the feedback."""
     feedback_config: Optional[FeedbackConfig] = None
     """The config for the feedback"""
+    extend_trace_retention: bool = True
+    """When true, extend trace retention as a side effect of creating this feedback."""
     error: Optional[bool] = None
 
 
@@ -865,6 +862,25 @@ class AnnotationQueueWithDetails(AnnotationQueue):
     """The rubric instructions for the annotation queue."""
 
 
+class RunKey(TypedDict):
+    """A run identified by its full lookup key, for adding to an annotation queue.
+
+    Unlike a bare run ID, this carries the partition key (``session_id`` and
+    ``start_time``) so the run can be located directly, without a scan.
+    """
+
+    run_id: Union[UUID, str]
+    """The ID of the run to add to the queue."""
+    session_id: Union[UUID, str]
+    """The ID of the project/session the run belongs to (partition key)."""
+    start_time: Union[datetime, str]
+    """The start time of the run (partition key). A ``datetime`` or an
+    ISO 8601 string."""
+    source_proposed_example_id: NotRequired[Union[UUID, str]]
+    """Optional back-pointer to the issues-agent proposed example that seeded
+    this queue item. The curation UI uses it to pre-fill suggested assertions."""
+
+
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 
@@ -992,6 +1008,8 @@ class ComparativeExperiment(BaseModel):
 class PromptCommit(BaseModel):
     """Represents a Prompt with a manifest."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     owner: str
     """The handle of the owner of the prompt."""
     repo: str
@@ -1002,6 +1020,12 @@ class PromptCommit(BaseModel):
     """The manifest of the prompt."""
     examples: list[dict]
     """The list of examples."""
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
+    hub_model_config: Optional[dict] = Field(default=None, alias="model_config")
+    """The model configuration for the prompt."""
+    hub_model_provider: Optional[str] = Field(default=None, alias="model_provider")
+    """The model provider (e.g. ChatOpenAI)."""
 
 
 class ListedPromptCommit(BaseModel):
@@ -1045,6 +1069,9 @@ class ListedPromptCommit(BaseModel):
 
     parent_commit_hash: Optional[str] = None
     """The optional hash of the parent commit."""
+
+    description: Optional[str] = None
+    """Optional human-readable description for the commit."""
 
 
 class Prompt(BaseModel):
@@ -1116,6 +1143,89 @@ class PromptSortField(str, Enum):
     """Last updated time."""
     num_likes = "num_likes"
     """Number of likes."""
+
+
+class FileEntry(BaseModel):
+    """A file with inline content."""
+
+    type: Literal["file"] = "file"
+    """The entry type."""
+    content: str
+    """The file content."""
+
+
+class AgentEntry(BaseModel):
+    """A link to another agent repo."""
+
+    type: Literal["agent"] = "agent"
+    """The entry type."""
+    repo_handle: str
+    """The handle of the linked repo."""
+    commit_id: Optional[UUID] = None
+    """The commit ID of the linked repo, if pinned."""
+    owner: Optional[str] = None
+    """The owner of the linked repo."""
+    commit_hash: Optional[str] = None
+    """The commit hash of the linked repo."""
+
+
+class SkillEntry(BaseModel):
+    """A link to a skill repo."""
+
+    type: Literal["skill"] = "skill"
+    """The entry type."""
+    repo_handle: str
+    """The handle of the linked repo."""
+    commit_id: Optional[UUID] = None
+    """The commit ID of the linked repo, if pinned."""
+    owner: Optional[str] = None
+    """The owner of the linked repo."""
+    commit_hash: Optional[str] = None
+    """The commit hash of the linked repo."""
+
+
+Entry = Annotated[Union[FileEntry, AgentEntry, SkillEntry], Field(discriminator="type")]
+"""A hub directory entry, discriminated by `type`."""
+
+
+class AgentContext(BaseModel):
+    """An agent pulled from hub."""
+
+    commit_id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, Entry]
+    """The files in the agent."""
+
+
+class SkillContext(BaseModel):
+    """A skill pulled from hub."""
+
+    commit_id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    files: dict[str, Entry]
+    """The files in the skill."""
+
+
+class DirectoryCommitInfo(BaseModel):
+    """Commit details returned from a directory commit."""
+
+    id: UUID
+    """The commit ID."""
+    commit_hash: str
+    """The commit hash."""
+    created_at: datetime
+    """When the commit was created."""
+
+
+class DirectoryCommitResponse(BaseModel):
+    """Response body for ``POST /directories/commits``."""
+
+    commit: DirectoryCommitInfo
+    """The created commit."""
 
 
 class InputTokenDetails(TypedDict, total=False):
@@ -1341,10 +1451,10 @@ class InsightsReport(BaseModel):
     @property
     def link(self) -> str:
         """URL to view this Insights Report in LangSmith UI."""
-        return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.project_id)}?tab=4&clusterJobId={str(self.id)}"
+        return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.project_id)}?tab=3&clusterJobId={str(self.id)}"
 
     def _repr_html_(self) -> str:
-        return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
+        return f'<a href="{_html_escape(self.link, quote=True)}", target="_blank" rel="noopener">InsightsReport(\'{_html_escape(self.name)}\')</a>'
 
 
 class InsightsHighlightedTrace(BaseModel):
@@ -1547,7 +1657,15 @@ class InsightsReportResult(BaseModel):
 
 
 class FeedbackFormulaWeightedVariable(BaseModel):
-    """A feedback key and weight used when calculating feedback formulas."""
+    """A feedback key and weight used when calculating feedback formulas.
+
+    .. admonition:: Deprecated
+
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     part_type: Literal["weighted_key"]
     weight: float
@@ -1555,7 +1673,15 @@ class FeedbackFormulaWeightedVariable(BaseModel):
 
 
 class FeedbackFormulaCreate(BaseModel):
-    """Schema used for creating a feedback formula."""
+    """Schema used for creating a feedback formula.
+
+    .. admonition:: Deprecated
+
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     dataset_id: Optional[UUID] = None
     session_id: Optional[UUID] = None
@@ -1567,7 +1693,15 @@ class FeedbackFormulaCreate(BaseModel):
 
 
 class FeedbackFormulaUpdate(BaseModel):
-    """Schema used for updating a feedback formula."""
+    """Schema used for updating a feedback formula.
+
+    .. admonition:: Deprecated
+
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
@@ -1577,7 +1711,15 @@ class FeedbackFormulaUpdate(BaseModel):
 
 
 class FeedbackFormula(FeedbackFormulaCreate):
-    """Schema for getting feedback formulas."""
+    """Schema for getting feedback formulas.
+
+    .. admonition:: Deprecated
+
+        Composite feedback formulas are no longer supported in the SDK.
+        Add composite feedback scores via the LangSmith UI instead. This
+        schema is retained only for backwards compatibility and will be
+        removed in a future release.
+    """
 
     id: UUID
     created_at: datetime

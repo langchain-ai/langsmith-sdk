@@ -25,7 +25,7 @@ function hexToBytes(hex: string): Uint8Array {
 }
 
 const kkey = hexToBytes(
-  "b8fe6c3923a44bbe7c01812cf721ad1cded46de9839097db7240a4a4b7b3671fcb79e64eccc0e578825ad07dccff7221b8084674f743248ee03590e6813a264c3c2852bb91c300cb88d0658b1b532ea371644897a20df94e3819ef46a9deacd8a8fa763fe39c343ff9dcbbc7c70b4f1d8a51e04bcdb45931c89f7ec9d9787364eac5ac8334d3ebc3c581a0fffa1363eb170ddd51b7f0da49d316552629d4689e2b16be587d47a1fc8ff8b8d17ad031ce45cb3a8f95160428afd7fbcabb4b407e"
+  "b8fe6c3923a44bbe7c01812cf721ad1cded46de9839097db7240a4a4b7b3671fcb79e64eccc0e578825ad07dccff7221b8084674f743248ee03590e6813a264c3c2852bb91c300cb88d0658b1b532ea371644897a20df94e3819ef46a9deacd8a8fa763fe39c343ff9dcbbc7c70b4f1d8a51e04bcdb45931c89f7ec9d9787364eac5ac8334d3ebc3c581a0fffa1363eb170ddd51b7f0da49d316552629d4689e2b16be587d47a1fc8ff8b8d17ad031ce45cb3a8f95160428afd7fbcabb4b407e",
 );
 const mask128 = (n(1) << n(128)) - n(1);
 const mask64 = (n(1) << n(64)) - n(1);
@@ -40,7 +40,7 @@ function getView(buf: Uint8Array, offset = 0): Uint8Array {
   return new Uint8Array(
     buf.buffer,
     buf.byteOffset + offset,
-    buf.length - offset
+    buf.length - offset,
   );
 }
 
@@ -93,7 +93,7 @@ function rotl32(a: bigint, b: bigint) {
 function XXH3_accumulate_512(
   acc: BigUint64Array,
   data: Uint8Array,
-  key: Uint8Array
+  key: Uint8Array,
 ) {
   for (let i = 0; i < ACC_NB; i++) {
     const data_val = readBigUInt64LE(data, i * 8);
@@ -108,13 +108,13 @@ function XXH3_accumulate(
   acc: BigUint64Array,
   data: Uint8Array,
   key: Uint8Array,
-  nbStripes: number
+  nbStripes: number,
 ) {
   for (let n = 0; n < nbStripes; n++) {
     XXH3_accumulate_512(
       acc,
       getView(data, n * STRIPE_LEN),
-      getView(key, n * 8)
+      getView(key, n * 8),
     );
   }
   return acc;
@@ -135,7 +135,7 @@ function XXH3_scrambleAcc(acc: BigUint64Array, key: Uint8Array) {
 function XXH3_mix2Accs(acc: BigUint64Array, key: Uint8Array) {
   return XXH3_mul128_fold64(
     acc[0] ^ readBigUInt64LE(key, 0),
-    acc[1] ^ readBigUInt64LE(key, _U64)
+    acc[1] ^ readBigUInt64LE(key, _U64),
   );
 }
 
@@ -157,9 +157,9 @@ function XXH3_hashLong(
   f_acc: (
     acc: BigUint64Array,
     data: Uint8Array,
-    key: Uint8Array
+    key: Uint8Array,
   ) => BigUint64Array,
-  f_scramble: (acc: BigUint64Array, key: Uint8Array) => BigUint64Array
+  f_scramble: (acc: BigUint64Array, key: Uint8Array) => BigUint64Array,
 ) {
   const nbStripesPerBlock = Math.floor((secret.byteLength - STRIPE_LEN) / 8);
   const block_len = STRIPE_LEN * nbStripesPerBlock;
@@ -170,7 +170,7 @@ function XXH3_hashLong(
       acc,
       getView(data, n * block_len),
       secret,
-      nbStripesPerBlock
+      nbStripesPerBlock,
     );
     acc = f_scramble(acc, getView(secret, secret.byteLength - STRIPE_LEN));
   }
@@ -178,20 +178,20 @@ function XXH3_hashLong(
   {
     // Partial block
     const nbStripes = Math.floor(
-      (data.byteLength - 1 - block_len * nb_blocks) / STRIPE_LEN
+      (data.byteLength - 1 - block_len * nb_blocks) / STRIPE_LEN,
     );
     acc = XXH3_accumulate(
       acc,
       getView(data, nb_blocks * block_len),
       secret,
-      nbStripes
+      nbStripes,
     );
 
     // Last Stripe
     acc = f_acc(
       acc,
       getView(data, data.byteLength - STRIPE_LEN),
-      getView(secret, secret.byteLength - STRIPE_LEN - 7)
+      getView(secret, secret.byteLength - STRIPE_LEN - 7),
     );
   }
   return acc;
@@ -200,7 +200,7 @@ function XXH3_hashLong(
 function XXH3_hashLong_128b(
   data: Uint8Array,
   secret: Uint8Array,
-  seed: bigint
+  seed: bigint,
 ) {
   let acc = new BigUint64Array([
     PRIME32_3,
@@ -222,12 +222,12 @@ function XXH3_hashLong_128b(
     const low64 = XXH3_mergeAccs(
       acc,
       getView(secret, 11),
-      (n(data.byteLength) * PRIME64_1) & mask64
+      (n(data.byteLength) * PRIME64_1) & mask64,
     );
     const high64 = XXH3_mergeAccs(
       acc,
       getView(secret, secret.byteLength - STRIPE_LEN - 11),
-      ~(n(data.byteLength) * PRIME64_2) & mask64
+      ~(n(data.byteLength) * PRIME64_2) & mask64,
     );
     return (high64 << n(64)) | low64;
   }
@@ -241,7 +241,7 @@ function XXH3_mul128_fold64(a: bigint, b: bigint) {
 function XXH3_mix16B(data: Uint8Array, key: Uint8Array, seed: bigint) {
   return XXH3_mul128_fold64(
     (readBigUInt64LE(data, 0) ^ (readBigUInt64LE(key, 0) + seed)) & mask64,
-    (readBigUInt64LE(data, 8) ^ (readBigUInt64LE(key, 8) - seed)) & mask64
+    (readBigUInt64LE(data, 8) ^ (readBigUInt64LE(key, 8) - seed)) & mask64,
   );
 }
 
@@ -250,7 +250,7 @@ function XXH3_mix32B(
   data1: Uint8Array,
   data2: Uint8Array,
   key: Uint8Array,
-  seed: bigint
+  seed: bigint,
 ) {
   let accl = acc & mask64;
   let acch = (acc >> n(64)) & mask64;
@@ -322,7 +322,7 @@ function XXH3_len_4to8_128b(data: Uint8Array, key32: Uint8Array, seed: bigint) {
     return (
       xorshift64(
         (xorshift64(m128 & mask64, n(35)) * PRIME_MX2) & mask64,
-        n(28)
+        n(28),
       ) |
       (XXH3_avalanche(m128 >> n(64)) << n(64))
     );
@@ -332,7 +332,7 @@ function XXH3_len_4to8_128b(data: Uint8Array, key32: Uint8Array, seed: bigint) {
 function XXH3_len_9to16_128b(
   data: Uint8Array,
   key64: Uint8Array,
-  seed: bigint
+  seed: bigint,
 ) {
   const len = data.byteLength;
   assert(len >= 9 && len <= 16);
@@ -373,10 +373,10 @@ function XXH3_len_0to16_128b(data: Uint8Array, seed: bigint) {
   if (len > 0) return XXH3_len_1to3_128b(data, kkey, seed);
   return (
     XXH3_avalanche64(
-      seed ^ readBigUInt64LE(kkey, 64) ^ readBigUInt64LE(kkey, 72)
+      seed ^ readBigUInt64LE(kkey, 64) ^ readBigUInt64LE(kkey, 72),
     ) |
     (XXH3_avalanche64(
-      seed ^ readBigUInt64LE(kkey, 80) ^ readBigUInt64LE(kkey, 88)
+      seed ^ readBigUInt64LE(kkey, 80) ^ readBigUInt64LE(kkey, 88),
     ) <<
       n(64))
   );
@@ -390,7 +390,7 @@ function inv64(x: bigint) {
 function XXH3_len_17to128_128b(
   data: Uint8Array,
   secret: Uint8Array,
-  seed: bigint
+  seed: bigint,
 ) {
   let acc = (n(data.byteLength) * PRIME64_1) & mask64;
   let i = n(data.byteLength - 1) / n(32);
@@ -401,7 +401,7 @@ function XXH3_len_17to128_128b(
       getView(data, 16 * ni),
       getView(data, data.byteLength - 16 * (ni + 1)),
       getView(secret, 32 * ni),
-      seed
+      seed,
     );
     i--;
   }
@@ -421,7 +421,7 @@ function XXH3_len_17to128_128b(
 function XXH3_len_129to240_128b(
   data: Uint8Array,
   secret: Uint8Array,
-  seed: bigint
+  seed: bigint,
 ) {
   let acc = (n(data.byteLength) * PRIME64_1) & mask64;
   for (let i = 32; i < 160; i += 32) {
@@ -430,7 +430,7 @@ function XXH3_len_129to240_128b(
       getView(data, i - 32),
       getView(data, i - 16),
       getView(secret, i - 32),
-      seed
+      seed,
     );
   }
   acc = XXH3_avalanche(acc & mask64) | (XXH3_avalanche(acc >> n(64)) << n(64));
@@ -440,7 +440,7 @@ function XXH3_len_129to240_128b(
       getView(data, i - 32),
       getView(data, i - 16),
       getView(secret, 3 + i - 160),
-      seed
+      seed,
     );
   }
   acc = XXH3_mix32B(
@@ -448,7 +448,7 @@ function XXH3_len_129to240_128b(
     getView(data, data.byteLength - 16),
     getView(data, data.byteLength - 32),
     getView(secret, 136 - 17 - 16),
-    inv64(seed)
+    inv64(seed),
   );
 
   let h128l = (acc + (acc >> n(64))) & mask64;

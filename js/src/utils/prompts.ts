@@ -1,22 +1,12 @@
-import { parse as parseVersion } from "semver";
 import { getInvalidPromptIdentifierMsg } from "./error.js";
 
-export function isVersionGreaterOrEqual(
-  current_version: string,
-  target_version: string
-): boolean {
-  const current = parseVersion(current_version);
-  const target = parseVersion(target_version);
-
-  if (!current || !target) {
-    throw new Error("Invalid version format.");
-  }
-
-  return current.compare(target) >= 0;
-}
-
-export function parsePromptIdentifier(
-  identifier: string
+/**
+ * Parse a hub repo identifier (owner/name:hash, name, etc.).
+ *
+ * Prompts, agents, and skills share the same identifier grammar on Hub.
+ */
+export function parseHubIdentifier(
+  identifier: string,
 ): [string, string, string] {
   if (
     !identifier ||

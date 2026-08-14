@@ -67,7 +67,7 @@ ls.describe(
         ls.logOutputs({
           bar: "perfect",
         });
-      }
+      },
     );
 
     ls.test(
@@ -91,7 +91,7 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .toBeGreaterThanOrEqual(0.5);
         return res;
-      }
+      },
     );
 
     ls.test(
@@ -113,7 +113,7 @@ ls.describe(
         });
         await nested();
         return res;
-      }
+      },
     );
 
     ls.test(
@@ -133,7 +133,7 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .not.toBeGreaterThanOrEqual(0.5);
         return res;
-      }
+      },
     );
 
     ls.test.concurrent.each(
@@ -159,7 +159,7 @@ ls.describe(
           },
         },
       ],
-      { repetitions: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } },
     )(
       "Counts to ten",
       async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
@@ -176,7 +176,7 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .not.toBeGreaterThanOrEqual(0.5);
         ls.logOutputs(res);
-      }
+      },
     );
 
     test("Absolute closeness custom matcher", async () => {
@@ -210,7 +210,7 @@ ls.describe(
     metadata: {
       model: "test-model",
     },
-  }
+  },
 );
 
 const scoreMarketingCopyAgent = async () => {
@@ -245,7 +245,7 @@ ls.describe("Test Tweet", () => {
         content: result,
         query_type: "tweet",
       });
-    }
+    },
   );
 });
 
@@ -278,7 +278,7 @@ ls.describe("Test Linkedin Post", () => {
         content: result,
         query_type: "linkedin post",
       });
-    }
+    },
   );
 });
 
@@ -288,6 +288,6 @@ test("object hash should work on undefined values", async () => {
       foo: "bar",
       baz: undefined,
       qux: null,
-    })
+    }),
   ).toEqual("88d67a35803b03a787d9fce25ebed027807c68ce0c3dee9f818fc58a43dd10af");
 });

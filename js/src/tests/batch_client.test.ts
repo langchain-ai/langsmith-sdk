@@ -3,13 +3,13 @@
 /* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { jest, describe, expect, afterEach, it } from "@jest/globals";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
-import { RunCreate } from "../schemas.js";
+import type { KVMap, RunCreate } from "../schemas.js";
 
 const parseMockRequestBody = async (
-  body: string | Uint8Array | ReadableStream
+  body: string | Uint8Array | ReadableStream,
 ) => {
   if (typeof body === "string") {
     return JSON.parse(body);
@@ -22,7 +22,7 @@ const parseMockRequestBody = async (
     const [stream1, stream2] = body.tee();
     try {
       rawMultipart = await new Response(
-        stream1.pipeThrough(new DecompressionStream("gzip"))
+        stream1.pipeThrough(new DecompressionStream("gzip")),
       ).text();
     } catch {
       // If gzip decompression fails, try reading as plain text
@@ -65,7 +65,7 @@ const parseMockRequestBody = async (
     }
     if (!type) {
       reconstructedBody[method as keyof typeof reconstructedBody].push(
-        parsedValue
+        parsedValue,
       );
     } else {
       for (const item of reconstructedBody[method]) {
@@ -107,7 +107,7 @@ describe.each(ENDPOINT_TYPES)(
 
     const createClient = (
       config: any,
-      mockFetch?: jest.MockedFunction<typeof fetch>
+      mockFetch?: jest.MockedFunction<typeof fetch>,
     ) => {
       const client = new Client({
         ...config,
@@ -157,7 +157,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -169,7 +169,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -212,7 +212,7 @@ describe.each(ENDPOINT_TYPES)(
           hideInputs: () => ({ hidden: "inputs" }),
           hideOutputs: () => ({ hidden: "outputs" }),
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -224,7 +224,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -271,7 +271,7 @@ describe.each(ENDPOINT_TYPES)(
           hideInputs: async () => ({ hidden: "inputs" }),
           hideOutputs: async () => ({ hidden: "outputs" }),
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -283,7 +283,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -319,6 +319,76 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
+    it.each([
+      [true, {}], // should hide metadata
+      [false, { random: 123 }], // should keep metadata
+      [undefined, { random: 123 }], // should keep metadata
+      [
+        function syncFn(metadata: KVMap) {
+          return { ...metadata, hidden: "metadata" };
+        },
+        { random: 123, hidden: "metadata" },
+      ], // should hide metadata
+      [
+        async function asyncFn(metadata: KVMap) {
+          return { ...metadata, hidden: "metadata" };
+        },
+        { random: 123, hidden: "metadata" },
+      ], // should hide metadata
+    ])("should hide metadata: %p", async (hideMetadata, expectedMetadata) => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        { apiKey: "test-api-key", autoBatchTracing: true, hideMetadata },
+        mockFetch,
+      );
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
+      });
+      const projectName = "__test_batch";
+
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId,
+      );
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        outputs: { text: "hello world" },
+        extra: { metadata: { random: 123 } },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+
+      const reqBody = await parseMockRequestBody(calledRequestParam?.body);
+      expect(reqBody).toEqual({
+        post: [
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: { text: "hello world" },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+            extra: { metadata: expectedMetadata, runtime: expect.any(Object) },
+          }),
+        ],
+        patch: [],
+      });
+      expect(reqBody.post[0].extra.metadata).toEqual(expectedMetadata);
+    });
+
     it("should not throw an error if fetch fails for batch requests", async () => {
       const calls: any[] = [];
       const mockFetch = jest.fn((...args: any[]) => {
@@ -331,7 +401,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -343,7 +413,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
 
       await client.createRun({
@@ -368,7 +438,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -380,7 +450,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -425,6 +495,182 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
+    it("should preserve workspace override for auto-batched create and update", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch,
+      );
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
+      });
+
+      const projectName = "__test_batch";
+      const workspaceId = "override-workspace-id";
+      const createRunId = uuidv4();
+      const updateRunId = uuidv4();
+      const { dottedOrder: createDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        createRunId,
+      );
+      const { dottedOrder: updateDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        updateRunId,
+      );
+
+      await client.createRun(
+        {
+          id: createRunId,
+          project_name: projectName,
+          name: "test_create_run",
+          run_type: "llm",
+          inputs: { text: "hello world" },
+          trace_id: createRunId,
+          dotted_order: createDottedOrder,
+        },
+        { workspaceId },
+      );
+
+      await client.updateRun(
+        updateRunId,
+        {
+          outputs: { output: ["Hi"] },
+          dotted_order: updateDottedOrder,
+          trace_id: updateRunId,
+        },
+        { workspaceId },
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calledRequestParam.headers["x-tenant-id"]).toBe(workspaceId);
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+        post: [
+          expect.objectContaining({
+            id: createRunId,
+            trace_id: createRunId,
+            dotted_order: createDottedOrder,
+          }),
+        ],
+        patch: [
+          expect.objectContaining({
+            id: updateRunId,
+            outputs: {
+              output: ["Hi"],
+            },
+            trace_id: updateRunId,
+            dotted_order: updateDottedOrder,
+          }),
+        ],
+      });
+    });
+
+    it("should split runs with different workspaces into separate batches", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          workspaceId: "default-workspace-id",
+          autoBatchTracing: true,
+        },
+        mockFetch,
+      );
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
+      });
+
+      const projectName = "__test_batch";
+      const overrideWorkspaceId = "override-workspace-id";
+      const defaultRunId = uuidv4();
+      const overrideRunId = uuidv4();
+      const { dottedOrder: defaultDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        defaultRunId,
+      );
+      const { dottedOrder: overrideDottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        overrideRunId,
+      );
+
+      // Uses the client's default workspace (no override).
+      await client.createRun({
+        id: defaultRunId,
+        project_name: projectName,
+        name: "default_workspace_run",
+        run_type: "llm",
+        inputs: { text: "default" },
+        trace_id: defaultRunId,
+        dotted_order: defaultDottedOrder,
+      });
+
+      // Overrides the workspace for this run only.
+      await client.createRun(
+        {
+          id: overrideRunId,
+          project_name: projectName,
+          name: "override_workspace_run",
+          run_type: "llm",
+          inputs: { text: "override" },
+          trace_id: overrideRunId,
+          dotted_order: overrideDottedOrder,
+        },
+        { workspaceId: overrideWorkspaceId },
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      // The two runs must land in two separate destination batches keyed by
+      // workspace, each carrying the correct x-tenant-id header.
+      expect(calls.length).toBe(2);
+
+      const callsByTenant: Record<string, any> = {};
+      for (const [url, requestParam] of calls) {
+        expect(url).toBe(expectedTraceURL);
+        callsByTenant[requestParam.headers["x-tenant-id"]] = requestParam;
+      }
+
+      expect(Object.keys(callsByTenant).sort()).toEqual(
+        ["default-workspace-id", overrideWorkspaceId].sort(),
+      );
+      expect(
+        await parseMockRequestBody(callsByTenant["default-workspace-id"].body),
+      ).toEqual({
+        post: [
+          expect.objectContaining({
+            id: defaultRunId,
+            trace_id: defaultRunId,
+            dotted_order: defaultDottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+      expect(
+        await parseMockRequestBody(callsByTenant[overrideWorkspaceId].body),
+      ).toEqual({
+        post: [
+          expect.objectContaining({
+            id: overrideRunId,
+            trace_id: overrideRunId,
+            dotted_order: overrideDottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+    });
+
     it("server info fetch should retry even if initial call fails", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
@@ -434,7 +680,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       let serverInfoFailedOnce = false;
       jest
@@ -453,7 +699,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -510,7 +756,7 @@ describe.each(ENDPOINT_TYPES)(
           autoBatchTracing: true,
           blockOnRootRunFinalization: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -522,7 +768,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -550,7 +796,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId2 = uuidv4();
       const { dottedOrder: dottedOrder2 } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId2
+        runId2,
       );
 
       // Will send in a third batch, even though it's triggered around the same time as the update
@@ -630,7 +876,7 @@ describe.each(ENDPOINT_TYPES)(
           autoBatchTracing: true,
           blockOnRootRunFinalization: false,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -642,7 +888,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -672,7 +918,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId2 = uuidv4();
       const { dottedOrder: dottedOrder2 } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId2
+        runId2,
       );
 
       // Should aggregate on the second batch
@@ -750,7 +996,7 @@ describe.each(ENDPOINT_TYPES)(
           batchSizeBytesLimit: 10000,
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -764,7 +1010,7 @@ describe.each(ENDPOINT_TYPES)(
           const runId = uuidv4();
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
-            runId
+            runId,
           );
           const params = mergeRuntimeEnvIntoRun({
             id: runId,
@@ -781,7 +1027,7 @@ describe.each(ENDPOINT_TYPES)(
           params.inputs.text = params.inputs.text + "x".repeat(padCount);
           await client.createRun(params);
           return runId;
-        })
+        }),
       );
 
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -792,10 +1038,10 @@ describe.each(ENDPOINT_TYPES)(
       expect(calls[1][0]).toBe(expectedTraceURL);
 
       const firstBatchBody = await parseMockRequestBody(
-        calledRequestParam?.body
+        calledRequestParam?.body,
       );
       const secondBatchBody = await parseMockRequestBody(
-        calledRequestParam2?.body
+        calledRequestParam2?.body,
       );
 
       const initialBatchBody =
@@ -814,7 +1060,7 @@ describe.each(ENDPOINT_TYPES)(
               text: expect.stringContaining("hello world " + i),
             },
             trace_id: runId,
-          })
+          }),
         ),
         patch: [],
       });
@@ -828,7 +1074,7 @@ describe.each(ENDPOINT_TYPES)(
               text: expect.stringContaining("hello world " + (i + 10)),
             },
             trace_id: runId,
-          })
+          }),
         ),
         patch: [],
       });
@@ -845,7 +1091,7 @@ describe.each(ENDPOINT_TYPES)(
           batchSizeLimit: 5,
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -859,7 +1105,7 @@ describe.each(ENDPOINT_TYPES)(
           const runId = uuidv4();
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
-            runId
+            runId,
           );
           const params = mergeRuntimeEnvIntoRun({
             id: runId,
@@ -872,7 +1118,7 @@ describe.each(ENDPOINT_TYPES)(
           } as RunCreate);
           await client.createRun(params);
           return runId;
-        })
+        }),
       );
 
       await client.awaitPendingTraceBatches();
@@ -885,10 +1131,10 @@ describe.each(ENDPOINT_TYPES)(
       expect(calls[1][0]).toBe(expectedTraceURL);
 
       const firstBatchBody = await parseMockRequestBody(
-        calledRequestParam?.body
+        calledRequestParam?.body,
       );
       const secondBatchBody = await parseMockRequestBody(
-        calledRequestParam2?.body
+        calledRequestParam2?.body,
       );
 
       const initialBatchBody =
@@ -907,7 +1153,7 @@ describe.each(ENDPOINT_TYPES)(
               text: expect.stringContaining("hello world " + i),
             },
             trace_id: runId,
-          })
+          }),
         ),
         patch: [],
       });
@@ -921,7 +1167,7 @@ describe.each(ENDPOINT_TYPES)(
               text: expect.stringContaining("hello world " + (i + 5)),
             },
             trace_id: runId,
-          })
+          }),
         ),
         patch: [],
       });
@@ -937,7 +1183,7 @@ describe.each(ENDPOINT_TYPES)(
           autoBatchTracing: true,
           tracingSamplingRate: 0.5,
         },
-        mockFetch
+        mockFetch,
       );
       let counter = 0;
       jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
@@ -956,7 +1202,7 @@ describe.each(ENDPOINT_TYPES)(
           const runId = uuidv4();
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
-            runId
+            runId,
           );
           const params = mergeRuntimeEnvIntoRun({
             id: runId,
@@ -969,7 +1215,7 @@ describe.each(ENDPOINT_TYPES)(
           } as RunCreate);
           await client.createRun(params);
           return params;
-        })
+        }),
       );
 
       await client.awaitPendingTraceBatches();
@@ -983,7 +1229,7 @@ describe.each(ENDPOINT_TYPES)(
           const runId = uuidv4();
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
-            runId
+            runId,
           );
           const params = mergeRuntimeEnvIntoRun({
             id: runId,
@@ -1002,7 +1248,7 @@ describe.each(ENDPOINT_TYPES)(
             end_time: Math.floor(new Date().getTime() / 1000),
           });
           return params;
-        })
+        }),
       );
 
       await client.awaitPendingTraceBatches();
@@ -1075,7 +1321,7 @@ describe.each(ENDPOINT_TYPES)(
           autoBatchTracing: true,
           manualFlushMode: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1089,7 +1335,7 @@ describe.each(ENDPOINT_TYPES)(
           const runId = uuidv4();
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
-            runId
+            runId,
           );
           const params = mergeRuntimeEnvIntoRun({
             id: runId,
@@ -1106,7 +1352,7 @@ describe.each(ENDPOINT_TYPES)(
           params.inputs.text = params.inputs.text + "x".repeat(padCount);
           await client.createRun(params);
           return runId;
-        })
+        }),
       );
 
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -1123,10 +1369,10 @@ describe.each(ENDPOINT_TYPES)(
       expect(calls[1][0]).toBe(expectedTraceURL);
 
       const firstBatchBody = await parseMockRequestBody(
-        calledRequestParam?.body
+        calledRequestParam?.body,
       );
       const secondBatchBody = await parseMockRequestBody(
-        calledRequestParam2?.body
+        calledRequestParam2?.body,
       );
 
       const initialBatchBody =
@@ -1145,7 +1391,7 @@ describe.each(ENDPOINT_TYPES)(
               text: expect.stringContaining("hello world " + i),
             },
             trace_id: runId,
-          })
+          }),
         ),
         patch: [],
       });
@@ -1159,7 +1405,7 @@ describe.each(ENDPOINT_TYPES)(
               text: expect.stringContaining("hello world " + (i + 10)),
             },
             trace_id: runId,
-          })
+          }),
         ),
         patch: [],
       });
@@ -1175,7 +1421,7 @@ describe.each(ENDPOINT_TYPES)(
           batchSizeBytesLimit: 1,
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1191,7 +1437,7 @@ describe.each(ENDPOINT_TYPES)(
           const runId = uuidv4();
           const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
-            runId
+            runId,
           );
           await client.createRun({
             id: runId,
@@ -1203,7 +1449,7 @@ describe.each(ENDPOINT_TYPES)(
             dotted_order: dottedOrder,
           });
           return runId;
-        })
+        }),
       );
 
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -1287,7 +1533,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest
         .spyOn(client as any, "_ensureServerInfo")
@@ -1297,7 +1543,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -1314,7 +1560,7 @@ describe.each(ENDPOINT_TYPES)(
       const calledRequestParam: any = calls[0][1];
 
       expect(
-        await parseMockRequestBody(calledRequestParam?.body)
+        await parseMockRequestBody(calledRequestParam?.body),
       ).toMatchObject({
         post: [
           {
@@ -1333,7 +1579,7 @@ describe.each(ENDPOINT_TYPES)(
       });
       // When server info is unavailable, client defaults to multipart endpoint (the new default)
       expect(calls[0][0]).toBe(
-        "https://api.smith.langchain.com/runs/multipart"
+        "https://api.smith.langchain.com/runs/multipart",
       );
 
       expect(calls.length).toBe(1);
@@ -1348,7 +1594,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1364,7 +1610,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -1458,7 +1704,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
 
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
@@ -1471,7 +1717,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
 
       await client.createRun({
@@ -1522,7 +1768,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
 
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
@@ -1535,7 +1781,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
 
       await client.createRun({
@@ -1592,7 +1838,7 @@ describe.each(ENDPOINT_TYPES)(
           apiKey: "test-api-key",
           autoBatchTracing: true,
         },
-        mockFetch
+        mockFetch,
       );
 
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
@@ -1605,7 +1851,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
 
       await client.createRun({
@@ -1642,7 +1888,7 @@ describe.each(ENDPOINT_TYPES)(
           maxIngestMemoryBytes: 1000,
           manualFlushMode: true, // Prevent auto-flushing so we can test the limit
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1658,7 +1904,7 @@ describe.each(ENDPOINT_TYPES)(
         const runId = uuidv4();
         const { dottedOrder } = convertToDottedOrderFormat(
           new Date().getTime() / 1000,
-          runId
+          runId,
         );
         const promise = client.createRun({
           id: runId,
@@ -1678,10 +1924,10 @@ describe.each(ENDPOINT_TYPES)(
 
       // Should have warned about dropped runs
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("AutoBatchQueue size limit")
+        expect.stringContaining("AutoBatchQueue size limit"),
       );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Dropping run")
+        expect.stringContaining("Dropping run"),
       );
 
       // Clean up
@@ -1704,7 +1950,7 @@ describe.each(ENDPOINT_TYPES)(
           maxIngestMemoryBytes: 1000,
           manualFlushMode: true,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1717,7 +1963,7 @@ describe.each(ENDPOINT_TYPES)(
       const runId = uuidv4();
       const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
-        runId
+        runId,
       );
       await client.createRun({
         id: runId,
@@ -1731,7 +1977,7 @@ describe.each(ENDPOINT_TYPES)(
 
       // Should NOT have warned since the queue was empty
       expect(consoleSpy).not.toHaveBeenCalledWith(
-        expect.stringContaining("AutoBatchQueue size limit")
+        expect.stringContaining("AutoBatchQueue size limit"),
       );
 
       // The run should be in the queue
@@ -1760,7 +2006,7 @@ describe.each(ENDPOINT_TYPES)(
             json: async () => ({}),
             text: async () => "{}",
           } as Response;
-        }
+        },
       );
 
       const consoleErrorSpy = jest
@@ -1781,7 +2027,7 @@ describe.each(ENDPOINT_TYPES)(
           batchSizeBytesLimit: 500, // Small batches
           batchSizeLimit: 3, // Few items per batch
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1796,7 +2042,7 @@ describe.each(ENDPOINT_TYPES)(
         const runId = uuidv4();
         const { dottedOrder } = convertToDottedOrderFormat(
           new Date().getTime() / 1000,
-          runId
+          runId,
         );
         await client.createRun({
           id: runId,
@@ -1818,10 +2064,10 @@ describe.each(ENDPOINT_TYPES)(
       const errorCalled = consoleErrorSpy.mock.calls.some(
         (call) =>
           call[0]?.includes?.("Error exporting batch") &&
-          call[1]?.message?.includes?.("Queue size limit")
+          call[1]?.message?.includes?.("Queue size limit"),
       );
       const warnCalled = consoleWarnSpy.mock.calls.some((call) =>
-        call[0]?.includes?.("Queue size limit")
+        call[0]?.includes?.("Queue size limit"),
       );
 
       expect(errorCalled || warnCalled).toBe(true);
@@ -1846,7 +2092,7 @@ describe.each(ENDPOINT_TYPES)(
             json: async () => ({}),
             text: async () => "{}",
           } as Response;
-        }
+        },
       );
 
       const client = createClient(
@@ -1858,7 +2104,7 @@ describe.each(ENDPOINT_TYPES)(
           batchSizeBytesLimit: 500,
           batchSizeLimit: 3,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1872,7 +2118,7 @@ describe.each(ENDPOINT_TYPES)(
         const runId = uuidv4();
         const { dottedOrder } = convertToDottedOrderFormat(
           new Date().getTime() / 1000,
-          runId
+          runId,
         );
         await client.createRun({
           id: runId,
@@ -1908,7 +2154,7 @@ describe.each(ENDPOINT_TYPES)(
       const mockFetch = jest.fn(
         async (
           url: string | URL | Request,
-          init?: RequestInit
+          init?: RequestInit,
         ): Promise<Response> => {
           calls.push([url, init]);
           // Respect the abort signal from timeout
@@ -1936,7 +2182,7 @@ describe.each(ENDPOINT_TYPES)(
             json: async () => ({}),
             text: async () => "{}",
           } as Response;
-        }
+        },
       );
 
       const consoleErrorSpy = jest
@@ -1956,7 +2202,7 @@ describe.each(ENDPOINT_TYPES)(
           batchSizeBytesLimit: 500,
           batchSizeLimit: 3,
         },
-        mockFetch
+        mockFetch,
       );
       jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
         version: "foo",
@@ -1970,7 +2216,7 @@ describe.each(ENDPOINT_TYPES)(
         const runId = uuidv4();
         const { dottedOrder } = convertToDottedOrderFormat(
           new Date().getTime() / 1000,
-          runId
+          runId,
         );
         await client.createRun({
           id: runId,
@@ -1995,10 +2241,10 @@ describe.each(ENDPOINT_TYPES)(
       const errorCalled = consoleErrorSpy.mock.calls.some(
         (call) =>
           call[0]?.includes?.("Error exporting batch") &&
-          call[1]?.message?.includes?.("TimeoutError")
+          call[1]?.message?.includes?.("TimeoutError"),
       );
       const warnCalled = consoleWarnSpy.mock.calls.some((call) =>
-        call[0]?.includes?.("TimeoutError")
+        call[0]?.includes?.("TimeoutError"),
       );
 
       expect(errorCalled || warnCalled).toBe(true);
@@ -2006,5 +2252,5 @@ describe.each(ENDPOINT_TYPES)(
       consoleErrorSpy.mockRestore();
       consoleWarnSpy.mockRestore();
     });
-  }
+  },
 );

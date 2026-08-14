@@ -5,6 +5,7 @@ import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { getCurrentRunTree, withRunTree } from "../singletons/traceable.js";
 import { traceable } from "../traceable.js";
+import { computeRunIdForSecondaryReplica } from "../uuid.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
@@ -62,10 +63,10 @@ test("nested", () => {
   expect(child1.dotted_order).toBe(`${date}1Z${id}0.${date}2Z${id}1`);
   expect(child2.dotted_order).toBe(`${date}1Z${id}0.${date}3Z${id}2`);
   expect(grandchild1.dotted_order).toBe(
-    `${date}1Z${id}0.${date}2Z${id}1.${date}3Z${id}3`
+    `${date}1Z${id}0.${date}2Z${id}1.${date}3Z${id}3`,
   );
   expect(grandchild2.dotted_order).toBe(
-    `${date}1Z${id}0.${date}2Z${id}1.${date}4Z${id}4`
+    `${date}1Z${id}0.${date}2Z${id}1.${date}4Z${id}4`,
   );
   expect(child3.dotted_order).toBe(`${date}1Z${id}0.${date}5Z${id}5`);
 });
@@ -133,7 +134,7 @@ test("distributed", async () => {
         const currentRunTree = getCurrentRunTree();
         expect(currentRunTree.id).toBe("00000000-0000-0000-0000-00000000002");
         expect(currentRunTree.dotted_order).toBe(
-          "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001.20210503T000002000003Z00000000-0000-0000-0000-00000000002"
+          "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001.20210503T000002000003Z00000000-0000-0000-0000-00000000002",
         );
         return "child2";
       },
@@ -142,7 +143,7 @@ test("distributed", async () => {
         client,
         id: "00000000-0000-0000-0000-00000000002",
         start_time: Date.parse("2021-05-03T00:00:02.000Z"),
-      }
+      },
     )();
   });
 
@@ -153,7 +154,7 @@ test("distributed", async () => {
   await parent.patchRun();
   await client.awaitPendingTraceBatches();
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["parent_1:0", "child_2:1", "grandchild_traceable:2"],
   });
@@ -326,6 +327,27 @@ test("distributed tracing: _remapForProject with reroot", () => {
   expect(remappedNoParam.parent_run_id).toBeTruthy();
 });
 
+test("_remapForProject honors replica primary semantics", () => {
+  const { client } = mockClient();
+  const run = new RunTree({
+    name: "run",
+    inputs: {},
+    client,
+    project_name: "original-project",
+  });
+  const remap = (projectName: string, primary?: boolean) =>
+    (run as any)._remapForProject({ projectName, primary });
+
+  expect(remap("different-project", true).id).toBe(run.id);
+  expect(remap("original-project", false).id).toBe(
+    computeRunIdForSecondaryReplica(run.id, "original-project"),
+  );
+  expect(remap("original-project").id).toBe(run.id);
+  expect(remap("different-project").id).toBe(
+    computeRunIdForSecondaryReplica(run.id, "different-project"),
+  );
+});
+
 test("distributed tracing: fromHeaders sets distributedParentId correctly", () => {
   const { client } = mockClient();
 
@@ -414,7 +436,7 @@ test("_sliceParentId handles empty dotted order segments", () => {
   const runDict = (singleRun as any)._convertToCreate(
     singleRun,
     undefined,
-    true
+    true,
   );
 
   // Try to slice at the run's own ID (should result in empty segments)
@@ -585,11 +607,12 @@ test("fromHeaders filters replica credentials", () => {
       apiKey: "injected-key",
       apiUrl: "https://evil.com/exfil",
       projectName: "legit-project",
+      primary: true,
       updates: { reroot: true },
     },
   ];
   const baggage = `langsmith-replicas=${encodeURIComponent(
-    JSON.stringify(replicas)
+    JSON.stringify(replicas),
   )}`;
   const headers = {
     "langsmith-trace":
@@ -607,5 +630,23 @@ test("fromHeaders filters replica credentials", () => {
   expect(replica.apiKey).toBeUndefined();
   expect(replica.apiUrl).toBeUndefined();
   expect(replica.projectName).toBe("legit-project");
+  expect(replica.primary).toBe(true);
   expect(replica.updates).toEqual({ reroot: true });
+});
+
+test("fromHeaders drops a non-boolean replica primary value", () => {
+  const baggage = `langsmith-replicas=${encodeURIComponent(
+    JSON.stringify([{ projectName: "replica-project", primary: "false" }]),
+  )}`;
+  const parsed = RunTree.fromHeaders({
+    "langsmith-trace":
+      "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+    baggage,
+  });
+
+  expect(parsed).toBeDefined();
+  const replica = parsed!.replicas![0];
+  expect(replica.primary).toBeUndefined();
+  const remapped = (parsed as any)._remapForProject(replica);
+  expect(remapped.id).not.toBe(parsed!.id);
 });

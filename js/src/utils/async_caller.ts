@@ -106,8 +106,8 @@ export class AsyncCaller {
       return Promise.reject(
         new Error(
           `Queue size limit (${this.maxQueueSizeBytes} bytes) exceeded. ` +
-            `Current queue size: ${this.queueSizeBytes} bytes, attempted addition: ${sizeBytes} bytes.`
-        )
+            `Current queue size: ${this.queueSizeBytes} bytes, attempted addition: ${sizeBytes} bytes.`,
+        ),
       );
     }
 
@@ -179,9 +179,9 @@ export class AsyncCaller {
             },
             retries: this.maxRetries,
             randomize: true,
-          }
+          },
         ),
-      { throwOnTimeout: true }
+      { throwOnTimeout: true },
     );
 
     // Decrement queue size when the call completes (success or failure)

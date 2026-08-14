@@ -2,37 +2,53 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import io
+import os
+import posixpath
+import shlex
+import tarfile
+import uuid
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional, Union
+from urllib.parse import quote
 
 import httpx
 
 from langsmith import utils as ls_utils
+from langsmith._openapi_client import Langsmith
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
-    ResourceInUseError,
     ResourceNameConflictError,
     ResourceNotFoundError,
     ResourceTimeoutError,
     SandboxAPIError,
-    ValidationError,
 )
 from langsmith.sandbox._helpers import (
     handle_client_http_error,
-    handle_pool_error,
     handle_sandbox_creation_error,
-    handle_volume_creation_error,
-    parse_error_response,
+    merge_headers,
+    validate_service_params,
     validate_ttl,
 )
 from langsmith.sandbox._models import (
-    Pool,
     ResourceStatus,
-    SandboxTemplate,
-    Volume,
-    VolumeMountSpec,
+    ServiceURL,
+    Snapshot,
 )
+from langsmith.sandbox._mounts import (
+    SandboxMountConfig,
+    validate_mount_config_proxy_config,
+)
+from langsmith.sandbox._proxy_config import SandboxProxyConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._transport import RetryTransport
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.sandboxes.registries import (
+        RegistriesResource,
+    )
+    from langsmith.sandbox._async_client import AsyncSandboxClient
 
 
 def _get_default_api_endpoint() -> str:
@@ -49,10 +65,117 @@ def _get_default_api_key() -> Optional[str]:
     return ls_utils.get_env_var("API_KEY")
 
 
+RequestHeaders = Optional[Mapping[str, str]]
+
+
+def _quote_path_segment(value: str) -> str:
+    """Quote a user-controlled value for use as a single URL path segment."""
+    if not value:
+        raise ValueError("URL path segment must be a non-empty string")
+    return quote(value, safe="")
+
+
+def _make_docker_context_tar(context_path: Path) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for path in sorted(context_path.rglob("*")):
+            rel = path.relative_to(context_path)
+            if rel.parts and rel.parts[0] == ".git":
+                continue
+            tar.add(path, arcname=rel.as_posix(), recursive=False)
+    return buf.getvalue()
+
+
+def _resolve_dockerfile_context(
+    dockerfile: Union[str, os.PathLike[str]],
+    context: Union[str, os.PathLike[str]],
+) -> tuple[Path, str]:
+    context_path = Path(context).expanduser().resolve()
+    dockerfile_path = Path(dockerfile).expanduser()
+    if not dockerfile_path.is_absolute():
+        dockerfile_path = context_path / dockerfile_path
+    dockerfile_path = dockerfile_path.resolve()
+    if not context_path.is_dir():
+        raise ValueError(f"context must be a directory: {context_path}")
+    if not dockerfile_path.is_file():
+        raise ValueError(f"dockerfile must be a file: {dockerfile_path}")
+    try:
+        dockerfile_rel = dockerfile_path.relative_to(context_path)
+    except ValueError as exc:
+        raise ValueError("dockerfile must be inside context") from exc
+    return context_path, dockerfile_rel.as_posix()
+
+
+def _make_dockerfile_build_command(
+    *,
+    remote_context: str,
+    dockerfile_rel: str,
+    image_ref: str,
+    buildkit_root: str,
+    buildkit_run: str,
+    build_args: Optional[Mapping[str, str]],
+    target: Optional[str],
+) -> str:
+    dockerfile_remote = posixpath.join(remote_context, dockerfile_rel)
+    dockerfile_dir = posixpath.dirname(dockerfile_remote)
+    dockerfile_name = posixpath.basename(dockerfile_remote)
+    socket_path = posixpath.join(buildkit_run, "buildkitd.sock")
+    buildctl = [
+        "buildctl",
+        "--addr",
+        "unix://" + socket_path,
+        "build",
+        "--progress=plain",
+        "--frontend",
+        "dockerfile.v0",
+        "--local",
+        "context=" + remote_context,
+        "--local",
+        "dockerfile=" + dockerfile_dir,
+        "--opt",
+        "filename=" + dockerfile_name,
+        "--output",
+        "type=docker,name=" + image_ref,
+    ]
+    if target is not None:
+        buildctl.extend(["--opt", "target=" + target])
+    for key, value in sorted((build_args or {}).items()):
+        buildctl.extend(["--opt", f"build-arg:{key}={value}"])
+    return (
+        "set -euo pipefail\n"
+        f"mkdir -p {shlex.quote(buildkit_root)} {shlex.quote(buildkit_run)}\n"
+        f"buildkitd --addr {shlex.quote('unix://' + socket_path)} "
+        f"--root {shlex.quote(buildkit_root)} "
+        "--oci-worker=true --containerd-worker=false "
+        "--oci-worker-snapshotter=native "
+        "--oci-worker-binary buildkit-runc "
+        f"> {shlex.quote(buildkit_run + '/buildkitd.log')} 2>&1 &\n"
+        "buildkitd_pid=$!\n"
+        'cleanup() { kill "$buildkitd_pid" >/dev/null 2>&1 || true; }\n'
+        "trap cleanup EXIT\n"
+        "for i in $(seq 1 300); do\n"
+        f"  if buildctl --addr {shlex.quote('unix://' + socket_path)} "
+        "debug workers >/dev/null 2>&1; then break; fi\n"
+        '  if ! kill -0 "$buildkitd_pid" >/dev/null 2>&1; then '
+        f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
+        '  if [ "$i" = 300 ]; then '
+        f"cat {shlex.quote(buildkit_run + '/buildkitd.log')}; exit 1; fi\n"
+        "  sleep 0.1\n"
+        "done\n"
+        "for i in $(seq 1 300); do\n"
+        "  if docker info >/dev/null 2>&1; then break; fi\n"
+        '  if [ "$i" = 300 ]; then docker info; exit 1; fi\n'
+        "  sleep 0.1\n"
+        "done\n"
+        f"{shlex.join(buildctl)} | docker load\n"
+        f"rm -rf {shlex.quote(buildkit_root)} || true\n"
+    )
+
+
 class SandboxClient:
     """Client for interacting with the Sandbox Server API.
 
-    This client provides a simple interface for managing sandboxes and templates.
+    This client provides a simple interface for managing sandboxes and snapshots.
 
     Example:
         # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
@@ -64,8 +187,8 @@ class SandboxClient:
             api_key="your-api-key",
         )
 
-        # Create a sandbox and run commands
-        with client.sandbox(template_name="python-sandbox") as sandbox:
+        # Create a sandbox with the default runtime and run commands
+        with client.sandbox() as sandbox:
             result = sandbox.run("python --version")
             print(result.stdout)
     """
@@ -77,6 +200,7 @@ class SandboxClient:
         timeout: float = 10.0,
         api_key: Optional[str] = None,
         max_retries: int = 3,
+        headers: Optional[RequestHeaders] = None,
     ):
         """Initialize the SandboxClient.
 
@@ -89,25 +213,113 @@ class SandboxClient:
             max_retries: Maximum number of retries for transient errors (502, 503,
                          504), rate limits (429), and connection failures. Set to 0
                          to disable retries. Default: 3.
+            headers: Optional default headers attached to every request on this
+                     client, including the data-plane ``/execute`` HTTP endpoint
+                     and the ``/execute/ws`` WebSocket upgrade. Use this to pass
+                     additional auth headers (e.g. ``X-Service-Key``).
         """
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
-        headers: dict[str, str] = {}
+        self._timeout = timeout
+        self._max_retries = max_retries
+        self._default_headers: dict[str, str] = dict(headers) if headers else {}
+        client_headers: dict[str, str] = {}
         if resolved_api_key:
-            headers["X-Api-Key"] = resolved_api_key
+            client_headers["X-Api-Key"] = resolved_api_key
+        if self._default_headers:
+            client_headers = merge_headers(client_headers, self._default_headers)
         transport = RetryTransport(max_retries=max_retries)
-        self._http = httpx.Client(transport=transport, timeout=timeout, headers=headers)
+        self._http = httpx.Client(
+            transport=transport, timeout=timeout, headers=client_headers
+        )
+        self._registries_client: Optional[Langsmith] = None
+
+    def _api_root(self) -> str:
+        """Return the API root URL, without the ``/v2/sandboxes`` suffix."""
+        suffix = "/v2/sandboxes"
+        if self._base_url.endswith(suffix):
+            return self._base_url[: -len(suffix)]
+        return self._base_url
+
+    @property
+    def registries(self) -> RegistriesResource:
+        """Manage sandbox image registries: create, list, retrieve, update, delete.
+
+        A registry stores credentials for pulling private images. Create one,
+        then pass its ``id`` as ``registry_id`` when building a snapshot.
+
+        Example:
+            registry = client.registries.create(
+                name="internal",
+                url="registry.example.com",
+                username="robot",
+                password=os.environ["REGISTRY_PASSWORD"],
+            )
+            snapshot = client.create_snapshot(
+                "internal-python",
+                docker_image="registry.example.com/internal/python:3.12",
+                fs_capacity_bytes=2 * 1024**3,
+                registry_id=registry.id,
+            )
+        """
+        if self._registries_client is None:
+            self._registries_client = Langsmith(
+                api_key=self._api_key,
+                base_url=self._api_root(),
+                default_headers=self._default_headers or None,
+            )
+        return self._registries_client.sandboxes.registries
+
+    def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
+        """Merge default client headers with per-request overrides."""
+        if headers is None:
+            return None
+        return merge_headers(self._http.headers, headers)
+
+    def _ws_default_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
+        """Merge constructor-supplied default headers with per-request overrides.
+
+        Used by the WebSocket exec path so headers like ``X-Service-Key``
+        set on the client are attached to the WS upgrade request.
+        """
+        if not self._default_headers and headers is None:
+            return None
+        return merge_headers(self._default_headers, headers)
+
+    def to_async(self) -> AsyncSandboxClient:
+        """Create an AsyncSandboxClient with the same configuration.
+
+        The returned client has its own HTTP connection pool; close it
+        independently (``await client.aclose()`` or ``async with``).
+
+        Returns:
+            AsyncSandboxClient with the same endpoint, credentials, timeout,
+            retry, and header configuration.
+        """
+        from langsmith.sandbox._async_client import AsyncSandboxClient
+
+        return AsyncSandboxClient(
+            api_endpoint=self._base_url,
+            timeout=self._timeout,
+            api_key=self._api_key,
+            max_retries=self._max_retries,
+            headers=self._default_headers or None,
+        )
 
     def close(self) -> None:
         """Close the HTTP client."""
         self._http.close()
+        if self._registries_client is not None:
+            self._registries_client.close()
 
     def __del__(self) -> None:
         """Close the HTTP client on garbage collection."""
         try:
             if not self._http.is_closed:
                 self._http.close()
+            if self._registries_client is not None:
+                self._registries_client.close()
         except Exception:
             pass
 
@@ -124,535 +336,13 @@ class SandboxClient:
         """Exit context manager."""
         self.close()
 
-    # ========================================================================
-    # Volume Operations
-    # ========================================================================
-
-    def create_volume(
-        self,
-        name: str,
-        size: str,
-        *,
-        timeout: int = 60,
-    ) -> Volume:
-        """Create a new persistent volume.
-
-        Creates a persistent storage volume that can be referenced in templates.
-
-        Args:
-            name: Volume name.
-            size: Storage size (e.g., "1Gi", "10Gi").
-            timeout: Timeout in seconds when waiting for ready (min: 5, max: 300).
+    def __repr__(self) -> str:
+        """Return a string representation of the instance.
 
         Returns:
-            Created Volume.
-
-        Raises:
-            VolumeProvisioningError: If volume provisioning fails.
-            ResourceTimeoutError: If volume doesn't become ready within timeout.
-            SandboxClientError: For other errors.
+            The string representation of the instance.
         """
-        url = f"{self._base_url}/volumes"
-
-        payload = {
-            "name": name,
-            "size": size,
-            "wait_for_ready": True,
-            "timeout": timeout,
-        }
-
-        try:
-            response = self._http.post(url, json=payload, timeout=timeout + 30)
-            response.raise_for_status()
-            return Volume.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_volume_creation_error(e)
-            raise  # pragma: no cover
-
-    def get_volume(self, name: str) -> Volume:
-        """Get a volume by name.
-
-        Args:
-            name: Volume name.
-
-        Returns:
-            Volume.
-
-        Raises:
-            ResourceNotFoundError: If volume not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes/{name}"
-
-        try:
-            response = self._http.get(url)
-            response.raise_for_status()
-            return Volume.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Volume '{name}' not found", resource_type="volume"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def list_volumes(self) -> list[Volume]:
-        """List all volumes.
-
-        Returns:
-            List of Volumes.
-        """
-        url = f"{self._base_url}/volumes"
-
-        try:
-            response = self._http.get(url)
-            response.raise_for_status()
-            data = response.json()
-            return [Volume.from_dict(v) for v in data.get("volumes", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def delete_volume(self, name: str) -> None:
-        """Delete a volume.
-
-        Args:
-            name: Volume name.
-
-        Raises:
-            ResourceNotFoundError: If volume not found.
-            ResourceInUseError: If volume is referenced by templates.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes/{name}"
-
-        try:
-            response = self._http.delete(url)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Volume '{name}' not found", resource_type="volume"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceInUseError(data["message"], resource_type="volume") from e
-            handle_client_http_error(e)
-
-    def update_volume(
-        self,
-        name: str,
-        *,
-        new_name: Optional[str] = None,
-        size: Optional[str] = None,
-    ) -> Volume:
-        """Update a volume's name and/or size.
-
-        You can update the display name, size, or both in a single request.
-        Only storage size increases are allowed (storage backend limitation).
-
-        Args:
-            name: Current volume name.
-            new_name: New display name (optional).
-            size: New storage size (must be >= current size). Optional.
-
-        Returns:
-            Updated Volume.
-
-        Raises:
-            ResourceNotFoundError: If volume not found.
-            VolumeResizeError: If storage decrease attempted.
-            ResourceNameConflictError: If new_name is already in use.
-            SandboxQuotaExceededError: If storage quota would be exceeded.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/volumes/{name}"
-        payload: dict[str, Any] = {}
-        if new_name is not None:
-            payload["name"] = new_name
-        if size is not None:
-            payload["size"] = size
-
-        if not payload:
-            # Nothing to update, just return the current volume
-            return self.get_volume(name)
-
-        try:
-            response = self._http.patch(url, json=payload)
-            response.raise_for_status()
-            return Volume.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Volume '{name}' not found", resource_type="volume"
-                ) from e
-            if e.response.status_code == 400:
-                data = parse_error_response(e)
-                raise ValidationError(data["message"], error_type="VolumeResize") from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceNameConflictError(
-                    data["message"], resource_type="volume"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    # ========================================================================
-    # Template Operations
-    # ========================================================================
-
-    def create_template(
-        self,
-        name: str,
-        image: str,
-        *,
-        cpu: str = "500m",
-        memory: str = "512Mi",
-        storage: Optional[str] = None,
-        volume_mounts: Optional[list[VolumeMountSpec]] = None,
-    ) -> SandboxTemplate:
-        """Create a new SandboxTemplate.
-
-        Only the container image, resource limits, and volume mounts can be
-        configured. All other container details are handled by the server.
-
-        Args:
-            name: Template name.
-            image: Container image (e.g., "python:3.12-slim").
-            cpu: CPU limit (e.g., "500m", "1", "2"). Default: "500m".
-            memory: Memory limit (e.g., "256Mi", "1Gi"). Default: "512Mi".
-            storage: Ephemeral storage limit (e.g., "1Gi"). Optional.
-            volume_mounts: List of volumes to mount in the sandbox. Optional.
-
-        Returns:
-            Created SandboxTemplate.
-
-        Raises:
-            SandboxClientError: If creation fails.
-        """
-        url = f"{self._base_url}/templates"
-
-        payload: dict[str, Any] = {
-            "name": name,
-            "image": image,
-            "resources": {
-                "cpu": cpu,
-                "memory": memory,
-            },
-        }
-        if storage:
-            payload["resources"]["storage"] = storage
-        if volume_mounts:
-            payload["volume_mounts"] = [
-                {"volume_name": vm.volume_name, "mount_path": vm.mount_path}
-                for vm in volume_mounts
-            ]
-
-        try:
-            response = self._http.post(url, json=payload)
-            response.raise_for_status()
-            return SandboxTemplate.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def get_template(self, name: str) -> SandboxTemplate:
-        """Get a SandboxTemplate by name.
-
-        Args:
-            name: Template name.
-
-        Returns:
-            SandboxTemplate.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/templates/{name}"
-
-        try:
-            response = self._http.get(url)
-            response.raise_for_status()
-            return SandboxTemplate.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Template '{name}' not found", resource_type="template"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def list_templates(self) -> list[SandboxTemplate]:
-        """List all SandboxTemplates.
-
-        Returns:
-            List of SandboxTemplates.
-        """
-        url = f"{self._base_url}/templates"
-
-        try:
-            response = self._http.get(url)
-            response.raise_for_status()
-            data = response.json()
-            return [SandboxTemplate.from_dict(t) for t in data.get("templates", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def update_template(self, name: str, *, new_name: str) -> SandboxTemplate:
-        """Update a template's display name.
-
-        Args:
-            name: Current template name.
-            new_name: New display name.
-
-        Returns:
-            Updated SandboxTemplate.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            ResourceNameConflictError: If new_name is already in use.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/templates/{name}"
-        payload = {"name": new_name}
-
-        try:
-            response = self._http.patch(url, json=payload)
-            response.raise_for_status()
-            return SandboxTemplate.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Template '{name}' not found", resource_type="template"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceNameConflictError(
-                    data["message"], resource_type="template"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def delete_template(self, name: str) -> None:
-        """Delete a SandboxTemplate.
-
-        Args:
-            name: Template name.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            ResourceInUseError: If template is referenced by sandboxes or pools.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/templates/{name}"
-
-        try:
-            response = self._http.delete(url)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Template '{name}' not found", resource_type="template"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceInUseError(
-                    data["message"], resource_type="template"
-                ) from e
-            handle_client_http_error(e)
-
-    # ========================================================================
-    # Pool Operations
-    # ========================================================================
-
-    def create_pool(
-        self,
-        name: str,
-        template_name: str,
-        replicas: int,
-        *,
-        timeout: int = 30,
-    ) -> Pool:
-        """Create a new Sandbox Pool.
-
-        Pools pre-provision sandboxes from a template for faster startup.
-
-        Args:
-            name: Pool name (lowercase letters, numbers, hyphens; max 63 chars).
-            template_name: Name of the SandboxTemplate to use (no volume mounts).
-            replicas: Number of sandboxes to pre-provision (1-100).
-            timeout: Timeout in seconds when waiting for ready (10-600).
-
-        Returns:
-            Created Pool.
-
-        Raises:
-            ResourceNotFoundError: If template not found.
-            ValidationError: If template has volumes attached.
-            ResourceAlreadyExistsError: If pool with this name already exists.
-            ResourceTimeoutError: If pool doesn't reach ready state within timeout.
-            SandboxQuotaExceededError: If organization quota is exceeded.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools"
-
-        payload: dict[str, Any] = {
-            "name": name,
-            "template_name": template_name,
-            "replicas": replicas,
-            "wait_for_ready": True,
-            "timeout": timeout,
-        }
-
-        try:
-            http_timeout = timeout + 30
-            response = self._http.post(url, json=payload, timeout=http_timeout)
-            response.raise_for_status()
-            return Pool.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_pool_error(e)
-            raise  # pragma: no cover
-
-    def get_pool(self, name: str) -> Pool:
-        """Get a Pool by name.
-
-        Args:
-            name: Pool name.
-
-        Returns:
-            Pool.
-
-        Raises:
-            ResourceNotFoundError: If pool not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools/{name}"
-
-        try:
-            response = self._http.get(url)
-            response.raise_for_status()
-            return Pool.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Pool '{name}' not found", resource_type="pool"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def list_pools(self) -> list[Pool]:
-        """List all Pools.
-
-        Returns:
-            List of Pools.
-        """
-        url = f"{self._base_url}/pools"
-
-        try:
-            response = self._http.get(url)
-            response.raise_for_status()
-            data = response.json()
-            return [Pool.from_dict(p) for p in data.get("pools", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-    def update_pool(
-        self,
-        name: str,
-        *,
-        new_name: Optional[str] = None,
-        replicas: Optional[int] = None,
-    ) -> Pool:
-        """Update a Pool's name and/or replica count.
-
-        You can update the display name, replica count, or both.
-        The template reference cannot be changed after creation.
-
-        Args:
-            name: Current pool name.
-            new_name: New display name (optional).
-            replicas: New number of replicas (0-100). Set to 0 to pause.
-
-        Returns:
-            Updated Pool.
-
-        Raises:
-            ResourceNotFoundError: If pool not found.
-            ValidationError: If template was deleted.
-            ResourceNameConflictError: If new_name is already in use.
-            SandboxQuotaExceededError: If quota exceeded when scaling up.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools/{name}"
-
-        payload: dict[str, Any] = {}
-        if new_name is not None:
-            payload["name"] = new_name
-        if replicas is not None:
-            payload["replicas"] = replicas
-
-        if not payload:
-            # Nothing to update, just return the current pool
-            return self.get_pool(name)
-
-        try:
-            response = self._http.patch(url, json=payload)
-            response.raise_for_status()
-            return Pool.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Pool '{name}' not found", resource_type="pool"
-                ) from e
-            if e.response.status_code == 409:
-                data = parse_error_response(e)
-                raise ResourceNameConflictError(
-                    data["message"], resource_type="pool"
-                ) from e
-            handle_pool_error(e)
-            raise  # pragma: no cover
-
-    def delete_pool(self, name: str) -> None:
-        """Delete a Pool.
-
-        This will terminate all sandboxes in the pool.
-
-        Args:
-            name: Pool name.
-
-        Raises:
-            ResourceNotFoundError: If pool not found.
-            SandboxClientError: For other errors.
-        """
-        url = f"{self._base_url}/pools/{name}"
-
-        try:
-            response = self._http.delete(url)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Pool '{name}' not found", resource_type="pool"
-                ) from e
-            handle_client_http_error(e)
+        return f"SandboxClient (API URL: {self._base_url})"
 
     # ========================================================================
     # Sandbox Operations
@@ -660,34 +350,70 @@ class SandboxClient:
 
     def sandbox(
         self,
-        template_name: str,
+        snapshot_id: Optional[str] = None,
         *,
+        snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
-        ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        delete_after_stop_seconds: Optional[int] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
 
         This is the primary method for creating sandboxes. Use it as a
         context manager for automatic cleanup:
 
-            with client.sandbox(template_name="my-template") as sandbox:
+            with client.sandbox(snapshot_id="<uuid>") as sandbox:
+                result = sandbox.run("echo hello")
+
+            # Resolve by snapshot name instead of ID:
+            with client.sandbox(snapshot_name="my-snap") as sandbox:
                 result = sandbox.run("echo hello")
 
         The sandbox is automatically deleted when exiting the context manager.
         For sandboxes with manual lifecycle management, use create_sandbox().
 
         Args:
-            template_name: Name of the SandboxTemplate to use.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
+            snapshot_name: Snapshot name to boot from. Resolved server-side to a
+                snapshot owned by the caller's tenant. Mutually exclusive with
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
-            ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
-                will be automatically deleted after this duration. Must be a
-                multiple of 60. 0 or None disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
-                automatically deleted after this duration of inactivity. Must be
-                a multiple of 60. 0 or None disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. The launcher
+                automatically stops the sandbox after this duration of
+                inactivity. Must be a multiple of 60. ``0`` explicitly
+                disables the idle stop. When omitted (``None``), the server
+                applies a default of ``600`` seconds (10 minutes).
+            delete_after_stop_seconds: Seconds after the sandbox enters the
+                ``stopped`` state before it (and its filesystem clone) are
+                permanently deleted. Must be a multiple of 60. ``0`` disables
+                stop-anchored deletion (manual cleanup required). When
+                omitted (``None``), the server applies its configured default.
+            vcpus: Number of vCPUs.
+            mem_bytes: Memory in bytes.
+            fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: Mount configuration forwarded to the server as
+                ``mount_config``. The backend expands mount auth into runtime
+                proxy rules. Explicit AWS/GCP proxy rules in ``proxy_config``
+                conflict with mount auth for the same provider.
+            proxy_config: Per-sandbox proxy configuration forwarded to the
+                server as-is. Shape matches the backend `proxy_config` field:
+                ``{"rules": [...], "no_proxy": [...], "access_control":
+                {"allow_list": [...]}}`` or ``{"access_control":
+                {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
+                restrict outbound HTTPS to a set of host patterns (exact
+                domains, globs like ``*.example.com``, IPs, CIDRs, or
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Sandbox instance.
@@ -696,27 +422,42 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
         sb = self.create_sandbox(
-            template_name=template_name,
+            snapshot_id,
+            snapshot_name=snapshot_name,
             name=name,
             timeout=timeout,
-            ttl_seconds=ttl_seconds,
             idle_ttl_seconds=idle_ttl_seconds,
+            delete_after_stop_seconds=delete_after_stop_seconds,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
+            fs_capacity_bytes=fs_capacity_bytes,
+            mount_config=mount_config,
+            proxy_config=proxy_config,
+            headers=headers,
         )
         sb._auto_delete = True
         return sb
 
     def create_sandbox(
         self,
-        template_name: str,
+        snapshot_id: Optional[str] = None,
         *,
+        snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
         wait_for_ready: bool = True,
-        ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        delete_after_stop_seconds: Optional[int] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        fs_capacity_bytes: Optional[int] = None,
+        mount_config: Optional[SandboxMountConfig] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
 
@@ -724,19 +465,44 @@ class SandboxClient:
         or use sandbox() for automatic cleanup with a context manager.
 
         Args:
-            template_name: Name of the SandboxTemplate to use.
+            snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
+                with ``snapshot_name``.
+            snapshot_name: Snapshot name to boot from. Resolved server-side to a
+                snapshot owned by the caller's tenant. Mutually exclusive with
+                ``snapshot_id``.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
             wait_for_ready: If True (default), block until sandbox is ready.
                 If False, return immediately with status "provisioning". Use
                 get_sandbox_status() or wait_for_sandbox() to poll for readiness.
-            ttl_seconds: Maximum lifetime in seconds from creation. The sandbox
-                will be automatically deleted after this duration. Must be a
-                multiple of 60. 0 or None disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. The sandbox will be
-                automatically deleted after this duration of inactivity. Must be
-                a multiple of 60. 0 or None disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. The launcher
+                automatically stops the sandbox after this duration of
+                inactivity. Must be a multiple of 60. ``0`` explicitly
+                disables the idle stop. When omitted (``None``), the server
+                applies a default of ``600`` seconds (10 minutes).
+            delete_after_stop_seconds: Seconds after the sandbox enters the
+                ``stopped`` state before it (and its filesystem clone) are
+                permanently deleted. Must be a multiple of 60. ``0`` disables
+                stop-anchored deletion (manual cleanup required). When
+                omitted (``None``), the server applies its configured default.
+            vcpus: Number of vCPUs.
+            mem_bytes: Memory in bytes.
+            fs_capacity_bytes: Root filesystem capacity in bytes.
+            mount_config: Mount configuration forwarded to the server as
+                ``mount_config``. The backend expands mount auth into runtime
+                proxy rules. Explicit AWS/GCP proxy rules in ``proxy_config``
+                conflict with mount auth for the same provider.
+            proxy_config: Per-sandbox proxy configuration forwarded to the
+                server as-is. Shape matches the backend `proxy_config` field:
+                ``{"rules": [...], "no_proxy": [...], "access_control":
+                {"allow_list": [...]}}`` or ``{"access_control":
+                {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
+                restrict outbound HTTPS to a set of host patterns (exact
+                domains, globs like ``*.example.com``, IPs, CIDRs, or
+                ``~regex``). Use ``proxy_config`` with provider rule helpers
+                such as ``aws_auth`` to let the proxy sign supported
+                AWS HTTPS requests on the sandbox's behalf.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -746,37 +512,59 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid.
+            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
+                ``snapshot_name`` are provided.
         """
-        validate_ttl(ttl_seconds, "ttl_seconds")
+        if snapshot_id and snapshot_name:
+            raise ValueError("At most one of snapshot_id or snapshot_name may be set")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
+        validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
         url = f"{self._base_url}/boxes"
 
         payload: dict[str, Any] = {
-            "template_name": template_name,
             "wait_for_ready": wait_for_ready,
         }
+        if snapshot_id:
+            payload["snapshot_id"] = snapshot_id
+        if snapshot_name:
+            payload["snapshot_name"] = snapshot_name
         if wait_for_ready:
             payload["timeout"] = timeout
         if name:
             payload["name"] = name
-        if ttl_seconds is not None:
-            payload["ttl_seconds"] = ttl_seconds
         if idle_ttl_seconds is not None:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
+        if delete_after_stop_seconds is not None:
+            payload["delete_after_stop_seconds"] = delete_after_stop_seconds
+        if vcpus is not None:
+            payload["vcpus"] = vcpus
+        if mem_bytes is not None:
+            payload["mem_bytes"] = mem_bytes
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if mount_config is not None:
+            validate_mount_config_proxy_config(mount_config, proxy_config)
+            payload["mount_config"] = mount_config
+        if proxy_config is not None:
+            payload["proxy_config"] = proxy_config
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
         try:
-            response = self._http.post(url, json=payload, timeout=http_timeout)
+            response = self._http.post(
+                url,
+                json=payload,
+                timeout=http_timeout,
+                headers=self._request_headers(headers),
+            )
             response.raise_for_status()
             return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.HTTPStatusError as e:
             handle_sandbox_creation_error(e)
             raise  # pragma: no cover
 
-    def get_sandbox(self, name: str) -> Sandbox:
+    def get_sandbox(self, name: str, *, headers: RequestHeaders = None) -> Sandbox:
         """Get a Sandbox by name.
 
         The sandbox is NOT automatically deleted. Use delete_sandbox() for cleanup.
@@ -791,10 +579,10 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.HTTPStatusError as e:
@@ -805,7 +593,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def list_sandboxes(self) -> list[Sandbox]:
+    def list_sandboxes(self, *, headers: RequestHeaders = None) -> list[Sandbox]:
         """List all Sandboxes.
 
         Returns:
@@ -814,7 +602,7 @@ class SandboxClient:
         url = f"{self._base_url}/boxes"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             data = response.json()
             return [
@@ -835,18 +623,22 @@ class SandboxClient:
         name: str,
         *,
         new_name: Optional[str] = None,
-        ttl_seconds: Optional[int] = None,
         idle_ttl_seconds: Optional[int] = None,
+        delete_after_stop_seconds: Optional[int] = None,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Update a sandbox's properties.
 
         Args:
             name: Current sandbox name.
             new_name: New display name.
-            ttl_seconds: Maximum lifetime in seconds from creation. Must be a
-                multiple of 60. 0 disables this TTL.
-            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of 60.
-                0 disables this TTL.
+            idle_ttl_seconds: Idle timeout in seconds. Must be a multiple of
+                60. ``0`` disables idle-stop. ``None`` leaves the existing
+                value unchanged.
+            delete_after_stop_seconds: Seconds after entering ``stopped``
+                before deletion. Must be a multiple of 60. ``0`` disables
+                stop-anchored deletion. ``None`` leaves the existing value
+                unchanged.
 
         Returns:
             Updated Sandbox.
@@ -857,20 +649,22 @@ class SandboxClient:
             SandboxClientError: For other errors.
             ValueError: If TTL values are invalid.
         """
-        validate_ttl(ttl_seconds, "ttl_seconds")
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
+        validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
         payload: dict[str, Any] = {}
         if new_name is not None:
             payload["name"] = new_name
-        if ttl_seconds is not None:
-            payload["ttl_seconds"] = ttl_seconds
         if idle_ttl_seconds is not None:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
+        if delete_after_stop_seconds is not None:
+            payload["delete_after_stop_seconds"] = delete_after_stop_seconds
 
         try:
-            response = self._http.patch(url, json=payload)
+            response = self._http.patch(
+                url, json=payload, headers=self._request_headers(headers)
+            )
             response.raise_for_status()
             return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.HTTPStatusError as e:
@@ -886,7 +680,7 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def delete_sandbox(self, name: str) -> None:
+    def delete_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Delete a Sandbox.
 
         Args:
@@ -896,10 +690,10 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
-            response = self._http.delete(url)
+            response = self._http.delete(url, headers=self._request_headers(headers))
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -908,7 +702,9 @@ class SandboxClient:
                 ) from e
             handle_client_http_error(e)
 
-    def get_sandbox_status(self, name: str) -> ResourceStatus:
+    def get_sandbox_status(
+        self, name: str, *, headers: RequestHeaders = None
+    ) -> ResourceStatus:
         """Get the provisioning status of a sandbox.
 
         This is a lightweight endpoint designed for high-frequency polling
@@ -925,12 +721,67 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{name}/status"
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/status"
 
         try:
-            response = self._http.get(url)
+            response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
             return ResourceStatus.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        headers: RequestHeaders = None,
+    ) -> ServiceURL:
+        """Get an authenticated URL for a service running inside a sandbox.
+
+        Returns a :class:`ServiceURL` whose properties auto-refresh the
+        token transparently before it expires.  The object also provides
+        HTTP helper methods (``.get``, ``.post``, etc.) that inject the
+        authentication header automatically.
+
+        Args:
+            name: Sandbox name.
+            port: Port the service is listening on inside the sandbox.
+            expires_in_seconds: Token TTL in seconds (1--86400, default 600).
+            headers: Optional per-request header overrides.
+
+        Returns:
+            ServiceURL with auto-refreshing token and HTTP helpers.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ValueError: If port or expires_in_seconds is out of range.
+            SandboxClientError: For other errors.
+        """
+        validate_service_params(port, expires_in_seconds)
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/service-url"
+        payload = {"port": port, "expires_in_seconds": expires_in_seconds}
+
+        def _refresher() -> ServiceURL:
+            return self.service(
+                name,
+                port,
+                expires_in_seconds=expires_in_seconds,
+                headers=headers,
+            )
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            return ServiceURL.from_dict(response.json(), _refresher=_refresher)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -945,6 +796,7 @@ class SandboxClient:
         *,
         timeout: int = 120,
         poll_interval: float = 1.0,
+        headers: RequestHeaders = None,
     ) -> Sandbox:
         """Poll until a sandbox reaches "ready" or "failed" status.
 
@@ -969,9 +821,9 @@ class SandboxClient:
 
         deadline = time.monotonic() + timeout
         while True:
-            status = self.get_sandbox_status(name)
+            status = self.get_sandbox_status(name, headers=headers)
             if status.status == "ready":
-                return self.get_sandbox(name)
+                return self.get_sandbox(name, headers=headers)
             if status.status == "failed":
                 raise ResourceCreationError(
                     status.status_message or "Sandbox provisioning failed",
@@ -983,5 +835,427 @@ class SandboxClient:
                     f"Sandbox '{name}' not ready after {timeout}s",
                     resource_type="sandbox",
                     last_status=status.status,
+                )
+            time.sleep(min(poll_interval, remaining))
+
+    def start_sandbox(
+        self,
+        name: str,
+        *,
+        timeout: int = 120,
+        headers: RequestHeaders = None,
+    ) -> Sandbox:
+        """Start a stopped sandbox and wait until ready.
+
+        Args:
+            name: Sandbox name.
+            timeout: Timeout in seconds when waiting for ready.
+
+        Returns:
+            Sandbox in "ready" status.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ResourceCreationError: If sandbox fails during startup.
+            ResourceTimeoutError: If sandbox doesn't become ready within timeout.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/start"
+
+        try:
+            response = self._http.post(
+                url, json={}, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+
+        return self.wait_for_sandbox(name, timeout=timeout, headers=headers)
+
+    def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
+        """Stop a running sandbox (preserves sandbox files for later restart).
+
+        Args:
+            name: Sandbox name.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/stop"
+
+        try:
+            response = self._http.post(
+                url, json={}, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+
+    # ========================================================================
+    # Snapshot Operations
+    # ========================================================================
+
+    def create_snapshot(
+        self,
+        name: str,
+        docker_image: str,
+        fs_capacity_bytes: int,
+        *,
+        registry_id: Optional[str] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a Docker image.
+
+        Blocks until the snapshot is ready (polls with 2s interval).
+
+        Args:
+            name: Snapshot name.
+            docker_image: Docker image to build from (e.g., "python:3.12-slim").
+            fs_capacity_bytes: Filesystem capacity in bytes.
+            registry_id: Private registry ID.
+            timeout: Timeout in seconds when waiting for ready.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceTimeoutError: If snapshot doesn't become ready within timeout.
+            ResourceCreationError: If snapshot build fails.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/snapshots"
+
+        payload: dict[str, Any] = {
+            "name": name,
+            "docker_image": docker_image,
+            "fs_capacity_bytes": fs_capacity_bytes,
+        }
+        if registry_id is not None:
+            payload["registry_id"] = registry_id
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            snapshot = Snapshot.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+        return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
+
+    def create_snapshot_from_dockerfile(
+        self,
+        name: str,
+        dockerfile: Union[str, os.PathLike[str]],
+        fs_capacity_bytes: Optional[int] = None,
+        *,
+        context: Union[str, os.PathLike[str]] = ".",
+        build_args: Optional[Mapping[str, str]] = None,
+        target: Optional[str] = None,
+        on_build_log: Optional[Callable[[str], Any]] = None,
+        vcpus: Optional[int] = None,
+        mem_bytes: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Build a snapshot from a local Dockerfile context.
+
+        When ``fs_capacity_bytes`` is omitted, the server applies its default.
+        ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
+        build runs BuildKit plus the native snapshotter's layer copies inside
+        it, which contend for a single core by default, so giving the builder
+        an extra vCPU can cut a cold build's wall time substantially.
+        """
+        context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
+
+        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
+        # Stage the build on the capacity-backed root filesystem, not /tmp.
+        # Inside the sandbox /tmp is a RAM-backed tmpfs that fs_capacity_bytes
+        # does not size, and BuildKit's native snapshotter writes a full copy
+        # of every layer under its root, so a /tmp build exhausts guest RAM and
+        # fails with "No space left on device".
+        build_root = f"/var/lib/langsmith-build/{uuid.uuid4().hex[:12]}"
+        remote_context = posixpath.join(build_root, "context")
+        remote_tar = posixpath.join(build_root, "context.tar")
+        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
+        buildkit_root = posixpath.join(build_root, "buildkit-root")
+        buildkit_run = posixpath.join(build_root, "buildkit-run")
+
+        with self.sandbox(
+            name=builder_name,
+            timeout=timeout,
+            vcpus=vcpus,
+            mem_bytes=mem_bytes,
+            fs_capacity_bytes=fs_capacity_bytes,
+            headers=headers,
+        ) as sandbox:
+            sandbox.write(
+                remote_tar,
+                _make_docker_context_tar(context_path),
+                timeout=timeout,
+                headers=headers,
+            )
+            sandbox.run(
+                "rm -rf "
+                + shlex.quote(remote_context)
+                + " && mkdir -p "
+                + shlex.quote(remote_context)
+                + " && tar -xf "
+                + shlex.quote(remote_tar)
+                + " -C "
+                + shlex.quote(remote_context),
+                timeout=timeout,
+                headers=headers,
+            )
+
+            result = sandbox.run(
+                _make_dockerfile_build_command(
+                    remote_context=remote_context,
+                    dockerfile_rel=dockerfile_rel,
+                    image_ref=image_ref,
+                    buildkit_root=buildkit_root,
+                    buildkit_run=buildkit_run,
+                    build_args=build_args,
+                    target=target,
+                ),
+                timeout=timeout,
+                on_stdout=on_build_log,
+                on_stderr=on_build_log,
+                headers=headers,
+            )
+            if result.exit_code != 0:
+                raise ResourceCreationError(
+                    "Dockerfile snapshot build failed",
+                    resource_type="snapshot",
+                )
+            return self.capture_snapshot(
+                sandbox.name,
+                name,
+                docker_image=image_ref,
+                fs_capacity_bytes=fs_capacity_bytes,
+                timeout=timeout,
+                headers=headers,
+            )
+
+    def capture_snapshot(
+        self,
+        sandbox_name: str,
+        name: str,
+        *,
+        docker_image: Optional[str] = None,
+        fs_capacity_bytes: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Capture a snapshot from a running sandbox.
+
+        Blocks until the snapshot is ready (polls with 2s interval).
+
+        Args:
+            sandbox_name: Name of the sandbox to capture from.
+            name: Snapshot name.
+            docker_image: Optional Docker image tag inside the sandbox to export
+                into the snapshot instead of capturing the live root filesystem.
+            fs_capacity_bytes: Filesystem capacity in bytes for Docker image export.
+            timeout: Timeout in seconds when waiting for ready.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ResourceTimeoutError: If snapshot doesn't become ready within timeout.
+            ResourceCreationError: If snapshot capture fails.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/boxes/{_quote_path_segment(sandbox_name)}/snapshot"
+
+        payload: dict[str, Any] = {"name": name}
+        if docker_image is not None:
+            payload["docker_image"] = docker_image
+        if fs_capacity_bytes is not None:
+            payload["fs_capacity_bytes"] = fs_capacity_bytes
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            snapshot = Snapshot.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{sandbox_name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+        return self.wait_for_snapshot(snapshot.id, timeout=timeout, headers=headers)
+
+    def get_snapshot(
+        self, snapshot_id: str, *, headers: RequestHeaders = None
+    ) -> Snapshot:
+        """Get a snapshot by ID.
+
+        Args:
+            snapshot_id: Snapshot UUID.
+
+        Returns:
+            Snapshot.
+
+        Raises:
+            ResourceNotFoundError: If snapshot not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
+
+        try:
+            response = self._http.get(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+            return Snapshot.from_dict(response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def list_snapshots(
+        self,
+        *,
+        name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        headers: RequestHeaders = None,
+    ) -> list[Snapshot]:
+        """List snapshots.
+
+        The backend always paginates this endpoint. When ``limit`` is omitted
+        the server applies a default page size (currently 50), so a single
+        call is not guaranteed to return every snapshot. To iterate through
+        all results, repeat the call with increasing ``offset`` values (or an
+        explicit ``limit``) until fewer than ``limit`` snapshots come back.
+
+        Args:
+            name_contains: Optional case-insensitive substring filter applied
+                to snapshot names server-side.
+            limit: Optional maximum number of snapshots to return for a single
+                request. Must be between 1 and 500 (inclusive); the server
+                rejects values outside that range. Defaults to 50 server-side
+                when omitted.
+            offset: Optional number of snapshots to skip before returning
+                results. Must be ``>= 0``. Useful for paginating through
+                large result sets in combination with ``limit``.
+
+        Returns:
+            A single page of Snapshots matching the provided filters.
+        """
+        url = f"{self._base_url}/snapshots"
+
+        params: dict[str, Any] = {}
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+
+        try:
+            response = self._http.get(
+                url,
+                params=params or None,
+                headers=self._request_headers(headers),
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [Snapshot.from_dict(s) for s in data.get("snapshots", [])]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise SandboxAPIError(
+                    f"API endpoint not found: {url}. "
+                    f"Check that api_endpoint is correct."
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def delete_snapshot(
+        self, snapshot_id: str, *, headers: RequestHeaders = None
+    ) -> None:
+        """Delete a snapshot.
+
+        Args:
+            snapshot_id: Snapshot UUID.
+
+        Raises:
+            ResourceNotFoundError: If snapshot not found.
+            SandboxClientError: For other errors.
+        """
+        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
+
+        try:
+            response = self._http.delete(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
+                ) from e
+            handle_client_http_error(e)
+
+    def wait_for_snapshot(
+        self,
+        snapshot_id: str,
+        *,
+        timeout: int = 300,
+        poll_interval: float = 2.0,
+        headers: RequestHeaders = None,
+    ) -> Snapshot:
+        """Poll until a snapshot reaches "ready" or "failed" status.
+
+        Args:
+            snapshot_id: Snapshot UUID.
+            timeout: Maximum time to wait in seconds.
+            poll_interval: Time between status checks in seconds.
+
+        Returns:
+            Snapshot in "ready" status.
+
+        Raises:
+            ResourceCreationError: If snapshot status becomes "failed".
+            ResourceTimeoutError: If timeout expires.
+            ResourceNotFoundError: If snapshot not found.
+            SandboxClientError: For other errors.
+        """
+        import time
+
+        deadline = time.monotonic() + timeout
+        while True:
+            snapshot = self.get_snapshot(snapshot_id, headers=headers)
+            if snapshot.status == "ready":
+                return snapshot
+            if snapshot.status == "failed":
+                raise ResourceCreationError(
+                    snapshot.status_message or "Snapshot build failed",
+                    resource_type="snapshot",
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResourceTimeoutError(
+                    f"Snapshot '{snapshot_id}' not ready after {timeout}s",
+                    resource_type="snapshot",
+                    last_status=snapshot.status,
                 )
             time.sleep(min(poll_interval, remaining))

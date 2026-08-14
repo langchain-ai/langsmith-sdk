@@ -1,4 +1,4 @@
-import * as uuid from "uuid";
+import * as uuid from "./utils/uuid/src/index.js";
 import type { OTELContext } from "./experimental/otel/types.js";
 import {
   LangSmithToOTELTranslator,
@@ -36,7 +36,6 @@ import {
   RunCreate,
   RunUpdate,
   ScoreType,
-  ExampleSearch,
   TimeDelta,
   TracerSession,
   TracerSessionResult,
@@ -52,7 +51,13 @@ import {
   DatasetVersion,
   AnnotationQueueWithDetails,
   AnnotationQueueRubricItem,
+  RunKey,
   FeedbackConfigSchema,
+  AgentContext,
+  SkillContext,
+  Entry,
+  DirectoryCommitResponse,
+  HubRepoType,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -63,16 +68,31 @@ import {
   getLangSmithEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
-  getOtelEnabled,
   getEnv,
+  resolveTracingMode,
+  type TracingMode,
 } from "./utils/env.js";
 
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
+import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/online-evaluators.js";
+import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
+import { Sandboxes } from "./_openapi_client/resources/sandboxes/sandboxes.js";
+import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
+import { AnnotationQueues } from "./_openapi_client/resources/annotation-queues/annotation-queues.js";
+import { Threads } from "./_openapi_client/resources/threads.js";
+import { Traces } from "./_openapi_client/resources/traces.js";
+import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
+import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
+import { parseHubIdentifier } from "./utils/prompts.js";
+import {
+  raiseForStatus,
+  isLangSmithNotFoundError,
+  isLangSmithConflictError,
+} from "./utils/error.js";
 import {
   PromptCache,
   promptCacheSingleton,
@@ -82,14 +102,41 @@ import {
   _shouldStreamForGlobalFetchImplementation,
   _getFetchImplementation,
 } from "./singletons/fetch.js";
+import {
+  DEFAULT_API_URL,
+  type ProfileAuthHeader,
+  ProfileAuth,
+  hasValue,
+  loadProfileClientConfig,
+} from "./utils/profiles.js";
 
-import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
+import {
+  serialize as serializePayloadForTracing,
+  estimateSerializedSize,
+} from "./utils/fast-safe-stringify/index.js";
+import {
+  getSharedSerializeWorker,
+  hasLargeString,
+  SerializeWorker,
+} from "./utils/serialize_worker.js";
+
+function assertPullPublicPromptAllowed(
+  promptIdentifier: string,
+  dangerouslyPullPublicPrompt?: boolean,
+): void {
+  const [owner] = parseHubIdentifier(promptIdentifier);
+  if (owner !== "-" && !dangerouslyPullPublicPrompt) {
+    throw new Error(
+      "Pulling a public prompt by owner/name is disabled by default because prompts may contain untrusted serialized LangChain objects. If you trust this prompt, set `dangerouslyPullPublicPrompt: true` to acknowledge the risk.",
+    );
+  }
+}
 
 /**
  * Catches timestamps without a timezone suffix.
  */
 function _ensureUTCTimestamp(
-  ts: string | number | undefined
+  ts: string | number | undefined,
 ): string | number | undefined {
   if (
     typeof ts === "string" &&
@@ -117,9 +164,18 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
+  /**
+   * A function applied for masking serialized run inputs, outputs and
+   * metadata, before sending to the API. Can be called with raw inputs, raw
+   * outputs, raw metadata, or a nested `{ error: string }` object for errors.
+   *
+   * If a `hideInputs`, `hideOutputs` or `hideMetadata` function is present,
+   * the client will call it instead of the anonymizer as appropriate.
+   */
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
+  hideMetadata?: boolean | ((metadata: KVMap) => KVMap | Promise<KVMap>);
   /**
    * Whether to omit runtime information from traced runs.
    * If true, runtime information (SDK version, platform, etc.) and
@@ -163,6 +219,26 @@ export interface ClientConfig {
    * By default, prompt caching is enabled globally.
    */
   disablePromptCache?: boolean;
+
+  /**
+   * Where to send traces.  One of:
+   *
+   * - `"langsmith"` (default) — LangSmith REST API only.
+   * - `"otel"` — OpenTelemetry export only.
+   *
+   * Falls back to the `LANGSMITH_TRACING_MODE` env var, then to the
+   * legacy `OTEL_ENABLED` / `LANGSMITH_OTEL_ENABLED` env vars, then to
+   * `"langsmith"`.
+   */
+  tracingMode?: TracingMode;
+
+  /**
+   * Additional HTTP headers to include in all requests.
+   * These headers will be merged with the default headers (User-Agent,
+   * x-api-key, x-tenant-id, etc.). Custom headers will not override
+   * the default required headers.
+   */
+  headers?: Record<string, string>;
 
   /**
    * @deprecated Use `configureGlobalPromptCache()` to configure caching, or
@@ -416,6 +492,7 @@ interface FeedbackCreate {
   session_id?: string;
   start_time?: number | string;
   comparative_experiment_id?: string;
+  extend_trace_retention?: boolean;
 }
 
 interface FeedbackUpdate {
@@ -424,6 +501,19 @@ interface FeedbackUpdate {
   correction?: object | null;
   comment?: string | null;
 }
+
+type DefaultClientConfig = {
+  apiUrl: string;
+  apiKey?: string;
+  webUrl?: string;
+  hideInputs?: boolean;
+  hideOutputs?: boolean;
+  hideMetadata?: boolean;
+  workspaceId?: string;
+  oauthAccessToken?: string;
+  oauthRefreshToken?: string;
+  profileAuth?: ProfileAuth;
+};
 
 interface CreateRunParams {
   name: string;
@@ -460,6 +550,58 @@ type RecordStringAny = Record<string, any>;
 
 export type FeedbackSourceType = "model" | "api" | "app";
 
+export type CreateFeedbackOptions = {
+  /** The metric name, tag, or aspect to provide feedback on. */
+  key: string;
+  score?: ScoreType;
+  value?: ValueType;
+  correction?: object;
+  comment?: string;
+  sourceInfo?: object;
+  feedbackSourceType?: FeedbackSourceType;
+  feedbackConfig?: FeedbackConfig;
+  sourceRunId?: string;
+  feedbackId?: string;
+  comparativeExperimentId?: string;
+  /**
+   * The run's start time, ISO string or epoch ms. Better performance if provided.
+   */
+  startTime?: number | string;
+  /** If false, create feedback without extending the trace's retention tier. */
+  extendTraceRetention?: boolean;
+};
+
+/** @deprecated Pass all params within an object and populate sessionId. */
+export type CreateFeedbackLegacyOptions = Omit<CreateFeedbackOptions, "key"> & {
+  /** @deprecated This option is no longer used. */
+  eager?: boolean;
+  /**
+   * The session (project) ID of the run. Required for run-level feedback;
+   * omitting it is deprecated. See
+   * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+   */
+  sessionId?: string;
+  /** The project (or experiment) to provide feedback on, for session-level feedback. */
+  projectId?: string;
+};
+
+export type CreateFeedbackParams = CreateFeedbackOptions &
+  (
+    | {
+        /** The run to provide feedback on. */
+        runId: string;
+        /** The session (project) ID of the run. */
+        sessionId: string;
+        projectId?: never;
+      }
+    | {
+        runId?: null;
+        /** The project (or experiment) to provide feedback on. */
+        projectId: string;
+        sessionId?: never;
+      }
+  );
+
 export type CreateExampleOptions = {
   /** The ID of the dataset to create the example in. */
   datasetId?: string;
@@ -490,6 +632,10 @@ export type CreateProjectParams = {
   upsert?: boolean;
   projectExtra?: RecordStringAny | null;
   referenceDatasetId?: string | null;
+  numExamples?: number | null;
+  numRepetitions?: number | null;
+  evaluatorKeys?: string[] | null;
+  tagValueIds?: string[] | null;
 };
 
 type AutoBatchQueueItem = {
@@ -498,6 +644,7 @@ type AutoBatchQueueItem = {
   otelContext?: OTELContext;
   apiKey?: string;
   apiUrl?: string;
+  workspaceId?: string;
   size?: number;
 };
 
@@ -530,7 +677,7 @@ export interface ListThreadsItem extends Thread {
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
   cachedEnvVars?: Record<string, string>,
-  omitTracedRuntimeInfo?: boolean
+  omitTracedRuntimeInfo?: boolean,
 ): T {
   if (omitTracedRuntimeInfo) {
     return run;
@@ -570,7 +717,7 @@ const getTracingSamplingRate = (configRate?: number) => {
   const samplingRate = parseFloat(samplingRateStr);
   if (samplingRate < 0 || samplingRate > 1) {
     throw new Error(
-      `LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
+      `LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`,
     );
   }
   return samplingRate;
@@ -625,6 +772,44 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
   return score;
 }
 
+export function _checkBackendVersion(
+  backendVersion: string,
+  minVersion: string,
+): void {
+  if (!backendVersion) {
+    // /info was unreachable (or skipped): nothing to compare against.
+    return;
+  }
+  const parse = (v: string) => v.split(".").map((s) => parseInt(s, 10));
+  const [maj, min, pat] = parse(backendVersion);
+  const [rMaj, rMin, rPat] = parse(minVersion);
+  if (
+    isNaN(maj) ||
+    isNaN(min) ||
+    isNaN(pat) ||
+    isNaN(rMaj) ||
+    isNaN(rMin) ||
+    isNaN(rPat)
+  ) {
+    console.warn(
+      `[LANGSMITH]: Could not parse backend version ${JSON.stringify(backendVersion)} for compatibility check.`,
+    );
+    return;
+  }
+  if (
+    maj < rMaj ||
+    (maj === rMaj && min < rMin) ||
+    (maj === rMaj && min === rMin && pat < rPat)
+  ) {
+    console.warn(
+      `[LANGSMITH]: Backend version ${JSON.stringify(backendVersion)} is older than ` +
+        `the minimum version required by this SDK (${JSON.stringify(minVersion)}). ` +
+        "Some features may not work as expected. See " +
+        "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
+    );
+  }
+}
+
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
 
 /** Default maximum memory (1GB) for queue size limits. */
@@ -635,7 +820,83 @@ const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 /** Maximum number of operations to batch in a single request. */
 const DEFAULT_BATCH_SIZE_LIMIT = 100;
 
-const DEFAULT_API_URL = "https://api.smith.langchain.com";
+/**
+ * Reject header names or values that could alter a request's framing.
+ *
+ * `Headers` does this for us, and does it the same way `fetch` will.
+ */
+function assertValidHeader(name: string, value: string): void {
+  new Headers({ [name]: value });
+}
+
+/** Reject a malformed header up front, before it can reach a request. */
+function assertValidHeaders(headers?: Record<string, string>): void {
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    assertValidHeader(name, value);
+  }
+}
+
+/**
+ * Fold a `HeadersInit` into a plain object so it can be spread.
+ *
+ * Names are matched case-insensitively with the last value winning, keeping the
+ * first spelling seen. A plain object would instead keep both spellings, which
+ * `Headers` later joins into a `"first, second"` list rather than an override.
+ * Every name and value is validated on the way through.
+ */
+function normalizeHeaders(
+  headers?: HeadersInit | Record<string, string>,
+): Record<string, string> {
+  if (!headers) return {};
+  const entries: Array<[string, string]> =
+    headers instanceof Headers
+      ? [...headers.entries()]
+      : Array.isArray(headers)
+        ? headers.map(([name, value]) => [name, value])
+        : Object.entries(headers);
+
+  const normalized: Record<string, string> = {};
+  const nameByLower = new Map<string, string>();
+  for (const [name, value] of entries) {
+    assertValidHeader(name, value);
+    const lowerName = name.toLowerCase();
+    const existingName = nameByLower.get(lowerName);
+    if (existingName === undefined) {
+      nameByLower.set(lowerName, name);
+      normalized[name] = value;
+    } else {
+      normalized[existingName] = value;
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Merge the caller's two header channels, then drop the `reserved` names.
+ *
+ * `overrides` wins, matched case-insensitively so a header supplied through both
+ * channels is overridden rather than turned into a `"first, second"` list.
+ */
+function mergeCallerHeaders(
+  base: Record<string, string>,
+  overrides: Record<string, string>,
+  reserved: ReadonlySet<string>,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...base };
+  const nameByLower = new Map(
+    Object.keys(merged).map((name) => [name.toLowerCase(), name]),
+  );
+  for (const [name, value] of Object.entries(overrides)) {
+    const lowerName = name.toLowerCase();
+    merged[nameByLower.get(lowerName) ?? name] = value;
+  }
+  for (const name of Object.keys(merged)) {
+    if (reserved.has(name.toLowerCase())) {
+      delete merged[name];
+    }
+  }
+  return merged;
+}
 
 export class AutoBatchQueue {
   items: {
@@ -647,6 +908,7 @@ export class AutoBatchQueue {
     size: number;
     apiKey?: string;
     apiUrl?: string;
+    workspaceId?: string;
   }[] = [];
 
   sizeBytes = 0;
@@ -668,17 +930,18 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = serializePayloadForTracing(
-      item.item,
-      `Serializing run with id: ${item.item.id}`
-    ).length;
+    // Use a cheap structural estimate for soft memory accounting (queue size
+    // limit and downstream async caller memory tracking). The exact
+    // serialization still happens later, off the hot path, when the batch is
+    // assembled for sending.
+    const size = estimateSerializedSize(item.item).size;
 
     // Check if adding this item would exceed the size limit
     // Allow the run if the queue is empty (to support large single traces)
     if (this.sizeBytes + size > this.maxSizeBytes && this.items.length > 0) {
       console.warn(
         `AutoBatchQueue size limit (${this.maxSizeBytes} bytes) exceeded. Dropping run with id: ${item.item.id}. ` +
-          `Current queue size: ${this.sizeBytes} bytes, attempted addition: ${size} bytes.`
+          `Current queue size: ${this.sizeBytes} bytes, attempted addition: ${size} bytes.`,
       );
       // Resolve immediately to avoid blocking caller
       itemPromiseResolve!();
@@ -691,6 +954,7 @@ export class AutoBatchQueue {
       otelContext: item.otelContext,
       apiKey: item.apiKey,
       apiUrl: item.apiUrl,
+      workspaceId: item.workspaceId,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -740,6 +1004,7 @@ export class AutoBatchQueue {
         otelContext: it.otelContext,
         apiKey: it.apiKey,
         apiUrl: it.apiUrl,
+        workspaceId: it.workspaceId,
         size: it.size,
       })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
@@ -768,6 +1033,12 @@ export class Client implements LangSmithTracingClientInterface {
 
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
+  private hideMetadata?:
+    | boolean
+    | ((metadata: KVMap) => KVMap | Promise<KVMap>);
+
+  private anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
+
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
@@ -786,7 +1057,14 @@ export class Client implements LangSmithTracingClientInterface {
 
   private batchSizeLimit?: number;
 
-  private fetchOptions: RequestInit;
+  /** `config.fetchOptions` without its `headers`, which are merged separately. */
+  private fetchOptions: Omit<RequestInit, "headers">;
+
+  private _fetchOptionsHeaders: Record<string, string> = {};
+
+  private _openAPIClient?: OpenAPILangsmith;
+
+  private _openAPIClientSignature?: string;
 
   private settings: Promise<LangSmithSettings> | null;
 
@@ -800,9 +1078,26 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
+  private _stainlessVersionsChecked = new Set<string>();
+
   private manualFlushMode = false;
 
+  private _serializeWorker?: SerializeWorker | null;
+
+  /**
+   * Tracks in-flight drainAutoBatchQueue promises so awaitPendingTraceBatches
+   * can wait on them even if the flush involves async work (worker-thread
+   * serialize) that hasn't yet registered with batchIngestCaller.queue.
+   */
+  private _pendingDrains = new Set<Promise<unknown>>();
+
   private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
+
+  private _tracingMode: TracingMode = "langsmith";
+
+  public get tracingMode(): TracingMode {
+    return this._tracingMode;
+  }
 
   private fetchImplementation?: typeof fetch;
 
@@ -810,11 +1105,252 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _promptCache?: PromptCache;
 
+  private profileAuth?: ProfileAuth;
+
   private get _fetch(): typeof fetch {
-    return this.fetchImplementation || _getFetchImplementation(this.debug);
+    const fetchImplementation =
+      this.fetchImplementation || _getFetchImplementation(this.debug);
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      let authHeader: ProfileAuthHeader | undefined;
+      const profileManagedAuthorization =
+        this.getProfileManagedAuthorizationHeader(init);
+      if (this.apiKey !== undefined) {
+        authHeader = { name: "x-api-key", value: `${this.apiKey}` };
+      } else if (
+        !this.hasExplicitAuthHeader(init, profileManagedAuthorization)
+      ) {
+        authHeader = await this.profileAuth?.getAuthHeader(
+          fetchImplementation,
+          init?.signal,
+        );
+      }
+      return fetchImplementation(
+        input,
+        this.applyCurrentAuthHeaders(
+          init,
+          authHeader,
+          profileManagedAuthorization,
+        ),
+      );
+    }) as typeof fetch;
   }
 
-  private multipartStreamingDisabled = false;
+  private getProfileManagedAuthorizationHeader(
+    init?: RequestInit,
+  ): string | undefined {
+    if (!init?.headers || !this.profileAuth) {
+      return undefined;
+    }
+    const authorization = new Headers(init.headers).get("Authorization");
+    if (!hasValue(authorization)) {
+      return undefined;
+    }
+    return this.profileAuth.isProfileAuthorizationHeader(authorization ?? "")
+      ? (authorization ?? undefined)
+      : undefined;
+  }
+
+  private isProfileManagedAuthorizationHeader(
+    value: string,
+    profileManagedAuthorization?: string,
+  ): boolean {
+    return (
+      value === profileManagedAuthorization ||
+      this.profileAuth?.isProfileAuthorizationHeader(value) === true
+    );
+  }
+
+  private hasExplicitAuthHeader(
+    init?: RequestInit,
+    profileManagedAuthorization?: string,
+  ): boolean {
+    if (!init?.headers) {
+      return false;
+    }
+    const headers = new Headers(init.headers);
+    if (hasValue(headers.get("x-api-key"))) {
+      return true;
+    }
+    const authorization = headers.get("Authorization");
+    if (!hasValue(authorization)) {
+      return false;
+    }
+    return !this.isProfileManagedAuthorizationHeader(
+      authorization ?? "",
+      profileManagedAuthorization,
+    );
+  }
+
+  private applyCurrentAuthHeaders(
+    init?: RequestInit,
+    authHeader?: ProfileAuthHeader,
+    profileManagedAuthorization?: string,
+  ): RequestInit | undefined {
+    if (!authHeader) {
+      return init;
+    }
+    const applyAuth = (headers: Headers): Headers => {
+      if (this.apiKey !== undefined && authHeader.name === "x-api-key") {
+        headers.delete("Authorization");
+        if (!headers.has("x-api-key")) {
+          headers.set("x-api-key", authHeader.value);
+        }
+        return headers;
+      }
+      if (authHeader.name === "Authorization") {
+        if (hasValue(headers.get("x-api-key"))) {
+          return headers;
+        }
+        const authorization = headers.get("Authorization");
+        if (
+          hasValue(authorization) &&
+          !this.isProfileManagedAuthorizationHeader(
+            authorization ?? "",
+            profileManagedAuthorization,
+          )
+        ) {
+          return headers;
+        }
+        headers.set("Authorization", authHeader.value);
+        return headers;
+      }
+      const authorization = headers.get("Authorization");
+      if (
+        hasValue(authorization) &&
+        !this.isProfileManagedAuthorizationHeader(
+          authorization ?? "",
+          profileManagedAuthorization,
+        )
+      ) {
+        return headers;
+      }
+      if (hasValue(authorization)) {
+        headers.delete("Authorization");
+      }
+      if (!headers.has("x-api-key")) {
+        headers.set("x-api-key", authHeader.value);
+      }
+      return headers;
+    };
+    if (!init) {
+      return {
+        headers: { [authHeader.name]: authHeader.value },
+      };
+    }
+    if (init.headers instanceof Headers) {
+      return { ...init, headers: applyAuth(new Headers(init.headers)) };
+    }
+    if (Array.isArray(init.headers)) {
+      return { ...init, headers: applyAuth(new Headers(init.headers)) };
+    }
+    const headers = {
+      ...((init.headers ?? {}) as Record<string, string>),
+    };
+    const getHeaderKey = (name: string) =>
+      Object.keys(headers).find((key) => key.toLowerCase() === name);
+    const getHeader = (name: string) => {
+      const key = getHeaderKey(name);
+      return key ? headers[key] : undefined;
+    };
+    const hasApiKey = hasValue(getHeader("x-api-key"));
+    const authorization = getHeader("authorization");
+    const hasExplicitAuthorization =
+      hasValue(authorization) &&
+      !this.isProfileManagedAuthorizationHeader(
+        authorization ?? "",
+        profileManagedAuthorization,
+      );
+
+    if (this.apiKey !== undefined && authHeader.name === "x-api-key") {
+      const authorizationKey = getHeaderKey("authorization");
+      if (authorizationKey) {
+        delete headers[authorizationKey];
+      }
+      if (!hasApiKey) {
+        headers["x-api-key"] = authHeader.value;
+      }
+      return { ...init, headers };
+    }
+    if (authHeader.name === "Authorization") {
+      if (!hasApiKey && !hasExplicitAuthorization) {
+        const authorizationKey = getHeaderKey("authorization");
+        if (authorizationKey && authorizationKey !== "Authorization") {
+          delete headers[authorizationKey];
+        }
+        headers.Authorization = authHeader.value;
+      }
+      return { ...init, headers };
+    }
+    if (!hasExplicitAuthorization) {
+      const authorizationKey = getHeaderKey("authorization");
+      if (authorizationKey) {
+        delete headers[authorizationKey];
+      }
+      if (!hasApiKey) {
+        headers["x-api-key"] = authHeader.value;
+      }
+    }
+    return { ...init, headers };
+  }
+
+  /**
+   * Serialize a payload for tracing, optionally offloading the work to a
+   * Node worker thread when the runtime supports worker_threads.
+   *
+   * Falls back to synchronous serialization when:
+   *  - manualFlushMode is enabled (serverless: worker boot cost > benefit)
+   *  - worker_threads is unavailable (non-Node runtimes)
+   *  - the payload contains values that can't be structured-cloned across
+   *    threads (functions, non-cloneable class instances, streams, etc.)
+   *  - the worker throws for any other reason
+   *
+   * In all fallback cases the returned bytes are identical to the sync path.
+   */
+  private _trackDrain(promise: Promise<unknown>): void {
+    this._pendingDrains.add(promise);
+    promise.finally(() => {
+      this._pendingDrains.delete(promise);
+    });
+  }
+
+  private async _serializeBody(
+    payload: unknown,
+    errorContext: string,
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    if (this.manualFlushMode) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    // Shape-aware gate: worker offload pays for itself only when the
+    // payload is dominated by one or more large strings (V8 can refcount
+    // those across isolates instead of copying). For structure-heavy
+    // payloads -- many keys, deep nesting, lots of small strings -- the
+    // structuredClone walk plus thread-hop cost exceeds the JSON.stringify
+    // cost we would pay inline, so we fall through to sync serialize.
+    if (!hasLargeString(payload)) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    if (this._serializeWorker === undefined) {
+      this._serializeWorker = getSharedSerializeWorker();
+    }
+    if (this._serializeWorker === null) {
+      return serializePayloadForTracing(payload, errorContext);
+    }
+    try {
+      const bytes = await this._serializeWorker.serialize(payload);
+      if (bytes === null) {
+        // Worker subsystem unavailable; cache the null to skip re-entry.
+        this._serializeWorker = null;
+        return serializePayloadForTracing(payload, errorContext);
+      }
+      return bytes;
+    } catch {
+      // DataCloneError, worker crash, etc. Fall back silently.
+      return serializePayloadForTracing(payload, errorContext);
+    }
+  }
+
+  private multipartStreamingDisabled =
+    getLangSmithEnvironmentVariable("DISABLE_MULTIPART_STREAMING") === "true";
 
   private _multipartDisabled = false;
 
@@ -827,6 +1363,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private static _fallbackDirsCreated = new Set<string>();
 
+  private _customHeaders: Record<string, string> = {};
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -838,13 +1376,16 @@ export class Client implements LangSmithTracingClientInterface {
       this.apiUrl = this.apiUrl.slice(0, -1);
     }
 
-    this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
+    const configuredApiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
+    this.apiKey = hasValue(configuredApiKey) ? configuredApiKey : undefined;
+    this.profileAuth =
+      this.apiKey !== undefined ? undefined : defaultConfig.profileAuth;
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
     this.workspaceId = trimQuotes(
-      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID")
+      config.workspaceId ?? defaultConfig.workspaceId,
     );
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
@@ -864,7 +1405,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.failedTracesDir =
       getLangSmithEnvironmentVariable("FAILED_TRACES_DIR") || undefined;
     const failedTracesMb = getLangSmithEnvironmentVariable(
-      "FAILED_TRACES_MAX_MB"
+      "FAILED_TRACES_MAX_MB",
     );
     if (failedTracesMb) {
       const n = parseInt(failedTracesMb, 10);
@@ -889,6 +1430,10 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+    this.hideMetadata =
+      config.hideMetadata ?? config.anonymizer ?? defaultConfig.hideMetadata;
+    this.anonymizer = config.anonymizer;
+
     this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
@@ -897,9 +1442,19 @@ export class Client implements LangSmithTracingClientInterface {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.batchSizeLimit = config.batchSizeLimit;
-    this.fetchOptions = config.fetchOptions || {};
+    const { headers: fetchOptionsHeaders, ...fetchOptions } =
+      config.fetchOptions || {};
+    this.fetchOptions = fetchOptions;
+    // Kept apart from `fetchOptions` so they can be merged *under* the required
+    // headers instead of replacing the whole set at each call site.
+    this._fetchOptionsHeaders = normalizeHeaders(fetchOptionsHeaders);
+    // Validated eagerly so malformed input fails at construction, but stored
+    // as given: `get headers` hands this object back to the caller.
+    assertValidHeaders(config.headers);
+    this._customHeaders = config.headers ?? {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
-    if (getOtelEnabled()) {
+    this._tracingMode = resolveTracingMode(config.tracingMode);
+    if (this._tracingMode === "otel") {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
@@ -911,7 +1466,7 @@ export class Client implements LangSmithTracingClientInterface {
       warnOnce(
         "Both 'cache' and 'disablePromptCache' were provided. " +
           "The 'cache' parameter is deprecated and will be removed in a future version. " +
-          "Using 'cache' parameter value."
+          "Using 'cache' parameter value.",
       );
     }
 
@@ -919,7 +1474,7 @@ export class Client implements LangSmithTracingClientInterface {
       warnOnce(
         "The 'cache' parameter is deprecated and will be removed in a future version. " +
           "Use 'configureGlobalPromptCache()' to configure the global cache, or " +
-          "'disablePromptCache: true' to disable caching for this client."
+          "'disablePromptCache: true' to disable caching for this client.",
       );
       // Handle old cache parameter
       if (config.cache === false) {
@@ -936,26 +1491,35 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  public static getDefaultClientConfig(): {
-    apiUrl: string;
-    apiKey?: string;
-    webUrl?: string;
-    hideInputs?: boolean;
-    hideOutputs?: boolean;
-  } {
-    const apiKey = getLangSmithEnvironmentVariable("API_KEY");
-    const apiUrl =
-      getLangSmithEnvironmentVariable("ENDPOINT") ?? DEFAULT_API_URL;
+  public static getDefaultClientConfig(): DefaultClientConfig {
+    const profileConfig = loadProfileClientConfig();
+    const envApiKey = getLangSmithEnvironmentVariable("API_KEY");
+    const envApiUrl = getLangSmithEnvironmentVariable("ENDPOINT");
+    const envWorkspaceId = getLangSmithEnvironmentVariable("WORKSPACE_ID");
+    const envAuthSet = hasValue(envApiKey);
+    const apiUrl = envApiUrl ?? profileConfig.apiUrl ?? DEFAULT_API_URL;
+    const workspaceId = envWorkspaceId ?? profileConfig.workspaceId;
     const hideInputs =
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
       getLangSmithEnvironmentVariable("HIDE_OUTPUTS") === "true";
+    const hideMetadata =
+      getLangSmithEnvironmentVariable("HIDE_METADATA") === "true";
     return {
       apiUrl: apiUrl,
-      apiKey: apiKey,
+      apiKey: envApiKey,
       webUrl: undefined,
       hideInputs: hideInputs,
       hideOutputs: hideOutputs,
+      hideMetadata: hideMetadata,
+      workspaceId: workspaceId,
+      oauthAccessToken: !envAuthSet
+        ? profileConfig.oauthAccessToken
+        : undefined,
+      oauthRefreshToken: !envAuthSet
+        ? profileConfig.oauthRefreshToken
+        : undefined,
+      profileAuth: !envAuthSet ? profileConfig.profileAuth : undefined,
     };
   }
 
@@ -980,6 +1544,12 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
       this.webUrl = "https://eu.smith.langchain.com";
       return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("aws")) {
+      this.webUrl = "https://aws.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("apac")) {
+      this.webUrl = "https://apac.smith.langchain.com";
+      return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("beta")) {
       this.webUrl = "https://beta.smith.langchain.com";
       return this.webUrl;
@@ -989,12 +1559,60 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private get headers(): { [header: string]: string } {
+  /**
+   * The headers this client sets from its own config, which a caller-supplied
+   * header must not replace.
+   *
+   * Only what the client *actually* supplies: passing an explicit `Authorization`
+   * or `x-api-key` header with no configured credential is a supported way to
+   * authenticate (see `hasExplicitAuthHeader`), so those must survive.
+   */
+  private get _sdkControlledHeaders(): ReadonlySet<string> {
+    const names = new Set<string>();
+    if (this.apiKey !== undefined) {
+      names.add("x-api-key");
+    } else {
+      const profileAuthHeader = this.profileAuth?.currentAuthHeader();
+      if (profileAuthHeader) {
+        names.add(profileAuthHeader.name.toLowerCase());
+      }
+    }
+    if (this.workspaceId) {
+      names.add("x-tenant-id");
+    }
+    return names;
+  }
+
+  /**
+   * Headers supplied by the caller, through either `config.headers` or
+   * `config.fetchOptions.headers`, with the ones this SDK sets removed.
+   *
+   * `_customHeaders` is normalized here rather than at assignment because it is
+   * public and mutable: `get headers` hands back the caller's own object, so its
+   * contents can change (and can become malformed) at any point.
+   */
+  private get _callerHeaders(): Record<string, string> {
+    return mergeCallerHeaders(
+      normalizeHeaders(this._customHeaders),
+      this._fetchOptionsHeaders,
+      this._sdkControlledHeaders,
+    );
+  }
+
+  private get _mergedHeaders(): { [header: string]: string } {
+    // Start with caller-supplied headers so they don't override required headers
     const headers: { [header: string]: string } = {
       "User-Agent": `langsmith-js/${__version__}`,
+      ...this._callerHeaders,
     };
-    if (this.apiKey) {
+    // Required headers that should not be overridden
+    if (this.apiKey !== undefined) {
       headers["x-api-key"] = `${this.apiKey}`;
+    } else {
+      const profileAuthHeader = this.profileAuth?.currentAuthHeader();
+      if (profileAuthHeader) {
+        headers[profileAuthHeader.name] = profileAuthHeader.value;
+      }
     }
     if (this.workspaceId) {
       headers["x-tenant-id"] = this.workspaceId;
@@ -1002,11 +1620,160 @@ export class Client implements LangSmithTracingClientInterface {
     return headers;
   }
 
+  /**
+   * The auth options and caller headers to build the generated client with.
+   *
+   * The generated client applies `defaultHeaders` *after* its own auth headers,
+   * so the ones this SDK sets are already dropped from `_callerHeaders` to keep
+   * the precedence of `_mergedHeaders`, where required headers win.
+   */
+  private get _openAPIAuth(): {
+    apiKey: string | undefined;
+    defaultHeaders: Record<string, string | null> | undefined;
+  } {
+    const headers: Record<string, string | null> = { ...this._callerHeaders };
+
+    // A caller may authenticate by supplying `x-api-key` themselves. The
+    // generated client rejects that as a header (its `validateHeaders` requires
+    // its own `apiKey` to be set), so hand it over as the `apiKey` option and
+    // drop the header to avoid sending the same value twice.
+    const callerApiKeyName = Object.keys(headers).find(
+      (name) => name.toLowerCase() === "x-api-key",
+    );
+    let apiKey = this.apiKey;
+    if (apiKey === undefined && callerApiKeyName !== undefined) {
+      apiKey = headers[callerApiKeyName] ?? undefined;
+      delete headers[callerApiKeyName];
+    }
+
+    if (apiKey === undefined && this.workspaceId === undefined) {
+      // Let the wrapped `fetch` supply auth (profile auth, an explicit
+      // `Authorization` header, or none at all).
+      headers["X-API-Key"] = null;
+    }
+
+    return {
+      apiKey,
+      defaultHeaders: Object.keys(headers).length > 0 ? headers : undefined,
+    };
+  }
+
+  /**
+   * Get or set custom headers for the client.
+   * Custom headers are merged with default headers (User-Agent, x-api-key, x-tenant-id).
+   * Custom headers will not override the default required headers.
+   */
+  public get headers(): Record<string, string> {
+    return this._customHeaders;
+  }
+
+  public set headers(value: Record<string, string> | undefined) {
+    assertValidHeaders(value);
+    this._customHeaders = value ?? {};
+  }
+
+  private _getOpenAPIBaseUrl(): string {
+    const url = this.apiUrl.replace(/\/$/, "");
+    for (const suffix of ["/api/v1", "/api"]) {
+      if (url.endsWith(suffix)) return url.slice(0, -suffix.length);
+    }
+    return url;
+  }
+
+  /**
+   * The generated OpenAPI client, rebuilt whenever its auth or headers change.
+   *
+   * The generated client captures `defaultHeaders` and `apiKey` when it is
+   * built, while the handwritten paths recompute `_mergedHeaders` per request.
+   * Rebuilding on change keeps the two halves from diverging when the inputs
+   * move underneath us — a caller mutating the object returned by
+   * `get headers`, or a profile whose auth header only becomes available after
+   * its token is refreshed.
+   */
+  private get openAPIClient(): OpenAPILangsmith {
+    const auth = this._openAPIAuth;
+    const signature = JSON.stringify([auth.apiKey, auth.defaultHeaders]);
+    if (
+      this._openAPIClient === undefined ||
+      this._openAPIClientSignature !== signature
+    ) {
+      this._openAPIClientSignature = signature;
+      this._openAPIClient = this._newOpenAPIClient(auth);
+    }
+    return this._openAPIClient;
+  }
+
+  private _newOpenAPIClient(auth = this._openAPIAuth): OpenAPILangsmith {
+    const {
+      method: _method,
+      body: _body,
+      signal: _signal,
+      ...openAPIFetchOptions
+    } = this.fetchOptions;
+
+    return new OpenAPILangsmith({
+      apiKey: auth.apiKey,
+      tenantID: this.workspaceId,
+      baseURL: this._getOpenAPIBaseUrl(),
+      timeout: this.timeout_ms,
+      fetch: this._fetch,
+      fetchOptions: openAPIFetchOptions,
+      defaultHeaders: auth.defaultHeaders,
+    });
+  }
+
   private _getPlatformEndpointPath(path: string): string {
     // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
     const needsV1Prefix =
       this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/";
     return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
+  }
+
+  public get evaluators(): Evaluators {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.onlineEvaluators;
+  }
+
+  public get runs(): OpenAPIRuns {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.runs;
+  }
+
+  /** Access the v2 sandboxes resource (registries, snapshots, boxes). */
+  public get sandboxes(): Sandboxes {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.sandboxes;
+  }
+
+  /** Access the v2 datasets resource (experimentRuns, etc.). */
+  public get datasets(): Datasets {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.datasets;
+  }
+
+  /** Access the annotation queues resource (runs, items). */
+  public get annotationQueues(): AnnotationQueues {
+    // The items endpoints landed in backend 0.16.14; the rest are older.
+    this._checkStainlessVersion("0.16.14");
+    return this.openAPIClient.annotationQueues;
+  }
+
+  /** Access the threads resource (query, stats, listTraces). */
+  public get threads(): Threads {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.threads;
+  }
+
+  /** Access the traces resource (query, listRuns). */
+  public get traces(): Traces {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.traces;
+  }
+
+  /** Access the public shared-run resource. */
+  public get public(): Public {
+    this._checkStainlessVersion("0.16.0");
+    return this.openAPIClient.public;
   }
 
   private async processInputs(inputs: KVMap): Promise<KVMap> {
@@ -1035,14 +1802,68 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
+  private async processMetadata(metadata: KVMap): Promise<KVMap> {
+    if (this.hideMetadata === false) {
+      return metadata;
+    }
+    if (this.hideMetadata === true) {
+      return {};
+    }
+    if (typeof this.hideMetadata === "function") {
+      return this.hideMetadata(metadata);
+    }
+    return metadata;
+  }
+
+  /**
+   * Apply the configured anonymizer to a run's error string.
+   *
+   * Unlike inputs/outputs, `error` is a plain string (an exception message or
+   * traceback) that can carry credentials the user never explicitly logged --
+   * e.g. an HTTP-client error whose message embeds an `Authorization` header.
+   * The anonymizer is typed `(KVMap) => KVMap`, so the string is wrapped as
+   * `{ error }`, scrubbed, and unwrapped. Mirrors the Python SDK's
+   * `Client._hide_run_error`.
+   *
+   * TODO: Update anonymizer to always nest inputs/outputs/error for consistency
+   */
+  private async processError(error: string): Promise<string> {
+    if (this.anonymizer == null) {
+      return error;
+    }
+    const result = await this.anonymizer({ error });
+    return typeof result?.error === "string" ? result.error : error;
+  }
+
+  /**
+   * Filter content from new_token events to prevent streaming LLM output
+   * from being uploaded via events.
+   */
+  private _filterNewTokenEvents(
+    events: KVMap[] | undefined,
+  ): KVMap[] | undefined {
+    if (!events || events.length === 0) {
+      return events;
+    }
+    return events.map((event) => {
+      if (event.name === "new_token") {
+        // Remove the kwargs containing the token data
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { kwargs: _, ...rest } = event;
+        return rest;
+      }
+      return event;
+    });
+  }
+
   private async prepareRunCreateOrUpdateInputs(
-    run: RunUpdate
+    run: RunUpdate,
   ): Promise<RunUpdate>;
   private async prepareRunCreateOrUpdateInputs(
-    run: RunCreate
+    run: RunCreate,
   ): Promise<RunCreate>;
   private async prepareRunCreateOrUpdateInputs(
-    run: RunCreate | RunUpdate
+    run: RunCreate | RunUpdate,
   ): Promise<RunCreate | RunUpdate> {
     const runParams = { ...run };
     if (runParams.inputs !== undefined) {
@@ -1051,19 +1872,31 @@ export class Client implements LangSmithTracingClientInterface {
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
     }
+    if (runParams.error !== undefined) {
+      runParams.error = await this.processError(runParams.error);
+    }
+    if (runParams.extra != null && "metadata" in runParams.extra) {
+      runParams.extra = {
+        ...runParams.extra,
+        metadata: await this.processMetadata(runParams.extra.metadata),
+      };
+    }
+    if (runParams.events !== undefined) {
+      runParams.events = this._filterNewTokenEvents(runParams.events);
+    }
     return runParams;
   }
 
   private async _getResponse(
     path: string,
-    queryParams?: URLSearchParams
+    queryParams?: URLSearchParams,
   ): Promise<Response> {
     const paramsString = queryParams?.toString() ?? "";
     const url = `${this.apiUrl}${path}?${paramsString}`;
     const response = await this.caller.call(async () => {
       const res = await this._fetch(url, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -1075,7 +1908,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _get<T>(
     path: string,
-    queryParams?: URLSearchParams
+    queryParams?: URLSearchParams,
   ): Promise<T> {
     const response = await this._getResponse(path, queryParams);
     return response.json() as T;
@@ -1084,7 +1917,7 @@ export class Client implements LangSmithTracingClientInterface {
   private async *_getPaginated<T, TResponse = unknown>(
     path: string,
     queryParams: URLSearchParams = new URLSearchParams(),
-    transform?: (data: TResponse) => T[]
+    transform?: (data: TResponse) => T[],
   ): AsyncIterable<T[]> {
     let offset = Number(queryParams.get("offset")) || 0;
     const limit = Number(queryParams.get("limit")) || 100;
@@ -1096,7 +1929,7 @@ export class Client implements LangSmithTracingClientInterface {
       const response = await this.caller.call(async () => {
         const res = await this._fetch(url, {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         });
@@ -1123,7 +1956,7 @@ export class Client implements LangSmithTracingClientInterface {
     path: string,
     body: RecordStringAny | null = null,
     requestMethod = "POST",
-    dataKey = "runs"
+    dataKey = "runs",
   ): AsyncIterable<T[]> {
     const bodyParams = body ? { ...body } : {};
     while (true) {
@@ -1131,7 +1964,10 @@ export class Client implements LangSmithTracingClientInterface {
       const response = await this.caller.call(async () => {
         const res = await this._fetch(`${this.apiUrl}${path}`, {
           method: requestMethod,
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -1168,7 +2004,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _filterForSampling(
     runs: CreateRunParams[] | UpdateRunParams[],
-    patch = false
+    patch = false,
   ) {
     if (this.tracingSampleRate === undefined) {
       return runs;
@@ -1256,24 +2092,37 @@ export class Client implements LangSmithTracingClientInterface {
         done();
         break;
       }
-      const batchesByDestination = batch.reduce((acc, item) => {
-        const apiUrl = item.apiUrl ?? this.apiUrl;
-        const apiKey = item.apiKey ?? this.apiKey;
-        const isDefault =
-          item.apiKey === this.apiKey && item.apiUrl === this.apiUrl;
-        const batchKey = isDefault ? "default" : `${apiUrl}|${apiKey}`;
-        if (!acc[batchKey]) {
-          acc[batchKey] = [];
-        }
-        acc[batchKey].push(item);
-        return acc;
-      }, {} as Record<string, AutoBatchQueueItem[]>);
+      const batchesByDestination = batch.reduce(
+        (acc, item) => {
+          const apiUrl = item.apiUrl ?? this.apiUrl;
+          const apiKey = item.apiKey ?? this.apiKey;
+          const workspaceId = item.workspaceId ?? this.workspaceId;
+          const isDefault =
+            item.apiKey === this.apiKey &&
+            item.apiUrl === this.apiUrl &&
+            item.workspaceId === this.workspaceId;
+          const batchKey = isDefault
+            ? "default"
+            : `${apiUrl}|${apiKey}|${workspaceId ?? ""}`;
+          if (!acc[batchKey]) {
+            acc[batchKey] = [];
+          }
+          acc[batchKey].push(item);
+          return acc;
+        },
+        {} as Record<string, AutoBatchQueueItem[]>,
+      );
 
       const batchPromises = [];
       for (const [batchKey, batch] of Object.entries(batchesByDestination)) {
+        const isDefault = batchKey === "default";
+        const parts = isDefault ? [] : batchKey.split("|");
+        const workspaceIdPart = parts[2];
         const batchPromise = this._processBatch(batch, {
-          apiUrl: batchKey === "default" ? undefined : batchKey.split("|")[0],
-          apiKey: batchKey === "default" ? undefined : batchKey.split("|")[1],
+          apiUrl: isDefault ? undefined : parts[0],
+          apiKey: isDefault ? undefined : parts[1],
+          workspaceId:
+            isDefault || !workspaceIdPart ? undefined : workspaceIdPart,
         });
         batchPromises.push(batchPromise);
       }
@@ -1302,7 +2151,7 @@ export class Client implements LangSmithTracingClientInterface {
     body: ArrayBuffer | string,
     replayHeaders: Record<string, string>,
     endpoint: string,
-    maxBytes?: number
+    maxBytes?: number,
   ): Promise<void> {
     try {
       const bodyBuffer =
@@ -1326,12 +2175,12 @@ export class Client implements LangSmithTracingClientInterface {
         try {
           const entries = await fsUtils.readdir(directory);
           const traceFiles = entries.filter(
-            (f) => f.startsWith("trace_") && f.endsWith(".json")
+            (f) => f.startsWith("trace_") && f.endsWith(".json"),
           );
           let total = 0;
           for (const name of traceFiles) {
             const { size } = await fsUtils.stat(
-              fsUtils.path.join(directory, name)
+              fsUtils.path.join(directory, name),
             );
             total += size;
           }
@@ -1339,7 +2188,7 @@ export class Client implements LangSmithTracingClientInterface {
             console.warn(
               `Could not write trace to fallback dir ${directory} as it's ` +
                 `already over size limit (${total} bytes >= ${maxBytes} bytes). ` +
-                `Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.`
+                `Increase LANGSMITH_FAILED_TRACES_MAX_MB if possible.`,
             );
             return;
           }
@@ -1349,19 +2198,19 @@ export class Client implements LangSmithTracingClientInterface {
       }
       await fsUtils.writeFileAtomic(filepath, envelope);
       console.warn(
-        `LangSmith trace upload failed; data saved to ${filepath} for later replay.`
+        `LangSmith trace upload failed; data saved to ${filepath} for later replay.`,
       );
     } catch (writeErr) {
       console.error(
         `LangSmith tracing error: could not write trace to fallback dir ${directory}:`,
-        writeErr
+        writeErr,
       );
     }
   }
 
   private async _processBatch(
     batch: AutoBatchQueueItem[],
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string },
   ) {
     if (!batch.length) {
       return;
@@ -1369,11 +2218,14 @@ export class Client implements LangSmithTracingClientInterface {
     // Calculate total batch size for queue tracking
     const batchSizeBytes = batch.reduce(
       (sum, item) => sum + (item.size ?? 0),
-      0
+      0,
     );
 
     try {
       if (this.langSmithToOTELTranslator !== undefined) {
+        for (const item of batch) {
+          item.item = await this._maskRunMetadata(item.item);
+        }
         this._sendBatchToOTELTranslator(batch);
       } else {
         const ingestParams = {
@@ -1452,13 +2304,42 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  private async _maskRunMetadata<T extends RunCreate | RunUpdate>(
+    run: T,
+  ): Promise<T> {
+    if (run.extra?.metadata == null) {
+      return run;
+    }
+    return {
+      ...run,
+      extra: {
+        ...run.extra,
+        metadata: await this.processMetadata(run.extra.metadata),
+      },
+    };
+  }
+
+  private async _mergeRuntimeEnvAndMaskMetadata<
+    T extends RunCreate | RunUpdate,
+  >(run: T): Promise<T> {
+    const merged = mergeRuntimeEnvIntoRun(
+      run,
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo,
+    );
+    if (this.omitTracedRuntimeInfo) {
+      return merged;
+    }
+    return this._maskRunMetadata(merged);
+  }
+
   private async processRunOperation(item: AutoBatchQueueItem) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     item.item = mergeRuntimeEnvIntoRun(
       item.item as RunCreate,
       this.cachedLSEnvVarsForMetadata,
-      this.omitTracedRuntimeInfo
+      this.omitTracedRuntimeInfo,
     );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
@@ -1471,18 +2352,22 @@ export class Client implements LangSmithTracingClientInterface {
       this.autoBatchQueue.sizeBytes > sizeLimitBytes ||
       this.autoBatchQueue.items.length > sizeLimit
     ) {
-      void this.drainAutoBatchQueue({
-        batchSizeLimitBytes: sizeLimitBytes,
-        batchSizeLimit: sizeLimit,
-      });
+      this._trackDrain(
+        this.drainAutoBatchQueue({
+          batchSizeLimitBytes: sizeLimitBytes,
+          batchSizeLimit: sizeLimit,
+        }),
+      );
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        void this.drainAutoBatchQueue({
-          batchSizeLimitBytes: sizeLimitBytes,
-          batchSizeLimit: sizeLimit,
-        });
+        this._trackDrain(
+          this.drainAutoBatchQueue({
+            batchSizeLimitBytes: sizeLimitBytes,
+            batchSizeLimit: sizeLimit,
+          }),
+        );
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
@@ -1492,7 +2377,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/info`, {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers: { ...this._mergedHeaders, Accept: "application/json" },
         signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT_MS),
         ...this.fetchOptions,
       });
@@ -1504,10 +2389,22 @@ export class Client implements LangSmithTracingClientInterface {
       console.log(
         "\n=== LangSmith Server Configuration ===\n" +
           JSON.stringify(json, null, 2) +
-          "\n"
+          "\n",
       );
     }
     return json;
+  }
+
+  private _checkStainlessVersion(minVersion: string): void {
+    if (this._stainlessVersionsChecked.has(minVersion)) return;
+    this._stainlessVersionsChecked.add(minVersion);
+    this._ensureServerInfo()
+      .then((serverInfo) => {
+        _checkBackendVersion(serverInfo?.version, minVersion);
+      })
+      .catch(() => {
+        // _ensureServerInfo handles and logs its own errors
+      });
   }
 
   protected async _ensureServerInfo() {
@@ -1520,7 +2417,7 @@ export class Client implements LangSmithTracingClientInterface {
             console.warn(
               `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
                 e.status ?? "Unspecified status code"
-              } ${e.message}`
+              } ${e.message}`,
             );
           }
         }
@@ -1533,6 +2430,33 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return serverInfo;
     });
+  }
+
+  public async _supportsSDBQuery(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return serverInfo.instance_flags?.sdb_query_enabled === true;
+  }
+
+  /**
+   * Throw on SmithDB-only deployments, warn elsewhere. Call only when run-level
+   * feedback has no sessionId.
+   */
+  private async _checkFeedbackSessionId(): Promise<void> {
+    const docs =
+      "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
+    const serverInfo = await this._ensureServerInfo();
+    if (
+      getQueryBackend(serverInfo.instance_flags) === QueryBackend.SMITHDB_ONLY
+    ) {
+      throw new Error(
+        `sessionId must be provided when creating feedback for a run: this ` +
+          `deployment cannot locate the run without it. See ${docs}`,
+      );
+    }
+    warnOnce(
+      `Creating feedback for a run without sessionId is deprecated and will ` +
+        `stop working in a future release. See ${docs}`,
+    );
   }
 
   protected async _getSettings() {
@@ -1569,13 +2493,13 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async createRun(
     run: CreateRunParams,
-    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string },
   ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
     }
     const headers: Record<string, string> = {
-      ...this.headers,
+      ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
     const session_name = run.project_name;
@@ -1598,14 +2522,12 @@ export class Client implements LangSmithTracingClientInterface {
         otelContext,
         apiKey: options?.apiKey,
         apiUrl: options?.apiUrl,
+        workspaceId: options?.workspaceId,
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
-      runCreate,
-      this.cachedLSEnvVarsForMetadata,
-      this.omitTracedRuntimeInfo
-    );
+    const mergedRunCreateParam =
+      await this._mergeRuntimeEnvAndMaskMetadata(runCreate);
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
@@ -1614,7 +2536,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const body = serializePayloadForTracing(
       mergedRunCreateParam,
-      `Creating run with id: ${mergedRunCreateParam.id}`
+      `Creating run with id: ${mergedRunCreateParam.id}`,
     );
     await this.caller.call(async () => {
       const res = await this._fetch(`${options?.apiUrl ?? this.apiUrl}/runs`, {
@@ -1641,20 +2563,25 @@ export class Client implements LangSmithTracingClientInterface {
       runCreates?: RunCreate[];
       runUpdates?: RunUpdate[];
     },
-    options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number }
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      sizeBytes?: number;
+    },
   ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
     let preparedCreateParams = await Promise.all(
       runCreates?.map((create) =>
-        this.prepareRunCreateOrUpdateInputs(create)
-      ) ?? []
+        this.prepareRunCreateOrUpdateInputs(create),
+      ) ?? [],
     );
     let preparedUpdateParams = await Promise.all(
       runUpdates?.map((update) =>
-        this.prepareRunCreateOrUpdateInputs(update)
-      ) ?? []
+        this.prepareRunCreateOrUpdateInputs(update),
+      ) ?? [],
     );
 
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
@@ -1666,7 +2593,7 @@ export class Client implements LangSmithTracingClientInterface {
           params[run.id] = run;
           return params;
         },
-        {}
+        {},
       );
       const standaloneUpdates = [];
       for (const updateParam of preparedUpdateParams) {
@@ -1709,26 +2636,34 @@ export class Client implements LangSmithTracingClientInterface {
         .concat(batchChunks.patch.map((item) => item.id))
         .join(",");
       await this._postBatchIngestRuns(
-        serializePayloadForTracing(
+        await this._serializeBody(
           batchChunks,
-          `Ingesting runs with ids: ${runIds}`
+          `Ingesting runs with ids: ${runIds}`,
         ),
-        options
+        options,
       );
     }
   }
 
   private async _postBatchIngestRuns(
     body: Uint8Array<ArrayBuffer>,
-    options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number }
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      sizeBytes?: number;
+    },
   ) {
     const headers: Record<string, string> = {
-      ...this.headers,
+      ...this._mergedHeaders,
       "Content-Type": "application/json",
       Accept: "application/json",
     };
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     await this.batchIngestCaller.callWithOptions(
       { sizeBytes: options?.sizeBytes },
@@ -1741,11 +2676,11 @@ export class Client implements LangSmithTracingClientInterface {
             signal: AbortSignal.timeout(this.timeout_ms),
             ...this.fetchOptions,
             body,
-          }
+          },
         );
         await raiseForStatus(res, "batch create run", true);
         return res;
-      }
+      },
     );
   }
 
@@ -1764,9 +2699,10 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       apiKey?: string;
       apiUrl?: string;
+      workspaceId?: string;
       useGzip?: boolean;
       sizeBytes?: number;
-    }
+    },
   ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
@@ -1789,7 +2725,7 @@ export class Client implements LangSmithTracingClientInterface {
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
       preparedUpdateParams.push(
-        await this.prepareRunCreateOrUpdateInputs(update)
+        await this.prepareRunCreateOrUpdateInputs(update),
       );
     }
 
@@ -1801,7 +2737,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
     if (invalidRunCreate !== undefined) {
       throw new Error(
-        `Multipart ingest requires "trace_id" and "dotted_order" to be set when creating a run`
+        `Multipart ingest requires "trace_id" and "dotted_order" to be set when creating a run`,
       );
     }
     const invalidRunUpdate = preparedUpdateParams.find((runUpdate) => {
@@ -1811,7 +2747,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
     if (invalidRunUpdate !== undefined) {
       throw new Error(
-        `Multipart ingest requires "trace_id" and "dotted_order" to be set when updating a run`
+        `Multipart ingest requires "trace_id" and "dotted_order" to be set when updating a run`,
       );
     }
     // combine post and patch dicts where possible
@@ -1824,7 +2760,7 @@ export class Client implements LangSmithTracingClientInterface {
           params[run.id] = run;
           return params;
         },
-        {}
+        {},
       );
       const standaloneUpdates = [];
       for (const updateParam of preparedUpdateParams) {
@@ -1867,9 +2803,9 @@ export class Client implements LangSmithTracingClientInterface {
         } = originalPayload;
         const fields = { inputs, outputs, events, extra, error, serialized };
         // encode the main run payload
-        const stringifiedPayload = serializePayloadForTracing(
+        const stringifiedPayload = await this._serializeBody(
           payload,
-          `Serializing for multipart ingestion of run with id: ${payload.id}`
+          `Serializing for multipart ingestion of run with id: ${payload.id}`,
         );
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
@@ -1882,9 +2818,9 @@ export class Client implements LangSmithTracingClientInterface {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = serializePayloadForTracing(
+          const stringifiedValue = await this._serializeBody(
             value,
-            `Serializing ${key} for multipart ingestion of run with id: ${payload.id}`
+            `Serializing ${key} for multipart ingestion of run with id: ${payload.id}`,
           );
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
@@ -1913,7 +2849,7 @@ export class Client implements LangSmithTracingClientInterface {
               if (name.includes(".")) {
                 console.warn(
                   `Skipping attachment '${name}' for run ${payload.id}: Invalid attachment name. ` +
-                    `Attachment names must not contain periods ('.'). Please rename the attachment and try again.`
+                    `Attachment names must not contain periods ('.'). Please rename the attachment and try again.`,
                 );
                 continue;
               }
@@ -1933,7 +2869,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this._sendMultipartRequest(
       accumulatedParts,
       accumulatedContext.join("; "),
-      options
+      options,
     );
   }
 
@@ -1948,7 +2884,7 @@ export class Client implements LangSmithTracingClientInterface {
         new Blob([
           `Content-Disposition: form-data; name="${part.name}"\r\n`,
           `Content-Type: ${part.payload.type}\r\n\r\n`,
-        ])
+        ]),
       );
       chunks.push(part.payload);
       chunks.push(new Blob(["\r\n"]));
@@ -1967,7 +2903,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _createMultipartStream(
     parts: MultipartPart[],
-    boundary: string
+    boundary: string,
   ) {
     const encoder = new TextEncoder();
     // Create a ReadableStream for streaming the multipart data
@@ -1988,7 +2924,7 @@ export class Client implements LangSmithTracingClientInterface {
           // Write boundary and headers
           await writeChunk(`--${boundary}\r\n`);
           await writeChunk(
-            `Content-Disposition: form-data; name="${part.name}"\r\n`
+            `Content-Disposition: form-data; name="${part.name}"\r\n`,
           );
           await writeChunk(`Content-Type: ${part.payload.type}\r\n\r\n`);
 
@@ -2022,9 +2958,10 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       apiKey?: string;
       apiUrl?: string;
+      workspaceId?: string;
       useGzip?: boolean;
       sizeBytes?: number;
-    }
+    },
   ) {
     // Create multipart form data boundary
     const boundary =
@@ -2034,18 +2971,21 @@ export class Client implements LangSmithTracingClientInterface {
     const buildStream = () => this._createMultipartStream(parts, boundary);
 
     const sendWithRetry = async (
-      bodyFactory: () => Promise<BodyInit>
+      bodyFactory: () => Promise<BodyInit>,
     ): Promise<Response> => {
       return this.batchIngestCaller.callWithOptions(
         { sizeBytes: options?.sizeBytes },
         async () => {
           const body = await bodyFactory();
           const headers: Record<string, string> = {
-            ...this.headers,
+            ...this._mergedHeaders,
             "Content-Type": `multipart/form-data; boundary=${boundary}`,
           };
           if (options?.apiKey !== undefined) {
             headers["x-api-key"] = options.apiKey;
+          }
+          if (options?.workspaceId !== undefined) {
+            headers["x-tenant-id"] = options.workspaceId;
           }
 
           let transformedBody = body;
@@ -2067,17 +3007,17 @@ export class Client implements LangSmithTracingClientInterface {
               duplex: "half",
               signal: AbortSignal.timeout(this.timeout_ms),
               ...this.fetchOptions,
-            } as RequestInit
+            } as RequestInit,
           );
 
           await raiseForStatus(
             response,
             `Failed to send multipart request`,
-            true
+            true,
           );
 
           return response;
-        }
+        },
       );
     };
 
@@ -2110,7 +3050,7 @@ export class Client implements LangSmithTracingClientInterface {
             options?.apiUrl ?? this.apiUrl
           }/runs/multipart failed. ` +
             `This usually means the host does not support chunked uploads. ` +
-            `Retrying with a buffered upload for operation "${context}".`
+            `Retrying with a buffered upload for operation "${context}".`,
         );
         // Disable streaming for future requests
         this.multipartStreamingDisabled = true;
@@ -2127,7 +3067,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (this.failedTracesDir) {
         const bodyBuffer = await this._createNodeFetchBody(
           parts,
-          boundary
+          boundary,
         ).catch(() => null);
         if (bodyBuffer) {
           await Client._writeTraceToFallbackDir(
@@ -2135,7 +3075,7 @@ export class Client implements LangSmithTracingClientInterface {
             bodyBuffer,
             { "Content-Type": `multipart/form-data; boundary=${boundary}` },
             "runs/multipart",
-            this.failedTracesMaxBytes
+            this.failedTracesMaxBytes,
           );
         }
       }
@@ -2145,7 +3085,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(
     runId: string,
     run: RunUpdate,
-    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string },
   ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
@@ -2154,6 +3094,19 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (run.outputs) {
       run.outputs = await this.processOutputs(run.outputs);
+    }
+    if (run.error) {
+      run.error = await this.processError(run.error);
+    }
+    if (run.extra != null && "metadata" in run.extra) {
+      run.extra = {
+        ...run.extra,
+        metadata: await this.processMetadata(run.extra.metadata),
+      };
+    }
+
+    if (run.events) {
+      run.events = this._filterNewTokenEvents(run.events);
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
@@ -2180,6 +3133,7 @@ export class Client implements LangSmithTracingClientInterface {
           otelContext,
           apiKey: options?.apiKey,
           apiUrl: options?.apiUrl,
+          workspaceId: options?.workspaceId,
         }).catch(console.error);
         return;
       } else {
@@ -2189,12 +3143,13 @@ export class Client implements LangSmithTracingClientInterface {
           otelContext,
           apiKey: options?.apiKey,
           apiUrl: options?.apiUrl,
+          workspaceId: options?.workspaceId,
         }).catch(console.error);
       }
       return;
     }
     const headers: Record<string, string> = {
-      ...this.headers,
+      ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
     if (options?.apiKey !== undefined) {
@@ -2205,7 +3160,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const body = serializePayloadForTracing(
       run,
-      `Serializing payload to update run with id: ${runId}`
+      `Serializing payload to update run with id: ${runId}`,
     );
     await this.caller.call(async () => {
       const res = await this._fetch(
@@ -2216,16 +3171,38 @@ export class Client implements LangSmithTracingClientInterface {
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "update run", true);
       return res;
     });
   }
 
+  /** @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRun(
     runId: string,
-    { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false }
+    { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
+  ): Promise<Run> {
+    warnOnce(
+      "readRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.retrieve() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
+    );
+    return this._readRun(runId, { loadChildRuns });
+  }
+
+  /**
+   * Fetch a run without emitting the `readRun()` deprecation warning.
+   *
+   * Internal callers use this so that a supported method doesn't warn about a
+   * deprecated one the caller never invoked.
+   *
+   * @internal
+   */
+  public async _readRun(
+    runId: string,
+    { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
   ): Promise<Run> {
     assertUuid(runId);
     let run = _normalizeRunTimestamps(await this._get<Run>(`/runs/${runId}`));
@@ -2235,6 +3212,7 @@ export class Client implements LangSmithTracingClientInterface {
     return run;
   }
 
+  /** @deprecated Use `client.runs.getURL()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide. Will be removed after Jan 31, 2027. */
   public async getRunUrl({
     runId,
     run,
@@ -2244,6 +3222,12 @@ export class Client implements LangSmithTracingClientInterface {
     run?: Run;
     projectOpts?: ProjectOptions;
   }): Promise<string> {
+    warnOnce(
+      "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.getURL() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
+    );
     if (run !== undefined) {
       let sessionId: string;
       if (run.session_id) {
@@ -2265,7 +3249,9 @@ export class Client implements LangSmithTracingClientInterface {
         run.id
       }?poll=true`;
     } else if (runId !== undefined) {
-      const run_ = await this.readRun(runId);
+      // Via _readRun() rather than readRun() so callers don't also get a
+      // readRun deprecation warning for a method they never called.
+      const run_ = await this._readRun(runId);
       if (!run_.app_path) {
         throw new Error(`Run ${runId} has no app_path`);
       }
@@ -2278,17 +3264,17 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _loadChildRuns(run: Run): Promise<Run> {
     const childRuns = await toArray(
-      this.listRuns({
+      this._listRuns({
         isRoot: false,
         projectId: run.session_id,
         traceId: run.trace_id,
-      })
+      }),
     );
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     // TODO: make dotted order required when the migration finishes
     childRuns.sort((a, b) =>
-      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? ""),
     );
     for (const childRun of childRuns) {
       if (
@@ -2319,6 +3305,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * List runs from the LangSmith server.
+   * @deprecated Use `client.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide. Will be removed after Jan 31, 2027.
    * @param projectId - The ID of the project to filter by.
    * @param projectName - The name of the project to filter by.
    * @param parentRunId - The ID of the parent run to filter by.
@@ -2400,6 +3387,24 @@ export class Client implements LangSmithTracingClientInterface {
    * });
    */
   public async *listRuns(props: ListRunsParams): AsyncIterable<Run> {
+    warnOnce(
+      "listRuns() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
+    );
+    yield* this._listRuns(props);
+  }
+
+  /**
+   * List runs without emitting the `listRuns()` deprecation warning.
+   *
+   * Internal callers use this so that a supported method doesn't warn about a
+   * deprecated one the caller never invoked.
+   *
+   * @internal
+   */
+  public async *_listRuns(props: ListRunsParams): AsyncIterable<Run> {
     const {
       projectId,
       projectName,
@@ -2430,8 +3435,8 @@ export class Client implements LangSmithTracingClientInterface {
         : [projectName];
       const projectIds_ = await Promise.all(
         projectNames.map((name) =>
-          this.readProject({ projectName: name }).then((project) => project.id)
-        )
+          this.readProject({ projectName: name }).then((project) => project.id),
+        ),
       );
       projectIds.push(...projectIds_);
     }
@@ -2486,14 +3491,14 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (body.select.includes("child_run_ids")) {
       warnOnce(
-        "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
+        "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version.",
       );
     }
 
     let runsYielded = 0;
     for await (const runs of this._getCursorPaginatedList<Run>(
       "/runs/query",
-      body
+      body,
     )) {
       const normalized = runs.map(_normalizeRunTimestamps);
       if (limit) {
@@ -2549,7 +3554,7 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Remove undefined values from the payload
       const filteredPayload = Object.fromEntries(
-        Object.entries(currentBody).filter(([_, value]) => value !== undefined)
+        Object.entries(currentBody).filter(([_, value]) => value !== undefined),
       );
 
       const body = JSON.stringify(filteredPayload);
@@ -2557,7 +3562,10 @@ export class Client implements LangSmithTracingClientInterface {
       const response = await this.caller.call(async () => {
         const res = await this._fetch(url, {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
@@ -2584,7 +3592,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
+    warnOnce(
+      "readThread() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.listTraces() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_THREAD" },
+    );
     const {
       threadId,
       projectId,
@@ -2604,7 +3619,9 @@ export class Client implements LangSmithTracingClientInterface {
       ? `and(${threadFilter}, ${userFilter})`
       : threadFilter;
 
-    yield* this.listRuns({
+    // Via _listRuns() rather than listRuns(): readThread() already warned, and it
+    // points at threads.listTraces() rather than listRuns()'s runs.query().
+    yield* this._listRuns({
       projectId: projectId ?? undefined,
       projectName: projectName ?? undefined,
       isRoot,
@@ -2614,9 +3631,16 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide. Will be removed after Jan 31, 2027. */
   public async listThreads(
-    props: ListThreadsParams
+    props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
+    warnOnce(
+      "listThreads() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.threads.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_THREADS" },
+    );
     const {
       projectId,
       projectName,
@@ -2679,7 +3703,7 @@ export class Client implements LangSmithTracingClientInterface {
     const threadsMap = new Map<string, Run[]>();
     for await (const runs of this._getCursorPaginatedList<Run>(
       "/runs/query",
-      bodyQuery as RecordStringAny
+      bodyQuery as RecordStringAny,
     )) {
       for (const raw of runs) {
         const run = _normalizeRunTimestamps(raw);
@@ -2708,7 +3732,7 @@ export class Client implements LangSmithTracingClientInterface {
       });
       const startTimes = runs
         .map(
-          (r) => (r as unknown as Record<string, unknown>).start_time as string
+          (r) => (r as unknown as Record<string, unknown>).start_time as string,
         )
         .filter(Boolean);
       const sortedTimes = [...startTimes].sort();
@@ -2787,11 +3811,16 @@ export class Client implements LangSmithTracingClientInterface {
         ...(await Promise.all(
           projectNames.map((name) =>
             this.readProject({ projectName: name }).then(
-              (project) => project.id
-            )
-          )
+              (project) => project.id,
+            ),
+          ),
         )),
       ];
+    }
+    if (projectIds_.length === 0) {
+      throw new Error(
+        "At least one of projectNames or projectIds must be provided.",
+      );
     }
 
     const payload = {
@@ -2814,7 +3843,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     // Remove undefined values from the payload
     const filteredPayload = Object.fromEntries(
-      Object.entries(payload).filter(([_, value]) => value !== undefined)
+      Object.entries(payload).filter(([_, value]) => value !== undefined),
     );
 
     const body = JSON.stringify(filteredPayload);
@@ -2822,7 +3851,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/stats`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -2835,10 +3864,17 @@ export class Client implements LangSmithTracingClientInterface {
     return result;
   }
 
+  /** @deprecated Use `client.runs.share.create()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async shareRun(
     runId: string,
-    { shareId }: { shareId?: string } = {}
+    { shareId }: { shareId?: string } = {},
   ): Promise<string> {
+    warnOnce(
+      "shareRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.share.create() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_SHARE_RUN" },
+    );
     const data = {
       run_id: runId,
       share_token: shareId || uuid.v4(),
@@ -2848,7 +3884,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "PUT",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -2863,12 +3899,19 @@ export class Client implements LangSmithTracingClientInterface {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
+  /** @deprecated Use `client.runs.share.delete()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async unshareRun(runId: string): Promise<void> {
+    warnOnce(
+      "unshareRun() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.runs.share.delete() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_UNSHARE_RUN" },
+    );
     assertUuid(runId);
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -2877,12 +3920,22 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
+  /** @deprecated Use `client.runs.retrieve({ selects: ["SHARE_URL"] })` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
+    warnOnce(
+      "readRunSharedLink() is deprecated and will be removed after Jan 31, 2027. " +
+        'Use client.runs.retrieve({ selects: ["SHARE_URL"] }) instead. ' +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_READ_RUN_SHARED_LINK",
+      },
+    );
     assertUuid(runId);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -2896,14 +3949,24 @@ export class Client implements LangSmithTracingClientInterface {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
+  /** @deprecated Use `client.public.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async listSharedRuns(
     shareToken: string,
     {
       runIds,
     }: {
       runIds?: string[];
-    } = {}
+    } = {},
   ): Promise<Run[]> {
+    warnOnce(
+      "listSharedRuns() is deprecated and will be removed after Jan 31, 2027. " +
+        "Use client.public.runs.query() instead. " +
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+      {
+        type: "DeprecationWarning",
+        code: "LANGSMITH_DEPRECATED_LIST_SHARED_RUNS",
+      },
+    );
     const queryParams = new URLSearchParams({
       share_token: shareToken,
     });
@@ -2918,10 +3981,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "list shared runs");
       return res;
@@ -2932,7 +3995,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async readDatasetSharedSchema(
     datasetId?: string,
-    datasetName?: string
+    datasetName?: string,
   ): Promise<DatasetShareSchema> {
     if (!datasetId && !datasetName) {
       throw new Error("Either datasetId or datasetName must be given");
@@ -2947,10 +4010,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId}/share`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "read dataset shared schema");
       return res;
@@ -2964,7 +4027,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async shareDataset(
     datasetId?: string,
-    datasetName?: string
+    datasetName?: string,
   ): Promise<DatasetShareSchema> {
     if (!datasetId && !datasetName) {
       throw new Error("Either datasetId or datasetName must be given");
@@ -2983,11 +4046,11 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId}/share`,
         {
           method: "PUT",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "share dataset");
       return res;
@@ -3006,10 +4069,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId}/share`,
         {
           method: "DELETE",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "unshare dataset", true);
       return res;
@@ -3023,10 +4086,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/public/${shareToken}/datasets`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "read shared dataset");
       return res;
@@ -3045,7 +4108,7 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async listSharedExamples(
     shareToken: string,
-    options?: { exampleIds?: string[] }
+    options?: { exampleIds?: string[] },
   ): Promise<Example[]> {
     const params: Record<string, string | string[]> = {};
     if (options?.exampleIds) {
@@ -3066,10 +4129,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "list shared examples");
       return res;
@@ -3084,11 +4147,11 @@ export class Client implements LangSmithTracingClientInterface {
             Array.isArray(result.detail)
               ? result.detail.join("\n")
               : "Unspecified error"
-          }`
+          }`,
         );
       }
       throw new Error(
-        `Failed to list shared examples: ${response.status} ${response.statusText}`
+        `Failed to list shared examples: ${response.status} ${response.statusText}`,
       );
     }
     return result.map((example: any) => ({
@@ -3104,6 +4167,10 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
+    numExamples = null,
+    numRepetitions = null,
+    evaluatorKeys = null,
+    tagValueIds = null,
   }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -3119,11 +4186,23 @@ export class Client implements LangSmithTracingClientInterface {
     if (referenceDatasetId !== null) {
       body["reference_dataset_id"] = referenceDatasetId;
     }
+    if (numExamples != null) {
+      body["num_examples"] = numExamples;
+    }
+    if (numRepetitions != null) {
+      body["num_repetitions"] = numRepetitions;
+    }
+    if (evaluatorKeys != null && evaluatorKeys.length > 0) {
+      body["evaluator_keys"] = evaluatorKeys;
+    }
+    if (tagValueIds !== null) {
+      body["tag_value_ids"] = tagValueIds;
+    }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(endpoint, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -3149,7 +4228,7 @@ export class Client implements LangSmithTracingClientInterface {
       metadata?: RecordStringAny | null;
       projectExtra?: RecordStringAny | null;
       endTime?: string | null;
-    }
+    },
   ): Promise<TracerSession> {
     const endpoint = `${this.apiUrl}/sessions/${projectId}`;
     let extra = projectExtra;
@@ -3165,7 +4244,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(endpoint, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -3200,7 +4279,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}${path}?${params}`, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -3220,7 +4299,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
       // projectId querying
       return true;
-    } catch (e) {
+    } catch (_e) {
       return false;
     }
   }
@@ -3252,13 +4331,13 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this._get<TracerSession | TracerSession[]>(
       path,
-      params
+      params,
     );
     let result: TracerSession;
     if (Array.isArray(response)) {
       if (response.length === 0) {
         throw new Error(
-          `Project[id=${projectId}, name=${projectName}] not found`
+          `Project[id=${projectId}, name=${projectName}] not found`,
         );
       }
       result = response[0] as TracerSessionResult;
@@ -3305,7 +4384,7 @@ export class Client implements LangSmithTracingClientInterface {
     const queryParams = new URLSearchParams({ limit: "1" });
     for await (const projects of this._getPaginated<TracerSession>(
       "/sessions",
-      queryParams
+      queryParams,
     )) {
       this._tenantId = projects[0].tenant_id;
       return projects[0].tenant_id;
@@ -3368,7 +4447,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     for await (const projects of this._getPaginated<TracerSessionResult>(
       "/sessions",
-      params
+      params,
     )) {
       yield* projects;
     }
@@ -3395,14 +4474,14 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/sessions/${projectId_}`, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
       await raiseForStatus(
         res,
         `delete session ${projectId_} (${projectName})`,
-        true
+        true,
       );
       return res;
     });
@@ -3441,7 +4520,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(url, {
         method: "POST",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: formData,
@@ -3462,13 +4541,15 @@ export class Client implements LangSmithTracingClientInterface {
       inputsSchema,
       outputsSchema,
       metadata,
+      tagValueIds,
     }: {
       description?: string;
       dataType?: DataType;
       inputsSchema?: KVMap;
       outputsSchema?: KVMap;
       metadata?: RecordStringAny;
-    } = {}
+      tagValueIds?: string[];
+    } = {},
   ): Promise<Dataset> {
     const body: KVMap = {
       name,
@@ -3484,11 +4565,14 @@ export class Client implements LangSmithTracingClientInterface {
     if (outputsSchema) {
       body.outputs_schema_definition = outputsSchema;
     }
+    if (tagValueIds !== undefined) {
+      body.tag_value_ids = tagValueIds;
+    }
     const serializedBody = JSON.stringify(body);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/datasets`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -3525,7 +4609,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (Array.isArray(response)) {
       if (response.length === 0) {
         throw new Error(
-          `Dataset[id=${datasetId}, name=${datasetName}] not found`
+          `Dataset[id=${datasetId}, name=${datasetName}] not found`,
         );
       }
       result = response[0] as Dataset;
@@ -3587,7 +4671,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
     const response = await this._get<DatasetDiffInfo>(
       `/datasets/${datasetId_}/versions/diff`,
-      urlParams
+      urlParams,
     );
     return response as DatasetDiffInfo;
   }
@@ -3680,7 +4764,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/datasets/${_datasetId}`, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -3730,11 +4814,14 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${_datasetId}/tags`,
         {
           method: "PUT",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "update dataset tags", true);
       return res;
@@ -3765,123 +4852,13 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
       await raiseForStatus(res, `delete ${path}`, true);
       return res;
     });
-  }
-
-  public async indexDataset({
-    datasetId,
-    datasetName,
-    tag,
-  }: {
-    datasetId?: string;
-    datasetName?: string;
-    tag?: string;
-  }): Promise<void> {
-    let datasetId_ = datasetId;
-    if (!datasetId_ && !datasetName) {
-      throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ && datasetName) {
-      throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (!datasetId_) {
-      const dataset = await this.readDataset({ datasetName });
-      datasetId_ = dataset.id;
-    }
-    assertUuid(datasetId_);
-
-    const data = {
-      tag: tag,
-    };
-    const body = JSON.stringify(data);
-    const response = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/datasets/${datasetId_}/index`,
-        {
-          method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        }
-      );
-      await raiseForStatus(res, "index dataset");
-      return res;
-    });
-    await response.json();
-  }
-
-  /**
-   * Lets you run a similarity search query on a dataset.
-   *
-   * Requires the dataset to be indexed. Please see the `indexDataset` method to set up indexing.
-   *
-   * @param inputs      The input on which to run the similarity search. Must have the
-   *                    same schema as the dataset.
-   *
-   * @param datasetId   The dataset to search for similar examples.
-   *
-   * @param limit       The maximum number of examples to return. Will return the top `limit` most
-   *                    similar examples in order of most similar to least similar. If no similar
-   *                    examples are found, random examples will be returned.
-   *
-   * @param filter      A filter string to apply to the search. Only examples will be returned that
-   *                    match the filter string. Some examples of filters
-   *
-   *                    - eq(metadata.mykey, "value")
-   *                    - and(neq(metadata.my.nested.key, "value"), neq(metadata.mykey, "value"))
-   *                    - or(eq(metadata.mykey, "value"), eq(metadata.mykey, "othervalue"))
-   *
-   * @returns           A list of similar examples.
-   *
-   *
-   * @example
-   * dataset_id = "123e4567-e89b-12d3-a456-426614174000"
-   * inputs = {"text": "How many people live in Berlin?"}
-   * limit = 5
-   * examples = await client.similarExamples(inputs, dataset_id, limit)
-   */
-  public async similarExamples(
-    inputs: KVMap,
-    datasetId: string,
-    limit: number,
-    {
-      filter,
-    }: {
-      filter?: string;
-    } = {}
-  ): Promise<ExampleSearch[]> {
-    const data: KVMap = {
-      limit: limit,
-      inputs: inputs,
-    };
-
-    if (filter !== undefined) {
-      data["filter"] = filter;
-    }
-
-    assertUuid(datasetId);
-    const body = JSON.stringify(data);
-    const response = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/datasets/${datasetId}/search`,
-        {
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          method: "POST",
-          body,
-        }
-      );
-      await raiseForStatus(res, "fetch similar examples");
-      return res;
-    });
-    const result = await response.json();
-    return result["examples"] as ExampleSearch[];
   }
 
   public async createExample(update: ExampleCreate): Promise<Example>;
@@ -3892,18 +4869,18 @@ export class Client implements LangSmithTracingClientInterface {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    options: CreateExampleOptions
+    options: CreateExampleOptions,
   ): Promise<Example>;
 
   public async createExample(
     inputsOrUpdate: KVMap | ExampleCreate,
     outputs?: KVMap,
-    options?: CreateExampleOptions
+    options?: CreateExampleOptions,
   ): Promise<Example> {
     if (isExampleCreate(inputsOrUpdate)) {
       if (outputs !== undefined || options !== undefined) {
         throw new Error(
-          "Cannot provide outputs or options when using ExampleCreate object"
+          "Cannot provide outputs or options when using ExampleCreate object",
         );
       }
     }
@@ -3943,7 +4920,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this._uploadExamplesMultipart(datasetId_, [data]);
     const example = await this.readExample(
-      response.example_ids?.[0] ?? uuid.v4()
+      response.example_ids?.[0] ?? uuid.v4(),
     );
     return example;
   }
@@ -3978,7 +4955,7 @@ export class Client implements LangSmithTracingClientInterface {
           exampleIds?: Array<string>;
           datasetId?: string;
           datasetName?: string;
-        }
+        },
   ): Promise<Example[]> {
     if (Array.isArray(propsOrUploads)) {
       if (propsOrUploads.length === 0) {
@@ -3993,7 +4970,7 @@ export class Client implements LangSmithTracingClientInterface {
         throw new Error("Must provide either datasetName or datasetId");
       } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
         throw new Error(
-          "Must provide either datasetName or datasetId, not both"
+          "Must provide either datasetName or datasetId, not both",
         );
       } else if (datasetId_ === undefined) {
         const dataset = await this.readDataset({ datasetName: datasetName_ });
@@ -4002,7 +4979,7 @@ export class Client implements LangSmithTracingClientInterface {
 
       const response = await this._uploadExamplesMultipart(datasetId_, uploads);
       const examples = await Promise.all(
-        response.example_ids.map((id) => this.readExample(id))
+        response.example_ids.map((id) => this.readExample(id)),
       );
       return examples;
     }
@@ -4054,10 +5031,10 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this._uploadExamplesMultipart(
       datasetId_,
-      formattedExamples
+      formattedExamples,
     );
     const examples = await Promise.all(
-      response.example_ids.map((id) => this.readExample(id))
+      response.example_ids.map((id) => this.readExample(id)),
     );
     return examples;
   }
@@ -4065,7 +5042,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async createLLMExample(
     input: string,
     generation: string | undefined,
-    options: CreateExampleOptions
+    options: CreateExampleOptions,
   ) {
     return this.createExample({ input }, { output: generation }, options);
   }
@@ -4073,7 +5050,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async createChatExample(
     input: KVMap[] | LangChainBaseMessage[],
     generations: KVMap | LangChainBaseMessage | undefined,
-    options: CreateExampleOptions
+    options: CreateExampleOptions,
   ) {
     const finalInput = input.map((message) => {
       if (isLangChainMessage(message)) {
@@ -4087,7 +5064,7 @@ export class Client implements LangSmithTracingClientInterface {
     return this.createExample(
       { input: finalInput },
       { output: finalOutput },
-      options
+      options,
     );
   }
 
@@ -4106,7 +5083,7 @@ export class Client implements LangSmithTracingClientInterface {
           };
           return acc;
         },
-        {} as Record<string, AttachmentInfo>
+        {} as Record<string, AttachmentInfo>,
       );
     }
     return example;
@@ -4184,13 +5161,13 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (includeAttachments === true) {
       ["attachment_urls", "outputs", "metadata"].forEach((field) =>
-        params.append("select", field)
+        params.append("select", field),
       );
     }
     let i = 0;
     for await (const rawExamples of this._getPaginated<RawExample>(
       "/examples",
-      params
+      params,
     )) {
       for (const rawExample of rawExamples) {
         const { attachment_urls, ...rest } = rawExample;
@@ -4204,7 +5181,7 @@ export class Client implements LangSmithTracingClientInterface {
               };
               return acc;
             },
-            {} as Record<string, AttachmentInfo>
+            {} as Record<string, AttachmentInfo>,
           );
         }
         yield example;
@@ -4222,7 +5199,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -4239,7 +5216,7 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async deleteExamples(
     exampleIds: string[],
-    options?: { hardDelete?: boolean }
+    options?: { hardDelete?: boolean },
   ): Promise<void> {
     // Validate all UUIDs
     exampleIds.forEach((id) => assertUuid(id));
@@ -4251,7 +5228,10 @@ export class Client implements LangSmithTracingClientInterface {
       await this.caller.call(async () => {
         const res = await this._fetch(`${this.apiUrl}${path}`, {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
             example_ids: exampleIds,
             hard_delete: true,
@@ -4272,10 +5252,10 @@ export class Client implements LangSmithTracingClientInterface {
           `${this.apiUrl}/examples?${params.toString()}`,
           {
             method: "DELETE",
-            headers: this.headers,
+            headers: this._mergedHeaders,
             signal: AbortSignal.timeout(this.timeout_ms),
             ...this.fetchOptions,
-          }
+          },
         );
         await raiseForStatus(res, "delete examples", true);
         return res;
@@ -4288,14 +5268,14 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async updateExample(
     exampleId: string,
-    update: ExampleUpdateWithoutId
+    update: ExampleUpdateWithoutId,
   ): Promise<object>;
 
   public async updateExample(update: ExampleUpdate): Promise<object>;
 
   public async updateExample(
     exampleIdOrUpdate: string | ExampleUpdate,
-    update?: ExampleUpdateWithoutId
+    update?: ExampleUpdateWithoutId,
   ): Promise<object> {
     let exampleId: string;
     if (update) {
@@ -4378,7 +5358,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (asOf !== undefined) {
       params.append(
         "as_of",
-        typeof asOf === "string" ? asOf : asOf.toISOString()
+        typeof asOf === "string" ? asOf : asOf.toISOString(),
       );
     }
     if (tag !== undefined) {
@@ -4392,10 +5372,10 @@ export class Client implements LangSmithTracingClientInterface {
         }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
         {
           method: "GET",
-          headers: { ...this.headers },
+          headers: { ...this._mergedHeaders },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "read dataset version");
       return res;
@@ -4439,7 +5419,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this._get<string[]>(
       `/datasets/${datasetId_}/splits`,
-      params
+      params,
     );
     return response;
   }
@@ -4486,21 +5466,35 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/datasets/${datasetId_}/splits`,
         {
           method: "PUT",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "update dataset splits", true);
       return res;
     });
   }
 
+  public async createFeedback(params: CreateFeedbackParams): Promise<Feedback>;
+  /** @deprecated Pass all params within an object and populate sessionId. */
   public async createFeedback(
     runId: string | null,
     key: string,
-    {
+    options: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback>;
+  public async createFeedback(
+    runIdOrParams: string | null | CreateFeedbackParams,
+    keyArg?: string,
+    optionsArg?: CreateFeedbackLegacyOptions,
+  ): Promise<Feedback> {
+    const {
+      runId = null,
+      key,
       score,
       value,
       correction,
@@ -4514,30 +5508,18 @@ export class Client implements LangSmithTracingClientInterface {
       comparativeExperimentId,
       sessionId,
       startTime,
-    }: {
-      score?: ScoreType;
-      value?: ValueType;
-      correction?: object;
-      comment?: string;
-      sourceInfo?: object;
-      feedbackSourceType?: FeedbackSourceType;
-      feedbackConfig?: FeedbackConfig;
-      sourceRunId?: string;
-      feedbackId?: string;
-      eager?: boolean;
-      projectId?: string;
-      comparativeExperimentId?: string;
-      /** The session (project) ID of the run this feedback is for. */
-      sessionId?: string;
-      /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
-      startTime?: number | string;
-    }
-  ): Promise<Feedback> {
+      extendTraceRetention,
+    } = typeof runIdOrParams === "object" && runIdOrParams !== null
+      ? runIdOrParams
+      : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
     }
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
+    }
+    if (runId && sessionId === undefined) {
+      await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",
@@ -4569,13 +5551,14 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackConfig,
       session_id: sessionId ?? projectId,
       start_time: startTime,
+      extend_trace_retention: extendTraceRetention,
     };
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
       const res = await this._fetch(url, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -4598,7 +5581,7 @@ export class Client implements LangSmithTracingClientInterface {
       value?: number | boolean | string | object | null;
       correction?: object | null;
       comment?: string | null;
-    }
+    },
   ): Promise<void> {
     const feedbackUpdate: FeedbackUpdate = {};
     if (score !== undefined && score !== null) {
@@ -4618,7 +5601,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback/${feedbackId}`, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -4641,7 +5624,7 @@ export class Client implements LangSmithTracingClientInterface {
     await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -4678,7 +5661,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     for await (const feedbacks of this._getPaginated<Feedback>(
       "/feedback",
-      queryParams
+      queryParams,
     )) {
       yield* feedbacks;
     }
@@ -4708,7 +5691,7 @@ export class Client implements LangSmithTracingClientInterface {
     }: {
       expiration?: string | TimeDelta;
       feedbackConfig?: FeedbackConfig;
-    } = {}
+    } = {},
   ): Promise<FeedbackIngestToken> {
     const body: KVMap = {
       run_id: runId,
@@ -4732,7 +5715,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback/tokens`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -4793,7 +5776,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/datasets/comparative`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -4810,20 +5793,20 @@ export class Client implements LangSmithTracingClientInterface {
    * @returns An async iterable of FeedbackIngestToken objects.
    */
   public async *listPresignedFeedbackTokens(
-    runId: string
+    runId: string,
   ): AsyncIterable<FeedbackIngestToken> {
     assertUuid(runId);
     const params = new URLSearchParams({ run_id: runId });
     for await (const tokens of this._getPaginated<FeedbackIngestToken>(
       "/feedback/tokens",
-      params
+      params,
     )) {
       yield* tokens;
     }
   }
 
   _selectEvalResults(
-    results: EvaluationResult | EvaluationResult[] | EvaluationResults
+    results: EvaluationResult | EvaluationResult[] | EvaluationResults,
   ): Array<EvaluationResult> {
     let results_: Array<EvaluationResult>;
     if ("results" in results) {
@@ -4842,7 +5825,8 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResult[]
       | EvaluationResults,
     run?: Run,
-    sourceInfo?: { [key: string]: any }
+    sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
     const evalResults: Array<EvaluationResult> =
       this._selectEvalResults(evaluatorResponse);
@@ -4871,27 +5855,70 @@ export class Client implements LangSmithTracingClientInterface {
           sourceRunId: res.sourceRunId,
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
-          sessionId: run?.session_id,
+          sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
-        })
+        }),
       );
     }
 
     return [evalResults, feedbacks];
   }
 
+  public async logEvaluationFeedback(params: {
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults;
+    run: Run;
+    projectId: string;
+    sourceInfo?: { [key: string]: any };
+  }): Promise<EvaluationResult[]>;
+  /** @deprecated Pass all params within an object and populate projectId. */
   public async logEvaluationFeedback(
     evaluatorResponse:
       | EvaluationResult
       | EvaluationResult[]
       | EvaluationResults,
     run?: Run,
-    sourceInfo?: { [key: string]: any }
+    sourceInfo?: { [key: string]: any },
+    sessionId?: string,
+  ): Promise<EvaluationResult[]>;
+  public async logEvaluationFeedback(
+    evaluatorResponseOrParams:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults
+      | {
+          evaluatorResponse:
+            | EvaluationResult
+            | EvaluationResult[]
+            | EvaluationResults;
+          run: Run;
+          projectId: string;
+          sourceInfo?: { [key: string]: any };
+        },
+    run?: Run,
+    sourceInfo?: { [key: string]: any },
+    sessionId?: string,
   ): Promise<EvaluationResult[]> {
+    if (
+      evaluatorResponseOrParams != null &&
+      typeof evaluatorResponseOrParams === "object" &&
+      "evaluatorResponse" in evaluatorResponseOrParams
+    ) {
+      const [results] = await this._logEvaluationFeedback(
+        evaluatorResponseOrParams.evaluatorResponse,
+        evaluatorResponseOrParams.run,
+        evaluatorResponseOrParams.sourceInfo,
+        evaluatorResponseOrParams.projectId,
+      );
+      return results;
+    }
     const [results] = await this._logEvaluationFeedback(
-      evaluatorResponse,
+      evaluatorResponseOrParams,
       run,
-      sourceInfo
+      sourceInfo,
+      sessionId,
     );
     return results;
   }
@@ -4927,7 +5954,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback-configs`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: JSON.stringify(body),
@@ -4951,7 +5978,7 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackKeys?: string[];
       nameContains?: string;
       limit?: number;
-    } = {}
+    } = {},
   ): AsyncIterableIterator<FeedbackConfigSchema> {
     const { feedbackKeys, nameContains, limit } = options;
     const params = new URLSearchParams();
@@ -4963,13 +5990,13 @@ export class Client implements LangSmithTracingClientInterface {
     if (nameContains) params.append("name_contains", nameContains);
     params.append(
       "limit",
-      (limit !== undefined ? Math.min(limit, 100) : 100).toString()
+      (limit !== undefined ? Math.min(limit, 100) : 100).toString(),
     );
 
     let count = 0;
     for await (const configs of this._getPaginated<FeedbackConfigSchema>(
       "/feedback-configs",
-      params
+      params,
     )) {
       yield* configs;
       count += configs.length;
@@ -4990,7 +6017,7 @@ export class Client implements LangSmithTracingClientInterface {
     options: {
       feedbackConfig?: FeedbackConfig;
       isLowerScoreBetter?: boolean;
-    } = {}
+    } = {},
   ): Promise<FeedbackConfigSchema> {
     const { feedbackConfig, isLowerScoreBetter } = options;
     const body: Record<string, unknown> = { feedback_key: feedbackKey };
@@ -5004,7 +6031,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/feedback-configs`, {
         method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: JSON.stringify(body),
@@ -5026,10 +6053,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/feedback-configs?${params}`,
         {
           method: "DELETE",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "delete feedback config", true);
       return res;
@@ -5055,7 +6082,7 @@ export class Client implements LangSmithTracingClientInterface {
       name?: string;
       nameContains?: string;
       limit?: number;
-    } = {}
+    } = {},
   ): AsyncIterableIterator<AnnotationQueue> {
     const { queueIds, name, nameContains, limit } = options;
     const params = new URLSearchParams();
@@ -5069,13 +6096,13 @@ export class Client implements LangSmithTracingClientInterface {
     if (nameContains) params.append("name_contains", nameContains);
     params.append(
       "limit",
-      (limit !== undefined ? Math.min(limit, 100) : 100).toString()
+      (limit !== undefined ? Math.min(limit, 100) : 100).toString(),
     );
 
     let count = 0;
     for await (const queues of this._getPaginated<AnnotationQueue>(
       "/annotation-queues",
-      params
+      params,
     )) {
       yield* queues;
       count++;
@@ -5110,13 +6137,13 @@ export class Client implements LangSmithTracingClientInterface {
 
     const serializedBody = JSON.stringify(
       Object.fromEntries(
-        Object.entries(body).filter(([_, v]) => v !== undefined)
-      )
+        Object.entries(body).filter(([_, v]) => v !== undefined),
+      ),
     );
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/annotation-queues`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body: serializedBody,
@@ -5133,17 +6160,17 @@ export class Client implements LangSmithTracingClientInterface {
    * @returns The AnnotationQueueWithDetails object
    */
   public async readAnnotationQueue(
-    queueId: string
+    queueId: string,
   ): Promise<AnnotationQueueWithDetails> {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "read annotation queue");
       return res;
@@ -5165,7 +6192,7 @@ export class Client implements LangSmithTracingClientInterface {
       description?: string;
       rubricInstructions?: string;
       rubricItems?: AnnotationQueueRubricItem[];
-    }
+    },
   ): Promise<void> {
     const { name, description, rubricInstructions, rubricItems } = options;
     const bodyObj: Record<string, unknown> = {};
@@ -5180,11 +6207,14 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
           method: "PATCH",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "update annotation queue", true);
       return res;
@@ -5201,10 +6231,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
           method: "DELETE",
-          headers: { ...this.headers, Accept: "application/json" },
+          headers: { ...this._mergedHeaders, Accept: "application/json" },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "delete annotation queue", true);
       return res;
@@ -5213,30 +6243,87 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * Add runs to an annotation queue with the specified queue ID.
+   *
+   * The second argument is either:
+   * - `RunKey[]` (preferred): each entry carries the run's full lookup key, so
+   *   it can be located directly without a scan. Required for workspaces served
+   *   by SmithDB; routes to `POST /runs/by-key`.
+   * - `string[]`: a plain list of run IDs. **Deprecated**: this path will be
+   *   removed after Jan 31, 2027; prefer the key form. Routes to `POST /runs`.
+   *   See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
+   *
+   * If every element is a string (or the list is empty) it is treated as run
+   * IDs; otherwise the list is treated as `RunKey` objects.
+   *
    * @param queueId - The ID of the annotation queue
-   * @param runIds - The IDs of the runs to be added to the annotation queue
+   * @param runs - Either a list of run IDs (deprecated) or a list of run keys.
    */
   public async addRunsToAnnotationQueue(
     queueId: string,
-    runIds: string[]
+    runs: string[] | RunKey[],
   ): Promise<void> {
-    const body = JSON.stringify(
-      runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString())
-    );
-    await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/annotation-queues/${assertUuid(
-          queueId,
-          "queueId"
-        )}/runs`,
-        {
-          method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        }
+    const base = `${this.apiUrl}/annotation-queues/${assertUuid(
+      queueId,
+      "queueId",
+    )}/runs`;
+
+    // All strings (including empty) -> legacy /runs; otherwise treat as run keys.
+    const allStrings = runs.every((r) => typeof r === "string");
+    let url: string;
+    let body: string;
+    if (!allStrings) {
+      url = `${base}/by-key`;
+      body = JSON.stringify(
+        (runs as RunKey[]).map((run, i) => {
+          const serialized: Record<string, string> = {
+            run_id: assertUuid(run.runId, `runs[${i}].runId`).toString(),
+            session_id: assertUuid(
+              run.sessionId,
+              `runs[${i}].sessionId`,
+            ).toString(),
+            start_time:
+              typeof run.startTime === "string"
+                ? run.startTime
+                : new Date(run.startTime).toISOString(),
+          };
+          if (run.sourceProposedExampleId != null) {
+            serialized.source_proposed_example_id = assertUuid(
+              run.sourceProposedExampleId,
+              `runs[${i}].sourceProposedExampleId`,
+            ).toString();
+          }
+          return serialized;
+        }),
       );
+    } else {
+      warnOnce(
+        "Passing run IDs as strings to addRunsToAnnotationQueue() is deprecated and will be removed after Jan 31, 2027. " +
+          "Use RunKey[] instead. " +
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+        {
+          type: "DeprecationWarning",
+          code: "LANGSMITH_DEPRECATED_ADD_RUNS_STRING_IDS",
+        },
+      );
+      url = base;
+      body = JSON.stringify(
+        (runs as string[]).map((id, i) =>
+          assertUuid(id, `runs[${i}]`).toString(),
+        ),
+      );
+    }
+
+    await this.caller.call(async () => {
+      const res = await this._fetch(url, {
+        method: "POST",
+        headers: {
+          ...this._mergedHeaders,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body,
+      });
       await raiseForStatus(res, "add runs to annotation queue", true);
       return res;
     });
@@ -5251,13 +6338,13 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async getRunFromAnnotationQueue(
     queueId: string,
-    index: number
+    index: number,
   ): Promise<RunWithAnnotationQueueInfo> {
     const baseUrl = `/annotation-queues/${assertUuid(queueId, "queueId")}/run`;
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}${baseUrl}/${index}`, {
         method: "GET",
-        headers: this.headers,
+        headers: this._mergedHeaders,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -5269,26 +6356,66 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * List the runs in an annotation queue.
+   * @param queueId - The ID of the annotation queue
+   * @param options - The options for listing runs in the annotation queue
+   * @param options.status - Filter runs by review status. If omitted, returns
+   * runs across all review states.
+   * @param options.limit - The maximum number of runs to return
+   * @returns An iterator of RunWithAnnotationQueueInfo objects
+   */
+  public async *listRunsFromAnnotationQueue(
+    queueId: string,
+    options: {
+      status?: "needs_my_review" | "needs_others_review" | "completed";
+      limit?: number;
+    } = {},
+  ): AsyncIterableIterator<RunWithAnnotationQueueInfo> {
+    const { status, limit: userLimit } = options;
+    const params = new URLSearchParams();
+    const limit =
+      userLimit !== undefined && Number.isFinite(userLimit)
+        ? Math.min(userLimit, 100)
+        : 100;
+
+    if (status) params.append("status", status);
+    params.append("limit", limit.toString());
+
+    let count = 0;
+    const path = `/annotation-queues/${assertUuid(queueId, "queueId")}/runs`;
+    for await (const runs of this._getPaginated<RunWithAnnotationQueueInfo>(
+      path,
+      params,
+    )) {
+      for (const run of runs) {
+        yield _normalizeRunTimestamps(run);
+        count++;
+        if (count >= limit) return;
+      }
+    }
+  }
+
+  /**
    * Delete a run from an an annotation queue.
    * @param queueId - The ID of the annotation queue to delete the run from
    * @param queueRunId - The ID of the run to delete from the annotation queue
    */
   public async deleteRunFromAnnotationQueue(
     queueId: string,
-    queueRunId: string
+    queueRunId: string,
   ): Promise<void> {
     await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/annotation-queues/${assertUuid(
           queueId,
-          "queueId"
+          "queueId",
         )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
         {
           method: "DELETE",
-          headers: { ...this.headers, Accept: "application/json" },
+          headers: { ...this._mergedHeaders, Accept: "application/json" },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "delete run from annotation queue", true);
       return res;
@@ -5300,20 +6427,20 @@ export class Client implements LangSmithTracingClientInterface {
    * @param queueId - The ID of the annotation queue
    */
   public async getSizeFromAnnotationQueue(
-    queueId: string
+    queueId: string,
   ): Promise<{ size: number }> {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/annotation-queues/${assertUuid(
           queueId,
-          "queueId"
+          "queueId",
         )}/size`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "get size from annotation queue");
       return res;
@@ -5328,28 +6455,28 @@ export class Client implements LangSmithTracingClientInterface {
 
   protected async _ownerConflictError(
     action: string,
-    owner: string
+    owner: string,
   ): Promise<Error> {
     const settings = await this._getSettings();
     return new Error(
       `Cannot ${action} for another tenant.\n
       Current tenant: ${settings.tenant_handle}\n
-      Requested tenant: ${owner}`
+      Requested tenant: ${owner}`,
     );
   }
 
   protected async _getLatestCommitHash(
-    promptOwnerAndName: string
+    promptOwnerAndName: string,
   ): Promise<string | undefined> {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "get latest commit hash");
       return res;
@@ -5363,22 +6490,55 @@ export class Client implements LangSmithTracingClientInterface {
     return json.commits[0].commit_hash;
   }
 
+  protected async _createCommitTags(
+    promptOwnerAndName: string,
+    commitId: string,
+    tags: string | string[],
+  ): Promise<void> {
+    const tagList = typeof tags === "string" ? [tags] : tags;
+
+    await Promise.all(
+      tagList.map(async (tag) =>
+        this.caller.call(async () => {
+          const res = await this._fetch(
+            `${this.apiUrl}/repos/${promptOwnerAndName}/tags`,
+            {
+              method: "POST",
+              headers: {
+                ...this._mergedHeaders,
+                "Content-Type": "application/json",
+              },
+              signal: AbortSignal.timeout(this.timeout_ms),
+              ...this.fetchOptions,
+              body: JSON.stringify({ tag_name: tag, commit_id: commitId }),
+            },
+          );
+          await raiseForStatus(res, "create commit tag");
+          return res;
+        }),
+      ),
+    );
+  }
+
   protected async _likeOrUnlikePrompt(
     promptIdentifier: string,
-    like: boolean
+    like: boolean,
   ): Promise<LikePromptResponse> {
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     const body = JSON.stringify({ like: like });
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/likes/${owner}/${promptName}`,
         {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, `${like ? "like" : "unlike"} prompt`);
       return res;
@@ -5388,12 +6548,12 @@ export class Client implements LangSmithTracingClientInterface {
 
   protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
     const [owner, promptName, commitHash] =
-      parsePromptIdentifier(promptIdentifier);
+      parseHubIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       if (commitHash !== "latest") {
         return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(
           0,
-          8
+          8,
         )}`;
       } else {
         return `${this.getHostUrl()}/hub/${owner}/${promptName}`;
@@ -5403,7 +6563,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (commitHash !== "latest") {
         return `${this.getHostUrl()}/prompts/${promptName}/${commitHash.substring(
           0,
-          8
+          8,
         )}?organizationId=${settings.id}`;
       } else {
         return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${
@@ -5448,7 +6608,7 @@ export class Client implements LangSmithTracingClientInterface {
    * ```
    */
   public async likePrompt(
-    promptIdentifier: string
+    promptIdentifier: string,
   ): Promise<LikePromptResponse> {
     return this._likeOrUnlikePrompt(promptIdentifier, true);
   }
@@ -5467,7 +6627,7 @@ export class Client implements LangSmithTracingClientInterface {
    * ```
    */
   public async unlikePrompt(
-    promptIdentifier: string
+    promptIdentifier: string,
   ): Promise<LikePromptResponse> {
     return this._likeOrUnlikePrompt(promptIdentifier, false);
   }
@@ -5493,16 +6653,16 @@ export class Client implements LangSmithTracingClientInterface {
    * ```
    */
   public async *listCommits(
-    promptIdentifier: string
+    promptIdentifier: string,
   ): AsyncIterableIterator<PromptCommit> {
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     for await (const commits of this._getPaginated<
       PromptCommit,
       ListCommitsResponse
     >(
       `/commits/${owner}/${promptName}/`,
       new URLSearchParams(),
-      (res) => res.commits
+      (res) => res.commits,
     )) {
       yield* commits;
     }
@@ -5556,7 +6716,7 @@ export class Client implements LangSmithTracingClientInterface {
     for await (const prompts of this._getPaginated<Prompt, ListPromptsResponse>(
       "/repos",
       params,
-      (res) => res.repos
+      (res) => res.repos,
     )) {
       yield* prompts;
     }
@@ -5579,16 +6739,16 @@ export class Client implements LangSmithTracingClientInterface {
    * ```
    */
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/repos/${owner}/${promptName}`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
 
       if (res?.status === 404) {
@@ -5639,7 +6799,7 @@ export class Client implements LangSmithTracingClientInterface {
       readme?: string;
       tags?: string[];
       isPublic?: boolean;
-    }
+    },
   ): Promise<Prompt> {
     const settings = await this._getSettings();
     if (options?.isPublic && !settings.tenant_handle) {
@@ -5647,11 +6807,11 @@ export class Client implements LangSmithTracingClientInterface {
         `Cannot create a public prompt without first\n
         creating a LangChain Hub handle.
         You can add a handle by creating a public prompt at:\n
-        https://smith.langchain.com/prompts`
+        https://smith.langchain.com/prompts`,
       );
     }
 
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("create a prompt", owner);
     }
@@ -5668,7 +6828,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/repos/`, {
         method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
+        headers: { ...this._mergedHeaders, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -5688,6 +6848,8 @@ export class Client implements LangSmithTracingClientInterface {
    * @param object - The prompt object/manifest to commit (e.g., ChatPromptTemplate, messages array, etc.)
    * @param options - Optional configuration for the commit
    * @param options.parentCommitHash - The parent commit hash. Defaults to "latest" (the most recent commit).
+   * @param options.tags - A tag or list of tags to apply to the commit.
+   * @param options.description - A description for the commit.
    * @returns A Promise that resolves to the URL of the newly created commit
    * @throws {Error} If the prompt does not exist
    * @example
@@ -5703,9 +6865,9 @@ export class Client implements LangSmithTracingClientInterface {
    * const commitUrl = await client.createCommit("my-prompt", template);
    * console.log(`Commit created: ${commitUrl}`);
    *
-   * // Create a commit based on a specific parent commit
+   * // Create a commit with tags
    * const commitUrl2 = await client.createCommit("my-prompt", template, {
-   *   parentCommitHash: "abc123def456"
+   *   tags: ["production", "v1"]
    * });
    * ```
    */
@@ -5714,13 +6876,15 @@ export class Client implements LangSmithTracingClientInterface {
     object: any,
     options?: {
       parentCommitHash?: string;
-    }
+      tags?: string | string[];
+      description?: string;
+    },
   ): Promise<string> {
     if (!(await this.promptExists(promptIdentifier))) {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
     const resolvedParentCommitHash =
       options?.parentCommitHash === "latest" || !options?.parentCommitHash
         ? await this._getLatestCommitHash(`${owner}/${promptName}`)
@@ -5729,6 +6893,9 @@ export class Client implements LangSmithTracingClientInterface {
     const payload = {
       manifest: JSON.parse(JSON.stringify(object)),
       parent_commit: resolvedParentCommitHash,
+      ...(options?.description !== undefined && {
+        description: options.description,
+      }),
     };
 
     const body = JSON.stringify(payload);
@@ -5738,20 +6905,29 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/commits/${owner}/${promptName}`,
         {
           method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "create commit");
       return res;
     });
     const result = await response.json();
+    const commit = result.commit ?? result;
+    if (options?.tags) {
+      await this._createCommitTags(
+        `${owner}/${promptName}`,
+        commit.id,
+        options.tags,
+      );
+    }
     return this._getPromptUrl(
-      `${owner}/${promptName}${
-        result.commit_hash ? `:${result.commit_hash}` : ""
-      }`
+      `${owner}/${promptName}${commit.commit_hash ? `:${commit.commit_hash}` : ""}`,
     );
   }
 
@@ -5762,18 +6938,18 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async updateExamplesMultipart(
     datasetId: string,
-    updates: ExampleUpdate[] = []
+    updates: ExampleUpdate[] = [],
   ): Promise<UpdateExamplesResponse> {
     return this._updateExamplesMultipart(datasetId, updates);
   }
 
   private async _updateExamplesMultipart(
     datasetId: string,
-    updates: ExampleUpdate[] = []
+    updates: ExampleUpdate[] = [],
   ): Promise<UpdateExamplesResponse> {
     if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
-        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
+        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version.",
       );
     }
     const formData = new FormData();
@@ -5790,7 +6966,7 @@ export class Client implements LangSmithTracingClientInterface {
       // Add main example data
       const stringifiedExample = serializePayloadForTracing(
         exampleBody,
-        `Serializing body for example with id: ${exampleId}`
+        `Serializing body for example with id: ${exampleId}`,
       );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
@@ -5801,7 +6977,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (example.inputs) {
         const stringifiedInputs = serializePayloadForTracing(
           example.inputs,
-          `Serializing inputs for example with id: ${exampleId}`
+          `Serializing inputs for example with id: ${exampleId}`,
         );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
@@ -5813,7 +6989,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (example.outputs) {
         const stringifiedOutputs = serializePayloadForTracing(
           example.outputs,
-          `Serializing outputs whle updating example with id: ${exampleId}`
+          `Serializing outputs whle updating example with id: ${exampleId}`,
         );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
@@ -5843,17 +7019,17 @@ export class Client implements LangSmithTracingClientInterface {
       if (example.attachments_operations) {
         const stringifiedAttachmentsOperations = serializePayloadForTracing(
           example.attachments_operations,
-          `Serializing attachments while updating example with id: ${exampleId}`
+          `Serializing attachments while updating example with id: ${exampleId}`,
         );
         const attachmentsOperationsBlob = new Blob(
           [stringifiedAttachmentsOperations],
           {
             type: "application/json",
-          }
+          },
         );
         formData.append(
           `${exampleId}.attachments_operations`,
-          attachmentsOperationsBlob
+          attachmentsOperationsBlob,
         );
       }
     }
@@ -5862,15 +7038,15 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}${this._getPlatformEndpointPath(
-          `datasets/${datasetIdToUse}/examples`
+          `datasets/${datasetIdToUse}/examples`,
         )}`,
         {
           method: "PATCH",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body: formData,
-        }
+        },
       );
       await raiseForStatus(res, "update examples");
       return res;
@@ -5886,18 +7062,18 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async uploadExamplesMultipart(
     datasetId: string,
-    uploads: ExampleCreate[] = []
+    uploads: ExampleCreate[] = [],
   ): Promise<UploadExamplesResponse> {
     return this._uploadExamplesMultipart(datasetId, uploads);
   }
 
   private async _uploadExamplesMultipart(
     datasetId: string,
-    uploads: ExampleCreate[] = []
+    uploads: ExampleCreate[] = [],
   ): Promise<UploadExamplesResponse> {
     if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
-        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
+        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version.",
       );
     }
     const formData = new FormData();
@@ -5922,7 +7098,7 @@ export class Client implements LangSmithTracingClientInterface {
       // Add main example data
       const stringifiedExample = serializePayloadForTracing(
         exampleBody,
-        `Serializing body for uploaded example with id: ${exampleId}`
+        `Serializing body for uploaded example with id: ${exampleId}`,
       );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
@@ -5933,7 +7109,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (example.inputs) {
         const stringifiedInputs = serializePayloadForTracing(
           example.inputs,
-          `Serializing inputs for uploaded example with id: ${exampleId}`
+          `Serializing inputs for uploaded example with id: ${exampleId}`,
         );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
@@ -5945,7 +7121,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (example.outputs) {
         const stringifiedOutputs = serializePayloadForTracing(
           example.outputs,
-          `Serializing outputs for uploaded example with id: ${exampleId}`
+          `Serializing outputs for uploaded example with id: ${exampleId}`,
         );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
@@ -5976,15 +7152,15 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}${this._getPlatformEndpointPath(
-          `datasets/${datasetId}/examples`
+          `datasets/${datasetId}/examples`,
         )}`,
         {
           method: "POST",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body: formData,
-        }
+        },
       );
       await raiseForStatus(res, "upload examples");
       return res;
@@ -6000,13 +7176,13 @@ export class Client implements LangSmithTracingClientInterface {
       tags?: string[];
       isPublic?: boolean;
       isArchived?: boolean;
-    }
+    },
   ): Promise<Record<string, any>> {
     if (!(await this.promptExists(promptIdentifier))) {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
-    const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName] = parseHubIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("update a prompt", owner);
     }
@@ -6033,13 +7209,13 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PATCH",
           headers: {
-            ...this.headers,
+            ...this._mergedHeaders,
             "Content-Type": "application/json",
           },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
           body,
-        }
+        },
       );
       await raiseForStatus(res, "update prompt");
       return res;
@@ -6052,7 +7228,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
-    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, _] = parseHubIdentifier(promptIdentifier);
 
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("delete a prompt", owner);
@@ -6063,10 +7239,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/repos/${owner}/${promptName}`,
         {
           method: "DELETE",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "delete prompt");
       return res;
@@ -6080,7 +7256,7 @@ export class Client implements LangSmithTracingClientInterface {
    */
   private _getPromptCacheKey(
     promptIdentifier: string,
-    includeModel?: boolean
+    includeModel?: boolean,
   ): string {
     const suffix = includeModel ? ":with_model" : "";
     return `${promptIdentifier}${suffix}`;
@@ -6091,10 +7267,10 @@ export class Client implements LangSmithTracingClientInterface {
    */
   private async _fetchPromptFromApi(
     promptIdentifier: string,
-    options?: { includeModel?: boolean }
+    options?: { includeModel?: boolean },
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
-      parsePromptIdentifier(promptIdentifier);
+      parseHubIdentifier(promptIdentifier);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(
         `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
@@ -6102,10 +7278,10 @@ export class Client implements LangSmithTracingClientInterface {
         }`,
         {
           method: "GET",
-          headers: this.headers,
+          headers: this._mergedHeaders,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
       );
       await raiseForStatus(res, "pull prompt commit");
       return res;
@@ -6119,26 +7295,59 @@ export class Client implements LangSmithTracingClientInterface {
       commit_hash: result.commit_hash,
       manifest: result.manifest,
       examples: result.examples,
+      hub_model_config: result.model_config,
+      hub_model_provider: result.model_provider,
     };
   }
 
+  /**
+   * Pull a prompt commit from the LangSmith API.
+   *
+   * Public prompts referenced by owner/name cross a trust boundary because the
+   * prompt manifest may contain serialized LangChain objects and configuration
+   * that affect runtime behavior. For example, a prompt can intentionally
+   * configure a model with a custom base URL, headers, model name, or other
+   * constructor arguments. These are supported features, but they also mean the
+   * prompt contents should be treated as executable configuration rather than
+   * plain text.
+   *
+   * Set `dangerouslyPullPublicPrompt: true` only after reviewing and trusting
+   * the prompt contents, not merely the publishing account. Prompts from your
+   * own or your organization's account can still be unsafe if that account or
+   * prompt was compromised.
+   *
+   * When pulling a trusted external prompt, prefer pinning to a specific commit
+   * rather than following a mutable latest version. Using `includeModel: true`
+   * increases risk and should be avoided for public prompts or prompts outside
+   * your own organization.
+   */
   public async pullPromptCommit(
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
-    }
+      /**
+       * Set to `true` to allow pulling a public prompt by owner/name, for
+       * example `username/promptname`. Defaults to `false`.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
+    },
   ): Promise<PromptCommit> {
+    assertPullPublicPromptAllowed(
+      promptIdentifier,
+      options?.dangerouslyPullPublicPrompt,
+    );
+
     // Check cache first if not skipped
     const refreshFunc = this._fetchPromptFromApi.bind(
       this,
       promptIdentifier,
-      options
+      options,
     );
     if (!options?.skipCache && this._promptCache) {
       const cacheKey = this._getPromptCacheKey(
         promptIdentifier,
-        options?.includeModel
+        options?.includeModel,
       );
       const cached = this._promptCache.get(cacheKey, refreshFunc);
       if (cached) {
@@ -6158,6 +7367,24 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   *
+   * Public prompts referenced by owner/name cross a trust boundary because the
+   * prompt manifest may contain serialized LangChain objects and configuration
+   * that affect runtime behavior. For example, a prompt can intentionally
+   * configure a model with a custom base URL, headers, model name, or other
+   * constructor arguments. These are supported features, but they also mean the
+   * prompt contents should be treated as executable configuration rather than
+   * plain text.
+   *
+   * Set `dangerouslyPullPublicPrompt: true` only after reviewing and trusting
+   * the prompt contents, not merely the publishing account. Prompts from your
+   * own or your organization's account can still be unsafe if that account or
+   * prompt was compromised.
+   *
+   * When pulling a trusted external prompt, prefer pinning to a specific commit
+   * rather than following a mutable latest version. Using `includeModel: true`
+   * increases risk and should be avoided for public prompts or prompts outside
+   * your own organization.
    * @private
    */
   public async _pullPrompt(
@@ -6165,11 +7392,17 @@ export class Client implements LangSmithTracingClientInterface {
     options?: {
       includeModel?: boolean;
       skipCache?: boolean;
-    }
+      /**
+       * Set to `true` to allow pulling a public prompt by owner/name, for
+       * example `username/promptname`. Defaults to `false`.
+       */
+      dangerouslyPullPublicPrompt?: boolean;
+    },
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
       skipCache: options?.skipCache,
+      dangerouslyPullPublicPrompt: options?.dangerouslyPullPublicPrompt,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;
@@ -6184,11 +7417,18 @@ export class Client implements LangSmithTracingClientInterface {
       description?: string;
       readme?: string;
       tags?: string[];
-    }
+      commitTags?: string | string[];
+      commitDescription?: string;
+    },
   ): Promise<string> {
     // Create or update prompt metadata
     if (await this.promptExists(promptIdentifier)) {
-      if (options && Object.keys(options).some((key) => key !== "object")) {
+      if (
+        options &&
+        ["description", "readme", "tags", "isPublic"].some(
+          (key) => options[key as keyof typeof options] !== undefined,
+        )
+      ) {
         await this.updatePrompt(promptIdentifier, {
           description: options?.description,
           readme: options?.readme,
@@ -6212,8 +7452,382 @@ export class Client implements LangSmithTracingClientInterface {
     // Create a commit with the new manifest
     const url = await this.createCommit(promptIdentifier, options?.object, {
       parentCommitHash: options?.parentCommitHash,
+      tags: options?.commitTags,
+      description: options?.commitDescription,
     });
     return url;
+  }
+
+  /**
+   * Check if an agent repo exists.
+   */
+  public async agentExists(identifier: string): Promise<boolean> {
+    const [owner, name] = parseHubIdentifier(identifier);
+    return this._repoExists(owner, name);
+  }
+
+  /**
+   * Check if a skill repo exists.
+   */
+  public async skillExists(identifier: string): Promise<boolean> {
+    const [owner, name] = parseHubIdentifier(identifier);
+    return this._repoExists(owner, name);
+  }
+
+  /**
+   * Pull an agent directory from Hub.
+   * @param identifier The identifier (owner/name[:version]).
+   * @param options.version Commit hash or tag; overrides identifier's version.
+   */
+  public async pullAgent(
+    identifier: string,
+    options?: { version?: string },
+  ): Promise<AgentContext> {
+    return (await this._pullDirectory(
+      identifier,
+      "agent",
+      options?.version,
+    )) as AgentContext;
+  }
+
+  /**
+   * Pull a skill directory from Hub.
+   */
+  public async pullSkill(
+    identifier: string,
+    options?: { version?: string },
+  ): Promise<SkillContext> {
+    return (await this._pullDirectory(
+      identifier,
+      "skill",
+      options?.version,
+    )) as SkillContext;
+  }
+
+  /**
+   * Push an agent to Hub. Creates the repo if missing, patches metadata if
+   * provided, then commits the given files.
+   * @returns The URL of the resulting commit.
+   */
+  public async pushAgent(
+    identifier: string,
+    options: {
+      files: Record<string, Entry | null>;
+      parentCommit?: string;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    },
+  ): Promise<string> {
+    return this._pushDirectory(identifier, "agent", options);
+  }
+
+  /**
+   * Push a skill to Hub.
+   */
+  public async pushSkill(
+    identifier: string,
+    options: {
+      files: Record<string, Entry | null>;
+      parentCommit?: string;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    },
+  ): Promise<string> {
+    return this._pushDirectory(identifier, "skill", options);
+  }
+
+  /**
+   * Delete an agent and all its owned child file repos.
+   */
+  public async deleteAgent(identifier: string): Promise<void> {
+    return this._deleteDirectory(identifier);
+  }
+
+  /**
+   * Delete a skill and all its owned child file repos.
+   */
+  public async deleteSkill(identifier: string): Promise<void> {
+    return this._deleteDirectory(identifier);
+  }
+
+  /**
+   * List agent repos. Yields one at a time, auto-paginating.
+   */
+  public async *listAgents(options?: {
+    isPublic?: boolean;
+    isArchived?: boolean;
+    query?: string;
+  }): AsyncIterableIterator<Prompt> {
+    yield* this._listReposByType("agent", options);
+  }
+
+  /**
+   * List skill repos. Yields one at a time, auto-paginating.
+   */
+  public async *listSkills(options?: {
+    isPublic?: boolean;
+    isArchived?: boolean;
+    query?: string;
+  }): AsyncIterableIterator<Prompt> {
+    yield* this._listReposByType("skill", options);
+  }
+
+  private async *_listReposByType(
+    repoType: HubRepoType,
+    options?: { isPublic?: boolean; isArchived?: boolean; query?: string },
+  ): AsyncIterableIterator<Prompt> {
+    const params = new URLSearchParams();
+    params.append("repo_type", repoType);
+    params.append("is_archived", (!!options?.isArchived).toString());
+    if (options?.isPublic !== undefined) {
+      params.append("is_public", options.isPublic.toString());
+    }
+    if (options?.query) {
+      params.append("query", options.query);
+    }
+
+    for await (const repos of this._getPaginated<Prompt, ListPromptsResponse>(
+      "/repos",
+      params,
+      (res) => res.repos,
+    )) {
+      yield* repos;
+    }
+  }
+
+  private async _pullDirectory(
+    identifier: string,
+    repoType: HubRepoType,
+    version?: string,
+  ): Promise<AgentContext | SkillContext> {
+    const [owner, name, parsedVersion] = parseHubIdentifier(identifier);
+    const resolvedVersion =
+      version ?? (parsedVersion !== "latest" ? parsedVersion : undefined);
+
+    const url = new URL(
+      `${this.apiUrl}${this._getPlatformEndpointPath(
+        `hub/repos/${owner}/${name}/directories`,
+      )}`,
+    );
+    url.searchParams.set("repo_type", repoType);
+    if (resolvedVersion) {
+      url.searchParams.set("commit", resolvedVersion);
+    }
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(url.toString(), {
+        method: "GET",
+        headers: this._mergedHeaders,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      });
+      await raiseForStatus(res, "pull directory");
+      return res;
+    });
+    return (await response.json()) as AgentContext | SkillContext;
+  }
+
+  private async _pushDirectory(
+    identifier: string,
+    repoType: HubRepoType,
+    options: {
+      files: Record<string, Entry | null>;
+      parentCommit?: string;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    },
+  ): Promise<string> {
+    if (
+      options.parentCommit !== undefined &&
+      (options.parentCommit.length < 8 || options.parentCommit.length > 64)
+    ) {
+      throw new Error("parent_commit must be 8-64 characters");
+    }
+
+    const [owner, name] = parseHubIdentifier(identifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError(`push ${repoType}`, owner);
+    }
+
+    if (await this._repoExists(owner, name)) {
+      if (
+        options.description !== undefined ||
+        options.readme !== undefined ||
+        options.tags !== undefined ||
+        options.isPublic !== undefined
+      ) {
+        await this._updateRepoMetadata(owner, name, options);
+      }
+    } else {
+      const REPO_HANDLE_PATTERN = /^[a-z][a-z0-9-_]*$/;
+      if (!REPO_HANDLE_PATTERN.test(name)) {
+        throw new Error(
+          `Invalid repo_handle ${JSON.stringify(
+            name,
+          )}: must match ${REPO_HANDLE_PATTERN}`,
+        );
+      }
+      await this._createRepo(name, repoType, options);
+    }
+
+    const body: Record<string, unknown> = { files: options.files };
+    if (options.parentCommit) {
+      body.parent_commit = options.parentCommit;
+    }
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `hub/repos/${owner}/${name}/directories/commits`,
+        )}`,
+        {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: JSON.stringify(body),
+        },
+      );
+      await raiseForStatus(res, `push ${repoType}`);
+      return res;
+    });
+    const data = (await response.json()) as DirectoryCommitResponse;
+    const commitHash = data.commit.commit_hash;
+    const settings = await this._getSettings();
+    const query = new URLSearchParams({ organizationId: settings.id });
+    return `${this.getHostUrl()}/context/${name}/${commitHash.slice(
+      0,
+      8,
+    )}?${query.toString()}`;
+  }
+
+  private async _deleteDirectory(identifier: string): Promise<void> {
+    const [owner, name] = parseHubIdentifier(identifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("delete", owner);
+    }
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `hub/repos/${owner}/${name}/directories`,
+        )}`,
+        {
+          method: "DELETE",
+          headers: this._mergedHeaders,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        },
+      );
+      await raiseForStatus(res, "delete directory");
+      return res;
+    });
+  }
+
+  private async _repoExists(owner: string, name: string): Promise<boolean> {
+    try {
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}/repos/${owner}/${name}`, {
+          method: "GET",
+          headers: this._mergedHeaders,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        });
+        await raiseForStatus(res, "check repo exists");
+        return res;
+      });
+      return true;
+    } catch (e) {
+      if (isLangSmithNotFoundError(e)) {
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  private async _createRepo(
+    name: string,
+    repoType: HubRepoType,
+    options: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    },
+  ): Promise<void> {
+    const body: Record<string, unknown> = {
+      repo_handle: name,
+      repo_type: repoType,
+      is_public: !!options.isPublic,
+    };
+    if (options.description !== undefined)
+      body.description = options.description;
+    if (options.readme !== undefined) body.readme = options.readme;
+    if (options.tags !== undefined) body.tags = options.tags;
+
+    try {
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}/repos/`, {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: JSON.stringify(body),
+        });
+        await raiseForStatus(res, `create ${repoType}`);
+        return res;
+      });
+    } catch (e) {
+      if (isLangSmithConflictError(e)) {
+        return;
+      }
+      throw e;
+    }
+  }
+
+  private async _updateRepoMetadata(
+    owner: string,
+    name: string,
+    options: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    },
+  ): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (options.description !== undefined)
+      body.description = options.description;
+    if (options.readme !== undefined) body.readme = options.readme;
+    if (options.tags !== undefined) body.tags = options.tags;
+    if (options.isPublic !== undefined) body.is_public = options.isPublic;
+    if (Object.keys(body).length === 0) return;
+
+    await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/repos/${owner}/${name}`, {
+        method: "PATCH",
+        headers: {
+          ...this._mergedHeaders,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body: JSON.stringify(body),
+      });
+      await raiseForStatus(res, "update repo metadata");
+      return res;
+    });
   }
 
   /**
@@ -6232,12 +7846,12 @@ export class Client implements LangSmithTracingClientInterface {
     options: {
       sourceApiUrl?: string;
       datasetName?: string;
-    } = {}
+    } = {},
   ): Promise<void> {
     const { sourceApiUrl = this.apiUrl, datasetName } = options;
     const [parsedApiUrl, tokenUuid] = this.parseTokenOrUrl(
       tokenOrUrl,
-      sourceApiUrl
+      sourceApiUrl,
     );
     const sourceClient = new Client({
       apiUrl: parsedApiUrl,
@@ -6253,7 +7867,7 @@ export class Client implements LangSmithTracingClientInterface {
     try {
       if (await this.hasDataset({ datasetId: finalDatasetName })) {
         console.log(
-          `Dataset ${finalDatasetName} already exists in your tenant. Skipping.`
+          `Dataset ${finalDatasetName} already exists in your tenant. Skipping.`,
         );
         return;
       }
@@ -6279,7 +7893,7 @@ export class Client implements LangSmithTracingClientInterface {
     } catch (e) {
       console.error(
         `An error occurred while creating dataset ${finalDatasetName}. ` +
-          "You should delete it manually."
+          "You should delete it manually.",
       );
       throw e;
     }
@@ -6289,7 +7903,7 @@ export class Client implements LangSmithTracingClientInterface {
     urlOrToken: string,
     apiUrl: string,
     numParts = 2,
-    kind = "dataset"
+    kind = "dataset",
   ): [string, string] {
     // Try parsing as UUID
     try {
@@ -6312,7 +7926,7 @@ export class Client implements LangSmithTracingClientInterface {
       } else {
         throw new Error(`Invalid public ${kind} URL: ${urlOrToken}`);
       }
-    } catch (error) {
+    } catch (_error) {
       throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
     }
   }
@@ -6351,7 +7965,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async awaitPendingTraceBatches() {
     if (this.manualFlushMode) {
       console.warn(
-        "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches."
+        "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches.",
       );
       return Promise.resolve();
     }
@@ -6370,6 +7984,12 @@ export class Client implements LangSmithTracingClientInterface {
      * ```
      */
     await new Promise((resolve) => setTimeout(resolve, 1));
+    // Wait for any in-flight drains (whose serialize work may still be
+    // in-progress on a worker thread and not yet registered with the
+    // batchIngestCaller queue) before checking queue idleness.
+    while (this._pendingDrains.size > 0) {
+      await Promise.all([...this._pendingDrains]);
+    }
     await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
@@ -6377,6 +7997,35 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.langSmithToOTELTranslator !== undefined) {
       await getDefaultOTLPTracerComponents()?.DEFAULT_LANGSMITH_SPAN_PROCESSOR?.forceFlush();
     }
+  }
+
+  /**
+   * Returns a string representation of the Client instance.
+   * This method is called when the object is converted to a string
+   * or logged, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the Client.
+   */
+  public toString(): string {
+    const params = [`apiUrl=${JSON.stringify(this.apiUrl)}`];
+    if (this.webUrl !== undefined) {
+      params.push(`webUrl=${JSON.stringify(this.webUrl)}`);
+    }
+    if (this.workspaceId !== undefined) {
+      params.push(`workspaceId=${JSON.stringify(this.workspaceId)}`);
+    }
+    return `[LangSmithClient ${params.join(" ")}]`;
+  }
+
+  /**
+   * Custom inspect method for Node.js.
+   * This method is called when the object is inspected in the Node.js REPL
+   * or with console.log, ensuring sensitive information like API keys is not exposed.
+   *
+   * @returns A string representation of the Client for inspection.
+   */
+  public [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return this.toString();
   }
 }
 

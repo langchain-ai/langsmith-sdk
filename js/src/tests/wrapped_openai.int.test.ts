@@ -99,20 +99,19 @@ test("chat.completions", async () => {
 
   // Verify token events were logged
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
   const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
-    (event: any) => event.name === "new_token"
+    (event: any) => event.name === "new_token",
   );
   expect(tokenEvents.length).toBeGreaterThan(0);
   tokenEvents.forEach((event: any) => {
     expect(event.name).toBe("new_token");
-    expect(event.kwargs).toBeDefined();
-    expect(event.kwargs.token).toBeDefined();
+    expect(event.kwargs).toBeUndefined();
     expect(event.time).toBeDefined();
   });
 
@@ -154,7 +153,7 @@ test("chat.completions", async () => {
           thing1: "thing2",
         },
       },
-    }
+    },
   );
 
   const patchedChoices2: unknown[] = [];
@@ -190,12 +189,17 @@ test("prepopulated invocation params are merged and runtime params override", as
     messages: [{ role: "user", content: "Say 'hello'" }],
     model: "gpt-4.1-nano",
     seed: 42, // Should override prepopulated seed=100
+    store: true,
+    metadata: {
+      request_key: "request_value",
+      ls_model_name: "should-not-override",
+    },
   });
 
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   const postCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST",
   );
 
   expect(postCalls.length).toBeGreaterThan(0);
@@ -217,6 +221,11 @@ test("prepopulated invocation params are merged and runtime params override", as
   expect(metadata?.custom_key).toBe("custom_value");
   expect(metadata?.version).toBe("1.0.0");
 
+  // OpenAI request metadata is copied to LangSmith run metadata
+  expect(metadata?.request_key).toBe("request_value");
+  expect(metadata?.ls_model_name).toBe("gpt-4.1-nano");
+  expect(lsInvocationParams?.metadata).toBeUndefined();
+
   callSpy.mockClear();
 });
 
@@ -231,7 +240,7 @@ test("chat completions with tool calling", async () => {
   const removeToolCallId = (
     choices:
       | OpenAI.ChatCompletion.Choice[]
-      | OpenAI.ChatCompletionChunk.Choice[][]
+      | OpenAI.ChatCompletionChunk.Choice[][],
   ) => {
     if (Array.isArray(choices[0])) {
       return (choices as OpenAI.ChatCompletionChunk.Choice[][]).map(
@@ -241,11 +250,11 @@ test("chat completions with tool calling", async () => {
               (toolCall) => {
                 const { id, ...rest } = toolCall;
                 return rest;
-              }
+              },
             ) as any;
             return choice;
           });
-        }
+        },
       );
     } else {
       return (choices as OpenAI.ChatCompletion.Choice[]).map((choice) => {
@@ -253,7 +262,7 @@ test("chat completions with tool calling", async () => {
           (toolCall) => {
             const { id, ...rest } = toolCall;
             return rest;
-          }
+          },
         ) as any;
         return choice;
       });
@@ -306,7 +315,7 @@ test("chat completions with tool calling", async () => {
   });
 
   expect(removeToolCallId(patched.choices)).toEqual(
-    removeToolCallId(original.choices)
+    removeToolCallId(original.choices),
   );
 
   // stream
@@ -349,27 +358,26 @@ test("chat completions with tool calling", async () => {
   }
 
   expect(removeToolCallId(patchedChoices)).toEqual(
-    removeToolCallId(originalChoices)
+    removeToolCallId(originalChoices),
   );
   await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged for tool calling stream
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
   const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
-    (event: any) => event.name === "new_token"
+    (event: any) => event.name === "new_token",
   );
   expect(tokenEvents.length).toBeGreaterThan(0);
   tokenEvents.forEach((event: any) => {
     expect(event.name).toBe("new_token");
-    expect(event.kwargs).toBeDefined();
-    expect(event.kwargs.token).toBeDefined();
+    expect(event.kwargs).toBeUndefined();
     expect(event.time).toBeDefined();
   });
 
@@ -400,7 +408,7 @@ test("chat completions with tool calling", async () => {
           thing1: "thing2",
         },
       },
-    }
+    },
   );
 
   const patchedChoices2: any[] = [];
@@ -411,7 +419,7 @@ test("chat completions with tool calling", async () => {
   }
 
   expect(removeToolCallId(patchedChoices2)).toEqual(
-    removeToolCallId(originalChoices)
+    removeToolCallId(originalChoices),
   );
   await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
@@ -510,7 +518,7 @@ test("completions", async () => {
           thing1: "thing2",
         },
       },
-    }
+    },
   );
 
   const patchedChoices2: unknown[] = [];
@@ -567,7 +575,7 @@ test.skip("no tracing with env var unset", async () => {
 test("wrapping same instance", async () => {
   const wrapped = wrapOpenAI(new OpenAI());
   expect(() => wrapOpenAI(wrapped)).toThrowError(
-    "This instance of OpenAI client has been already wrapped once."
+    "This instance of OpenAI client has been already wrapped once.",
   );
 });
 
@@ -586,7 +594,7 @@ test("chat extra name", async () => {
       seed: 42,
       model: "gpt-4.1-nano",
     },
-    { langsmithExtra: { name: "red", metadata: { customKey: "red" } } }
+    { langsmithExtra: { name: "red", metadata: { customKey: "red" } } },
   );
 
   const stream = await openai.chat.completions.create(
@@ -597,7 +605,7 @@ test("chat extra name", async () => {
       model: "gpt-4.1-nano",
       stream: true,
     },
-    { langsmithExtra: { name: "green", metadata: { customKey: "green" } } }
+    { langsmithExtra: { name: "green", metadata: { customKey: "green" } } },
   );
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -606,7 +614,7 @@ test("chat extra name", async () => {
   }
 
   expect(
-    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
   ).toMatchObject({
     nodes: ["red:0", "green:1"],
     edges: [],
@@ -660,7 +668,7 @@ test("chat.completions.parse", async () => {
       z.object({
         name: z.string(),
       }),
-      "name"
+      "name",
     ),
   });
 
@@ -692,6 +700,9 @@ test("responses.create and retrieve workflow", async () => {
     reasoning: {
       effort: "low",
     },
+    metadata: {
+      request_key: "request_value",
+    },
     input: [
       {
         role: "user",
@@ -705,7 +716,7 @@ test("responses.create and retrieve workflow", async () => {
 
   // Verify that create was traced
   const createCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
+    (call: any) => (call[1] as any).method === "POST",
   );
   expect(createCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -724,6 +735,7 @@ test("responses.create and retrieve workflow", async () => {
   for (const call of createCalls) {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
+      request_key: "request_value",
       ls_model_name: "gpt-5-nano",
       ls_model_type: "chat",
       ls_provider: "openai",
@@ -735,7 +747,7 @@ test("responses.create and retrieve workflow", async () => {
     });
   }
   const updateCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   for (const call of updateCalls) {
     const body = parseRequestBody((call[1] as any).body);
@@ -778,14 +790,14 @@ test("responses.create streaming", async () => {
 
   // Verify token events were logged
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
   const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
-    (event: any) => event.name === "new_token"
+    (event: any) => event.name === "new_token",
   );
   expect(tokenEvents.length).toBeGreaterThan(0);
 
@@ -829,7 +841,7 @@ test("responses.parse", async () => {
         z.object({
           response: z.string(),
         }),
-        "response"
+        "response",
       ),
     },
   });
@@ -870,7 +882,7 @@ test("responses.parse streaming", async () => {
         z.object({
           response: z.string(),
         }),
-        "response"
+        "response",
       ),
     },
   });
@@ -1092,7 +1104,7 @@ describe("Usage Metadata Tests", () => {
         let oaiUsage: OpenAI.CompletionUsage | undefined;
         if (requestParams.stream) {
           const stream = await openai.chat.completions.create(
-            requestParams as OpenAI.ChatCompletionCreateParamsStreaming
+            requestParams as OpenAI.ChatCompletionCreateParamsStreaming,
           );
           for await (const chunk of stream) {
             if (expectUsageMetadata && chunk.usage) {
@@ -1101,7 +1113,7 @@ describe("Usage Metadata Tests", () => {
           }
         } else {
           const res = await openai.chat.completions.create(
-            requestParams as OpenAI.ChatCompletionCreateParams
+            requestParams as OpenAI.ChatCompletionCreateParams,
           );
           oaiUsage = (res as OpenAI.ChatCompletion).usage;
         }
@@ -1131,17 +1143,17 @@ describe("Usage Metadata Tests", () => {
           expect(oaiUsage).not.toBeNull();
           expect(usageMetadata!.input_tokens).toEqual(oaiUsage!.prompt_tokens);
           expect(usageMetadata!.output_tokens).toEqual(
-            oaiUsage!.completion_tokens
+            oaiUsage!.completion_tokens,
           );
           expect(usageMetadata!.total_tokens).toEqual(oaiUsage!.total_tokens);
 
           if (checkReasoningTokens) {
             expect(usageMetadata!.output_token_details).not.toBeUndefined();
             expect(
-              usageMetadata!.output_token_details!.reasoning
+              usageMetadata!.output_token_details!.reasoning,
             ).not.toBeUndefined();
             expect(usageMetadata!.output_token_details!.reasoning).toEqual(
-              oaiUsage!.completion_tokens_details?.reasoning_tokens
+              oaiUsage!.completion_tokens_details?.reasoning_tokens,
             );
           }
 
@@ -1149,16 +1161,16 @@ describe("Usage Metadata Tests", () => {
             expect(usageMetadata!.input_token_details).not.toBeUndefined();
             expect(usageMetadata!.output_token_details).not.toBeUndefined();
             expect(
-              usageMetadata?.input_token_details?.[checkServiceTier]
+              usageMetadata?.input_token_details?.[checkServiceTier],
             ).not.toBeUndefined();
             expect(
-              usageMetadata?.output_token_details?.[checkServiceTier]
+              usageMetadata?.output_token_details?.[checkServiceTier],
             ).not.toBeUndefined();
             expect(
-              usageMetadata?.input_token_details?.[checkServiceTier]
+              usageMetadata?.input_token_details?.[checkServiceTier],
             ).toBeGreaterThan(0);
             expect(
-              usageMetadata?.output_token_details?.[checkServiceTier]
+              usageMetadata?.output_token_details?.[checkServiceTier],
             ).toBeGreaterThan(0);
           }
         } else {
@@ -1170,15 +1182,15 @@ describe("Usage Metadata Tests", () => {
           fs.writeFileSync(
             `${__dirname}/test_data/langsmith_js_wrap_openai_${description.replace(
               " ",
-              "_"
+              "_",
             )}.json`,
-            JSON.stringify(requestBodies, null, 2)
+            JSON.stringify(requestBodies, null, 2),
           );
         }
 
         callSpy.mockClear();
       });
-    }
+    },
   );
 });
 
@@ -1201,7 +1213,7 @@ test("chat.completions.stream with finalChatCompletion", async () => {
 
   // Verify tracing calls were made
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   expect(patchCalls.length).toBeGreaterThan(0);
 
@@ -1227,7 +1239,7 @@ test("chat.completions.stream with finalMessage", async () => {
 
   // Verify tracing calls were made
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   expect(patchCalls.length).toBeGreaterThan(0);
 
@@ -1258,7 +1270,7 @@ test("responses.stream with finalResponse", async () => {
 
   // Verify tracing calls were made
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "PATCH"
+    (call: any) => (call[1] as any).method === "PATCH",
   );
   expect(patchCalls.length).toBeGreaterThan(0);
 

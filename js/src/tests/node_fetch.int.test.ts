@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import nodeFetch from "node-fetch";
 
 import { Client } from "../client.js";
@@ -31,7 +31,7 @@ test("multipart should work with overridden node-fetch", async () => {
         project_name: projectName,
         client: langchainClient,
         tracingEnabled: true,
-      }
+      },
     )();
 
     await langchainClient.awaitPendingTraceBatches();

@@ -15,8 +15,16 @@ function getOperationName(runType: string): string {
   return WELL_KNOWN_OPERATION_NAMES[runType] || runType;
 }
 
+function isPrimitive(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
 export type SerializedRunOperation<
-  T extends "post" | "patch" = "post" | "patch"
+  T extends "post" | "patch" = "post" | "patch",
 > = {
   operation: T;
   id: string;
@@ -29,7 +37,7 @@ export class LangSmithToOTELTranslator {
 
   exportBatch(
     operations: SerializedRunOperation[],
-    otelContextMap: Map<string, OTELContext>
+    otelContextMap: Map<string, OTELContext>,
   ): void {
     for (const op of operations) {
       try {
@@ -41,7 +49,7 @@ export class LangSmithToOTELTranslator {
           const span = this.createSpanForRun(
             op,
             op.run as RunCreate,
-            otelContextMap.get(op.id)
+            otelContextMap.get(op.id),
           );
           if (span && !op.run.end_time) {
             this.spans.set(op.id, span);
@@ -58,7 +66,7 @@ export class LangSmithToOTELTranslator {
   private createSpanForRun(
     op: SerializedRunOperation,
     runInfo: RunCreate,
-    otelContext?: OTELContext
+    otelContext?: OTELContext,
   ): OTELSpan | undefined {
     const activeSpan = otelContext && getOTELTrace().getSpan(otelContext);
     if (!activeSpan) {
@@ -75,7 +83,7 @@ export class LangSmithToOTELTranslator {
   private finishSpanSetup(
     span: OTELSpan,
     runInfo: RunCreate | RunUpdate,
-    op: SerializedRunOperation
+    op: SerializedRunOperation,
   ): OTELSpan {
     // Set all attributes
     this.setSpanAttributes(span, runInfo, op);
@@ -98,7 +106,7 @@ export class LangSmithToOTELTranslator {
 
   private updateSpanForRun(
     op: SerializedRunOperation,
-    runInfo: RunUpdate
+    runInfo: RunUpdate,
   ): void {
     try {
       const span = this.spans.get(op.id);
@@ -156,7 +164,7 @@ export class LangSmithToOTELTranslator {
   private setSpanAttributes(
     span: OTELSpan,
     runInfo: RunCreate | RunUpdate,
-    op: SerializedRunOperation
+    op: SerializedRunOperation,
   ): void {
     if ("run_type" in runInfo && runInfo.run_type) {
       span.setAttribute(constants.LANGSMITH_RUN_TYPE, runInfo.run_type);
@@ -186,6 +194,18 @@ export class LangSmithToOTELTranslator {
       span.setAttribute(constants.GEN_AI_REQUEST_MODEL, modelName);
     }
 
+    // Set usage from metadata if available
+    // This can be overriden by `run.outputs.usage_metadata` later if present.
+    if (
+      runInfo.extra?.metadata?.usage_metadata &&
+      typeof runInfo.extra.metadata.usage_metadata === "object"
+    ) {
+      span.setAttribute(
+        constants.LANGSMITH_USAGE_METADATA,
+        JSON.stringify(runInfo.extra.metadata.usage_metadata),
+      );
+    }
+
     // Set token usage information
     if (
       "prompt_tokens" in runInfo &&
@@ -193,7 +213,7 @@ export class LangSmithToOTELTranslator {
     ) {
       span.setAttribute(
         constants.GEN_AI_USAGE_INPUT_TOKENS,
-        runInfo.prompt_tokens
+        runInfo.prompt_tokens,
       );
     }
 
@@ -203,14 +223,14 @@ export class LangSmithToOTELTranslator {
     ) {
       span.setAttribute(
         constants.GEN_AI_USAGE_OUTPUT_TOKENS,
-        runInfo.completion_tokens
+        runInfo.completion_tokens,
       );
     }
 
     if ("total_tokens" in runInfo && typeof runInfo.total_tokens === "number") {
       span.setAttribute(
         constants.GEN_AI_USAGE_TOTAL_TOKENS,
-        runInfo.total_tokens
+        runInfo.total_tokens,
       );
     }
 
@@ -223,7 +243,7 @@ export class LangSmithToOTELTranslator {
       if (value !== null && value !== undefined) {
         span.setAttribute(
           `${constants.LANGSMITH_METADATA}.${key}`,
-          String(value)
+          isPrimitive(value) ? String(value) : JSON.stringify(value),
         );
       }
     }
@@ -241,19 +261,19 @@ export class LangSmithToOTELTranslator {
       if (serialized.name) {
         span.setAttribute(
           constants.GEN_AI_SERIALIZED_NAME,
-          String(serialized.name)
+          String(serialized.name),
         );
       }
       if (serialized.signature) {
         span.setAttribute(
           constants.GEN_AI_SERIALIZED_SIGNATURE,
-          String(serialized.signature)
+          String(serialized.signature),
         );
       }
       if (serialized.doc) {
         span.setAttribute(
           constants.GEN_AI_SERIALIZED_DOC,
-          String(serialized.doc)
+          String(serialized.doc),
         );
       }
     }
@@ -315,7 +335,7 @@ export class LangSmithToOTELTranslator {
 
   private setInvocationParameters(
     span: OTELSpan,
-    runInfo: RunCreate | RunUpdate
+    runInfo: RunCreate | RunUpdate,
   ): void {
     if (!runInfo.extra?.metadata?.invocation_params) {
       return;
@@ -327,14 +347,14 @@ export class LangSmithToOTELTranslator {
     if (invocationParams.max_tokens !== undefined) {
       span.setAttribute(
         constants.GEN_AI_REQUEST_MAX_TOKENS,
-        invocationParams.max_tokens
+        invocationParams.max_tokens,
       );
     }
 
     if (invocationParams.temperature !== undefined) {
       span.setAttribute(
         constants.GEN_AI_REQUEST_TEMPERATURE,
-        invocationParams.temperature
+        invocationParams.temperature,
       );
     }
 
@@ -345,14 +365,14 @@ export class LangSmithToOTELTranslator {
     if (invocationParams.frequency_penalty !== undefined) {
       span.setAttribute(
         constants.GEN_AI_REQUEST_FREQUENCY_PENALTY,
-        invocationParams.frequency_penalty
+        invocationParams.frequency_penalty,
       );
     }
 
     if (invocationParams.presence_penalty !== undefined) {
       span.setAttribute(
         constants.GEN_AI_REQUEST_PRESENCE_PENALTY,
-        invocationParams.presence_penalty
+        invocationParams.presence_penalty,
       );
     }
   }
@@ -371,25 +391,25 @@ export class LangSmithToOTELTranslator {
           if (inputs.stream !== undefined) {
             span.setAttribute(
               constants.LANGSMITH_REQUEST_STREAMING,
-              inputs.stream
+              inputs.stream,
             );
           }
           if (inputs.extra_headers) {
             span.setAttribute(
               constants.LANGSMITH_REQUEST_HEADERS,
-              JSON.stringify(inputs.extra_headers)
+              JSON.stringify(inputs.extra_headers),
             );
           }
           if (inputs.extra_query) {
             span.setAttribute(
               constants.GEN_AI_REQUEST_EXTRA_QUERY,
-              JSON.stringify(inputs.extra_query)
+              JSON.stringify(inputs.extra_query),
             );
           }
           if (inputs.extra_body) {
             span.setAttribute(
               constants.GEN_AI_REQUEST_EXTRA_BODY,
-              JSON.stringify(inputs.extra_body)
+              JSON.stringify(inputs.extra_body),
             );
           }
         }
@@ -410,11 +430,11 @@ export class LangSmithToOTELTranslator {
           span.setAttribute(constants.GEN_AI_USAGE_INPUT_TOKENS, tokenUsage[0]);
           span.setAttribute(
             constants.GEN_AI_USAGE_OUTPUT_TOKENS,
-            tokenUsage[1]
+            tokenUsage[1],
           );
           span.setAttribute(
             constants.GEN_AI_USAGE_TOTAL_TOKENS,
-            tokenUsage[0] + tokenUsage[1]
+            tokenUsage[0] + tokenUsage[1],
           );
         }
 
@@ -422,7 +442,7 @@ export class LangSmithToOTELTranslator {
           if (outputs.model) {
             span.setAttribute(
               constants.GEN_AI_RESPONSE_MODEL,
-              String(outputs.model)
+              String(outputs.model),
             );
           }
 
@@ -441,7 +461,7 @@ export class LangSmithToOTELTranslator {
             if (finishReasons.length > 0) {
               span.setAttribute(
                 constants.GEN_AI_RESPONSE_FINISH_REASONS,
-                finishReasons.join(", ")
+                finishReasons.join(", "),
               );
             }
           }
@@ -449,14 +469,14 @@ export class LangSmithToOTELTranslator {
           if (outputs.service_tier) {
             span.setAttribute(
               constants.GEN_AI_RESPONSE_SERVICE_TIER,
-              outputs.service_tier
+              outputs.service_tier,
             );
           }
 
           if (outputs.system_fingerprint) {
             span.setAttribute(
               constants.GEN_AI_RESPONSE_SYSTEM_FINGERPRINT,
-              outputs.system_fingerprint
+              outputs.system_fingerprint,
             );
           }
 
@@ -465,16 +485,24 @@ export class LangSmithToOTELTranslator {
             typeof outputs.usage_metadata === "object"
           ) {
             const usageMetadata = outputs.usage_metadata;
+
+            // Set usage from outputs if available
+            // This overrides the usage from metadata if present.
+            span.setAttribute(
+              constants.LANGSMITH_USAGE_METADATA,
+              JSON.stringify(usageMetadata),
+            );
+
             if (usageMetadata.input_token_details) {
               span.setAttribute(
                 constants.GEN_AI_USAGE_INPUT_TOKEN_DETAILS,
-                JSON.stringify(usageMetadata.input_token_details)
+                JSON.stringify(usageMetadata.input_token_details),
               );
             }
             if (usageMetadata.output_token_details) {
               span.setAttribute(
                 constants.GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS,
-                JSON.stringify(usageMetadata.output_token_details)
+                JSON.stringify(usageMetadata.output_token_details),
               );
             }
           }
@@ -518,7 +546,7 @@ export class LangSmithToOTELTranslator {
         typeof haystack.kwargs === "object"
       ) {
         tokenUsage = this.extractUnifiedRunTokens(
-          haystack.kwargs.usage_metadata
+          haystack.kwargs.usage_metadata,
         );
         if (tokenUsage) {
           return tokenUsage;
@@ -545,7 +573,7 @@ export class LangSmithToOTELTranslator {
         typeof generation.message.kwargs === "object"
       ) {
         tokenUsage = this.extractUnifiedRunTokens(
-          generation.message.kwargs.usage_metadata
+          generation.message.kwargs.usage_metadata,
         );
         if (tokenUsage) {
           return tokenUsage;

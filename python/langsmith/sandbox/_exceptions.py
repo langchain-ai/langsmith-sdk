@@ -44,6 +44,18 @@ class SandboxConnectionError(SandboxClientError):
     pass
 
 
+class SandboxConnectTimeoutError(SandboxConnectionError):
+    """Raised when the socket fails or times out before the WebSocket handshake.
+
+    Distinct from its parent because it is safely retryable: the execute frame
+    was never sent, so re-issuing the same command_id cannot double-run a
+    command. run() retries this with backoff; a plain SandboxConnectionError
+    (a rejected handshake) is permanent and propagates immediately.
+    """
+
+    pass
+
+
 class SandboxServerReloadError(SandboxConnectionError):
     """Raised when the server sends a 1001 Going Away close frame.
 
@@ -71,7 +83,7 @@ class ResourceNotFoundError(SandboxClientError):
     """Raised when a resource is not found.
 
     Attributes:
-        resource_type: Type of resource (sandbox, template, volume, pool, file).
+        resource_type: Type of resource (sandbox, snapshot, file).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -84,7 +96,7 @@ class ResourceTimeoutError(SandboxClientError):
     """Raised when an operation times out.
 
     Attributes:
-        resource_type: Type of resource (sandbox, volume, pool).
+        resource_type: Type of resource (sandbox, snapshot).
         last_status: The last known status before timeout (for sandboxes).
     """
 
@@ -111,7 +123,7 @@ class ResourceInUseError(SandboxClientError):
     """Raised when deleting a resource that is still in use.
 
     Attributes:
-        resource_type: Type of resource (template, volume).
+        resource_type: Type of resource (snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -124,7 +136,7 @@ class ResourceAlreadyExistsError(SandboxClientError):
     """Raised when creating a resource that already exists.
 
     Attributes:
-        resource_type: Type of resource (e.g., pool).
+        resource_type: Type of resource (e.g., snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -137,7 +149,7 @@ class ResourceNameConflictError(SandboxClientError):
     """Raised when updating a resource name to one that already exists.
 
     Attributes:
-        resource_type: Type of resource (volume, template, pool, sandbox).
+        resource_type: Type of resource (sandbox, snapshot).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -158,7 +170,6 @@ class ValidationError(SandboxClientError):
     - Resource values exceeding server-defined limits (CPU, memory, storage)
     - Invalid resource units
     - Invalid name formats
-    - Pool validation failures (e.g., template has volumes)
 
     Attributes:
         field: The field that failed validation (e.g., "cpu", "memory").
@@ -183,7 +194,8 @@ class ValidationError(SandboxClientError):
 class QuotaExceededError(SandboxClientError):
     """Raised when organization quota limits are exceeded.
 
-    Users should contact support@langchain.dev to increase quotas.
+    Users should contact technical support via our Support Portal
+    (https://support.langchain.com) to increase quotas.
 
     Attributes:
         quota_type: Type of quota exceeded (e.g., "sandbox_count", "cpu").
@@ -204,9 +216,9 @@ class ResourceCreationError(SandboxClientError):
     """Raised when resource provisioning fails.
 
     Attributes:
-        resource_type: Type of resource (sandbox, volume, pool).
+        resource_type: Type of resource (sandbox, snapshot).
         error_type: Machine-readable error type (ImagePull, CrashLoop,
-            SandboxConfig, Unschedulable, VolumeProvisioning).
+            SandboxConfig, Unschedulable).
     """
 
     def __init__(

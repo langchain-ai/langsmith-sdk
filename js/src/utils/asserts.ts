@@ -1,5 +1,5 @@
 export function isPromiseMethod(
-  x: string | symbol
+  x: string | symbol,
 ): x is "then" | "catch" | "finally" {
   if (x === "then" || x === "catch" || x === "finally") {
     return true;

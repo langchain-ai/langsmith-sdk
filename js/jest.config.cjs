@@ -12,7 +12,6 @@ module.exports = {
     // Temporarily skip consistently flaky tests due to external API issues
     // TODO: Re-enable once API stability improves
     // "batch_client\\.int\\.test\\.ts$",
-    "few_shot\\.int\\.test\\.ts$",
   ],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
@@ -24,9 +23,10 @@ module.exports = {
     ],
   },
   setupFiles: ["dotenv/config"],
+  // Retry flaky integration tests up to 3 times. `jest.retryTimes` is a
+  // runtime API, not a config option, so it must be called from a file
+  // loaded after the test framework is installed.
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.cjs"],
   testTimeout: 20_000,
   maxConcurrency: 2,
-  // Retry flaky integration tests up to 3 times
-  retryTimes: 3,
-  retryImmediately: false,
 };

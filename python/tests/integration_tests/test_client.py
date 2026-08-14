@@ -40,6 +40,7 @@ from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
+from langsmith.run_trees import RunTree
 from langsmith.schemas import (
     AttachmentsOperations,
     Dataset,
@@ -119,6 +120,82 @@ def parameterized_multipart_client(request) -> Client:
             }
         }
     )
+
+
+@pytest.mark.require_v2
+async def test_evaluators_generated_client_crud(
+    langchain_client: Client,
+) -> None:
+    """Exercise the generated OpenAPI evaluators resource end to end."""
+    evaluator = None
+    name = "__sdk_evaluator_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+
+    try:
+        created = await langchain_client.evaluators.create(
+            name=name,
+            type="code",
+            code_evaluator={
+                "code": "def perform_eval(run, example):\n    return {'score': 1}",
+                "language": "python",
+            },
+        )
+        evaluator = created.evaluator
+        assert evaluator is not None
+        assert evaluator.id is not None
+        assert evaluator.name == name
+        assert evaluator.type == "code"
+
+        retrieved = await langchain_client.evaluators.retrieve(evaluator.id)
+        assert retrieved.id == evaluator.id
+        assert retrieved.name == name
+
+        updated_name = f"{name}_updated"
+        updated = await langchain_client.evaluators.update(
+            evaluator.id,
+            name=updated_name,
+        )
+        assert updated.evaluator is not None
+        assert updated.evaluator.name == updated_name
+
+        evaluators = [
+            item
+            async for item in langchain_client.evaluators.list(
+                name_contains=updated_name, limit=10
+            )
+        ]
+        assert evaluator.id in {item.id for item in evaluators}
+    finally:
+        if evaluator is not None and evaluator.id is not None:
+            await langchain_client.evaluators.delete(
+                evaluator.id, delete_run_rules=True
+            )
+
+
+async def test_aread_project(langchain_client: Client) -> None:
+    """Exercise the async aread_project method against the LangSmith API."""
+    project_name = "__sdk_aread_project_integration_" + "".join(
+        random.sample(string.ascii_lowercase, 10)
+    )
+    created = langchain_client.create_project(project_name)
+    try:
+        project = await langchain_client.aread_project(project_name=project_name)
+        assert project.id == created.id
+        assert project.name == project_name
+
+        project_by_id = await langchain_client.aread_project(
+            project_id=str(created.id), include_stats=True
+        )
+        assert project_by_id.id == created.id
+
+        nonexistent_name = "__sdk_aread_project_missing_" + "".join(
+            random.sample(string.ascii_lowercase, 10)
+        )
+        with pytest.raises(LangSmithNotFoundError):
+            await langchain_client.aread_project(project_name=nonexistent_name)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 def test_datasets(parameterized_multipart_client: Client) -> None:
@@ -387,66 +464,7 @@ def test_list_examples(langchain_client: "Client") -> None:
         safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-@pytest.mark.slow
-def test_similar_examples(langchain_client: Client) -> None:
-    inputs = [{"text": "how are you"}, {"text": "good bye"}, {"text": "see ya later"}]
-    outputs = [
-        {"response": "good how are you"},
-        {"response": "ta ta"},
-        {"response": "tootles"},
-    ]
-    dataset_name = "__test_similar_examples" + uuid7().hex
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
-    dataset = langchain_client.create_dataset(
-        dataset_name=dataset_name,
-        inputs_schema={
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-            },
-            "required": ["text"],
-            "additionalProperties": False,
-        },
-        outputs_schema={
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "response": {"type": "string"},
-            },
-            "required": ["response"],
-            "additionalProperties": False,
-        },
-    )
-    langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, dataset_id=dataset.id
-    )
-    langchain_client.index_dataset(dataset_id=dataset.id)
-    # Need to wait for indexing to finish.
-    time.sleep(5)
-    similar_list = langchain_client.similar_examples(
-        {"text": "howdy"}, limit=2, dataset_id=dataset.id
-    )
-    assert len(similar_list) == 2
-
-    langchain_client.create_example(
-        inputs={"text": "howdy"},
-        outputs={"response": "howdy"},
-        dataset_id=dataset.id,
-    )
-
-    langchain_client.sync_indexed_dataset(dataset_id=dataset.id)
-    time.sleep(5)
-
-    similar_list = langchain_client.similar_examples(
-        {"text": "howdy"}, limit=5, dataset_id=dataset.id
-    )
-    assert len(similar_list) == 4
-
-    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
-
-
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -483,6 +501,7 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_update_run_attachments(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -832,6 +851,7 @@ def test_list_datasets(langchain_client: Client) -> None:
                 pass
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 def test_create_run_with_masked_inputs_outputs(
     langchain_client: Client, monkeypatch: pytest.MonkeyPatch
@@ -939,6 +959,7 @@ def test_create_chat_example(
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.parametrize("use_multipart_endpoint", [True, False])
 @pytest.mark.slow
 def test_batch_ingest_runs(
@@ -1091,10 +1112,11 @@ def test_multipart_ingest_create_with_attachments_error(
     ]
 
     # make sure no warnings logged
-    with pytest.raises(ValueError, match="Must set dangerously_allow_filesystem"):
+    with pytest.raises(ValueError, match="dangerously_allow_filesystem"):
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1143,6 +1165,7 @@ def test_multipart_ingest_create_with_attachments(
         )
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_multipart_ingest_update_with_attachments_no_paths(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1209,6 +1232,7 @@ def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -
         return False
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments_error(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1253,11 +1277,12 @@ def test_multipart_ingest_update_with_attachments_error(
                 },
             }
         ]
-        with pytest.raises(ValueError, match="Must set dangerously_allow_filesystem"):
+        with pytest.raises(ValueError, match="dangerously_allow_filesystem"):
             langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
 
 # TODO: fix flakiness
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1326,9 +1351,9 @@ def test_multipart_ingest_create_then_update(
     _session = "__test_multipart_ingest_create_then_update"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = start_time.strftime("%Y%m%dT%H%M%S%fZ")
+    end_time = (start_time + datetime.timedelta(seconds=1)).isoformat()
 
     runs_to_create: list[dict] = [
         {
@@ -1339,6 +1364,7 @@ def test_multipart_ingest_create_then_update(
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
             "inputs": {"input1": 1, "input2": 2},
+            "start_time": start_time.isoformat(),
         }
     ]
 
@@ -1351,8 +1377,11 @@ def test_multipart_ingest_create_then_update(
     runs_to_update: list[dict] = [
         {
             "id": str(trace_a_id),
+            "session_name": _session,
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time,
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
@@ -1368,15 +1397,18 @@ def test_multipart_ingest_update_then_create(
     _session = "__test_multipart_ingest_update_then_create"
 
     trace_a_id = uuid7()
-    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y%m%dT%H%M%S%fZ"
-    )
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    current_time = start_time.strftime("%Y%m%dT%H%M%S%fZ")
+    end_time = (start_time + datetime.timedelta(seconds=1)).isoformat()
 
     runs_to_update: list[dict] = [
         {
             "id": str(trace_a_id),
+            "session_name": _session,
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time,
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
@@ -1396,6 +1428,7 @@ def test_multipart_ingest_update_then_create(
             "dotted_order": f"{current_time}{str(trace_a_id)}",
             "trace_id": str(trace_a_id),
             "inputs": {"input1": 1, "input2": 2},
+            "start_time": start_time.isoformat(),
         }
     ]
 
@@ -1451,6 +1484,7 @@ def test_get_info() -> None:
     assert info.batch_ingest_config["size_limit"] > 0  # type: ignore
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 @pytest.mark.parametrize("add_metadata", [True, False])
 @pytest.mark.parametrize("do_batching", [True, False])
@@ -3427,6 +3461,7 @@ def test_list_annotation_queues(langchain_client: Client):
             langchain_client.delete_annotation_queue(queue_id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_annotation_queue_runs(langchain_client: Client):
     """Test managing runs within an annotation queue."""
@@ -3468,6 +3503,15 @@ def test_annotation_queue_runs(langchain_client: Client):
     )
     assert run_info.id in run_ids
 
+    # Test listing all runs in the queue
+    listed_runs = list(langchain_client.list_runs_from_annotation_queue(queue.id))
+    assert sorted([r.id for r in listed_runs]) == sorted(run_ids)
+    assert all(r.added_at is not None for r in listed_runs)
+
+    # Test limit
+    limited = list(langchain_client.list_runs_from_annotation_queue(queue.id, limit=1))
+    assert len(limited) == 1
+
     # Test deleting a run from queue
     langchain_client.delete_run_from_annotation_queue(
         queue_id=queue.id, run_id=run_ids[2]
@@ -3480,6 +3524,61 @@ def test_annotation_queue_runs(langchain_client: Client):
     run_1 = langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
     run_2 = langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=1)
     assert sorted([run_1.id, run_2.id]) == sorted(run_ids[:2])
+
+    remaining = list(langchain_client.list_runs_from_annotation_queue(queue.id))
+    assert sorted([r.id for r in remaining]) == sorted(run_ids[:2])
+
+    # Clean up
+    langchain_client.delete_annotation_queue(queue.id)
+
+
+@pytest.mark.require_clickhouse
+@pytest.mark.slow
+def test_annotation_queue_runs_by_key(langchain_client: Client):
+    """Test adding runs to an annotation queue via the SmithDB by-key path."""
+    queue_name = f"test_queue_{uuid7().hex[:8]}"
+    project_name = f"test_project_{uuid7().hex[:8]}"
+    queue = langchain_client.create_annotation_queue(
+        name=queue_name, description="Test by-key queue"
+    )
+
+    run_ids = [uuid7() for _ in range(2)]
+    for i, run_id in enumerate(run_ids):
+        langchain_client.create_run(
+            name=f"test_run_{i}",
+            inputs={"input": f"test_{i}"},
+            run_type="llm",
+            project_name=project_name,
+            start_time=datetime.datetime.now(datetime.timezone.utc),
+            id=run_id,
+        )
+
+    def _get_run(run_id: ID_TYPE) -> bool:
+        try:
+            langchain_client.read_run(run_id)  # type: ignore
+            return True
+        except LangSmithError:
+            return False
+
+    for run_id in run_ids:
+        wait_for(lambda rid=run_id: _get_run(rid))
+
+    # Read the runs back to obtain their SmithDB partition key fields.
+    fetched = [langchain_client.read_run(rid) for rid in run_ids]
+    langchain_client.add_runs_to_annotation_queue(
+        queue_id=queue.id,
+        runs=[
+            {
+                "run_id": run.id,
+                "session_id": run.session_id,
+                "start_time": run.start_time,
+            }
+            for run in fetched
+        ],
+    )
+
+    listed_runs = list(langchain_client.list_runs_from_annotation_queue(queue.id))
+    assert sorted([r.id for r in listed_runs]) == sorted(run_ids)
 
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)
@@ -3566,6 +3665,7 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_list_threads(langchain_client: Client) -> None:
     """Test list_threads returns threads grouped by thread_id."""
@@ -3649,6 +3749,7 @@ def test_list_threads(langchain_client: Client) -> None:
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_read_thread(langchain_client: Client) -> None:
     """Test read_thread yields runs for a single thread_id."""
@@ -3710,6 +3811,7 @@ def test_read_thread(langchain_client: Client) -> None:
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="flaky")
 def test_list_runs_with_child_runs(langchain_client: Client):
     """Test listing runs with child runs."""
@@ -3746,6 +3848,7 @@ def test_list_runs_with_child_runs(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_run_ops_buffer_integration(langchain_client: Client) -> None:
     project_name = f"test-run-ops-buffer-{str(uuid7())[:8]}"
@@ -3876,14 +3979,10 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
                             op, run_info, otel_context_map.get(op.id)
                         )
                         if span:
-                            self.original_otel_exporter._span_info[op.id] = {
-                                "span": span,
-                                "created_at": time.time(),
-                            }
+                            self.original_otel_exporter._span_info.set(op.id, span)
                     else:
-                        future.put(
-                            self.original_otel_exporter._span_info[op.id]["span"]
-                        )
+                        span_info = self.original_otel_exporter._span_info.get(op.id)
+                        future.put(span_info.span)
                         self.original_otel_exporter._update_span_for_run(op, run_info)
                 except Exception as e:
                     logger.exception(f"Error processing operation {op.id}: {e}")
@@ -3948,6 +4047,7 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
     )
 
 
+@pytest.mark.require_clickhouse
 def test_get_experiment_results(langchain_client: Client) -> None:
     """Test get_experiment_results method with evaluation data."""
     dataset_name = "__test_evaluate_attachments" + uuid7().hex
@@ -4044,6 +4144,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
+@pytest.mark.skip(reason="Relies on external config and resources")
 def test_create_insights_job(langchain_client: Client) -> None:
     chat_histories = [
         [
@@ -4072,87 +4173,124 @@ def test_create_insights_job(langchain_client: Client) -> None:
     assert insights_job.status in ["queued", "running", "success"]
 
 
-def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
-    dataset_name = f"feedback-formula-crud-{uuid7().hex}"
-    feedback_key = f"overall-quality-{uuid7().hex[:8]}"
-    initial_parts = [
-        {"part_type": "weighted_key", "weight": 0.6, "key": "accuracy"},
-        {"part_type": "weighted_key", "weight": 0.4, "key": "helpfulness"},
-    ]
-    updated_parts = [
-        {"part_type": "weighted_key", "weight": 0.25, "key": "coverage"},
-        {"part_type": "weighted_key", "weight": 0.75, "key": "relevance"},
-    ]
+# ---------------------------------------------------------------------------
+# v2 resource tests (runs.retrieve / runs.query via AsyncRunsResource)
+# ---------------------------------------------------------------------------
 
-    dataset = None
-    feedback_formula_id = None
+_V2_DEFAULT_SELECTS = [
+    "ID",
+    "NAME",
+    "RUN_TYPE",
+    "STATUS",
+    "START_TIME",
+    "END_TIME",
+    "INPUTS",
+    "OUTPUTS",
+    "TAGS",
+    "PROJECT_ID",
+    "TRACE_ID",
+    "DOTTED_ORDER",
+]
+
+
+def _v2_create_project_name(suffix: str) -> str:
+    import uuid
+
+    return f"__test_v2_resources_{suffix}_{uuid.uuid4().hex}"
+
+
+def _v2_cleanup_project(client: Client, project_name: str) -> None:
     try:
-        dataset = langchain_client.create_dataset(dataset_name)
-        created_formula = langchain_client.create_feedback_formula(
-            feedback_key=feedback_key,
-            aggregation_type="sum",
-            formula_parts=initial_parts,
-            dataset_id=dataset.id,
+        client.delete_project(project_name=project_name)
+    except Exception:
+        pass
+
+
+def _v2_get_project_id_or_skip(
+    client: Client,
+    project_name: str,
+    max_retries: int = 30,
+    sleep_time: float = 2.0,
+) -> str:
+    for _ in range(max_retries):
+        try:
+            project = client.read_project(project_name=project_name)
+            return str(project.id)
+        except Exception as e:
+            msg = str(e)
+            if "projects:read" in msg or "403" in msg:
+                pytest.skip(
+                    "requires projects:read permission (service key limitation)"
+                )
+        time.sleep(sleep_time)
+    pytest.fail(f"Project {project_name!r} not found after {max_retries} retries")
+
+
+def _v2_post_trace(project_name: str) -> tuple:
+    from datetime import datetime, timezone
+
+    client = Client()
+    start = datetime.now(timezone.utc)
+    root = RunTree(
+        name="root_run",
+        run_type="chain",
+        inputs={"input": "hello"},
+        project_name=project_name,
+    )
+    root.post()
+    child = root.create_child(
+        name="child_run",
+        run_type="llm",
+        inputs={"prompt": "world"},
+    )
+    child.post()
+    child.end(outputs={"text": "done"})
+    child.patch()
+    root.end(outputs={"result": "ok"})
+    root.patch()
+    project_id = _v2_get_project_id_or_skip(client, project_name)
+    return str(root.id), project_id, start
+
+
+@pytest.fixture
+def v2_client() -> Client:
+    return Client()
+
+
+@pytest.mark.require_v2
+async def test_runs_retrieve(v2_client: Client) -> None:
+    import time as _time
+
+    project_name = _v2_create_project_name("runs_retrieve")
+    run_id, project_id, start = _v2_post_trace(project_name)
+    run = None
+    for _ in range(15):
+        try:
+            run = await v2_client.runs.retrieve(
+                run_id=run_id,
+                project_id=project_id,
+                start_time=start.isoformat(),
+            )
+            break
+        except Exception:
+            _time.sleep(2)
+    assert run is not None
+    assert run.id == run_id
+    _v2_cleanup_project(v2_client, project_name)
+
+
+@pytest.mark.require_v2
+async def test_runs_query(v2_client: Client) -> None:
+    project_name = _v2_create_project_name("runs_query")
+    trace_id, project_id, _ = _v2_post_trace(project_name)
+    runs = [
+        r
+        async for r in v2_client.runs.query(
+            project_ids=[project_id],
+            selects=_V2_DEFAULT_SELECTS,
         )
-        feedback_formula_id = created_formula.id
-
-        assert created_formula.dataset_id == dataset.id
-        assert created_formula.feedback_key == feedback_key
-        assert [part.key for part in created_formula.formula_parts] == [
-            part["key"] for part in initial_parts
-        ]
-
-        formulas = list(langchain_client.list_feedback_formulas(dataset_id=dataset.id))
-        assert any(formula.id == feedback_formula_id for formula in formulas)
-
-        updated_feedback_key = f"{feedback_key}-updated"
-        updated_formula = langchain_client.update_feedback_formula(
-            feedback_formula_id,
-            feedback_key=updated_feedback_key,
-            aggregation_type="avg",
-            formula_parts=updated_parts,
-        )
-        assert updated_formula.id == feedback_formula_id
-        assert updated_formula.feedback_key == updated_feedback_key
-        assert updated_formula.aggregation_type == "avg"
-        assert [part.key for part in updated_formula.formula_parts] == [
-            part["key"] for part in updated_parts
-        ]
-        assert [part.weight for part in updated_formula.formula_parts] == [
-            part["weight"] for part in updated_parts
-        ]
-
-        fetched_formula = langchain_client.get_feedback_formula_by_id(
-            feedback_formula_id
-        )
-        assert fetched_formula.feedback_key == updated_feedback_key
-        assert fetched_formula.aggregation_type == "avg"
-        assert [part.key for part in fetched_formula.formula_parts] == [
-            part["key"] for part in updated_parts
-        ]
-
-        langchain_client.delete_feedback_formula(feedback_formula_id)
-        deleted_formula_id = feedback_formula_id
-        feedback_formula_id = None
-
-        wait_for(
-            lambda: (
-                deleted_formula_id
-                not in {
-                    formula.id
-                    for formula in langchain_client.list_feedback_formulas(
-                        dataset_id=dataset.id
-                    )
-                }
-            ),
-            max_sleep_time=30,
-            sleep_time=1,
-        )
-    finally:
-        if feedback_formula_id is not None:
-            try:
-                langchain_client.delete_feedback_formula(feedback_formula_id)
-            except Exception:
-                pass
-        if dataset is not None:
-            safe_delete_dataset(langchain_client, dataset_id=dataset.id)
+    ]
+    assert len(runs) >= 1
+    trace_ids = {r.trace_id for r in runs}
+    assert trace_id in trace_ids
+    _v2_cleanup_project(v2_client, project_name)

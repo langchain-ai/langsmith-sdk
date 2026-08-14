@@ -9,7 +9,7 @@ const DEFAULT_FETCH_IMPLEMENTATION = (...args: any[]) => fetch(...args);
 let globalFetchSupportsWebStreaming: boolean | undefined = undefined;
 
 const LANGSMITH_FETCH_IMPLEMENTATION_KEY = Symbol.for(
-  "ls:fetch_implementation"
+  "ls:fetch_implementation",
 );
 
 /**
@@ -20,7 +20,7 @@ const LANGSMITH_FETCH_IMPLEMENTATION_KEY = Symbol.for(
  */
 export const overrideFetchImplementation = (
   fetch: (...args: any[]) => any,
-  supportsWebStreaming?: boolean
+  supportsWebStreaming?: boolean,
 ) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
   globalFetchSupportsWebStreaming = supportsWebStreaming;
@@ -47,7 +47,7 @@ export const _shouldStreamForGlobalFetchImplementation = () => {
  * @internal
  */
 export const _getFetchImplementation: (
-  debug?: boolean
+  debug?: boolean,
 ) => (...args: any[]) => any = (debug?: boolean) => {
   return async (...args: any[]) => {
     if (debug || getLangSmithEnvironmentVariable("DEBUG") === "true") {

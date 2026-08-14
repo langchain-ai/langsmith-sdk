@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from typing import Any, Iterator
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
+    SandboxNotReadyError,
     SandboxOperationError,
     SandboxServerReloadError,
 )
@@ -24,6 +25,8 @@ from langsmith.sandbox._ws_execute import (
     _build_ws_url,
     _raise_from_error_msg,
     _WSStreamControl,
+    reconnect_ws_stream,
+    run_ws_stream,
 )
 
 # =============================================================================
@@ -71,12 +74,23 @@ class TestBuildWsUrl:
 
 class TestBuildAuthHeaders:
     def test_builds_header(self):
+        # Header names are normalized to lowercase.
         headers = _build_auth_headers("my-key")
-        assert headers == {"X-Api-Key": "my-key"}
+        assert headers == {"x-api-key": "my-key"}
 
     def test_none_key_returns_empty(self):
         headers = _build_auth_headers(None)
         assert headers == {}
+
+    def test_custom_headers_override_auth_header(self):
+        headers = _build_auth_headers(
+            "default-key",
+            {"X-Api-Key": "override-key", "X-Test-Header": "ws-value"},
+        )
+        assert headers == {
+            "x-api-key": "override-key",
+            "x-test-header": "ws-value",
+        }
 
 
 # =============================================================================
@@ -264,7 +278,7 @@ class TestCommandHandle:
         with pytest.raises(SandboxOperationError, match="before 'started'"):
             CommandHandle(stream, None, sandbox)
 
-    def test_stream_ends_without_exit(self):
+    def test_stream_end_without_exit_reconnects(self):
         stream = _make_stream(
             [
                 _started_msg(),
@@ -272,10 +286,22 @@ class TestCommandHandle:
             ]
         )
         sandbox = self._make_sandbox_mock()
+        reconnect_handle = MagicMock()
+        reconnect_handle._stream = _make_stream([_exit_msg(0)])
+        reconnect_handle._control = None
+        sandbox.reconnect.return_value = reconnect_handle
         handle = CommandHandle(stream, None, sandbox)
-        list(handle)  # Exhaust
-        with pytest.raises(SandboxOperationError, match="without exit"):
-            _ = handle.result
+        with patch("time.sleep") as mock_sleep:
+            chunks = list(handle)
+        assert [chunk.data for chunk in chunks] == ["data"]
+        assert handle.result.stdout == "data"
+        assert handle.result.exit_code == 0
+        sandbox.reconnect.assert_called_once_with(
+            "cmd-123",
+            stdout_offset=len("data".encode("utf-8")),
+            stderr_offset=0,
+        )
+        mock_sleep.assert_called_once_with(0.5)
 
     def test_kill(self):
         ctrl = _WSStreamControl()
@@ -477,6 +503,135 @@ class TestCommandHandle:
         assert len(chunks) == max_reconnects_to_do + 1
         assert reconnect_count[0] == max_reconnects_to_do
 
+    def test_reconnect_ack_resets_counter_without_output(self):
+        """A silent command survives more socket losses than the reconnect budget.
+
+        Every reattachment is acknowledged with 'started' and produces no output.
+        The budget bounds *failed* reattachments, so it must never be consumed by
+        a command that is simply quiet.
+        """
+        losses = CommandHandle.MAX_AUTO_RECONNECTS + 3
+        attempts = [0]
+
+        def initial_stream():
+            yield _started_msg()
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+
+        def make_reconnect_handle(*args, **kwargs):
+            attempts[0] += 1
+            h = MagicMock()
+            if attempts[0] < losses:
+
+                def acked_then_lost():
+                    yield _started_msg()
+                    raise SandboxConnectionError("lost again")
+
+                h._stream = acked_then_lost()
+            else:
+                h._stream = _make_stream([_started_msg(), _exit_msg(7)])
+            h._control = None
+            return h
+
+        sandbox.reconnect.side_effect = make_reconnect_handle
+        handle = CommandHandle(initial_stream(), None, sandbox)
+
+        with patch("time.sleep"):
+            chunks = list(handle)
+
+        assert chunks == []
+        assert attempts[0] == losses
+        assert handle.result.exit_code == 7
+
+    def test_reconnect_ack_for_another_command_does_not_reset(self):
+        """An acknowledgement naming a different command is not proof of anything."""
+
+        def initial_stream():
+            yield _started_msg()
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+
+        def make_reconnect_handle(*args, **kwargs):
+            h = MagicMock()
+
+            def foreign_ack_then_lost():
+                yield _started_msg("someone-elses-cmd")
+                raise SandboxConnectionError("lost again")
+
+            h._stream = foreign_ack_then_lost()
+            h._control = None
+            return h
+
+        sandbox.reconnect.side_effect = make_reconnect_handle
+        handle = CommandHandle(initial_stream(), None, sandbox)
+
+        with patch("time.sleep"):
+            with pytest.raises(SandboxConnectionError, match="giving up"):
+                list(handle)
+
+        assert sandbox.reconnect.call_count == CommandHandle.MAX_AUTO_RECONNECTS
+
+    def test_reconnect_ack_is_consumed_and_leaves_offsets_alone(self):
+        """The acknowledgement yields no chunk, fires no callback, moves no offset."""
+
+        def initial_stream():
+            yield _started_msg()
+            yield _stdout_msg("before", 0)
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+
+        def make_reconnect_handle(*args, **kwargs):
+            h = MagicMock()
+            h._stream = _make_stream(
+                [
+                    _started_msg(),
+                    _stdout_msg("after", 6),
+                    _exit_msg(0),
+                ]
+            )
+            h._control = None
+            return h
+
+        sandbox.reconnect.side_effect = make_reconnect_handle
+        seen: list[str] = []
+        handle = CommandHandle(initial_stream(), None, sandbox, on_stdout=seen.append)
+
+        with patch("time.sleep"):
+            chunks = list(handle)
+
+        assert [chunk.data for chunk in chunks] == ["before", "after"]
+        assert seen == ["before", "after"]
+        # Offsets are the ones "before" left behind: the ack carried no bytes.
+        sandbox.reconnect.assert_called_once_with(
+            "cmd-123", stdout_offset=6, stderr_offset=0
+        )
+        assert handle.result.stdout == "beforeafter"
+
+    def test_command_not_found_not_retried(self):
+        """A permanently gone command fails on the first reattachment attempt."""
+
+        def failing_stream():
+            yield _started_msg()
+            raise SandboxConnectionError("lost")
+
+        sandbox = self._make_sandbox_mock()
+        sandbox.reconnect.side_effect = SandboxOperationError(
+            "Command not found: cmd-123",
+            operation="reconnect",
+            error_type="CommandNotFound",
+        )
+
+        handle = CommandHandle(failing_stream(), None, sandbox)
+
+        with patch("time.sleep"):
+            with pytest.raises(SandboxOperationError, match="Command not found"):
+                list(handle)
+
+        assert sandbox.reconnect.call_count == 1
+
     def test_manual_reconnect(self):
         """handle.reconnect() delegates to sandbox.reconnect()."""
         stream = _make_stream(
@@ -549,16 +704,25 @@ class TestCommandHandle:
 class TestSandboxRunWs:
     """Test Sandbox.run() with mocked WebSocket layer."""
 
-    def _make_sandbox(self) -> Any:
+    def _make_sandbox(self, default_headers: Any = None) -> Any:
         """Create a Sandbox with mocked client."""
         from langsmith.sandbox._sandbox import Sandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",
-                "template_name": "test-tmpl",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
             client=client,
@@ -643,23 +807,58 @@ class TestSandboxRunWs:
         assert stdout_chunks == ["out"]
         assert stderr_chunks == ["err"]
 
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_forwards_headers(self, mock_run_ws):
+        """Custom headers are forwarded to WebSocket execution."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox()
+        sandbox.run("echo hello", headers={"X-Test-Header": "sandbox-ws"})
+
+        mock_run_ws.assert_called_once_with(
+            "https://router.example.com/sb-123",
+            "test-key",
+            "echo hello",
+            command_id=ANY,
+            timeout=60,
+            env=None,
+            cwd=None,
+            shell="/bin/bash",
+            headers={"X-Test-Header": "sandbox-ws"},
+            idle_timeout=300,
+            kill_on_disconnect=False,
+            ttl_seconds=600,
+            pty=False,
+            open_timeout=ANY,
+        )
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_forwards_client_default_headers(self, mock_run_ws):
+        """Default headers set on the client (e.g. X-Service-Key) are
+        forwarded to the WS layer."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox(default_headers={"X-Service-Key": "svc-jwt"})
+        sandbox.run("echo hello")
+
+        assert mock_run_ws.call_args.kwargs.get("headers") == {
+            "X-Service-Key": "svc-jwt"
+        }
+
     def test_run_wait_false_plus_callbacks_raises(self):
         """wait=False + callbacks raises ValueError."""
         sandbox = self._make_sandbox()
         with pytest.raises(ValueError, match="Cannot combine"):
             sandbox.run("cmd", wait=False, on_stdout=lambda s: None)
 
-    @pytest.mark.parametrize(
-        "exc",
-        [
-            SandboxConnectionError("WS failed"),
-            ImportError("no websockets"),
-        ],
-    )
-    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
-    def test_run_fallback_to_http(self, mock_run_ws, exc):
-        """WS failure (connection error or missing lib) falls back to HTTP."""
-        mock_run_ws.side_effect = exc
+    def test_run_fallback_to_http_when_ws_unavailable(self, monkeypatch):
+        """run() falls back to HTTP only when the websockets library is
+        unavailable."""
+        monkeypatch.setattr("langsmith.sandbox._sandbox.WEBSOCKETS_AVAILABLE", False)
         sandbox = self._make_sandbox()
 
         with patch.object(sandbox, "_run_http") as mock_http:
@@ -670,6 +869,25 @@ class TestSandboxRunWs:
 
         assert result.stdout == "http output"
         mock_http.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            SandboxConnectionError("WS failed"),
+            OSError("socket down"),
+        ],
+    )
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_ws_error_propagates_without_http_fallback(self, mock_run_ws, exc):
+        """Any WS failure other than a missing library propagates; run() must
+        not silently fall back to the capacity-capped blocking HTTP endpoint."""
+        mock_run_ws.side_effect = exc
+        sandbox = self._make_sandbox()
+
+        with patch.object(sandbox, "_run_http") as mock_http:
+            with pytest.raises(type(exc)):
+                sandbox.run("echo hello")
+        mock_http.assert_not_called()
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -694,15 +912,24 @@ class TestSandboxRunWs:
 
 
 class TestSandboxReconnect:
-    def _make_sandbox(self):
+    def _make_sandbox(self, default_headers: Any = None):
         from langsmith.sandbox._sandbox import Sandbox
 
         client = MagicMock()
         client._api_key = "test-key"
+        client._ws_default_headers.side_effect = (
+            (lambda headers: dict(headers) if headers else None)
+            if default_headers is None
+            else (
+                lambda headers: {
+                    **default_headers,
+                    **(dict(headers) if headers else {}),
+                }
+            )
+        )
         return Sandbox.from_dict(
             data={
                 "name": "test-sb",
-                "template_name": "test-tmpl",
                 "dataplane_url": "https://router.example.com/sb-123",
             },
             client=client,
@@ -742,15 +969,34 @@ class TestSandboxReconnect:
             stderr_offset=50,
         )
 
+    @patch("langsmith.sandbox._ws_execute.reconnect_ws_stream")
+    def test_reconnect_forwards_headers(self, mock_reconnect_ws):
+        """Reconnect forwards per-request headers to WebSocket execution."""
+        mock_reconnect_ws.return_value = (
+            _make_stream([_exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        sandbox = self._make_sandbox()
+        sandbox.reconnect("cmd-123", headers={"X-Test-Header": "sandbox-reconnect"})
+
+        mock_reconnect_ws.assert_called_once_with(
+            "https://router.example.com/sb-123",
+            "test-key",
+            "cmd-123",
+            stdout_offset=0,
+            stderr_offset=0,
+            headers={"X-Test-Header": "sandbox-reconnect"},
+        )
+
 
 # =============================================================================
-# Tests: _raise_for_invalid_status
+# Tests: _raise_for_invalid_handshake
 # =============================================================================
 
 
-class TestRaiseForInvalidStatus:
+class TestRaiseForInvalidHandshake:
     def test_404_gives_clear_message_with_url(self):
-        from langsmith.sandbox._ws_execute import _raise_for_invalid_status
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
         mock_response.status_code = 404
@@ -758,7 +1004,7 @@ class TestRaiseForInvalidStatus:
         exc.response = mock_response
 
         with pytest.raises(SandboxConnectionError) as exc_info:
-            _raise_for_invalid_status(
+            _raise_for_invalid_handshake(
                 exc,
                 "ws://example.com/sb-123/execute/ws",
             )
@@ -768,7 +1014,7 @@ class TestRaiseForInvalidStatus:
         assert exc_info.value.__cause__ is exc
 
     def test_non_404_includes_status_code(self):
-        from langsmith.sandbox._ws_execute import _raise_for_invalid_status
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
         mock_response.status_code = 403
@@ -776,4 +1022,78 @@ class TestRaiseForInvalidStatus:
         exc.response = mock_response
 
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
-            _raise_for_invalid_status(exc, "ws://example.com/sb-123/execute/ws")
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_503_raises_not_ready(self):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        exc = Exception("server rejected WebSocket connection: HTTP 503")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxNotReadyError, match="not ready"):
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_no_http_response_gives_unreachable_message(self):
+        """InvalidMessage carries no .response — a stopped/unreachable peer."""
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        exc = Exception("did not receive a valid HTTP response")
+
+        with pytest.raises(SandboxConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+        msg = str(exc_info.value)
+        assert "no valid HTTP response" in msg
+        assert "may be stopped or unreachable" in msg
+        assert "HTTP None" not in msg
+        assert exc_info.value.__cause__ is exc
+
+
+# =============================================================================
+# Tests: handshake failures are wrapped as SandboxConnectionError
+# =============================================================================
+
+
+class TestReconnectStreamFrames:
+    def test_forwards_started_acknowledgement(self):
+        """The reattachment ack must reach the handle, not be dropped in transport."""
+        frames = [
+            {"type": "started", "command_id": "cmd-123", "pid": 42},
+            {"type": "stdout", "data": "resumed", "offset": 10},
+            {"type": "exit", "exit_code": 0},
+        ]
+        ws = MagicMock()
+        ws.__iter__.return_value = iter([json.dumps(frame) for frame in frames])
+        with patch("langsmith.sandbox._ws_execute._ws_connect_sync") as mock_connect:
+            mock_connect.return_value.__enter__.return_value = ws
+            msg_stream, _ = reconnect_ws_stream(
+                "https://sb.example.com", "key", "cmd-123", stdout_offset=10
+            )
+            assert list(msg_stream) == frames
+
+
+class TestHandshakeFailureWrapping:
+    """A non-HTTP handshake response (InvalidMessage) must surface as the SDK's
+    typed SandboxConnectionError, not leak as a raw websockets exception."""
+
+    def _invalid_message(self):
+        from websockets.exceptions import InvalidMessage
+
+        return InvalidMessage("did not receive a valid HTTP response")
+
+    def test_run_ws_stream_wraps_invalid_message(self):
+        with patch("langsmith.sandbox._ws_execute._ws_connect_sync") as mock_connect:
+            mock_connect.side_effect = self._invalid_message()
+            msg_stream, _ = run_ws_stream("https://sb.example.com", "key", "echo hi")
+            with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                list(msg_stream)
+
+    def test_reconnect_ws_stream_wraps_invalid_message(self):
+        with patch("langsmith.sandbox._ws_execute._ws_connect_sync") as mock_connect:
+            mock_connect.side_effect = self._invalid_message()
+            msg_stream, _ = reconnect_ws_stream(
+                "https://sb.example.com", "key", "cmd-123"
+            )
+            with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                list(msg_stream)

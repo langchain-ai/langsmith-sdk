@@ -4,17 +4,15 @@ import type {
   LanguageModelV2StreamPart,
   LanguageModelV2CallOptions,
   LanguageModelV2Message,
-  LanguageModelV2Usage,
   SharedV2ProviderMetadata,
   LanguageModelV2FinishReason,
 } from "@ai-sdk/provider";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
 import {
-  extractInputTokenDetails,
-  extractOutputTokenDetails,
-} from "../../utils/vercel.js";
-import { convertMessageToTracedFormat } from "./utils.js";
+  convertMessageToTracedFormat,
+  setUsageMetadataOnRunTree,
+} from "./utils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
@@ -33,7 +31,7 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
 
 const _formatTracedOutputs = (
   outputs: Record<string, unknown>,
-  includeHttpDetails = false
+  includeHttpDetails = false,
 ) => {
   let formattedOutputs: Record<string, unknown>;
 
@@ -50,112 +48,8 @@ const _formatTracedOutputs = (
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
   return convertMessageToTracedFormat(
-    formattedOutputs as LanguageModelV2Message
+    formattedOutputs as LanguageModelV2Message,
   );
-};
-
-const setUsageMetadataOnRunTree = (
-  result: {
-    usage?: LanguageModelV2Usage;
-    providerMetadata?: SharedV2ProviderMetadata;
-  },
-  runTree: RunTree
-) => {
-  if (result.usage == null || typeof result.usage !== "object") {
-    return;
-  }
-
-  const usage = result.usage as Record<string, any>;
-  let inputTokens: number | undefined;
-  let outputTokens: number | undefined;
-  let totalTokens: number | undefined;
-
-  // AI SDK 6: Check for object-based token structures first
-  if (
-    typeof usage.inputTokens === "object" &&
-    usage.inputTokens?.total != null
-  ) {
-    // AI SDK 6 detected
-    inputTokens = usage.inputTokens.total;
-
-    if (
-      typeof usage.outputTokens === "object" &&
-      usage.outputTokens?.total != null
-    ) {
-      outputTokens = usage.outputTokens.total;
-    }
-
-    totalTokens = result.usage?.totalTokens;
-    if (
-      typeof totalTokens !== "number" &&
-      typeof inputTokens === "number" &&
-      typeof outputTokens === "number"
-    ) {
-      totalTokens = inputTokens + outputTokens;
-    }
-  } else if (typeof usage.inputTokens === "number") {
-    // AI SDK 5 detected
-    inputTokens = usage.inputTokens;
-
-    if (typeof usage.outputTokens === "number") {
-      outputTokens = usage.outputTokens;
-    }
-
-    totalTokens = result.usage?.totalTokens;
-    if (
-      typeof totalTokens !== "number" &&
-      typeof inputTokens === "number" &&
-      typeof outputTokens === "number"
-    ) {
-      totalTokens = inputTokens + outputTokens;
-    }
-  } else {
-    // AI SDK 4 fallback
-    if (typeof usage.promptTokens === "number") {
-      inputTokens = usage.promptTokens;
-    }
-    if (typeof usage.completionTokens === "number") {
-      outputTokens = usage.completionTokens;
-    }
-
-    totalTokens = result.usage?.totalTokens;
-    if (
-      typeof totalTokens !== "number" &&
-      typeof inputTokens === "number" &&
-      typeof outputTokens === "number"
-    ) {
-      totalTokens = inputTokens + outputTokens;
-    }
-  }
-
-  const langsmithUsage = {
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    total_tokens: totalTokens,
-  };
-  const inputTokenDetails = extractInputTokenDetails(
-    result.usage,
-    result.providerMetadata
-  );
-  const outputTokenDetails = extractOutputTokenDetails(
-    result.usage,
-    result.providerMetadata
-  );
-  runTree.extra = {
-    ...runTree.extra,
-    metadata: {
-      ...runTree.extra?.metadata,
-      usage_metadata: {
-        ...langsmithUsage,
-        input_token_details: {
-          ...inputTokenDetails,
-        },
-        output_token_details: {
-          ...outputTokenDetails,
-        },
-      },
-    },
-  };
 };
 
 type StandardTextBlock = { type: "text"; text: string };
@@ -188,10 +82,10 @@ export function LangSmithMiddleware(config?: {
   modelId?: string;
   lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">> & {
     processInputs?: (
-      inputs: Record<string, unknown>
+      inputs: Record<string, unknown>,
     ) => Record<string, unknown>;
     processOutputs?: (
-      outputs: Record<string, unknown>
+      outputs: Record<string, unknown>,
     ) => Record<string, unknown> | Promise<Record<string, unknown>>;
     traceRawHttp?: boolean;
   };
@@ -214,6 +108,7 @@ export function LangSmithMiddleware(config?: {
           name: name ?? "ai.doGenerate",
           run_type: "llm",
           metadata: {
+            ls_integration: "vercel-ai-sdk",
             ls_model_name: modelId,
             ai_sdk_method: "ai.doGenerate",
             ...lsConfig?.metadata,
@@ -233,7 +128,7 @@ export function LangSmithMiddleware(config?: {
             }
             return _formatTracedOutputs(typedOutputs, lsConfig?.traceRawHttp);
           },
-        }
+        },
       );
       const res = await traceableFunc(params);
       return res;
@@ -253,6 +148,7 @@ export function LangSmithMiddleware(config?: {
           name: name ?? "ai.doStream",
           run_type: "llm",
           metadata: {
+            ls_integration: "vercel-ai-sdk",
             ls_model_name: modelId,
             ai_sdk_method: "ai.doStream",
             ...lsConfig?.metadata,
@@ -294,7 +190,7 @@ export function LangSmithMiddleware(config?: {
                       aggregated.content.push({ type: "text", text: "" });
                     }
                     const contentBlock = aggregated.content.at(
-                      -1
+                      -1,
                     ) as NonNullable<StandardTextBlock>;
                     if (chunk.delta != null) {
                       contentBlock.text += chunk.delta;
@@ -315,7 +211,7 @@ export function LangSmithMiddleware(config?: {
                       });
                     }
                     const reasoningBlock = aggregated.content.at(
-                      -1
+                      -1,
                     ) as NonNullable<StandardReasoningBlock>;
                     if (chunk.delta != null) {
                       reasoningBlock.reasoning += chunk.delta;
@@ -323,7 +219,7 @@ export function LangSmithMiddleware(config?: {
                     return aggregated;
                   } else if (chunk.type === "tool-call") {
                     const matchingToolCall = aggregated.tool_calls.find(
-                      (call) => call.id === chunk.toolCallId
+                      (call) => call.id === chunk.toolCallId,
                     );
                     if (matchingToolCall != null) {
                       return aggregated;
@@ -367,7 +263,7 @@ export function LangSmithMiddleware(config?: {
                   content: [],
                   role: "assistant",
                   tool_calls: [],
-                }
+                },
               );
               // Add raw request/response for tracing only (not part of aggregated output)
               const outputForTracing: Record<string, unknown> = {
@@ -385,13 +281,12 @@ export function LangSmithMiddleware(config?: {
               }
               let formattedOutputs: Record<string, unknown>;
               if (lsConfig?.processOutputs) {
-                formattedOutputs = await lsConfig.processOutputs(
-                  outputForTracing
-                );
+                formattedOutputs =
+                  await lsConfig.processOutputs(outputForTracing);
               } else {
                 formattedOutputs = _formatTracedOutputs(
                   outputForTracing,
-                  lsConfig?.traceRawHttp
+                  lsConfig?.traceRawHttp,
                 );
               }
               await runTree?.end(formattedOutputs);

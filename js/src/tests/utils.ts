@@ -1,5 +1,5 @@
 import { Client } from "../client.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { faker } from "@faker-js/faker";
 import { RunCreate } from "../schemas.js";
@@ -16,7 +16,7 @@ export async function waitUntil(
   condition: () => Promise<boolean>,
   timeout: number,
   interval: number,
-  prefix?: string
+  prefix?: string,
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeout) {
@@ -24,56 +24,112 @@ export async function waitUntil(
       if (await condition()) {
         return;
       }
-    } catch (e) {
+    } catch (_e) {
       // Pass
     }
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
   const elapsed = Date.now() - start;
   throw new Error(
-    [prefix, `Timeout after ${elapsed / 1000}s`].filter(Boolean).join(": ")
+    [prefix, `Timeout after ${elapsed / 1000}s`].filter(Boolean).join(": "),
   );
+}
+
+/**
+ * Counts the runs in a project.
+ *
+ * `listRuns` comes first so environments that serve it keep the exact behavior
+ * they had before; SmithDB-only backends don't serve it and never settle, so
+ * they fall through to the v2 read path.
+ */
+async function countProjectRuns(
+  client: Client,
+  projectName: string,
+): Promise<number | null> {
+  try {
+    const count = (await toArray(client.listRuns({ projectName }))).length;
+    if (count > 0) return count;
+  } catch (_e) {
+    // Fall through to the v2 endpoint.
+  }
+  try {
+    const { id } = await client.readProject({ projectName });
+    let count = 0;
+    for await (const _run of client.runs.query({
+      project_ids: [id],
+      selects: ["ID"],
+    })) {
+      count++;
+    }
+    return count;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Resolves a run's trace id.
+ *
+ * `readRun` comes first to keep the previous behavior where it works; SmithDB
+ * answers the legacy single-run read with 501, so those deployments fall through
+ * to the v2 read. Callers create root runs, whose trace id is the run id itself
+ * — the last resort.
+ */
+export async function resolveTraceId(
+  client: Client,
+  runId: string,
+  projectId: string,
+): Promise<string> {
+  try {
+    const run = await client.readRun(runId);
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the v2 endpoint.
+  }
+  try {
+    const run = await client.runs.retrieve(runId, {
+      project_id: projectId,
+      selects: ["TRACE_ID"],
+    });
+    if (run?.trace_id) return run.trace_id;
+  } catch (_e) {
+    // Fall through to the run id.
+  }
+  return runId;
 }
 
 export async function pollRunsUntilCount(
   client: Client,
   projectName: string,
   count: number,
-  timeout?: number
+  timeout?: number,
 ): Promise<void> {
   await waitUntil(
-    async () => {
-      try {
-        const runs = await toArray(client.listRuns({ projectName }));
-        return runs.length === count;
-      } catch (e) {
-        return false;
-      }
-    },
+    async () => (await countProjectRuns(client, projectName)) === count,
     timeout ?? 120_000, // Wait up to 120 seconds
-    3000
+    3000,
   );
 }
 
 export async function deleteProject(
   langchainClient: Client,
-  projectName: string
+  projectName: string,
 ) {
   try {
     await langchainClient.readProject({ projectName });
     await langchainClient.deleteProject({ projectName });
-  } catch (e) {
+  } catch (_e) {
     // Pass
   }
 }
 export async function deleteDataset(
   langchainClient: Client,
-  datasetName: string
+  datasetName: string,
 ) {
   try {
     const existingDataset = await langchainClient.readDataset({ datasetName });
     await langchainClient.deleteDataset({ datasetId: existingDataset.id });
-  } catch (e) {
+  } catch (_e) {
     // Pass
   }
 }
@@ -82,7 +138,7 @@ export async function waitUntilRunFound(
   client: Client,
   runId: string,
   checkOutputs = false,
-  timeout?: number
+  timeout?: number,
 ) {
   return waitUntil(
     async () => {
@@ -96,13 +152,13 @@ export async function waitUntilRunFound(
           );
         }
         return true;
-      } catch (e) {
+      } catch (_e) {
         return false;
       }
     },
     timeout ?? 30_000,
     3_000,
-    `Waiting for run "${runId}"`
+    `Waiting for run "${runId}"`,
   );
 }
 
@@ -111,7 +167,7 @@ export async function waitUntilRunFoundByMetaField(
   projectName: string,
   metaKey: string,
   metaValue: string,
-  checkOutputs = false
+  checkOutputs = false,
 ) {
   return waitUntil(
     async () => {
@@ -120,7 +176,7 @@ export async function waitUntilRunFoundByMetaField(
           client.listRuns({
             filter: `and(eq(metadata_key, "${metaKey}"), eq(metadata_value, "${metaValue}"))`,
             projectName,
-          })
+          }),
         );
         if (runs.length === 0) {
           return false;
@@ -134,32 +190,32 @@ export async function waitUntilRunFoundByMetaField(
           );
         }
         return true;
-      } catch (e) {
+      } catch (_e) {
         return false;
       }
     },
     30_000,
     5_000,
-    `Waiting for run with metadata.${metaKey} = "${metaValue}"`
+    `Waiting for run with metadata.${metaKey} = "${metaValue}"`,
   );
 }
 
 export async function waitUntilProjectFound(
   client: Client,
-  projectName: string
+  projectName: string,
 ) {
   return waitUntil(
     async () => {
       try {
         await client.readProject({ projectName });
         return true;
-      } catch (e) {
+      } catch (_e) {
         return false;
       }
     },
     15_000,
     5_000,
-    `Waiting for project "${projectName}"`
+    `Waiting for project "${projectName}"`,
   );
 }
 
@@ -187,7 +243,7 @@ export function sanitizePresignedUrls(payload: unknown) {
  */
 export function createRunsFactory(
   projectName: string,
-  count = 10
+  count = 10,
 ): Array<RunCreate> {
   return Array.from({ length: count }).map((_, idx) => ({
     id: uuidv4(),
@@ -241,14 +297,14 @@ export function isTransientError(error: any): boolean {
  * Wraps a test function to skip gracefully on rate limit errors
  */
 export async function skipOnRateLimit(
-  testFn: () => Promise<void>
+  testFn: () => Promise<void>,
 ): Promise<void> {
   try {
     await testFn();
   } catch (error: any) {
     if (isRateLimitError(error)) {
       console.log(
-        "⚠️  Test skipped due to rate limit (429). This is expected in CI with API rate limits."
+        "⚠️  Test skipped due to rate limit (429). This is expected in CI with API rate limits.",
       );
       return; // Skip test gracefully
     }
@@ -261,7 +317,7 @@ export async function skipOnRateLimit(
  * (rate limits, timeouts, and other CI-flaky issues)
  */
 export async function skipIfTransientError(
-  testFn: () => Promise<void>
+  testFn: () => Promise<void>,
 ): Promise<void> {
   try {
     await testFn();
@@ -269,7 +325,7 @@ export async function skipIfTransientError(
     if (isTransientError(error)) {
       const errorType = isRateLimitError(error) ? "rate limit" : "timeout";
       console.log(
-        `⚠️  Test skipped due to ${errorType}. This is expected in CI with API rate limits.`
+        `⚠️  Test skipped due to ${errorType}. This is expected in CI with API rate limits.`,
       );
       return; // Skip test gracefully
     }
@@ -458,7 +514,7 @@ function processUserDataCollection(userData, processingOptions = {}) {
   // Critical error location: userData parameter validation missing
   // This function expects an array but sometimes receives undefined
   // due to upstream service failures or race conditions
-  
+
   const {
     enableValidation = true,
     transformationRules = [],
@@ -498,12 +554,12 @@ async function fetchUserDataFromMultipleSources(userIds, options = {}) {
       fetchFromCacheLayer(userIds),
       fetchFromExternalAPIs(userIds, options)
     ];
-    
+
     const [dbData, cacheData, apiData] = await Promise.allSettled(promises);
-    
+
     // POTENTIAL ISSUE: Merge logic may result in undefined
     const mergedData = mergeUserDataSources(dbData, cacheData, apiData);
-    
+
     // ISSUE: No validation that mergedData is a valid array
     return mergedData;
   } catch (error) {

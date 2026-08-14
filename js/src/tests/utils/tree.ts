@@ -3,7 +3,7 @@ import { Client } from "../../client.js";
 
 export async function getAssumedTreeFromCalls(
   calls: unknown[][],
-  client: Client
+  client: Client,
 ): Promise<{
   nodes: string[];
   edges: Array<[string, string]>;
@@ -37,9 +37,16 @@ export async function getAssumedTreeFromCalls(
 
     const [url, fetchArgs] = call.slice(-2) as [
       string,
-      { method: string; body: string }
+      { method: string; body: string },
     ];
-    const req = `${fetchArgs.method} ${new URL(url as string).pathname}`;
+    const { method } = fetchArgs;
+    // The API base URL carries a different prefix per deployment ("" on beta,
+    // "/api" on self-hosted, "/api/v1" elsewhere), so match on the endpoint
+    // suffix rather than the whole pathname.
+    const pathname = new URL(url as string).pathname;
+    const createRun = method === "POST" && /(?:^|\/)runs$/.test(pathname);
+    const updateRun =
+      method === "PATCH" && /(?:^|\/)runs\/[^/]+$/.test(pathname);
     let body: Run;
     if (typeof fetchArgs.body === "string") {
       body = JSON.parse(fetchArgs.body);
@@ -50,7 +57,7 @@ export async function getAssumedTreeFromCalls(
       }
     }
 
-    if (req === "POST /runs" || req === "POST /api/v1/runs") {
+    if (createRun) {
       const id = body!.id;
       upsertId(id);
       nodeMap[id] = { ...nodeMap[id], ...body! };
@@ -58,15 +65,8 @@ export async function getAssumedTreeFromCalls(
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         edges.push([nodeMap[id].parent_run_id!, nodeMap[id].id]);
       }
-    } else if (
-      req.startsWith("PATCH /runs/") ||
-      req.startsWith("PATCH /api/v1/runs/")
-    ) {
-      const id = req.substring(
-        req.startsWith("PATCH /api/v1/runs/")
-          ? "PATCH /api/v1/runs/".length
-          : "PATCH /runs/".length
-      );
+    } else if (updateRun) {
+      const id = pathname.slice(pathname.lastIndexOf("/") + 1);
       upsertId(id);
       nodeMap[id] = { ...nodeMap[id], ...body! };
     }
@@ -76,7 +76,51 @@ export async function getAssumedTreeFromCalls(
     nodes: idMap.map(getId),
     edges: edges.map(([source, target]) => [getId(source), getId(target)]),
     data: Object.fromEntries(
-      Object.entries(nodeMap).map(([id, value]) => [getId(id), value] as const)
+      Object.entries(nodeMap).map(([id, value]) => [getId(id), value] as const),
+    ),
+  };
+}
+
+type MagicRunResult = {
+  name: string;
+  [key: string]: unknown;
+};
+
+type MagicRun = (
+  rawName: TemplateStringsArray,
+) => (props: Record<string, unknown>, ...children: string[]) => string;
+
+export function asTree(cb: (run: MagicRun) => void): {
+  nodes: string[];
+  edges: Array<[string, string]>;
+  data: Record<string, unknown>;
+} {
+  const acc: {
+    nodes: string[];
+    edges: Array<[string, string]>;
+    data: Record<string, MagicRunResult>;
+  } = { nodes: [], edges: [], data: {} };
+
+  function run(rawId: TemplateStringsArray) {
+    const id = rawId.join("");
+    const name = id.split(":")[0];
+
+    acc.nodes.push(id);
+    return (props: Record<string, unknown>, ...children: string[]): string => {
+      for (const childId of children) acc.edges.push([id, childId]);
+      acc.data[id] = { name, ...props };
+      return id;
+    };
+  }
+
+  cb(run);
+  const nodeOrder = new Map(acc.nodes.map((id, idx) => [id, idx]));
+
+  return {
+    ...acc,
+    edges: [...acc.edges].sort(
+      ([, left], [, right]) =>
+        (nodeOrder.get(left) ?? 0) - (nodeOrder.get(right) ?? 0),
     ),
   };
 }

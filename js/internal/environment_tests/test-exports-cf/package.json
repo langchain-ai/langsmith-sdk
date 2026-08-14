@@ -11,6 +11,11 @@
     "langsmith": "file:../../.."
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.110.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "ws": "8.21.0"
+    }
   }
 }

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
-from dataclasses import dataclass, field
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
+
+import httpx
 
 from langsmith.sandbox._exceptions import (
     SandboxConnectionError,
@@ -20,6 +24,38 @@ if TYPE_CHECKING:
         _WSStreamControl,
     )
 
+logger = logging.getLogger(__name__)
+
+
+def _acknowledges_reconnect(msg: dict, command_id: Optional[str]) -> bool:
+    """Whether a 'started' frame proves *this* command was reattached to.
+
+    A command and its WebSocket are separate things: the command keeps running on
+    the server and the socket is only this client's attachment to it. The server
+    acknowledges every successful reattachment with 'started', which for a
+    command that produces no output is the only evidence it landed. One naming a
+    different command is not evidence, and must not clear the reconnect budget.
+    """
+    acked = msg.get("command_id")
+    if acked == command_id:
+        return True
+    logger.warning(
+        "Ignoring reconnect acknowledgement for command %r while attached to %r",
+        acked,
+        command_id,
+    )
+    return False
+
+
+class _StreamEndedBeforeStarted(SandboxOperationError):
+    """A command WebSocket closed before the guest sent its 'started' frame.
+
+    Internal marker for the idempotently-retryable early close (the proxied
+    tunnel was torn down gracefully mid-handshake), as distinct from a
+    command-level failure. Subclasses SandboxOperationError so callers that
+    catch the public type are unaffected.
+    """
+
 
 @dataclass
 class ExecutionResult:
@@ -33,102 +69,6 @@ class ExecutionResult:
     def success(self) -> bool:
         """Return True if the command exited with code 0."""
         return self.exit_code == 0
-
-
-@dataclass
-class ResourceSpec:
-    """Resource specification for a sandbox."""
-
-    cpu: str = "500m"
-    memory: str = "512Mi"
-    storage: Optional[str] = None
-
-
-@dataclass
-class Volume:
-    """Represents a persistent volume.
-
-    Volumes are persistent storage that can be mounted in sandboxes.
-
-    Attributes:
-        id: Unique identifier (UUID). Remains constant even if name changes.
-            May be None for resources created before ID support was added.
-        name: Display name (can be updated).
-    """
-
-    name: str
-    size: str
-    storage_class: str
-    id: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Volume:
-        """Create a Volume from API response dict."""
-        return cls(
-            name=data.get("name", ""),
-            size=data.get("size", "unknown"),
-            storage_class=data.get("storage_class", "default"),
-            id=data.get("id"),
-            created_at=data.get("created_at"),
-            updated_at=data.get("updated_at"),
-        )
-
-
-@dataclass
-class VolumeMountSpec:
-    """Specification for mounting a volume in a sandbox template."""
-
-    volume_name: str
-    mount_path: str
-
-
-@dataclass
-class SandboxTemplate:
-    """Represents a SandboxTemplate.
-
-    Templates define the image, resource limits, and volume mounts for sandboxes.
-    All other container details are handled by the server with secure defaults.
-
-    Attributes:
-        id: Unique identifier (UUID). Remains constant even if name changes.
-            May be None for resources created before ID support was added.
-        name: Display name (can be updated).
-    """
-
-    name: str
-    image: str
-    resources: ResourceSpec
-    volume_mounts: list[VolumeMountSpec] = field(default_factory=list)
-    id: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SandboxTemplate:
-        """Create a SandboxTemplate from API response dict."""
-        resources_data = data.get("resources", {})
-        volume_mounts_data = data.get("volume_mounts", [])
-        return cls(
-            name=data.get("name", ""),
-            image=data.get("image", "unknown"),
-            resources=ResourceSpec(
-                cpu=resources_data.get("cpu", "500m"),
-                memory=resources_data.get("memory", "512Mi"),
-                storage=resources_data.get("storage"),
-            ),
-            volume_mounts=[
-                VolumeMountSpec(
-                    volume_name=vm.get("volume_name", ""),
-                    mount_path=vm.get("mount_path", ""),
-                )
-                for vm in volume_mounts_data
-            ],
-            id=data.get("id"),
-            created_at=data.get("created_at"),
-            updated_at=data.get("updated_at"),
-        )
 
 
 @dataclass
@@ -153,38 +93,369 @@ class ResourceStatus:
 
 
 @dataclass
-class Pool:
-    """Represents a Sandbox Pool for pre-provisioned sandboxes.
+class Snapshot:
+    """Represents a sandbox snapshot.
 
-    Pools pre-provision sandboxes from a template for faster startup.
-    Instead of waiting for a new sandbox to be created, sandboxes can
-    be served from a pre-warmed pool.
-
-    Note: Templates with volume mounts cannot be used in pools.
+    Snapshots are built from Docker images or captured from running sandboxes.
+    They are used to create new sandboxes.
 
     Attributes:
-        id: Unique identifier (UUID). Remains constant even if name changes.
-            May be None for resources created before ID support was added.
-        name: Display name (can be updated).
+        id: Unique identifier (UUID).
+        name: Display name.
+        status: Build status. One of "building", "ready", "failed".
+        fs_capacity_bytes: Filesystem capacity in bytes.
+        docker_image: Source Docker image (for build snapshots).
+        image_digest: Docker image digest after pull.
+        source_sandbox_id: Source sandbox (for capture snapshots).
+        status_message: Human-readable details when status is "failed".
+        fs_used_bytes: Actual bytes used on the filesystem.
+        created_by: User or service that created the snapshot.
+        registry_id: Private registry ID, if applicable.
+        created_at: Timestamp when the snapshot was created.
+        updated_at: Timestamp when the snapshot was last updated.
     """
 
+    id: str
     name: str
-    template_name: str
-    replicas: int  # Desired replicas
-    id: Optional[str] = None
+    status: str
+    fs_capacity_bytes: int
+    docker_image: Optional[str] = None
+    image_digest: Optional[str] = None
+    source_sandbox_id: Optional[str] = None
+    status_message: Optional[str] = None
+    fs_used_bytes: Optional[int] = None
+    created_by: Optional[str] = None
+    registry_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Pool:
-        """Create a Pool from API response dict."""
+    def from_dict(cls, data: dict[str, Any]) -> Snapshot:
+        """Create a Snapshot from API response dict."""
         return cls(
+            id=data.get("id", ""),
             name=data.get("name", ""),
-            template_name=data.get("template_name", ""),
-            replicas=data.get("replicas", 0),
-            id=data.get("id"),
+            status=data.get("status", "building"),
+            fs_capacity_bytes=data.get("fs_capacity_bytes", 0),
+            docker_image=data.get("docker_image"),
+            image_digest=data.get("image_digest"),
+            source_sandbox_id=data.get("source_sandbox_id"),
+            status_message=data.get("status_message"),
+            fs_used_bytes=data.get("fs_used_bytes"),
+            created_by=data.get("created_by"),
+            registry_id=data.get("registry_id"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
+        )
+
+
+# =============================================================================
+# Service URL Models
+# =============================================================================
+
+_AUTH_HEADER = "X-Langsmith-Sandbox-Service-Token"
+_REFRESH_MARGIN_SECONDS = 30
+
+
+class ServiceURL:
+    """Authenticated URL for accessing an HTTP service running in a sandbox.
+
+    Properties auto-refresh the token transparently when it nears expiry.
+    HTTP helper methods (``.get``, ``.post``, etc.) inject the auth header
+    automatically.
+
+    When constructed by :meth:`SandboxClient.service` or
+    :meth:`Sandbox.service`, the object holds an internal refresher that
+    re-calls the API to obtain a fresh token before the current one expires.
+
+    Example::
+
+        svc = sb.service(port=3000)
+
+        resp = svc.get("/api/data")  # token injected + auto-refreshed
+        print(svc.browser_url)  # always-fresh URL
+    """
+
+    def __init__(
+        self,
+        browser_url: str,
+        service_url: str,
+        token: str,
+        expires_at: str,
+        *,
+        _refresher: Optional[Callable[[], ServiceURL]] = None,
+    ) -> None:
+        self._browser_url = browser_url
+        self._service_url = service_url
+        self._token = token
+        self._expires_at = expires_at
+        self._refresher = _refresher
+
+    # -- Auto-refresh logic -------------------------------------------------
+
+    def _should_refresh(self) -> bool:
+        if self._refresher is None:
+            return False
+        raw = self._expires_at.replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+        return remaining <= _REFRESH_MARGIN_SECONDS
+
+    def _maybe_refresh(self) -> None:
+        if self._should_refresh():
+            fresh = self._refresher()  # type: ignore[misc]
+            self._browser_url = fresh._browser_url
+            self._service_url = fresh._service_url
+            self._token = fresh._token
+            self._expires_at = fresh._expires_at
+
+    # -- Properties (auto-refresh on access) --------------------------------
+
+    @property
+    def token(self) -> str:
+        """Return the raw JWT, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._token
+
+    @property
+    def service_url(self) -> str:
+        """Return the base URL, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._service_url
+
+    @property
+    def browser_url(self) -> str:
+        """Return the browser auth URL, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._browser_url
+
+    @property
+    def expires_at(self) -> str:
+        """Return the ISO 8601 expiration, refreshing if near expiry."""
+        self._maybe_refresh()
+        return self._expires_at
+
+    # -- HTTP helpers (stateless, one httpx call per request) ----------------
+
+    def request(self, method: str, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Make an HTTP request to the service, injecting the auth header.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            path: Path relative to the service URL.
+            **kwargs: Forwarded to ``httpx.request``.
+
+        Returns:
+            httpx.Response.
+        """
+        url = self.service_url.rstrip("/") + "/" + path.lstrip("/")
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers[_AUTH_HEADER] = self.token
+        return httpx.request(method, url, headers=headers, **kwargs)
+
+    def get(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP GET to the service."""
+        return self.request("GET", path, **kwargs)
+
+    def post(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP POST to the service."""
+        return self.request("POST", path, **kwargs)
+
+    def put(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP PUT to the service."""
+        return self.request("PUT", path, **kwargs)
+
+    def patch(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP PATCH to the service."""
+        return self.request("PATCH", path, **kwargs)
+
+    def delete(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """HTTP DELETE to the service."""
+        return self.request("DELETE", path, **kwargs)
+
+    # -- Construction -------------------------------------------------------
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        _refresher: Optional[Callable[[], ServiceURL]] = None,
+    ) -> ServiceURL:
+        """Create a ServiceURL from API response dict."""
+        return cls(
+            browser_url=data["browser_url"],
+            service_url=data["service_url"],
+            token=data["token"],
+            expires_at=data["expires_at"],
+            _refresher=_refresher,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"ServiceURL(service_url={self._service_url!r}, "
+            f"expires_at={self._expires_at!r})"
+        )
+
+
+class AsyncServiceURL:
+    """Async variant of :class:`ServiceURL` with auto-refreshing token.
+
+    Properties and HTTP helpers are async. Use with
+    :meth:`AsyncSandboxClient.service` or :meth:`AsyncSandbox.service`.
+
+    Example::
+
+        svc = await sb.service(port=3000)
+
+        resp = await svc.get("/api/data")
+        print(await svc.get_browser_url())
+    """
+
+    def __init__(
+        self,
+        browser_url: str,
+        service_url: str,
+        token: str,
+        expires_at: str,
+        *,
+        _refresher: Optional[Callable[[], Awaitable[AsyncServiceURL]]] = None,
+    ) -> None:
+        self._browser_url = browser_url
+        self._service_url = service_url
+        self._token = token
+        self._expires_at = expires_at
+        self._refresher = _refresher
+
+    # -- Auto-refresh logic -------------------------------------------------
+
+    def _should_refresh(self) -> bool:
+        if self._refresher is None:
+            return False
+        raw = self._expires_at.replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+        return remaining <= _REFRESH_MARGIN_SECONDS
+
+    async def _maybe_refresh(self) -> None:
+        if self._should_refresh():
+            fresh = await self._refresher()  # type: ignore[misc]
+            self._browser_url = fresh._browser_url
+            self._service_url = fresh._service_url
+            self._token = fresh._token
+            self._expires_at = fresh._expires_at
+
+    # -- Async accessors (auto-refresh on access) ---------------------------
+
+    async def get_token(self) -> str:
+        """Return the raw JWT, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._token
+
+    async def get_service_url(self) -> str:
+        """Return the base URL, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._service_url
+
+    async def get_browser_url(self) -> str:
+        """Return the browser auth URL, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._browser_url
+
+    async def get_expires_at(self) -> str:
+        """Return the ISO 8601 expiration, refreshing if near expiry."""
+        await self._maybe_refresh()
+        return self._expires_at
+
+    # -- Sync property access (no refresh, use when token is known-fresh) ---
+
+    @property
+    def token(self) -> str:
+        """Return the raw JWT without refreshing."""
+        return self._token
+
+    @property
+    def service_url(self) -> str:
+        """Return the base URL without refreshing."""
+        return self._service_url
+
+    @property
+    def browser_url(self) -> str:
+        """Return the browser auth URL without refreshing."""
+        return self._browser_url
+
+    @property
+    def expires_at(self) -> str:
+        """Return the expiration timestamp without refreshing."""
+        return self._expires_at
+
+    # -- HTTP helpers (one request per call) --------------------------------
+
+    async def request(
+        self, method: str, path: str = "/", **kwargs: Any
+    ) -> httpx.Response:
+        """Make an async HTTP request to the service, injecting the auth header.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            path: Path relative to the service URL.
+            **kwargs: Forwarded to ``httpx.AsyncClient.request``.
+
+        Returns:
+            httpx.Response.
+        """
+        url = (await self.get_service_url()).rstrip("/") + "/" + path.lstrip("/")
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers[_AUTH_HEADER] = await self.get_token()
+        async with httpx.AsyncClient() as client:
+            return await client.request(method, url, headers=headers, **kwargs)
+
+    async def get(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP GET to the service."""
+        return await self.request("GET", path, **kwargs)
+
+    async def post(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP POST to the service."""
+        return await self.request("POST", path, **kwargs)
+
+    async def put(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP PUT to the service."""
+        return await self.request("PUT", path, **kwargs)
+
+    async def patch(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP PATCH to the service."""
+        return await self.request("PATCH", path, **kwargs)
+
+    async def delete(self, path: str = "/", **kwargs: Any) -> httpx.Response:
+        """Async HTTP DELETE to the service."""
+        return await self.request("DELETE", path, **kwargs)
+
+    # -- Construction -------------------------------------------------------
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        _refresher: Optional[Callable[[], Awaitable[AsyncServiceURL]]] = None,
+    ) -> AsyncServiceURL:
+        """Create an AsyncServiceURL from API response dict."""
+        return cls(
+            browser_url=data["browser_url"],
+            service_url=data["service_url"],
+            token=data["token"],
+            expires_at=data["expires_at"],
+            _refresher=_refresher,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"AsyncServiceURL(service_url={self._service_url!r}, "
+            f"expires_at={self._expires_at!r})"
         )
 
 
@@ -231,7 +502,10 @@ class CommandHandle:
       eagerly reads the server's ``"started"`` message to populate
       ``command_id`` and ``pid`` before returning.
     - **Reconnection** (``command_id`` set): skips the started-message
-      read, since reconnect streams don't emit one.
+      read. A reconnect stream's ``"started"`` message is the server's
+      acknowledgement that the reattachment landed, consumed while iterating to
+      clear the reconnect budget — the only such signal for a command that
+      emits no output.
 
     Example:
         handle = sandbox.run("make build", timeout=600, wait=False)
@@ -256,10 +530,14 @@ class CommandHandle:
         command_id: str = "",
         stdout_offset: int = 0,
         stderr_offset: int = 0,
+        on_stdout: Optional[Callable[[str], Any]] = None,
+        on_stderr: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
+        self._on_stdout = on_stdout
+        self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -268,10 +546,11 @@ class CommandHandle:
         self._exhausted = False
         self._last_stdout_offset = stdout_offset
         self._last_stderr_offset = stderr_offset
+        self._reconnect_attempts = 0
 
         # New executions (command_id=""): eager_start reads "started" message.
-        # Reconnections (command_id set): skip eager_start since reconnect
-        # streams don't send a "started" message.
+        # Reconnections (command_id set): the "started" message is the server's
+        # reattachment acknowledgement, consumed by _iter_stream instead.
         if command_id:
             self._command_id = command_id
         else:
@@ -288,7 +567,7 @@ class CommandHandle:
         try:
             first_msg = next(self._stream)
         except StopIteration:
-            raise SandboxOperationError(
+            raise _StreamEndedBeforeStarted(
                 "Command stream ended before 'started' message",
                 operation="command",
             )
@@ -333,7 +612,10 @@ class CommandHandle:
             return
         for msg in self._stream:
             msg_type = msg.get("type")
-            if msg_type in ("stdout", "stderr"):
+            if msg_type == "started":
+                if _acknowledges_reconnect(msg, self._command_id):
+                    self._reconnect_attempts = 0
+            elif msg_type in ("stdout", "stderr"):
                 chunk = OutputChunk(
                     stream=msg_type,
                     data=msg["data"],
@@ -352,7 +634,7 @@ class CommandHandle:
                 )
                 self._exhausted = True
                 return
-        self._exhausted = True
+        raise SandboxConnectionError("Command stream ended without exit message")
 
     def __iter__(self) -> Iterator[OutputChunk]:
         """Iterate over output chunks, auto-reconnecting on transient errors.
@@ -364,19 +646,23 @@ class CommandHandle:
         """
         import time
 
-        reconnect_attempts = 0
+        self._reconnect_attempts = 0
         while True:
             try:
                 for chunk in self._iter_stream():
-                    reconnect_attempts = 0  # Reset on successful data
+                    self._reconnect_attempts = 0  # Reset on successful data
                     if chunk.stream == "stdout":
                         self._last_stdout_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stdout is not None:
+                            self._on_stdout(chunk.data)
                     else:
                         self._last_stderr_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stderr is not None:
+                            self._on_stderr(chunk.data)
                     yield chunk
                 return  # Stream ended normally (exit message received)
 
@@ -384,17 +670,18 @@ class CommandHandle:
                 if self._control and self._control.killed:
                     raise
 
-                reconnect_attempts += 1
-                if reconnect_attempts > self.MAX_AUTO_RECONNECTS:
+                self._reconnect_attempts += 1
+                if self._reconnect_attempts > self.MAX_AUTO_RECONNECTS:
                     raise SandboxConnectionError(
-                        f"Lost connection {reconnect_attempts} times in "
-                        f"succession, giving up"
+                        f"Failed to reattach to the command "
+                        f"{self._reconnect_attempts} times in succession, "
+                        f"giving up"
                     ) from e
 
                 is_hot_reload = isinstance(e, SandboxServerReloadError)
                 if not is_hot_reload:
                     delay = min(
-                        self._BACKOFF_BASE * (2 ** (reconnect_attempts - 1)),
+                        self._BACKOFF_BASE * (2 ** (self._reconnect_attempts - 1)),
                         self._BACKOFF_MAX,
                     )
                     time.sleep(delay)
@@ -483,7 +770,10 @@ class AsyncCommandHandle:
       ``await handle._ensure_started()`` after construction to read the
       server's ``"started"`` message and populate ``command_id`` / ``pid``.
     - **Reconnection** (``command_id`` set): skips the started-message
-      read, since reconnect streams don't emit one.
+      read. A reconnect stream's ``"started"`` message is the server's
+      acknowledgement that the reattachment landed, consumed while iterating to
+      clear the reconnect budget — the only such signal for a command that
+      emits no output.
 
     Example:
         handle = await sandbox.run("make build", timeout=600, wait=False)
@@ -508,10 +798,14 @@ class AsyncCommandHandle:
         command_id: str = "",
         stdout_offset: int = 0,
         stderr_offset: int = 0,
+        on_stdout: Optional[Callable[[str], Any]] = None,
+        on_stderr: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
+        self._on_stdout = on_stdout
+        self._on_stderr = on_stderr
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -520,10 +814,11 @@ class AsyncCommandHandle:
         self._exhausted = False
         self._last_stdout_offset = stdout_offset
         self._last_stderr_offset = stderr_offset
+        self._reconnect_attempts = 0
 
         # New executions (command_id=""): _ensure_started reads "started".
-        # Reconnections (command_id set): skip since reconnect streams
-        # don't send a "started" message.
+        # Reconnections (command_id set): the "started" message is the server's
+        # reattachment acknowledgement, consumed by _aiter_stream instead.
         if command_id:
             self._command_id = command_id
             self._started = True
@@ -537,7 +832,7 @@ class AsyncCommandHandle:
         try:
             first_msg = await self._stream.__anext__()
         except StopAsyncIteration:
-            raise SandboxOperationError(
+            raise _StreamEndedBeforeStarted(
                 "Command stream ended before 'started' message",
                 operation="command",
             )
@@ -580,7 +875,10 @@ class AsyncCommandHandle:
             return
         async for msg in self._stream:
             msg_type = msg.get("type")
-            if msg_type in ("stdout", "stderr"):
+            if msg_type == "started":
+                if _acknowledges_reconnect(msg, self._command_id):
+                    self._reconnect_attempts = 0
+            elif msg_type in ("stdout", "stderr"):
                 chunk = OutputChunk(
                     stream=msg_type,
                     data=msg["data"],
@@ -599,25 +897,29 @@ class AsyncCommandHandle:
                 )
                 self._exhausted = True
                 return
-        self._exhausted = True
+        raise SandboxConnectionError("Command stream ended without exit message")
 
     async def __aiter__(self) -> AsyncIterator[OutputChunk]:
         """Async iterate with auto-reconnect on transient errors."""
         import asyncio
 
-        reconnect_attempts = 0
+        self._reconnect_attempts = 0
         while True:
             try:
                 async for chunk in self._aiter_stream():
-                    reconnect_attempts = 0
+                    self._reconnect_attempts = 0
                     if chunk.stream == "stdout":
                         self._last_stdout_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stdout is not None:
+                            self._on_stdout(chunk.data)
                     else:
                         self._last_stderr_offset = chunk.offset + len(
                             chunk.data.encode("utf-8")
                         )
+                        if self._on_stderr is not None:
+                            self._on_stderr(chunk.data)
                     yield chunk
                 return  # Stream ended normally
 
@@ -625,17 +927,18 @@ class AsyncCommandHandle:
                 if self._control and self._control.killed:
                     raise
 
-                reconnect_attempts += 1
-                if reconnect_attempts > self.MAX_AUTO_RECONNECTS:
+                self._reconnect_attempts += 1
+                if self._reconnect_attempts > self.MAX_AUTO_RECONNECTS:
                     raise SandboxConnectionError(
-                        f"Lost connection {reconnect_attempts} times "
-                        f"in succession, giving up"
+                        f"Failed to reattach to the command "
+                        f"{self._reconnect_attempts} times in succession, "
+                        f"giving up"
                     ) from e
 
                 is_hot_reload = isinstance(e, SandboxServerReloadError)
                 if not is_hot_reload:
                     delay = min(
-                        self._BACKOFF_BASE * (2 ** (reconnect_attempts - 1)),
+                        self._BACKOFF_BASE * (2 ** (self._reconnect_attempts - 1)),
                         self._BACKOFF_MAX,
                     )
                     await asyncio.sleep(delay)

@@ -1,0 +1,356 @@
+interactions:
+- request:
+    body: '{"include":[],"input":[{"content":"What is 2 + 2?","role":"user"}],"instructions":"You
+      are a helpful assistant. Use the tool_agent tool for math questions.","model":"gpt-4.1","tools":[{"name":"tool_agent","parameters":{"description":"Default
+      input schema for agent-as-tool calls.","properties":{"input":{"title":"Input","type":"string"}},"required":["input"],"title":"AgentAsToolInput","type":"object","additionalProperties":false},"strict":true,"type":"function","description":"Use
+      this tool for math questions"}]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '515'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_05701bcb26386ffa0069d83bd107cc819d8d7c46cc7623fb9c\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775778769,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775778769,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a helpful assistant. Use the tool_agent tool for math questions.\",\n
+        \ \"max_output_tokens\": null,\n  \"max_tool_calls\": null,\n  \"model\":
+        \"gpt-4.1-2025-04-14\",\n  \"output\": [\n    {\n      \"id\": \"fc_05701bcb26386ffa0069d83bd183f8819dae8bdf8880fcb8e5\",\n
+        \     \"type\": \"function_call\",\n      \"status\": \"completed\",\n      \"arguments\":
+        \"{\\\"input\\\":\\\"2 + 2\\\"}\",\n      \"call_id\": \"call_0txTb47NhHhRw5oKGptF48Wj\",\n
+        \     \"name\": \"tool_agent\"\n    }\n  ],\n  \"parallel_tool_calls\": true,\n
+        \ \"presence_penalty\": 0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\":
+        null,\n  \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\":
+        null,\n    \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 1.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"text\"\n    },\n    \"verbosity\": \"medium\"\n
+        \ },\n  \"tool_choice\": \"auto\",\n  \"tools\": [\n    {\n      \"type\":
+        \"function\",\n      \"description\": \"Use this tool for math questions\",\n
+        \     \"name\": \"tool_agent\",\n      \"parameters\": {\n        \"description\":
+        \"Default input schema for agent-as-tool calls.\",\n        \"properties\":
+        {\n          \"input\": {\n            \"title\": \"Input\",\n            \"type\":
+        \"string\"\n          }\n        },\n        \"required\": [\n          \"input\"\n
+        \       ],\n        \"title\": \"AgentAsToolInput\",\n        \"type\": \"object\",\n
+        \       \"additionalProperties\": false\n      },\n      \"strict\": true\n
+        \   }\n  ],\n  \"top_logprobs\": 0,\n  \"top_p\": 1.0,\n  \"truncation\":
+        \"disabled\",\n  \"usage\": {\n    \"input_tokens\": 84,\n    \"input_tokens_details\":
+        {\n      \"cached_tokens\": 0\n    },\n    \"output_tokens\": 18,\n    \"output_tokens_details\":
+        {\n      \"reasoning_tokens\": 0\n    },\n    \"total_tokens\": 102\n  },\n
+        \ \"user\": null,\n  \"metadata\": {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d6d7a0aaf67d7-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:52:49 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2067'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '806'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      set-cookie:
+      - __cf_bm=ReRjSwoTQlAI9I943XvIypKxaU0BVRb0HNZ63fAr6UQ-1775778768.9687903-1.0.1.1-fARdLv780GxaUHD9o1Dm62uFvI0_Hm6613XzVUWL9tGzrbS9TPxwc12afkt.QIyUMCrkmA6gPOkOQZaa2vbl2k3Y23IKYxd8AvfGB1gIF0mM8Nz39alf3GkQ9VBfxig9;
+        HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Fri, 10 Apr 2026
+        00:22:49 GMT
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_ba46080b22864313a702cabb7347bb45
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"include":[],"input":[{"content":"2 + 2","role":"user"}],"instructions":"You
+      are a math expert. Answer math questions concisely.","model":"gpt-4.1","tools":[]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '160'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=ReRjSwoTQlAI9I943XvIypKxaU0BVRb0HNZ63fAr6UQ-1775778768.9687903-1.0.1.1-fARdLv780GxaUHD9o1Dm62uFvI0_Hm6613XzVUWL9tGzrbS9TPxwc12afkt.QIyUMCrkmA6gPOkOQZaa2vbl2k3Y23IKYxd8AvfGB1gIF0mM8Nz39alf3GkQ9VBfxig9
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_0cd4ac5c524351620069d83bd20948819ea589b754640284ec\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775778770,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775778770,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a math expert. Answer math questions concisely.\",\n  \"max_output_tokens\":
+        null,\n  \"max_tool_calls\": null,\n  \"model\": \"gpt-4.1-2025-04-14\",\n
+        \ \"output\": [\n    {\n      \"id\": \"msg_0cd4ac5c524351620069d83bd29c44819e8175f61759ad4691\",\n
+        \     \"type\": \"message\",\n      \"status\": \"completed\",\n      \"content\":
+        [\n        {\n          \"type\": \"output_text\",\n          \"annotations\":
+        [],\n          \"logprobs\": [],\n          \"text\": \"2 + 2 = 4\"\n        }\n
+        \     ],\n      \"role\": \"assistant\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"presence_penalty\": 0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\":
+        null,\n  \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\":
+        null,\n    \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 1.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"text\"\n    },\n    \"verbosity\": \"medium\"\n
+        \ },\n  \"tool_choice\": \"auto\",\n  \"tools\": [],\n  \"top_logprobs\":
+        0,\n  \"top_p\": 1.0,\n  \"truncation\": \"disabled\",\n  \"usage\": {\n    \"input_tokens\":
+        28,\n    \"input_tokens_details\": {\n      \"cached_tokens\": 0\n    },\n
+        \   \"output_tokens\": 8,\n    \"output_tokens_details\": {\n      \"reasoning_tokens\":
+        0\n    },\n    \"total_tokens\": 36\n  },\n  \"user\": null,\n  \"metadata\":
+        {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d6d805fcb58ac-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:52:50 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1585'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '767'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_61940d4163914c90baceb9142a674398
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"include":[],"input":[{"content":"What is 2 + 2?","role":"user"},{"arguments":"{\"input\":\"2
+      + 2\"}","call_id":"call_0txTb47NhHhRw5oKGptF48Wj","name":"tool_agent","type":"function_call","id":"fc_05701bcb26386ffa0069d83bd183f8819dae8bdf8880fcb8e5","status":"completed"},{"call_id":"call_0txTb47NhHhRw5oKGptF48Wj","output":"2
+      + 2 = 4","type":"function_call_output"}],"instructions":"You are a helpful assistant.
+      Use the tool_agent tool for math questions.","model":"gpt-4.1","tools":[{"name":"tool_agent","parameters":{"description":"Default
+      input schema for agent-as-tool calls.","properties":{"input":{"title":"Input","type":"string"}},"required":["input"],"title":"AgentAsToolInput","type":"object","additionalProperties":false},"strict":true,"type":"function","description":"Use
+      this tool for math questions"}]}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '815'
+      Content-Type:
+      - application/json
+      Cookie:
+      - __cf_bm=ReRjSwoTQlAI9I943XvIypKxaU0BVRb0HNZ63fAr6UQ-1775778768.9687903-1.0.1.1-fARdLv780GxaUHD9o1Dm62uFvI0_Hm6613XzVUWL9tGzrbS9TPxwc12afkt.QIyUMCrkmA6gPOkOQZaa2vbl2k3Y23IKYxd8AvfGB1gIF0mM8Nz39alf3GkQ9VBfxig9
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.31.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.11.9
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_05701bcb26386ffa0069d83bd31418819dbc37f40687c90515\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1775778771,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"completed_at\": 1775778771,\n  \"error\": null,\n
+        \ \"frequency_penalty\": 0.0,\n  \"incomplete_details\": null,\n  \"instructions\":
+        \"You are a helpful assistant. Use the tool_agent tool for math questions.\",\n
+        \ \"max_output_tokens\": null,\n  \"max_tool_calls\": null,\n  \"model\":
+        \"gpt-4.1-2025-04-14\",\n  \"output\": [\n    {\n      \"id\": \"msg_05701bcb26386ffa0069d83bd367e0819daea1ff9bfa9610dd\",\n
+        \     \"type\": \"message\",\n      \"status\": \"completed\",\n      \"content\":
+        [\n        {\n          \"type\": \"output_text\",\n          \"annotations\":
+        [],\n          \"logprobs\": [],\n          \"text\": \"2 + 2 equals 4.\"\n
+        \       }\n      ],\n      \"role\": \"assistant\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"presence_penalty\": 0.0,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\":
+        null,\n  \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\":
+        null,\n    \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 1.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"text\"\n    },\n    \"verbosity\": \"medium\"\n
+        \ },\n  \"tool_choice\": \"auto\",\n  \"tools\": [\n    {\n      \"type\":
+        \"function\",\n      \"description\": \"Use this tool for math questions\",\n
+        \     \"name\": \"tool_agent\",\n      \"parameters\": {\n        \"description\":
+        \"Default input schema for agent-as-tool calls.\",\n        \"properties\":
+        {\n          \"input\": {\n            \"title\": \"Input\",\n            \"type\":
+        \"string\"\n          }\n        },\n        \"required\": [\n          \"input\"\n
+        \       ],\n        \"title\": \"AgentAsToolInput\",\n        \"type\": \"object\",\n
+        \       \"additionalProperties\": false\n      },\n      \"strict\": true\n
+        \   }\n  ],\n  \"top_logprobs\": 0,\n  \"top_p\": 1.0,\n  \"truncation\":
+        \"disabled\",\n  \"usage\": {\n    \"input_tokens\": 117,\n    \"input_tokens_details\":
+        {\n      \"cached_tokens\": 0\n    },\n    \"output_tokens\": 10,\n    \"output_tokens_details\":
+        {\n      \"reasoning_tokens\": 0\n    },\n    \"total_tokens\": 127\n  },\n
+        \ \"user\": null,\n  \"metadata\": {}\n}"
+    headers:
+      CF-RAY:
+      - 9e9d6d869808cd36-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 09 Apr 2026 23:52:51 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2140'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '510'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '30000000'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_78e03991c1a34b4283cc934aa55c7ac9
+    status:
+      code: 200
+      message: OK
+version: 1

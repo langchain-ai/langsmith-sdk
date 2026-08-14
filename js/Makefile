@@ -1,7 +1,7 @@
 .PHONY: format lint
 
 format:
-	yarn format
+	pnpm format
 
 lint:
-	yarn lint
+	pnpm lint

@@ -48,6 +48,7 @@ def request(self, method, url, body=None, headers=None):
 
 
 _PATCHED = False
+_VCR_AIOHTTP_PATCHED = False
 
 
 def patch_urllib3():
@@ -91,3 +92,27 @@ def patch_urllib3():
 
     connection.HTTPConnection.request = new_request
     _PATCHED = True
+
+
+def patch_vcr_aiohttp():
+    """Disable vcrpy's aiohttp patcher when aiohttp removed APIs it imports."""
+    global _VCR_AIOHTTP_PATCHED
+    if _VCR_AIOHTTP_PATCHED:
+        return
+
+    try:
+        import aiohttp.streams as aiohttp_streams
+        import vcr.patch as vcr_patch  # type: ignore[import-untyped]
+    except ImportError:
+        _VCR_AIOHTTP_PATCHED = True
+        return
+
+    if hasattr(aiohttp_streams, "AsyncStreamReaderMixin"):
+        _VCR_AIOHTTP_PATCHED = True
+        return
+
+    def _skip_aiohttp_patcher(self):
+        return iter(())
+
+    vcr_patch.CassettePatcherBuilder._aiohttp = _skip_aiohttp_patcher
+    _VCR_AIOHTTP_PATCHED = True

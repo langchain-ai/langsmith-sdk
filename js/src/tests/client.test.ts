@@ -1,16 +1,342 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any, no-process-env */
 import { jest } from "@jest/globals";
-import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { inspect } from "node:util";
+import {
+  Client,
+  ClientConfig,
+  mergeRuntimeEnvIntoRun,
+  _checkBackendVersion,
+} from "../client.js";
+import { v4 as uuid } from "../utils/uuid/src/index.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
-import {
-  isVersionGreaterOrEqual,
-  parsePromptIdentifier,
-} from "../utils/prompts.js";
+import { parseHubIdentifier } from "../utils/prompts.js";
+import { _resetWarnedMessages } from "../utils/warn.js";
 
 describe("Client", () => {
+  describe("resource tags on create", () => {
+    const tagValueIds = [
+      "550e8400-e29b-41d4-a716-446655440000",
+      "550e8400-e29b-41d4-a716-446655440001",
+    ];
+
+    it("includes tag value IDs when creating a project", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createProject({ projectName: "test-project", tagValueIds });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
+        tagValueIds,
+      );
+    });
+
+    it("includes tag value IDs when creating a dataset", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createDataset("test-dataset", { tagValueIds });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
+        tagValueIds,
+      );
+    });
+  });
+
+  describe("createFeedback", () => {
+    it("can opt out of extending trace retention", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+          extendTraceRetention: false,
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+        },
+      );
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual(
+        expect.objectContaining({
+          extend_trace_retention: false,
+        }),
+      );
+    });
+
+    it("uses the supplied experiment session ID for evaluation feedback", async () => {
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+      });
+      const createFeedback = jest
+        .spyOn(client, "createFeedback")
+        .mockResolvedValue({} as any);
+      const startTime = "2026-07-21T12:34:56.789Z";
+
+      await client.logEvaluationFeedback(
+        { key: "quality", score: 1 },
+        {
+          id: "550e8400-e29b-41d4-a716-446655440000",
+          start_time: startTime,
+        } as any,
+        undefined,
+        "550e8400-e29b-41d4-a716-446655440001",
+      );
+
+      expect(createFeedback).toHaveBeenCalledWith(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "quality",
+        expect.objectContaining({
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+          startTime,
+        }),
+      );
+    });
+
+    const infoClient = (smithdbOnly: boolean) => {
+      const instance_flags = smithdbOnly
+        ? { ch_query_enabled: false, sdb_query_enabled: true }
+        : { ch_query_enabled: true };
+      const mockFetch = jest.fn<typeof fetch>().mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ instance_flags }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+      const paths = () =>
+        mockFetch.mock.calls.map(([url]) => new URL(String(url)).pathname);
+      return { client, paths };
+    };
+
+    it("throws without a sessionId on a SmithDB-only deployment", async () => {
+      const { client, paths } = infoClient(true);
+
+      await expect(
+        client.createFeedback("550e8400-e29b-41d4-a716-446655440000", "Foo", {
+          score: 1,
+        }),
+      ).rejects.toThrow(/sessionId must be provided/);
+      // Only GET /info was called: the feedback was never sent.
+      expect(paths()).toEqual(["/info"]);
+
+      // startTime stays optional, matching the server.
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+        },
+      );
+      expect(paths()).toContain("/feedback");
+
+      // Session-level feedback has no run to locate.
+      await client.createFeedback(null, "Foo", {
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+    });
+
+    it("accepts the params-object overload, which requires sessionId", async () => {
+      const { client, paths } = infoClient(true);
+
+      await client.createFeedback({
+        runId: "550e8400-e29b-41d4-a716-446655440000",
+        key: "Foo",
+        score: 1,
+        sessionId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+      // sessionId came from the params, so /info was never consulted.
+      expect(paths()).toEqual(["/feedback"]);
+
+      await client.createFeedback({
+        key: "Foo",
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+
+      // @ts-expect-error sessionId is required alongside runId.
+      await client.createFeedback({ runId: "x", key: "Foo" }).catch(() => {});
+    });
+
+    it("warns without a sessionId on other deployments", async () => {
+      const { client, paths } = infoClient(false);
+      // warnOnce dedupes per process, so this must be the only test that warns.
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+        },
+      );
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("smithdb-sdk-migration#feedback-create"),
+      );
+      expect(paths()).toContain("/feedback");
+      warn.mockRestore();
+    });
+  });
+
+  describe("evaluators", () => {
+    it("creates an evaluator through the platform endpoint", async () => {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          // second call: the actual evaluator create
+          new Response(
+            JSON.stringify({
+              evaluator: {
+                id: "eval-1",
+                name: "SDK smoke test code evaluator",
+                type: "code",
+              },
+            }),
+            {
+              status: 200,
+              statusText: "OK",
+              headers: { "content-type": "application/json" },
+            },
+          ),
+        );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.evaluators.create({
+        name: "SDK smoke test code evaluator",
+        type: "code",
+        code_evaluator: {
+          code: "def perform_eval(run, example):\n    return {'score': 1}",
+          language: "python",
+        },
+      });
+
+      expect(response.evaluator?.id).toBe("eval-1");
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
+      const headers = new Headers(init?.headers);
+      expect(url).toBe("http://localhost:8080/api/v1/platform/evaluators");
+      expect(init).toEqual(
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            name: "SDK smoke test code evaluator",
+            type: "code",
+            code_evaluator: {
+              code: "def perform_eval(run, example):\n    return {'score': 1}",
+              language: "python",
+            },
+          }),
+        }),
+      );
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
+    });
+  });
+
+  describe("annotationQueues", () => {
+    it("exposes generated annotation queue item endpoints", async () => {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ count: 3 }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.annotationQueues.items.retrieveCount(
+        "queue-1",
+        { status: "all" },
+      );
+
+      expect(response.count).toBe(3);
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
+      const headers = new Headers(init?.headers);
+      expect(url).toBe(
+        "http://localhost:8080/api/v1/platform/annotation-queues/queue-1/items/count?status=all",
+      );
+      expect(init).toEqual(expect.objectContaining({ method: "GET" }));
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
+    });
+  });
+
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
       const client = new Client({ apiKey: "test-api-key" });
@@ -34,7 +360,7 @@ describe("Client", () => {
       expect(createExampleSpy).toHaveBeenCalledWith(
         { input },
         { output: generation },
-        options
+        options,
       );
     });
   });
@@ -79,7 +405,7 @@ describe("Client", () => {
             type: "langchain",
           },
         },
-        options
+        options,
       );
     });
   });
@@ -88,6 +414,305 @@ describe("Client", () => {
     const client = new Client({ apiUrl: "https://example.com/" });
     const result = (client as any).apiUrl;
     expect(result).toBe("https://example.com");
+  });
+
+  describe("profile config", () => {
+    const originalEnv = process.env;
+    let tempDir: string;
+
+    const writeProfileConfig = (config: unknown) => {
+      const configPath = path.join(tempDir, "config.json");
+      fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+      process.env.LANGSMITH_CONFIG_FILE = configPath;
+      return configPath;
+    };
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "langsmith-profile-"));
+      delete process.env.LANGSMITH_API_KEY;
+      delete process.env.LANGCHAIN_API_KEY;
+      delete process.env.LANGSMITH_ENDPOINT;
+      delete process.env.LANGCHAIN_ENDPOINT;
+      delete process.env.LANGSMITH_WORKSPACE_ID;
+      delete process.env.LANGCHAIN_WORKSPACE_ID;
+      delete process.env.LANGSMITH_PROFILE;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      process.env = originalEnv;
+    });
+
+    it("loads api URL, API key header, and workspace from the active profile", () => {
+      writeProfileConfig({
+        current_profile: "prod",
+        profiles: {
+          prod: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            workspace_id: "workspace-id",
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any).apiKey).toBeUndefined();
+      expect((client as any).workspaceId).toBe("workspace-id");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe("profile-key");
+      expect((client as any)._mergedHeaders["x-tenant-id"]).toBe(
+        "workspace-id",
+      );
+    });
+
+    it("uses profile OAuth access tokens before profile API keys", () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            oauth: {
+              access_token: "profile-access-token",
+            },
+          },
+        },
+      });
+
+      const client = new Client();
+
+      expect((client as any).apiKey).toBeUndefined();
+      expect((client as any)._mergedHeaders.Authorization).toBe(
+        "Bearer profile-access-token",
+      );
+      expect((client as any)._mergedHeaders["x-api-key"]).toBeUndefined();
+    });
+
+    it("suppresses profile auth when environment auth is set", () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            workspace_id: "workspace-id",
+            oauth: {
+              access_token: "profile-access-token",
+            },
+          },
+        },
+      });
+      process.env.LANGSMITH_API_KEY = "env-key";
+
+      const client = new Client();
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any).workspaceId).toBe("workspace-id");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe("env-key");
+      expect((client as any)._mergedHeaders.Authorization).toBeUndefined();
+    });
+
+    it("suppresses profile auth when constructor auth is set", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_key: "profile-key",
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({
+        apiKey: "constructor-key",
+        fetchImplementation: mockFetch as any,
+      });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      expect((client as any).apiUrl).toBe("https://profile.example.com");
+      expect((client as any)._mergedHeaders["x-api-key"]).toBe(
+        "constructor-key",
+      );
+      expect((client as any)._mergedHeaders.Authorization).toBeUndefined();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+    });
+
+    it("refreshes expired profile OAuth tokens before requests", async () => {
+      const configPath = writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          // This deployment serves no discovery document, so refresh falls back
+          // to the configured mount point.
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            expect(String(init?.body)).toContain("grant_type=refresh_token");
+            expect(String(init?.body)).toContain("client_id=langsmith-cli");
+            expect(String(init?.body)).toContain(
+              "refresh_token=old-refresh-token",
+            );
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("{}", { status: 200 });
+        },
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      const tokenCalls = mockFetch.mock.calls.filter(
+        ([input]) =>
+          String(input) === "https://profile.example.com/oauth/token",
+      );
+      expect(tokenCalls).toHaveLength(1);
+      const infoCall = mockFetch.mock.calls.find(
+        ([input]) => String(input) === "https://profile.example.com/info",
+      );
+      expect(infoCall).toBeDefined();
+      const requestInit = infoCall![1] as RequestInit;
+      expect(requestInit.headers).toMatchObject({
+        Authorization: "Bearer new-access-token",
+      });
+      const updated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      expect(updated.profiles.default.oauth.access_token).toBe(
+        "new-access-token",
+      );
+      expect(updated.profiles.default.oauth.refresh_token).toBe(
+        "new-refresh-token",
+      );
+      expect(updated.profiles.default.oauth).not.toHaveProperty("token_type");
+      expect(updated.profiles.default).not.toHaveProperty("bearer_token");
+    });
+
+    it("preserves explicit Authorization headers during profile refresh", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async () => new Response("{}", { status: 200 }),
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await (client as any)._fetch("https://profile.example.com/info", {
+        headers: {
+          Authorization: "Bearer explicit-token",
+        },
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [[requestUrl, requestInit]] = mockFetch.mock.calls as unknown as [
+        [RequestInfo | URL, RequestInit | undefined],
+      ];
+      expect(String(requestUrl)).toBe("https://profile.example.com/info");
+      expect(requestInit?.headers).toMatchObject({
+        Authorization: "Bearer explicit-token",
+      });
+    });
+
+    it("refreshes profile OAuth tokens against profile api_url", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          if (String(input) === "https://override.example.com/oauth/token") {
+            return new Response("wrong refresh URL", { status: 418 });
+          }
+          return new Response("{}", { status: 200 });
+        },
+      );
+      const client = new Client({
+        apiUrl: "https://override.example.com",
+        fetchImplementation: mockFetch as any,
+      });
+
+      await (client as any)._fetch("https://override.example.com/info", {
+        headers: (client as any)._mergedHeaders,
+      });
+
+      // Discovery probes aside, refresh must target the profile's api_url
+      // rather than the client-level override.
+      expect(
+        mockFetch.mock.calls
+          .map(([input]) => String(input))
+          .filter(
+            (url) => !url.includes("/.well-known/oauth-authorization-server"),
+          ),
+      ).toEqual([
+        "https://profile.example.com/oauth/token",
+        "https://override.example.com/info",
+      ]);
+    });
   });
 
   describe("getHostUrl", () => {
@@ -156,6 +781,15 @@ describe("Client", () => {
       expect(result).toBe("https://eu.smith.langchain.com");
     });
 
+    it("should return 'https://apac.smith.langchain.com' if apiUrl contains 'apac'", () => {
+      const client = new Client({
+        apiUrl: "https://apac.api.smith.langchain.com/v1",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://apac.smith.langchain.com");
+    });
+
     it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
       const client = new Client({
         apiUrl: "https://smith.langchain.com/api",
@@ -163,6 +797,70 @@ describe("Client", () => {
       });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://smith.langchain.com");
+    });
+  });
+
+  describe("_getOpenAPIBaseUrl", () => {
+    const getOpenAPIBaseUrl = (apiUrl: string) =>
+      (
+        new Client({ apiUrl, apiKey: "test-api-key" }) as any
+      )._getOpenAPIBaseUrl();
+
+    it("should strip a trailing /api/v1", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/v1")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should strip a trailing /api/v1 with a trailing slash", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/v1/")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should not strip a bare trailing /v1", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1")).toBe(
+        "https://api.smith.langchain.com/v1",
+      );
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith/v1");
+    });
+
+    it("should strip a trailing /api", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should preserve a self-hosted path prefix", () => {
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith");
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api"),
+      ).toBe("https://self-hosted.example.com/langsmith");
+    });
+
+    it("should leave a URL without an /api suffix unchanged", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("http://localhost:1984")).toBe(
+        "http://localhost:1984",
+      );
+    });
+
+    it("should only strip /api when it is the trailing path segment", () => {
+      expect(
+        getOpenAPIBaseUrl("https://api.smith.langchain.com/api/runs"),
+      ).toBe("https://api.smith.langchain.com/api/runs");
+      expect(getOpenAPIBaseUrl("https://api.example.com")).toBe(
+        "https://api.example.com",
+      );
     });
   });
 
@@ -201,37 +899,20 @@ describe("Client", () => {
     });
   });
 
-  describe("isVersionGreaterOrEqual", () => {
-    it("should return true if the version is greater or equal", () => {
-      // Test versions equal to 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.23", "0.5.23")).toBe(true);
-
-      // Test versions greater than 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.24", "0.5.23"));
-      expect(isVersionGreaterOrEqual("0.6.0", "0.5.23"));
-      expect(isVersionGreaterOrEqual("1.0.0", "0.5.23"));
-
-      // Test versions less than 0.5.23
-      expect(isVersionGreaterOrEqual("0.5.22", "0.5.23")).toBe(false);
-      expect(isVersionGreaterOrEqual("0.5.0", "0.5.23")).toBe(false);
-      expect(isVersionGreaterOrEqual("0.4.99", "0.5.23")).toBe(false);
-    });
-  });
-
-  describe("parsePromptIdentifier", () => {
+  describe("parseHubIdentifier", () => {
     it("should parse valid identifiers correctly", () => {
-      expect(parsePromptIdentifier("name")).toEqual(["-", "name", "latest"]);
-      expect(parsePromptIdentifier("owner/name")).toEqual([
+      expect(parseHubIdentifier("name")).toEqual(["-", "name", "latest"]);
+      expect(parseHubIdentifier("owner/name")).toEqual([
         "owner",
         "name",
         "latest",
       ]);
-      expect(parsePromptIdentifier("owner/name:commit")).toEqual([
+      expect(parseHubIdentifier("owner/name:commit")).toEqual([
         "owner",
         "name",
         "commit",
       ]);
-      expect(parsePromptIdentifier("name:commit")).toEqual([
+      expect(parseHubIdentifier("name:commit")).toEqual([
         "-",
         "name",
         "commit",
@@ -252,10 +933,42 @@ describe("Client", () => {
       ];
 
       invalidIdentifiers.forEach((identifier) => {
-        expect(() => parsePromptIdentifier(identifier)).toThrowError(
-          /Invalid prompt identifier format/
+        expect(() => parseHubIdentifier(identifier)).toThrowError(
+          /Invalid prompt identifier format/,
         );
       });
+    });
+  });
+
+  describe("pullPromptCommit", () => {
+    it("requires dangerouslyPullPublicPrompt for public prompt identifiers", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const fetchSpy = jest.spyOn(client as any, "_fetchPromptFromApi");
+
+      await expect(
+        client.pullPromptCommit("someuser/someprompt"),
+      ).rejects.toThrow(/dangerouslyPullPublicPrompt: true/);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("allows public prompt identifiers with dangerouslyPullPublicPrompt", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const promptCommit = {
+        owner: "someuser",
+        repo: "someprompt",
+        commit_hash: "abc123",
+        manifest: {},
+        examples: [],
+      };
+      jest
+        .spyOn(client as any, "_fetchPromptFromApi")
+        .mockResolvedValue(promptCommit);
+
+      await expect(
+        client.pullPromptCommit("someuser/someprompt", {
+          dangerouslyPullPublicPrompt: true,
+        }),
+      ).resolves.toEqual(promptCommit);
     });
   });
 
@@ -322,6 +1035,148 @@ describe("Client", () => {
 
       // The commit identifier is parsed but not used in the URL (listCommits lists all commits)
       expect(capturedUrl).toBe("/commits/-/my-prompt/");
+    });
+  });
+
+  describe("createCommit", () => {
+    it("should include description in request body when provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ commit_hash: "new123", id: "1" }),
+        text: async () => "",
+        headers: new Headers(),
+      });
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      // Capture the fetch call body
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit(
+        "owner/my-prompt",
+        { id: "test" },
+        {
+          description: "initial prompt version",
+        },
+      );
+
+      const fetchCall = fetchSpy.mock.calls[0];
+      const capturedBody = (fetchCall[1] as Record<string, unknown>)
+        ?.body as string;
+      const parsed = JSON.parse(capturedBody);
+      expect(parsed.description).toBe("initial prompt version");
+    });
+
+    it("should omit description from request body when not provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest.spyOn(client as any, "_fetch").mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ commit_hash: "new123", id: "1" }),
+        text: async () => "",
+        headers: new Headers(),
+      });
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit("owner/my-prompt", { id: "test" });
+
+      const fetchCall = fetchSpy.mock.calls[0];
+      const capturedBody = (fetchCall[1] as Record<string, unknown>)
+        ?.body as string;
+      const parsed = JSON.parse(capturedBody);
+      expect(parsed.description).toBeUndefined();
+    });
+
+    it("should create commit tags when provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client as any, "promptExists").mockResolvedValue(true);
+      jest
+        .spyOn(client as any, "_getLatestCommitHash")
+        .mockResolvedValue("parent123");
+      jest.spyOn(client as any, "_fetch").mockImplementation(async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          String(url).includes("/commits/")
+            ? { commit: { commit_hash: "new123", id: "commit-id" } }
+            : {},
+        text: async () => "",
+        headers: new Headers(),
+      }));
+      jest
+        .spyOn(client as any, "_getPromptUrl")
+        .mockReturnValue("https://smith.langchain.com/prompts/test");
+
+      const fetchSpy = jest.spyOn(client as any, "_fetch");
+
+      await client.createCommit(
+        "owner/my-prompt",
+        { id: "test" },
+        {
+          tags: ["production", "v1"],
+        },
+      );
+
+      const tagCalls = fetchSpy.mock.calls.filter(([url]) =>
+        String(url).endsWith("/repos/owner/my-prompt/tags"),
+      );
+      expect(tagCalls).toHaveLength(2);
+      expect(
+        tagCalls.map(([, init]) =>
+          JSON.parse((init as RequestInit).body as string),
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          { tag_name: "production", commit_id: "commit-id" },
+          { tag_name: "v1", commit_id: "commit-id" },
+        ]),
+      );
+    });
+  });
+
+  describe("pushPrompt", () => {
+    it("should forward commit tags without updating prompt metadata", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      jest.spyOn(client, "promptExists").mockResolvedValue(true);
+      const updatePromptSpy = jest.spyOn(client, "updatePrompt");
+      const createCommitSpy = jest
+        .spyOn(client, "createCommit")
+        .mockResolvedValue("https://smith.langchain.com/prompts/test");
+
+      await client.pushPrompt("owner/my-prompt", {
+        object: { id: "test" },
+        commitTags: ["production"],
+      });
+
+      expect(updatePromptSpy).not.toHaveBeenCalled();
+      expect(createCommitSpy).toHaveBeenCalledWith(
+        "owner/my-prompt",
+        { id: "test" },
+        {
+          parentCommitHash: undefined,
+          tags: ["production"],
+          description: undefined,
+        },
+      );
     });
   });
 
@@ -466,7 +1321,7 @@ describe("Client", () => {
 
       const rootPatchFiltered = (client as any)._filterForSampling(
         rootPatchRuns,
-        true
+        true,
       );
 
       // Only root_run_2 should be included, and traceId1 should be removed from filtered set
@@ -530,7 +1385,7 @@ describe("Client", () => {
       // Only children of sampled traces should be included
       expect(patchFiltered).toHaveLength(2);
       const patchTraceIds = new Set(
-        patchFiltered.map((run: any) => run.trace_id)
+        patchFiltered.map((run: any) => run.trace_id),
       );
       expect(patchTraceIds.has(traceIds[0])).toBe(true);
       expect(patchTraceIds.has(traceIds[2])).toBe(true);
@@ -605,7 +1460,7 @@ describe("Client", () => {
               "x-tenant-id": "test-workspace-id",
               "x-api-key": "test-api-key",
             }),
-          })
+          }),
         );
 
         // eslint-disable-next-line no-process-env
@@ -635,7 +1490,7 @@ describe("Client", () => {
             name: "test-run",
             run_type: "llm",
             inputs: { text: "hello" },
-          })
+          }),
         ).rejects.toThrow("[403]: Forbidden");
 
         expect(mockFetch).toHaveBeenCalled();
@@ -662,7 +1517,7 @@ describe("Client", () => {
             name: "test-run",
             run_type: "llm",
             inputs: { text: "hello" },
-          })
+          }),
         ).rejects.toThrow("Failed to create run");
 
         expect(mockFetch).toHaveBeenCalled();
@@ -690,7 +1545,7 @@ describe("Client", () => {
             run_type: "llm",
             inputs: { text: "hello" },
           },
-          { workspaceId: "test-workspace-id" }
+          { workspaceId: "test-workspace-id" },
         );
 
         // check call was made with correct headers
@@ -701,7 +1556,7 @@ describe("Client", () => {
             headers: expect.objectContaining({
               "x-tenant-id": "test-workspace-id",
             }),
-          })
+          }),
         );
       });
 
@@ -734,7 +1589,7 @@ describe("Client", () => {
           {
             outputs: { result: "updated" },
           },
-          { workspaceId: "override-workspace-id" }
+          { workspaceId: "override-workspace-id" },
         );
 
         expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -743,10 +1598,10 @@ describe("Client", () => {
         const secondCall = mockFetch.mock.calls[1];
 
         expect((firstCall[1] as any).headers["x-tenant-id"]).toBe(
-          "default-workspace-id"
+          "default-workspace-id",
         );
         expect((secondCall[1] as any).headers["x-tenant-id"]).toBe(
-          "override-workspace-id"
+          "override-workspace-id",
         );
       });
     });
@@ -782,8 +1637,8 @@ describe("Client", () => {
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringMatching(
-          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
-        )
+          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version.",
+        ),
       );
       consoleWarnSpy.mockClear();
 
@@ -827,6 +1682,78 @@ describe("Client", () => {
       expect(result.extra).toBeDefined();
       expect(result.extra.runtime).toBeDefined();
       expect(result.extra.metadata).toBeDefined();
+    });
+  });
+
+  describe("hideMetadata covers runtime env metadata", () => {
+    const postedMetadata = async (
+      hideMetadata: ClientConfig["hideMetadata"],
+    ) => {
+      // Read once at construction, so it has to be set before the client exists.
+      process.env.LANGCHAIN_TEST_ENV_METADATA = "env-value";
+      try {
+        const { client, callSpy } = mockClient({ hideMetadata });
+        await client.createRun({
+          id: uuid(),
+          name: "traced",
+          run_type: "llm",
+          inputs: { in: "put" },
+          extra: { metadata: { random: 123 } },
+        });
+        const { data } = await getAssumedTreeFromCalls(
+          callSpy.mock.calls,
+          client,
+        );
+        return data["traced:0"].extra?.metadata;
+      } finally {
+        delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+      }
+    };
+
+    it("should hide metadata merged in after masking", async () => {
+      expect(await postedMetadata(true)).toEqual({});
+    });
+
+    it("should pass env metadata to a hideMetadata function", async () => {
+      const metadata = await postedMetadata((metadata) =>
+        Object.fromEntries(
+          Object.entries(metadata).filter(
+            ([key]) => !key.startsWith("LANGCHAIN_"),
+          ),
+        ),
+      );
+
+      expect(metadata).not.toHaveProperty("LANGCHAIN_TEST_ENV_METADATA");
+      expect(metadata?.random).toBe(123);
+    });
+
+    // The OTEL exporter consumes queued runs directly, so it needs the same
+    // re-masking the ingest endpoints get from prepareRunCreateOrUpdateInputs.
+    it("should hide metadata merged in before OTEL export", async () => {
+      process.env.LANGCHAIN_TEST_ENV_METADATA = "env-value";
+      try {
+        const client = new Client({ apiKey: "MOCK", hideMetadata: true });
+        const exportBatch = jest.fn();
+        (client as any).langSmithToOTELTranslator = { exportBatch };
+
+        // What processRunOperation queues: masked metadata, then env merged in.
+        const item = mergeRuntimeEnvIntoRun({
+          id: uuid(),
+          name: "traced",
+          run_type: "llm",
+          inputs: { in: "put" },
+          extra: { metadata: {} },
+        } as any);
+
+        await (client as any)._processBatch([
+          { action: "create", item, otelContext: {} },
+        ]);
+
+        const [operations] = exportBatch.mock.calls[0] as [any[]];
+        expect(operations[0].run.extra.metadata).toEqual({});
+      } finally {
+        delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+      }
     });
   });
 
@@ -905,4 +1832,509 @@ describe("Client", () => {
       expect(runs[0].end_time).toBe("2026-03-12T19:38:11.000000+00:00");
     });
   });
+
+  describe("custom headers", () => {
+    it("should include custom headers in requests", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Custom-Header": "custom-value",
+          "X-Another-Header": "another-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+      // Default headers should still be present
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+
+    it("should not allow custom headers to override required headers", () => {
+      const client = new Client({
+        apiKey: "correct-api-key",
+        headers: {
+          "x-api-key": "wrong-key",
+          "X-Custom-Header": "custom-value",
+        },
+      });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      // API key from config should take precedence
+      expect(mergedHeaders["x-api-key"]).toBe("correct-api-key");
+      // Custom header should still be present
+      expect(mergedHeaders["X-Custom-Header"]).toBe("custom-value");
+    });
+
+    it("should allow dynamic update of custom headers", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: {
+          "X-Initial-Header": "initial-value",
+        },
+      });
+
+      let mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBe("initial-value");
+      expect(mergedHeaders["X-New-Header"]).toBeUndefined();
+
+      // Update custom headers
+      client.headers = {
+        "X-New-Header": "new-value",
+        "X-Another-Header": "another-value",
+      };
+
+      mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["X-Initial-Header"]).toBeUndefined();
+      expect(mergedHeaders["X-New-Header"]).toBe("new-value");
+      expect(mergedHeaders["X-Another-Header"]).toBe("another-value");
+    });
+
+    it("should return custom headers via getter", () => {
+      const customHeaders = { "X-Custom-Header": "custom-value" };
+      const client = new Client({
+        apiKey: "test-api-key",
+        headers: customHeaders,
+      });
+
+      expect(client.headers).toEqual(customHeaders);
+    });
+
+    it("should work without custom headers", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      const mergedHeaders = (client as any)._mergedHeaders;
+      expect(mergedHeaders["User-Agent"]).toBeDefined();
+      expect(mergedHeaders["x-api-key"]).toBe("test-api-key");
+    });
+  });
+
+  describe("_filterNewTokenEvents", () => {
+    it("should strip kwargs from new_token events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        {
+          name: "new_token",
+          kwargs: { token: "sensitive streaming data" },
+          time: "2024-01-01T00:00:00Z",
+        },
+        {
+          name: "other_event",
+          kwargs: { data: "keep this" },
+          time: "2024-01-01T00:00:01Z",
+        },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0].name).toBe("new_token");
+      expect(filtered[0].time).toBe("2024-01-01T00:00:00Z");
+      expect(filtered[0].kwargs).toBeUndefined();
+      expect(filtered[1].kwargs).toEqual({ data: "keep this" });
+    });
+
+    it("should handle empty events array", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const filtered = (client as any)._filterNewTokenEvents([]);
+      expect(filtered).toEqual([]);
+    });
+
+    it("should handle undefined events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const filtered = (client as any)._filterNewTokenEvents(undefined);
+      expect(filtered).toBeUndefined();
+    });
+
+    it("should handle events without kwargs", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        { name: "new_token", time: "2024-01-01T00:00:00Z" },
+        { name: "other_event", time: "2024-01-01T00:00:01Z" },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0]).toEqual({
+        name: "new_token",
+        time: "2024-01-01T00:00:00Z",
+      });
+      expect(filtered[1]).toEqual({
+        name: "other_event",
+        time: "2024-01-01T00:00:01Z",
+      });
+    });
+
+    it("should preserve other event properties", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        {
+          name: "new_token",
+          kwargs: { token: "data" },
+          time: "2024-01-01T00:00:00Z",
+          message: "token received",
+          custom_field: "custom_value",
+        },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered[0].name).toBe("new_token");
+      expect(filtered[0].time).toBe("2024-01-01T00:00:00Z");
+      expect(filtered[0].message).toBe("token received");
+      expect(filtered[0].custom_field).toBe("custom_value");
+      expect(filtered[0].kwargs).toBeUndefined();
+    });
+
+    it("should filter multiple new_token events", () => {
+      const client = new Client({ apiKey: "test-api-key" });
+      const events = [
+        { name: "new_token", kwargs: { token: "chunk1" }, time: "t1" },
+        { name: "new_token", kwargs: { token: "chunk2" }, time: "t2" },
+        { name: "new_token", kwargs: { token: "chunk3" }, time: "t3" },
+      ];
+
+      const filtered = (client as any)._filterNewTokenEvents(events);
+
+      expect(filtered).toHaveLength(3);
+      filtered.forEach((event: any) => {
+        expect(event.kwargs).toBeUndefined();
+        expect(event.name).toBe("new_token");
+      });
+    });
+  });
+
+  describe("toString", () => {
+    it("should not expose sensitive information like API keys", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "super-secret-api-key-12345",
+      });
+
+      const str = client.toString();
+      // Ensure API key is NOT in the string representation
+      expect(str).not.toContain("super-secret-api-key-12345");
+      // Ensure the string shows the API URL
+      expect(str).toContain("https://api.smith.langchain.com");
+      // Ensure it's properly formatted
+      expect(str).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
+      );
+    });
+
+    it("should be called when converting to string", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const str = String(client);
+      expect(str).not.toContain("secret-key");
+      expect(str).toContain("https://api.smith.langchain.com");
+    });
+
+    it("should be called by Node.js inspect", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const inspectResult = inspect(client);
+      expect(inspectResult).not.toContain("secret-key");
+      expect(inspectResult).toContain("https://api.smith.langchain.com");
+      expect(inspectResult).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
+      );
+    });
+
+    it("should expose the Node.js custom inspect hook", () => {
+      const client = new Client({
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "secret-key",
+      });
+
+      const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
+      const inspectFn = (client as any)[inspectSymbol];
+      expect(typeof inspectFn).toBe("function");
+      expect(inspectFn.call(client)).toBe(
+        '[LangSmithClient apiUrl="https://api.smith.langchain.com"]',
+      );
+    });
+  });
+});
+
+describe("_checkBackendVersion", () => {
+  let warnSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it.each([
+    ["0.15.9", true],
+    ["0.15.4rc1", true],
+    ["0.16.0", false],
+    ["0.16.1", false],
+    ["0.16.4rc1", false],
+    ["0.17.0", false],
+    ["", false],
+    ["not-a-version", true],
+  ])("version %s -> warns: %s", (version, expectWarn) => {
+    _checkBackendVersion(version as string, "0.16.0");
+    if (expectWarn) {
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } else {
+      expect(warnSpy).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([
+    ["0.15.9", true],
+    ["0.16.0", false],
+  ])(
+    "resource getter checks the backend version (%s -> warns: %s)",
+    async (version, expectWarn) => {
+      // Guards the min version passed by the getters: drop the call, or declare
+      // a version below 0.16.0, and this fails.
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ version }), {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      void client.runs;
+      // The check is fire-and-forget: await the same /info promise it awaits,
+      // then let its callback run.
+      await (
+        client as unknown as { _ensureServerInfo(): Promise<unknown> }
+      )._ensureServerInfo();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      if (expectWarn) {
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("older than the minimum version"),
+        );
+      } else {
+        expect(warnSpy).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("reports both versions and links to the migration docs", () => {
+    _checkBackendVersion("0.15.0", "0.16.0");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Backend version "0.15.0" is older than the minimum version required by this SDK ("0.16.0")',
+      ),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
+      ),
+    );
+  });
+});
+
+describe("getRunUrl deprecation", () => {
+  beforeEach(() => _resetWarnedMessages());
+
+  it("warns and does not emit a nested readRun warning", async () => {
+    const client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    const runId = "00000000-0000-4000-8000-000000000001";
+    const traceId = "00000000-0000-4000-8000-000000000002";
+    const sessionId = "00000000-0000-4000-8000-000000000003";
+
+    const warnings: string[] = [];
+    const emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+    jest
+      .spyOn(client as any, "_getTenantId")
+      .mockResolvedValue("00000000-0000-4000-8000-000000000004" as never);
+
+    try {
+      const url = await client.getRunUrl({
+        run: {
+          id: runId,
+          trace_id: traceId,
+          session_id: sessionId,
+        } as any,
+      });
+      expect(url).toContain(runId);
+      expect(
+        warnings.filter((w) => w.includes("getRunUrl() is deprecated")),
+      ).toHaveLength(1);
+      expect(warnings.filter((w) => w.includes("readRun()"))).toHaveLength(0);
+    } finally {
+      emitWarningSpy.mockRestore();
+    }
+  });
+});
+
+describe("nested deprecation warnings", () => {
+  const RUN_ID = "00000000-0000-4000-8000-000000000011";
+  const PROJECT_ID = "00000000-0000-4000-8000-000000000012";
+
+  let client: Client;
+  let warnings: string[];
+  let emitWarningSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    _resetWarnedMessages();
+    client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    warnings = [];
+    emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+  });
+
+  afterEach(() => emitWarningSpy.mockRestore());
+
+  it("readThread() warns for itself but not for listRuns()", async () => {
+    // _listRuns is what readThread delegates to; stub it so no HTTP happens.
+    jest
+      .spyOn(client as any, "_listRuns")
+      .mockImplementation(async function* () {} as never);
+
+    for await (const _ of client.readThread({
+      threadId: "thread-1",
+      projectId: PROJECT_ID,
+    })) {
+      // drain
+    }
+
+    expect(
+      warnings.filter((w) => w.includes("readThread() is deprecated")),
+    ).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes("listRuns()"))).toHaveLength(0);
+  });
+
+  it("readRun({ loadChildRuns }) warns for itself but not for listRuns()", async () => {
+    jest.spyOn(client as any, "_get").mockResolvedValue({
+      id: RUN_ID,
+      name: "r",
+      run_type: "chain",
+      session_id: PROJECT_ID,
+      trace_id: RUN_ID,
+      dotted_order: "1",
+    } as never);
+    jest
+      .spyOn(client as any, "_listRuns")
+      .mockImplementation(async function* () {} as never);
+
+    await client.readRun(RUN_ID, { loadChildRuns: true });
+
+    expect(
+      warnings.filter((w) => w.includes("readRun() is deprecated")),
+    ).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes("listRuns()"))).toHaveLength(0);
+  });
+
+  it("_listRuns() does not warn at all", async () => {
+    jest
+      .spyOn(client as any, "_getCursorPaginatedList")
+      .mockImplementation(async function* () {} as never);
+
+    for await (const _ of client._listRuns({ projectId: PROJECT_ID })) {
+      // drain
+    }
+
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe("run sharing deprecations", () => {
+  const RUN_ID = "00000000-0000-4000-8000-000000000021";
+  const SHARE_TOKEN = "00000000-0000-4000-8000-000000000022";
+
+  let client: Client;
+  let warnings: string[];
+  let emitWarningSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    _resetWarnedMessages();
+    client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    warnings = [];
+    emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+  });
+
+  afterEach(() => emitWarningSpy.mockRestore());
+
+  /** Stub only the transport, so each real method body still executes. */
+  const stubFetch = (body: unknown) =>
+    jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => body,
+      text: async () => "",
+    } as never);
+
+  it.each([
+    [
+      "shareRun",
+      { share_token: SHARE_TOKEN },
+      () => client.shareRun(RUN_ID),
+      "client.runs.share.create()",
+    ],
+    [
+      "unshareRun",
+      {},
+      () => client.unshareRun(RUN_ID),
+      "client.runs.share.delete()",
+    ],
+    [
+      "readRunSharedLink",
+      { share_token: SHARE_TOKEN },
+      () => client.readRunSharedLink(RUN_ID),
+      'client.runs.retrieve({ selects: ["SHARE_URL"] })',
+    ],
+    [
+      "listSharedRuns",
+      [],
+      () => client.listSharedRuns(SHARE_TOKEN),
+      "client.public.runs.query()",
+    ],
+  ])(
+    "%s() warns once and names its replacement",
+    async (name, body, call, replacement) => {
+      stubFetch(body);
+      await call();
+
+      const emitted = warnings.filter((w) =>
+        w.includes(`${name}() is deprecated`),
+      );
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toContain(`Use ${replacement} instead.`);
+      expect(emitted[0]).toContain("#share-and-read-public-runs");
+    },
+  );
 });

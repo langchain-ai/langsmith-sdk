@@ -7,7 +7,7 @@ import {
 
 import { SimpleEvaluationResult } from "../types.js";
 import { RunTree, RunTreeConfig } from "../../../run_trees.js";
-import { v7 } from "uuid";
+import { v7 } from "../../uuid/src/index.js";
 
 export type SimpleEvaluatorParams = {
   inputs: Record<string, any>;
@@ -16,7 +16,7 @@ export type SimpleEvaluatorParams = {
 };
 
 export type SimpleEvaluator = (
-  params: SimpleEvaluatorParams
+  params: SimpleEvaluatorParams,
 ) => SimpleEvaluationResult | Promise<SimpleEvaluationResult>;
 
 function isEvaluationResult(x: unknown): x is SimpleEvaluationResult {
@@ -31,11 +31,11 @@ function isEvaluationResult(x: unknown): x is SimpleEvaluationResult {
 
 export function wrapEvaluator<
   I,
-  O extends SimpleEvaluationResult | SimpleEvaluationResult[]
+  O extends SimpleEvaluationResult | SimpleEvaluationResult[],
 >(evaluator: (input: I) => O | Promise<O>) {
   return async (
     input: I,
-    config?: Partial<RunTreeConfig> & { runId?: string }
+    config?: Partial<RunTreeConfig> & { runId?: string },
   ): Promise<O> => {
     const context = testWrapperAsyncLocalStorageInstance.getStore();
     if (context === undefined || context.currentExample === undefined) {
@@ -44,7 +44,7 @@ export function wrapEvaluator<
           `Could not identify current LangSmith context.`,
           `Please ensure you are calling this matcher within "ls.test()"`,
           `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-        ].join("\n")
+        ].join("\n"),
       );
     }
     let evalRunId = config?.runId ?? config?.id ?? v7();
@@ -72,7 +72,7 @@ export function wrapEvaluator<
             ...config?.extra,
             ls_otel_root: true,
           },
-        }
+        },
       );
 
       evalResult = await wrappedEvaluator(ROOT, input);
@@ -109,7 +109,7 @@ export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
         `Could not identify current LangSmith context.`,
         `Please ensure you are calling this matcher within "ls.test()"`,
         `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
-      ].join("\n")
+      ].join("\n"),
     );
   }
   const wrappedEvaluator = wrapEvaluator(evaluator);
@@ -120,7 +120,7 @@ export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
       referenceOutputs: context?.currentExample?.outputs ?? {},
       outputs,
     },
-    { runId: evalRunId }
+    { runId: evalRunId },
   );
   if (Array.isArray(evalResult)) {
     return evalResult.map((result) => result.score);

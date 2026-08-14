@@ -170,6 +170,13 @@ def serialize_feedback_dict(
         feedback_create: dict = feedback.model_dump()  # type: ignore
     else:
         feedback_create = cast(dict, feedback)
+    extend_trace_retention = feedback_create.pop("extend_trace_retention", True)
+    if not extend_trace_retention:
+        feedback_create["_skip_trace_upgrade"] = True
+        # Multipart feedback parts validate against FeedbackCreateSchema, which
+        # does not read _skip_trace_upgrade. Keep extend_trace_retention for
+        # that path while _skip_trace_upgrade serves the redis queue path.
+        feedback_create["extend_trace_retention"] = False
     if "id" not in feedback_create:
         feedback_create["id"] = uuid.uuid4()
     elif isinstance(feedback_create["id"], str):

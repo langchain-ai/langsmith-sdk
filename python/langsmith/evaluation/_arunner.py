@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
+import contextvars
 import io
 import logging
 import pathlib
@@ -32,19 +33,20 @@ from langsmith.evaluation._runner import (
     DATA_T,
     EVALUATOR_T,
     ExperimentResultRow,
+    _collect_evaluator_keys,
     _evaluators_include_attachments,
     _ExperimentManagerMixin,
-    _extract_feedback_keys,
     _ForwardResults,
     _get_target_args,
     _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
     _load_tqdm,
-    _load_traces,
+    _load_traces_for_experiment,
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
+    _resolve_num_examples,
     _target_include_attachments,
     _to_pandas,
     _wrap_summary_evaluators,
@@ -437,12 +439,22 @@ async def aevaluate_existing(
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
-        else (await aitertools.aio_to_thread(_load_experiment, experiment, client))
+        else (
+            await aitertools.aio_to_thread(
+                contextvars.copy_context(), _load_experiment, experiment, client
+            )
+        )
     )
     runs = await aitertools.aio_to_thread(
-        _load_traces, experiment, client, load_nested=load_nested
+        contextvars.copy_context(),
+        _load_traces_for_experiment,
+        project,
+        client,
+        load_nested=load_nested,
     )
-    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
+    data_map = await aitertools.aio_to_thread(
+        contextvars.copy_context(), _load_examples_map, client, project
+    )
     data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
@@ -482,6 +494,7 @@ async def _aevaluate(
     client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
     experiment_, runs = await aitertools.aio_to_thread(
+        contextvars.copy_context(),
         _resolve_experiment,
         experiment,
         runs,
@@ -497,6 +510,7 @@ async def _aevaluate(
         experiment=experiment_ or experiment_prefix,
         description=description,
         num_repetitions=num_repetitions,
+        evaluator_keys=_collect_evaluator_keys(evaluators),
         runs=runs,
         include_attachments=num_include_attachments > 0,
         reuse_attachments=num_repetitions * num_include_attachments > 1,
@@ -588,6 +602,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        num_examples: Optional[int] = None,
+        evaluator_keys: Optional[list[str]] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
         upload_results: bool = True,
@@ -601,6 +617,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             description=description,
         )
         self._data = data
+        self._evaluator_keys = evaluator_keys
         self._examples: Optional[AsyncIterable[schemas.Example]] = None
         self._runs = (
             aitertools.ensure_async_iterator(runs) if runs is not None else None
@@ -608,6 +625,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._num_examples = (
+            num_examples
+            if num_examples is not None
+            else _resolve_num_examples(data, client=self.client)
+        )
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
@@ -999,12 +1021,15 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
                     if self._upload_results:
                         self.client._log_evaluation_feedback(
-                            evaluator_response, run=run, _executor=feedback_executor
+                            evaluator_response,
+                            run=run,
+                            project_id=self._get_experiment().id,
+                            _executor=feedback_executor,
                         )
                     return selected_results
                 except Exception as e:
                     try:
-                        feedback_keys = _extract_feedback_keys(evaluator)
+                        feedback_keys = evaluator.feedback_keys
 
                         error_response = EvaluationResults(
                             results=[
@@ -1022,7 +1047,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                         if self._upload_results:
                             self.client._log_evaluation_feedback(
-                                error_response, run=run, _executor=feedback_executor
+                                error_response,
+                                run=run,
+                                project_id=self._get_experiment().id,
+                                _executor=feedback_executor,
                             )
                         return selected_results
                     except Exception as e2:
@@ -1089,6 +1117,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             feedback = result.model_dump(exclude={"target_run_id"})
                             evaluator_info = feedback.pop("evaluator_info", None)
                             await aitertools.aio_to_thread(
+                                contextvars.copy_context(),
                                 self.client.create_feedback,
                                 **feedback,
                                 run_id=None,
@@ -1156,6 +1185,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             "client": self.client,
             "evaluation_results": self._evaluation_results,
             "summary_results": self._summary_results,
+            "num_examples": self._num_examples,
+            "evaluator_keys": self._evaluator_keys,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
             "upload_results": self._upload_results,

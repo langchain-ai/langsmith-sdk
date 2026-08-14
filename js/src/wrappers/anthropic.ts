@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Stream } from "@anthropic-ai/sdk/streaming";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { RunTreeConfig } from "../index.js";
+import { wrapManagedAgentSessionEvents } from "./utils/anthropic_managed.js";
 import {
   isTraceableFunction,
   traceable,
@@ -9,8 +10,41 @@ import {
 } from "../traceable.js";
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
+import { SECRET_PLACEHOLDER } from "../anonymizer/index.js";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
+
+/** Keys of an MCP server definition that are safe to trace. */
+const MCP_SERVER_SAFE_KEYS = new Set([
+  "name",
+  "type",
+  "url",
+  "tool_configuration",
+]);
+
+/**
+ * Mask credentials in `mcp_servers` before tracing. Anything outside
+ * {@link MCP_SERVER_SAFE_KEYS} keeps its name but gets
+ * {@link SECRET_PLACEHOLDER} as its value, so the trace shows the field was set
+ * without exposing it, and fields the API adds later are masked by default.
+ *
+ * Returns new objects; the caller's are also sent to Anthropic.
+ */
+function redactMcpServers(servers: unknown): unknown {
+  if (!Array.isArray(servers)) return servers;
+
+  return servers.map((server) => {
+    if (typeof server !== "object" || server == null || Array.isArray(server)) {
+      return server;
+    }
+    return Object.fromEntries(
+      Object.entries(server).map(([key, value]) => [
+        key,
+        MCP_SERVER_SAFE_KEYS.has(key) ? value : SECRET_PLACEHOLDER,
+      ]),
+    );
+  });
+}
 
 type ExtraRunTreeConfig = Pick<
   Partial<RunTreeConfig>,
@@ -22,13 +56,29 @@ type MessagesNamespace = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   create: (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parse?: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stream: (...args: any[]) => any;
+};
+
+type ManagedAgentsEventsNamespace = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stream: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  send: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  list?: (...args: any[]) => any;
 };
 
 type AnthropicType = {
   messages: MessagesNamespace;
   beta?: {
     messages?: MessagesNamespace;
+    sessions?: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      retrieve?: (...args: any[]) => any;
+      events?: ManagedAgentsEventsNamespace;
+    };
   };
 };
 
@@ -39,14 +89,14 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
         arg: Anthropic.MessageCreateParamsStreaming,
         arg2?: Anthropic.RequestOptions & {
           langsmithExtra?: ExtraRunTreeConfig;
-        }
+        },
       ): Promise<Stream<Anthropic.MessageStreamEvent>>;
     } & {
       (
         arg: Anthropic.MessageCreateParamsNonStreaming,
         arg2?: Anthropic.RequestOptions & {
           langsmithExtra?: ExtraRunTreeConfig;
-        }
+        },
       ): Promise<Anthropic.Message>;
     };
     stream: {
@@ -54,7 +104,7 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
         arg: Anthropic.MessageStreamParams,
         arg2?: Anthropic.RequestOptions & {
           langsmithExtra?: ExtraRunTreeConfig;
-        }
+        },
       ): MessageStream;
     };
   };
@@ -64,7 +114,7 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
  * Create usage metadata from Anthropic's token usage format.
  */
 export function createUsageMetadata(
-  anthropicUsage: Partial<Anthropic.Messages.Usage>
+  anthropicUsage: Partial<Anthropic.Messages.Usage> | undefined,
 ): KVMap | undefined {
   if (!anthropicUsage) {
     return undefined;
@@ -82,14 +132,14 @@ export function createUsageMetadata(
   const inputTokenDetails: Record<string, number> =
     convertAnthropicUsageToInputTokenDetails(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      anthropicUsage as Record<string, any>
+      anthropicUsage as Record<string, any>,
     );
 
   // Anthropic cache tokens are ADDITIVE (not subsets of input_tokens like OpenAI).
   // Sum them into input_tokens so the backend cost calculation is correct.
   const cacheTokenSum = Object.values(inputTokenDetails).reduce(
     (sum, v) => sum + (v ?? 0),
-    0
+    0,
   );
   const adjustedInputTokens = inputTokens + cacheTokenSum;
   const adjustedTotalTokens = adjustedInputTokens + outputTokens;
@@ -126,7 +176,7 @@ function processMessageOutput(outputs: KVMap): KVMap {
  */
 function accumulateContentBlockDelta(
   content: Anthropic.ContentBlock[],
-  event: Anthropic.ContentBlockDeltaEvent
+  event: Anthropic.ContentBlockDeltaEvent,
 ): void {
   const block = content[event.index];
   if (!block) return;
@@ -202,7 +252,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
         if (message.content) {
           accumulateContentBlockDelta(
             message.content as Anthropic.ContentBlock[],
-            chunk
+            chunk,
           );
         }
         break;
@@ -238,7 +288,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
           // Override only non-null keys
           for (const [key, value] of Object.entries(chunk.usage)) {
             if (value != null) {
-              usage[key as keyof typeof usage] = value;
+              (usage as Record<string, unknown>)[key] = value;
             }
           }
         }
@@ -296,14 +346,18 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
  */
 export const wrapAnthropic = <T extends AnthropicType>(
   anthropic: T,
-  options?: Partial<RunTreeConfig>
+  options?: Partial<RunTreeConfig>,
 ): PatchedAnthropicClient<T> => {
   if (
     isTraceableFunction(anthropic.messages.create) ||
-    isTraceableFunction(anthropic.messages.stream)
+    isTraceableFunction(anthropic.messages.stream) ||
+    (anthropic.beta?.sessions?.events?.stream &&
+      isTraceableFunction(anthropic.beta.sessions.events.stream)) ||
+    (anthropic.beta?.sessions?.events?.send &&
+      isTraceableFunction(anthropic.beta.sessions.events.send))
   ) {
     throw new Error(
-      "This instance of Anthropic client has been already wrapped once."
+      "This instance of Anthropic client has been already wrapped once.",
     );
   }
 
@@ -327,20 +381,25 @@ export const wrapAnthropic = <T extends AnthropicType>(
    * This provides parity with the Python SDK behavior and enables system prompts
    * to be viewed and edited in the LangSmith playground.
    */
-  function processSystemMessage(
-    params: Record<string, unknown>
+  function processTracedInputs(
+    params: Record<string, unknown>,
   ): Record<string, unknown> {
-    if (!params.system) {
-      return params;
+    // Copy first: `params` also goes to the API and must keep its real values.
+    const processed = { ...params };
+
+    if (processed.mcp_servers != null) {
+      processed.mcp_servers = redactMcpServers(processed.mcp_servers);
     }
 
-    const processed = { ...params };
+    if (!params.system) {
+      return processed;
+    }
 
     // Handle both string and ContentBlock[] formats
     const systemContent = Array.isArray(params.system)
       ? params.system
           .map((block: string | { text: string; type?: string }) =>
-            typeof block === "string" ? block : block.text
+            typeof block === "string" ? block : block.text,
           )
           .join("\n")
       : params.system;
@@ -365,7 +424,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
     run_type: "llm",
     aggregator: messageAggregator,
     argsConfigPath: [1, "langsmithExtra"],
-    processInputs: processSystemMessage,
+    processInputs: processTracedInputs,
     getInvocationParams: (payload: unknown) => {
       if (typeof payload !== "object" || payload == null) return undefined;
       const params = payload as Anthropic.MessageCreateParams;
@@ -401,7 +460,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
 
   // Create a new messages object preserving the prototype
   tracedAnthropicClient.messages = Object.create(
-    Object.getPrototypeOf(anthropic.messages)
+    Object.getPrototypeOf(anthropic.messages),
   );
 
   // Copy all own properties
@@ -410,7 +469,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
   // Wrap messages.create
   tracedAnthropicClient.messages.create = traceable(
     anthropic.messages.create.bind(anthropic.messages),
-    messagesCreateConfig
+    messagesCreateConfig,
   );
 
   // Shared function to wrap stream methods
@@ -449,50 +508,68 @@ export const wrapAnthropic = <T extends AnthropicType>(
       run_type: "llm",
       aggregator: messageAggregator,
       argsConfigPath: [1, "langsmithExtra"],
-      processInputs: processSystemMessage,
+      processInputs: processTracedInputs,
       getInvocationParams: messagesCreateConfig.getInvocationParams,
       processOutputs: processMessageOutput,
       ...cleanedOptions,
-    }
+    },
   );
 
-  // Wrap beta.messages if it exists
-  if (
-    anthropic.beta &&
-    anthropic.beta.messages &&
-    typeof anthropic.beta.messages.create === "function"
-  ) {
+  if (anthropic.beta) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tracedBeta = { ...anthropic.beta } as any;
-    tracedBeta.messages = Object.create(
-      Object.getPrototypeOf(anthropic.beta.messages)
-    );
-    Object.assign(tracedBeta.messages, anthropic.beta.messages);
 
-    // Wrap beta.messages.create
-    tracedBeta.messages.create = traceable(
-      anthropic.beta.messages.create.bind(anthropic.beta.messages),
-      messagesCreateConfig
-    );
-
-    // Wrap beta.messages.stream if it exists
-    if (typeof anthropic.beta.messages.stream === "function") {
-      tracedBeta.messages.stream = traceable(
-        wrapStreamMethod(
-          anthropic.beta.messages.stream.bind(anthropic.beta.messages)
-        ),
-        {
-          name: "ChatAnthropic",
-          run_type: "llm",
-          aggregator: messageAggregator,
-          argsConfigPath: [1, "langsmithExtra"],
-          processInputs: processSystemMessage,
-          getInvocationParams: messagesCreateConfig.getInvocationParams,
-          processOutputs: processMessageOutput,
-          ...cleanedOptions,
-        }
+    // Wrap beta.messages if it exists
+    if (
+      anthropic.beta.messages &&
+      typeof anthropic.beta.messages.create === "function"
+    ) {
+      tracedBeta.messages = Object.create(
+        Object.getPrototypeOf(anthropic.beta.messages),
       );
+      Object.assign(tracedBeta.messages, anthropic.beta.messages);
+
+      // Wrap beta.messages.create
+      tracedBeta.messages.create = traceable(
+        anthropic.beta.messages.create.bind(anthropic.beta.messages),
+        messagesCreateConfig,
+      );
+
+      // Wrap beta.messages.parse if it exists
+      if (typeof anthropic.beta.messages.parse === "function") {
+        tracedBeta.messages.parse = traceable(
+          anthropic.beta.messages.parse.bind(anthropic.beta.messages),
+          messagesCreateConfig,
+        );
+      }
+
+      // Wrap beta.messages.stream if it exists
+      if (typeof anthropic.beta.messages.stream === "function") {
+        tracedBeta.messages.stream = traceable(
+          wrapStreamMethod(
+            anthropic.beta.messages.stream.bind(anthropic.beta.messages),
+          ),
+          {
+            name: "ChatAnthropic",
+            run_type: "llm",
+            aggregator: messageAggregator,
+            argsConfigPath: [1, "langsmithExtra"],
+            processInputs: processTracedInputs,
+            getInvocationParams: messagesCreateConfig.getInvocationParams,
+            processOutputs: processMessageOutput,
+            ...cleanedOptions,
+          },
+        );
+      }
     }
+
+    // Wrap Claude Managed Agents session events if they exist
+    wrapManagedAgentSessionEvents({
+      originalBeta: anthropic.beta,
+      tracedBeta,
+      cleanedOptions,
+      prepopulatedInvocationParams,
+    });
 
     tracedAnthropicClient.beta = tracedBeta;
   }

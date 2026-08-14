@@ -1,11 +1,27 @@
 """LangSmith Client."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
+    from langsmith._openapi_client._exceptions import (
+        APIConnectionError,
+        APIError,
+        APIResponseValidationError,
+        APIStatusError,
+        APITimeoutError,
+        AuthenticationError,
+        BadRequestError,
+        ConflictError,
+        InternalServerError,
+        LangsmithError,
+        NotFoundError,
+        PermissionDeniedError,
+        RateLimitError,
+        UnprocessableEntityError,
+    )
     from langsmith.async_client import AsyncClient
-    from langsmith.client import Client
+    from langsmith.client import Client, TracingMode
     from langsmith.evaluation import (
         aevaluate,
         aevaluate_existing,
@@ -25,12 +41,19 @@ if TYPE_CHECKING:
     from langsmith.run_trees import RunTree, configure
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
-    from langsmith.uuid import uuid7, uuid7_from_datetime
+    from langsmith.uuid import (
+        compute_run_id_for_secondary_replica,
+        uuid7,
+        uuid7_from_datetime,
+    )
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.7.22"
+__version__ = "0.10.18"
 version = __version__  # for backwards compatibility
+
+# Metadata key to hide a traced run from LangSmith's Messages View.
+LS_MESSAGE_VIEW_EXCLUDE: Final = "ls_message_view_exclude"
 
 
 def __getattr__(name: str) -> Any:
@@ -40,6 +63,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.client import Client
 
         return Client
+    elif name == "TracingMode":
+        from langsmith.client import TracingMode
+
+        return TracingMode
     elif name == "AsyncClient":
         from langsmith.async_client import AsyncClient
 
@@ -121,6 +148,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_trees import configure
 
         return configure
+    elif name == "compute_run_id_for_secondary_replica":
+        from langsmith.uuid import compute_run_id_for_secondary_replica
+
+        return compute_run_id_for_secondary_replica
     elif name == "uuid7":
         from langsmith.uuid import uuid7
 
@@ -145,7 +176,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.prompt_cache import AsyncCache
 
         return AsyncCache
-
     elif name == "configure_global_prompt_cache":
         from langsmith.prompt_cache import configure_global_prompt_cache
 
@@ -156,12 +186,40 @@ def __getattr__(name: str) -> Any:
 
         return configure_global_async_prompt_cache
 
+    elif name == "set_runtime_overrides":
+        from langsmith._runtime_overrides import set_runtime_overrides
+
+        return set_runtime_overrides
+
+    elif name in (
+        "LangsmithError",
+        "APIError",
+        "APIResponseValidationError",
+        "APIStatusError",
+        "APIConnectionError",
+        "APITimeoutError",
+        "BadRequestError",
+        "AuthenticationError",
+        "PermissionDeniedError",
+        "NotFoundError",
+        "ConflictError",
+        "UnprocessableEntityError",
+        "RateLimitError",
+        "InternalServerError",
+    ):
+        import langsmith._openapi_client._exceptions as _exceptions
+
+        exception = getattr(_exceptions, name)
+        exception.__module__ = __name__
+        return exception
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "Client",
     "AsyncClient",
+    "TracingMode",
     "PromptCache",
     "AsyncPromptCache",
     "Cache",
@@ -188,6 +246,23 @@ __all__ = [
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
+    "compute_run_id_for_secondary_replica",
     "uuid7",
     "uuid7_from_datetime",
+    "set_runtime_overrides",
+    "LS_MESSAGE_VIEW_EXCLUDE",
+    "LangsmithError",
+    "APIError",
+    "APIResponseValidationError",
+    "APIStatusError",
+    "APIConnectionError",
+    "APITimeoutError",
+    "BadRequestError",
+    "AuthenticationError",
+    "PermissionDeniedError",
+    "NotFoundError",
+    "ConflictError",
+    "UnprocessableEntityError",
+    "RateLimitError",
+    "InternalServerError",
 ]

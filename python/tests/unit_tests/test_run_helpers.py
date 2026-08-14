@@ -2238,6 +2238,49 @@ def test_traceable_nested_outer_enabled_inner_disabled(mock_client: Client) -> N
     assert "inner_function" not in names
 
 
+def test_traceable_disabled_clears_parent_context(mock_client: Client) -> None:
+    """Test that when enabled=False, the parent RunTree context is cleared.
+
+    This ensures that a nested @traceable with enabled=False doesn't incorrectly
+    inherit the parent's RunTree, which would cause incorrect nesting.
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    def outer_function(a: int) -> int:
+        # At this point, get_current_run_tree() should return outer's run
+        outer_run = get_current_run_tree()
+        assert outer_run is not None
+        assert outer_run.name == "outer_function"
+        result = inner_disabled(a)
+        # After inner_disabled returns, we should still have outer's run
+        outer_run_after = get_current_run_tree()
+        assert outer_run_after is not None
+        assert outer_run_after.name == "outer_function"
+        return result
+
+    @traceable(client=mock_client, enabled=False)
+    def inner_disabled(a: int) -> int:
+        # Since enabled=False, get_current_run_tree() should return None
+        # (the parent context was cleared, not inherited)
+        inner_run = get_current_run_tree()
+        assert inner_run is None, (
+            "Expected None when enabled=False, but got a RunTree. "
+            "Parent context should be cleared, not inherited."
+        )
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    # Only outer_function should be traced
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" in names
+    assert "inner_disabled" not in names
+
+
 @pytest.mark.parametrize(
     "decorator_enabled,context_enabled,should_trace",
     [
@@ -2475,3 +2518,113 @@ class TestTraceableExceptionsToHandle:
                 pytest.fail(
                     f"Expected error to be None for handled exception, got: {err}"
                 )
+
+
+def test_ls_message_view_exclude_constant_is_exposed() -> None:
+    """LS_MESSAGE_VIEW_EXCLUDE is importable from langsmith top-level,
+    has the canonical wire value, and is listed in __all__."""
+    from langsmith import LS_MESSAGE_VIEW_EXCLUDE
+
+    assert LS_MESSAGE_VIEW_EXCLUDE == "ls_message_view_exclude"
+    assert "LS_MESSAGE_VIEW_EXCLUDE" in langsmith.__all__
+
+
+def test_ls_message_view_exclude_metadata_round_trips_to_run() -> None:
+    """Using the constant as a metadata key in @traceable causes it to
+    land on the shipped run's extra.metadata at the canonical wire
+    key."""
+    from langsmith import LS_MESSAGE_VIEW_EXCLUDE
+
+    mock_client = _get_mock_client()
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
+        def classify(x: str) -> str:
+            return x
+
+        classify("hello")
+
+    mock_calls = _get_calls(mock_client, minimum=1)
+    payloads = _get_data(mock_calls)
+    assert payloads, "expected at least one POST payload"
+    _, payload = payloads[0]
+    metadata = (payload.get("extra") or {}).get("metadata") or {}
+    assert metadata.get(LS_MESSAGE_VIEW_EXCLUDE) is True
+
+
+def test_ls_message_view_exclude_metadata_cascades_to_child_runs() -> None:
+    """Metadata set on a parent @traceable cascades to child @traceable
+    runs via the _METADATA contextvar. Regression test for the
+    cascade behavior LS_MESSAGE_VIEW_EXCLUDE depends on."""
+    from langsmith import LS_MESSAGE_VIEW_EXCLUDE
+
+    mock_client = _get_mock_client()
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client)
+        def child() -> str:
+            return "ok"
+
+        @traceable(client=mock_client, metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
+        def parent() -> str:
+            return child()
+
+        parent()
+
+    mock_calls = _get_calls(mock_client, minimum=2)
+    payloads = [p for _, p in _get_data(mock_calls)]
+    assert len(payloads) >= 2, f"expected parent + child payloads, got {len(payloads)}"
+
+    excluded = [
+        p
+        for p in payloads
+        if (p.get("extra") or {}).get("metadata", {}).get(LS_MESSAGE_VIEW_EXCLUDE)
+        is True
+    ]
+    assert len(excluded) == len(payloads), (
+        f"expected all {len(payloads)} runs to carry "
+        f"{LS_MESSAGE_VIEW_EXCLUDE}=True, only {len(excluded)} did"
+    )
+
+
+@pytest.mark.parametrize("parent_kind", ["dict", "str"])
+def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str):
+    """`tracing_context(parent=<headers|dotted_order>, replicas=[...])` applies.
+
+    Regression test for LSDK-449. The downstream service's root run is created as
+    a child of the placeholder parent rebuilt from the incoming trace context.
+    That placeholder used to be constructed before `_REPLICAS` was set and without
+    the explicit `replicas` argument, so it ended up with `[]`, and `create_child`
+    propagated that `[]` to the root run and every descendant.
+    """
+    replicas = [{"project_name": "project-b", "primary": True}]
+    upstream = RunTree(name="a_root", run_type="chain", project_name="project-a")
+    parent = upstream.to_headers() if parent_kind == "dict" else upstream.dotted_order
+
+    seen = {}
+
+    @traceable(run_type="chain", name="b_root")
+    def b_root():
+        run = get_current_run_tree()
+        seen["replicas"] = run.replicas
+        seen["parent_run_id"] = run.parent_run_id
+        return nested()
+
+    @traceable(run_type="llm", name="nested")
+    def nested():
+        seen["nested_replicas"] = get_current_run_tree().replicas
+        return "ok"
+
+    with tracing_context(enabled="local"):
+        with tracing_context(parent=parent, replicas=replicas):
+            placeholder = get_current_run_tree()
+            assert placeholder is not None
+            assert placeholder.replicas == replicas
+            b_root()
+
+    assert seen["replicas"] == replicas
+    assert seen["nested_replicas"] == replicas
+    # No reroot: the downstream root still points at the real upstream run id.
+    assert seen["parent_run_id"] == upstream.id

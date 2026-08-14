@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import logging
+import random
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
     Optional,
@@ -19,19 +22,154 @@ from typing import (
 
 import httpx
 
+import langsmith._openapi_client as _langsmith_api_module
+from langsmith._internal._beta_decorator import deprecated as _deprecated
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
+from langsmith.client import _get_openapi_base_url
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.runs import AsyncRunsResource
+
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _beta_decorator as ls_beta
+from langsmith._internal import _profiles
+from langsmith._internal._backend_version import _check_backend_version
+from langsmith._internal._hub import (
+    HUB,
+    REPO_HANDLE_PATTERN,
+    build_commit_url,
+    platform_hub_path,
+    validate_parent_commit,
+)
+from langsmith._internal._v2_migration_utils import (
+    _V2_RUN_SELECTS,
+    QueryBackend,
+    _v2_run_to_schema,
+    get_query_backend,
+)
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
+logger = logging.getLogger(__name__)
+
 ID_TYPE = Union[uuid.UUID, str]
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.annotation_queues.annotation_queues import (
+        AsyncAnnotationQueuesResource,
+    )
+    from langsmith._openapi_client.resources.datasets.datasets import (
+        AsyncDatasetsResource,
+    )
+    from langsmith._openapi_client.resources.online_evaluators import (
+        AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+    )
+    from langsmith._openapi_client.resources.public.public import (
+        AsyncPublicResource,
+    )
+    from langsmith._openapi_client.resources.sandboxes.sandboxes import (
+        AsyncSandboxesResource,
+    )
+    from langsmith._openapi_client.resources.threads import AsyncThreadsResource
+    from langsmith._openapi_client.resources.traces import AsyncTracesResource
 
 
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = (
+        "_retry_config",
+        "_client",
+        "_web_url",
+        "_settings",
+        "_cache",
+        "_custom_headers",
+        "_api_key",
+        "_oauth_access_token",
+        "_workspace_id",
+        "_profile_auth",
+        "_profile_auth_headers",
+        "_langsmith_api",
+        "_info",
+        "_checked_min_versions",
+        "_version_check_tasks",
+    )
+
+    _custom_headers: dict[str, str]
+    _api_key: Optional[str]
+    _oauth_access_token: Optional[str]
+    _workspace_id: Optional[str]
+    _profile_auth: Optional[_profiles.ProfileAuth]
+    _profile_auth_headers: dict[str, str]
+    _info: Optional[ls_schemas.LangSmithInfo]
+
+    def _compute_headers(self) -> dict[str, str]:
+        headers = {**self._custom_headers}
+        # Required headers that should not be overridden
+        headers["Content-Type"] = "application/json"
+        if self._api_key:
+            headers[ls_client.X_API_KEY] = self._api_key
+        elif self._profile_auth_headers:
+            headers.update(self._profile_auth_headers)
+        elif self._oauth_access_token:
+            headers["Authorization"] = f"Bearer {self._oauth_access_token}"
+        if self._workspace_id:
+            headers["X-Tenant-Id"] = self._workspace_id
+        return headers
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the custom headers used for API requests."""
+        return self._custom_headers
+
+    @headers.setter
+    def headers(self, value: Optional[dict[str, str]]) -> None:
+        self._custom_headers = value or {}
+        self._client.headers = httpx.Headers(self._compute_headers())
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        """Return the merged headers used for API requests."""
+        return dict(self._client.headers)
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Return the API key used for authentication."""
+        return self._api_key
+
+    @api_key.setter
+    def api_key(self, value: Optional[str]) -> None:
+        self._api_key = value
+        self._client.headers = httpx.Headers(self._compute_headers())
+
+    @property
+    def workspace_id(self) -> Optional[str]:
+        """Return the workspace ID used for API requests."""
+        return self._workspace_id
+
+    @workspace_id.setter
+    def workspace_id(self, value: Optional[str]) -> None:
+        self._workspace_id = ls_utils.get_workspace_id(value)
+        self._client.headers = httpx.Headers(self._compute_headers())
+
+    async def info(self) -> ls_schemas.LangSmithInfo:
+        """Get information about the LangSmith server."""
+        if self._info is not None:
+            return self._info
+        try:
+            response = await self._arequest_with_retries(
+                "GET",
+                "/info",
+                headers={"Accept": "application/json"},
+            )
+            ls_utils.raise_for_status_with_text(response)
+            self._info = ls_schemas.LangSmithInfo(**response.json())
+        except BaseException as e:
+            logger.warning(f"Failed to get info from {self._api_url}: {repr(e)}")
+            self._info = ls_schemas.LangSmithInfo()
+        return self._info
 
     def __init__(
         self,
@@ -44,6 +182,8 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
+        workspace_id: Optional[str] = None,
         disable_prompt_cache: bool = False,
         cache: Optional[Union[bool, AsyncPromptCache]] = None,
     ):
@@ -55,6 +195,12 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
+            headers: Additional HTTP headers to include in all requests.
+
+                These headers will be merged with the default headers
+                (Content-Type, x-api-key, etc.). Custom headers will not override
+                the default required headers.
+            workspace_id: The workspace ID. Required for org-scoped API keys.
             disable_prompt_cache: Disable prompt caching for this client.
             cache: **[Deprecated]** Control prompt caching behavior.
 
@@ -66,14 +212,56 @@ class AsyncClient:
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
         self._retry_config = retry_config or {"max_retries": 3}
-        _headers = {
-            "Content-Type": "application/json",
-        }
-        api_key = ls_utils.get_api_key(api_key)
-        api_url = ls_utils.get_api_url(api_url)
-        if api_key:
-            _headers[ls_client.X_API_KEY] = api_key
-        ls_client._validate_api_key_if_hosted(api_url, api_key)
+        self._custom_headers = headers or {}
+        env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
+        env_api_key = ls_client._get_langsmith_env_var_uncached("API_KEY")
+        env_workspace_id = ls_client._get_langsmith_env_var_uncached("WORKSPACE_ID")
+        profile_config = _profiles.load_profile_client_config()
+        api_url_ = (
+            api_url if api_url is not None else env_api_url or profile_config.api_url
+        )
+        explicit_or_env_api_key = api_key if api_key is not None else env_api_key
+        profile_auth_enabled = api_key is None and env_api_key is None
+        use_profile_oauth = profile_auth_enabled and profile_config.has_oauth
+        api_key_ = (
+            explicit_or_env_api_key
+            if explicit_or_env_api_key is not None
+            else None
+            if use_profile_oauth
+            else profile_config.api_key
+        )
+        self._oauth_access_token = (
+            profile_config.oauth_access_token if use_profile_oauth else None
+        )
+        workspace_id_ = (
+            workspace_id
+            if workspace_id is not None
+            else env_workspace_id or profile_config.workspace_id
+        )
+        api_key = ls_utils.get_api_key(api_key_)
+        api_url = ls_utils.get_api_url(api_url_)
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id_)
+        self._profile_auth = None
+        self._profile_auth_headers = {}
+        if use_profile_oauth:
+            self._profile_auth = _profiles.ProfileAuth(
+                profile_config,
+                api_key_header=ls_client.X_API_KEY,
+            )
+            self._profile_auth_headers = self._profile_auth.current_auth_headers()
+            self._oauth_access_token = self._profile_auth.oauth_access_token
+        self._api_key = api_key
+        _headers = self._compute_headers()
+        ls_client._validate_api_key_if_hosted(
+            api_url,
+            api_key
+            or self._oauth_access_token
+            or (
+                "profile-auth"
+                if self._profile_auth is not None and self._profile_auth.has_auth
+                else None
+            ),
+        )
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)
@@ -86,6 +274,9 @@ class AsyncClient:
         )
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
+        self._info: Optional[ls_schemas.LangSmithInfo] = None
+        self._checked_min_versions: set[str] = set()
+        self._version_check_tasks: set[asyncio.Task] = set()
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -124,6 +315,93 @@ class AsyncClient:
         else:
             self._cache = None
 
+        self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
+            api_key=self._api_key,
+            tenant_id=self._workspace_id,
+            base_url=_get_openapi_base_url(str(self._client.base_url)),
+            timeout=self._client.timeout,
+            default_headers=_headers or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Stainless v2 resource accessors
+    # Only resources that target /v2/ endpoints are exposed here.
+    # @property is used (not @cached_property) because __slots__ disables
+    # __dict__; the stainless client caches each resource internally.
+    # ------------------------------------------------------------------
+
+    def _schedule_backend_version_check(self, min_version: str) -> None:
+        """Warn if the backend is older than *min_version*, without blocking.
+
+        These properties are sync while `info()` is async, so the check runs as a
+        background task (as the JS client does) instead of inline. Scheduled at
+        most once per version, and only when a resource is actually accessed.
+        """
+        if min_version in self._checked_min_versions:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # no event loop: nothing to schedule the check on
+            return
+        self._checked_min_versions.add(min_version)
+        task = loop.create_task(self._acheck_backend_version(min_version))
+        # Keep a strong reference so the task is not garbage collected mid-flight.
+        self._version_check_tasks.add(task)
+        task.add_done_callback(self._version_check_tasks.discard)
+
+    async def _acheck_backend_version(self, min_version: str) -> None:
+        info = await self.info()
+        _check_backend_version(info.version, min_version=min_version)
+
+    @property
+    def runs(self) -> AsyncRunsResource:
+        """Access the runs resource."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.runs
+
+    @property
+    def evaluators(self) -> AsyncEvaluatorsResource:
+        """Access the evaluator resource."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.online_evaluators
+
+    @property
+    def sandboxes(self) -> AsyncSandboxesResource:
+        """Access the sandboxes resource (registries, snapshots, boxes)."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.sandboxes
+
+    @property
+    def datasets(self) -> AsyncDatasetsResource:
+        """Access the v2 datasets resource (experiment_runs, etc.)."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.datasets
+
+    @property
+    def annotation_queues(self) -> AsyncAnnotationQueuesResource:
+        """Access the annotation queues resource (runs, items)."""
+        # The items endpoints landed in backend 0.16.14; the rest are older.
+        self._schedule_backend_version_check("0.16.14")
+        return self._langsmith_api.annotation_queues
+
+    @property
+    def threads(self) -> AsyncThreadsResource:
+        """Access the threads resource (query, stats, list_traces)."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.threads
+
+    @property
+    def traces(self) -> AsyncTracesResource:
+        """Access the traces resource (query, list_runs)."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.traces
+
+    @property
+    def public(self) -> AsyncPublicResource:
+        """Access the public shared-run resource."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.public
+
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
         if self._cache is not None:
@@ -140,6 +418,14 @@ class AsyncClient:
             await self._cache.stop()
         await self._client.aclose()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the instance.
+
+        Returns:
+            The string representation of the instance.
+        """
+        return f"AsyncClient (API URL: {self._api_url})"
+
     @property
     def _api_url(self):
         return str(self._client.base_url)
@@ -149,14 +435,51 @@ class AsyncClient:
         """The web host url."""
         return ls_utils.get_host_url(self._web_url, self._api_url)
 
+    async def _ensure_profile_auth(self) -> None:
+        if self._api_key or self._profile_auth is None:
+            return
+        if self._profile_auth.needs_refresh():
+            auth_headers = await asyncio.to_thread(self._profile_auth.get_auth_headers)
+        else:
+            auth_headers = self._profile_auth.current_auth_headers()
+        self._profile_auth_headers = auth_headers
+        self._oauth_access_token = self._profile_auth.oauth_access_token
+        self._client.headers = httpx.Headers(self._compute_headers())
+
     async def _arequest_with_retries(
         self,
         method: str,
         endpoint: str,
+        *,
+        stop_after_attempt: Optional[int] = None,
+        retry_on: Optional[Sequence[type[BaseException]]] = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Make an async HTTP request with retries."""
-        max_retries = cast(int, self._retry_config.get("max_retries", 3))
+        """Make an async HTTP request with retries.
+
+        Args:
+            method: The HTTP method.
+            endpoint: The request endpoint (appended to the API base URL).
+            stop_after_attempt: The number of attempts to make. If unset, uses
+                the client's configured max retries.
+            retry_on: Additional exception types to retry on, beyond the
+                connection/timeout/server-error set that is always retried.
+            **kwargs: Forwarded to the underlying httpx request.
+        """
+        max_retries = (
+            stop_after_attempt
+            if stop_after_attempt is not None
+            else cast(int, self._retry_config.get("max_retries", 3))
+        )
+        # Transient connection/timeout/server errors are always retried; callers
+        # can opt into retrying additional types (e.g. LangSmithNotFoundError
+        # when writing against a run that may not be ingested yet).
+        retry_on_: tuple[type[BaseException], ...] = (
+            ls_utils.LangSmithConnectionError,
+            ls_utils.LangSmithRequestTimeout,
+            ls_utils.LangSmithAPIError,
+            *(retry_on or ()),
+        )
 
         # Python requests library used by the normal Client filters out params with None values
         # The httpx library does not. Filter them out here to keep behavior consistent
@@ -165,46 +488,59 @@ class AsyncClient:
             filtered_params = {k: v for k, v in params.items() if v is not None}
             kwargs["params"] = filtered_params
 
+        await self._ensure_profile_auth()
+        if self._profile_auth is not None and "headers" in kwargs:
+            kwargs["headers"] = self._profile_auth.prepare_request_headers(
+                kwargs["headers"]
+            )
+
         for attempt in range(max_retries):
             try:
-                response = await self._client.request(method, endpoint, **kwargs)
-                ls_utils.raise_for_status_with_text(response)
-                return response
-            except httpx.HTTPStatusError as e:
-                if response.status_code == 500:
-                    raise ls_utils.LangSmithAPIError(
-                        f"Server error caused failure to {method}"
-                        f" {endpoint} in"
-                        f" LangSmith API. {repr(e)}"
-                    )
-                elif response.status_code == 408:
-                    raise ls_utils.LangSmithRequestTimeout(
-                        f"Client took too long to send request to {method}{endpoint}"
-                    )
-                elif response.status_code == 429:
-                    raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 401:
-                    raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 404:
-                    raise ls_utils.LangSmithNotFoundError(
-                        f"Resource not found for {endpoint}. {repr(e)}"
-                    )
-                elif response.status_code == 409:
-                    raise ls_utils.LangSmithConflictError(
-                        f"Conflict for {endpoint}. {repr(e)}"
-                    )
-                else:
-                    raise ls_utils.LangSmithError(
-                        f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
-                    )
-            except httpx.RequestError as e:
+                try:
+                    response = await self._client.request(method, endpoint, **kwargs)
+                    ls_utils.raise_for_status_with_text(response)
+                    return response
+                except httpx.HTTPStatusError as e:
+                    response = e.response
+                    if response.status_code in {425, 500, 502, 503, 504}:
+                        raise ls_utils.LangSmithAPIError(
+                            f"Server error ({response.status_code}) caused failure to"
+                            f" {method} {endpoint} in"
+                            f" LangSmith API. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 408:
+                        raise ls_utils.LangSmithRequestTimeout(
+                            f"Client took too long to send request to {method}{endpoint}"
+                        ) from e
+                    elif response.status_code == 429:
+                        raise ls_utils.LangSmithRateLimitError(
+                            f"Rate limit exceeded for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 401:
+                        raise ls_utils.LangSmithAuthError(
+                            f"Authentication failed for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 404:
+                        raise ls_utils.LangSmithNotFoundError(
+                            f"Resource not found for {endpoint}. {repr(e)}"
+                        ) from e
+                    elif response.status_code == 409:
+                        raise ls_utils.LangSmithConflictError(
+                            f"Conflict for {endpoint}. {repr(e)}"
+                        ) from e
+                    else:
+                        raise ls_utils.LangSmithError(
+                            f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
+                        ) from e
+                except httpx.RequestError as e:
+                    raise ls_utils.LangSmithConnectionError(
+                        f"Request error: {repr(e)}"
+                    ) from e
+            except retry_on_:
                 if attempt == max_retries - 1:
-                    raise ls_utils.LangSmithConnectionError(f"Request error: {repr(e)}")
-                await asyncio.sleep(2**attempt)
+                    raise
+                sleep_time = 2**attempt + (random.random() * 0.5)
+                await asyncio.sleep(sleep_time)
         raise ls_utils.LangSmithAPIError(
             "Unexpected error connecting to the LangSmith API"
         )
@@ -297,14 +633,60 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
-    async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
-        """Read a run."""
-        response = await self._arequest_with_retries(
-            "GET",
-            f"/runs/{ls_client._as_uuid(run_id)}",
-        )
-        return ls_schemas.Run(**response.json())
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
+    async def read_run(
+        self,
+        run_id: ls_client.ID_TYPE,
+        *,
+        project_id: Optional[ls_client.ID_TYPE] = None,
+    ) -> ls_schemas.Run:
+        """Read a run.
 
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
+
+        Args:
+            run_id: The ID of the run to read.
+            project_id: The ID of the project (session) that owns the run.
+                Required on SmithDB-only backends (no ClickHouse query
+                support), where it's used to look up the run via the v2 API.
+        """
+        run_id_ = ls_client._as_uuid(run_id)
+        info = await self.info()
+        backend = get_query_backend(info.instance_flags)
+        if backend != QueryBackend.SMITHDB_ONLY:
+            response = await self._arequest_with_retries(
+                "GET",
+                f"/runs/{run_id_}",
+            )
+            return ls_schemas.Run(**response.json())
+
+        if project_id is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires project_id on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
+        run = await self.runs.retrieve_v2(
+            run_id=str(run_id_),
+            project_id=str(ls_client._as_uuid(project_id)),
+            selects=_V2_RUN_SELECTS,
+        )
+        return _v2_run_to_schema(run)
+
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     async def list_runs(
         self,
         *,
@@ -329,6 +711,12 @@ class AsyncClient:
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -469,10 +857,22 @@ class AsyncClient:
             if limit is not None and ix >= limit:
                 break
 
+    @_deprecated(
+        "share_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.create() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     async def share_run(
         self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
     ) -> str:
         """Get a share link for a run asynchronously.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.share.create` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (ID_TYPE): The ID of the run to share.
@@ -502,11 +902,24 @@ class AsyncClient:
 
     async def run_is_shared(self, run_id: ls_client.ID_TYPE) -> bool:
         """Get share state for a run asynchronously."""
-        link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
+        with _suppress_deprecation_warning():
+            link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
         return link is not None
 
+    @_deprecated(
+        "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
+        'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run asynchronously.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` with ``selects=["SHARE_URL"]`` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (ID_TYPE): The ID of the run.
@@ -693,24 +1106,65 @@ class AsyncClient:
 
     async def create_feedback(
         self,
-        run_id: Optional[ls_client.ID_TYPE],
-        key: str,
-        score: Optional[float] = None,
+        run_id: Optional[ls_client.ID_TYPE] = None,
+        key: str = "unnamed",
+        *,
+        score: Union[float, int, bool, None] = None,
         value: Union[float, int, bool, str, dict, None] = None,
+        trace_id: Optional[ls_client.ID_TYPE] = None,
+        correction: Union[dict, None] = None,
+        feedback_id: Optional[ls_client.ID_TYPE] = None,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        feedback_source_type: Union[
+            ls_schemas.FeedbackSourceType, str
+        ] = ls_schemas.FeedbackSourceType.API,
+        source_info: Optional[dict[str, Any]] = None,
+        source_run_id: Optional[ls_client.ID_TYPE] = None,
+        stop_after_attempt: int = 10,
+        project_id: Optional[ls_client.ID_TYPE] = None,
+        comparative_experiment_id: Optional[ls_client.ID_TYPE] = None,
+        feedback_group_id: Optional[ls_client.ID_TYPE] = None,
+        extra: Optional[dict] = None,
+        error: Optional[bool] = None,
+        session_id: Optional[ls_client.ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
+        extend_trace_retention: bool = True,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
 
         Args:
-            run_id: The ID of the run to provide feedback for.
-
-                Can be `None` for project-level feedback.
-            key: The name of the metric or aspect this feedback is about.
+            run_id: The ID of the run to provide feedback for. At least one of
+                run_id, trace_id, or project_id must be specified.
+            key: The name of the feedback metric.
             score: The score to rate this run on the metric or aspect.
             value: The display value or non-numeric value for this feedback.
+            trace_id: The ID of the trace that contains the run.
+            correction: The proper ground truth for this run.
+            feedback_id: Optional ID to assign to the feedback.
+            feedback_config: Configuration specifying how to interpret this
+                feedback with this key.
+            feedback_source_type: The feedback source type, such as API or model.
+            source_info: Information about the source of this feedback.
+            source_run_id: The run that generated this feedback, if model-generated.
+            stop_after_attempt: The number of times to retry the request before
+                giving up.
+            project_id: The project or experiment ID for project-level feedback.
+            comparative_experiment_id: The comparative experiment ID for this
+                feedback.
+            feedback_group_id: The group ID for preference or comparative
+                feedback.
+            extra: Metadata for the feedback.
+            error: Whether the feedback represents an error.
+            session_id: The project ID of the run. Required for run-level feedback;
+                omitting it is deprecated. See
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+            start_time: The start time of the run. Better performance if provided.
             comment: A comment about this feedback.
-            **kwargs: Additional keyword arguments to include in the feedback data.
+            extend_trace_retention: If false, create the feedback without
+                extending the trace's retention tier.
+            **kwargs: Additional deprecated keyword arguments.
 
         Returns:
             The created feedback object.
@@ -718,18 +1172,89 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        data = {
-            "run_id": ls_client._ensure_uuid(run_id, accept_null=True),
-            "key": key,
-            "score": score,
-            "value": value,
-            "comment": comment,
-            **kwargs,
-        }
-        response = await self._arequest_with_retries(
-            "POST", "/feedback", content=ls_client._dumps_json(data)
+        run_id = run_id or trace_id
+        if run_id is None and project_id is None:
+            raise ValueError("One of run_id, trace_id, or project_id  must be provided")
+        if run_id is not None and project_id is not None:
+            raise ValueError(
+                "project_id cannot be provided if run_id or trace_id is provided"
+            )
+        if run_id is not None and session_id is None:
+            ls_client._check_feedback_session_id(await self.info())
+        if kwargs:
+            warnings.warn(
+                "The following arguments are no longer used in the create_feedback"
+                f" endpoint: {sorted(kwargs)}",
+                DeprecationWarning,
+            )
+        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
+            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
+        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
+            feedback_source: ls_schemas.FeedbackSourceBase = (
+                ls_schemas.APIFeedbackSource(metadata=source_info)
+            )
+        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
+            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
+        else:
+            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+        feedback_source.metadata = (
+            feedback_source.metadata if feedback_source.metadata is not None else {}
         )
-        return ls_schemas.Feedback(**response.json())
+        if source_run_id is not None and "__run" not in feedback_source.metadata:
+            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
+        if feedback_source.metadata and "__run" in feedback_source.metadata:
+            run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
+            if hasattr(run_meta, "model_dump") and callable(
+                getattr(run_meta, "model_dump")
+            ):
+                run_meta = run_meta.model_dump()
+            if "run_id" in run_meta:
+                run_meta["run_id"] = str(
+                    ls_client._as_uuid(
+                        feedback_source.metadata["__run"]["run_id"],
+                        "feedback_source.metadata['__run']['run_id']",
+                    )
+                )
+            feedback_source.metadata["__run"] = run_meta
+
+        session_id_ = ls_client._ensure_uuid(
+            session_id if session_id is not None else project_id, accept_null=True
+        )
+        feedback = ls_schemas.FeedbackCreate(
+            id=ls_client._ensure_uuid(feedback_id),
+            run_id=ls_client._ensure_uuid(run_id, accept_null=True),
+            trace_id=ls_client._ensure_uuid(trace_id, accept_null=True),
+            key=key,
+            score=ls_client._format_feedback_score(score),
+            value=value,
+            correction=correction,
+            comment=comment,
+            feedback_source=feedback_source,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            modified_at=datetime.datetime.now(datetime.timezone.utc),
+            feedback_config=feedback_config,
+            session_id=session_id_,
+            start_time=start_time,
+            comparative_experiment_id=ls_client._ensure_uuid(
+                comparative_experiment_id, accept_null=True
+            ),
+            feedback_group_id=ls_client._ensure_uuid(
+                feedback_group_id, accept_null=True
+            ),
+            extra=extra,
+            error=error,
+            extend_trace_retention=extend_trace_retention,
+        )
+        # Retry on NotFound: the run referenced by run_id/trace_id may have been
+        # submitted moments ago and not yet ingested when this write lands.
+        await self._arequest_with_retries(
+            "POST",
+            "/feedback",
+            content=ls_client._dumps_json(feedback.model_dump(exclude_none=True)),
+            stop_after_attempt=stop_after_attempt,
+            retry_on=(ls_utils.LangSmithNotFoundError,),
+        )
+        return ls_schemas.Feedback(**feedback.model_dump())
 
     async def create_feedback_from_token(
         self,
@@ -1039,23 +1564,60 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
+        self,
+        queue_id: ID_TYPE,
+        *,
+        run_ids: Optional[list[ID_TYPE]] = None,
+        runs: Optional[Sequence[ls_schemas.RunKey]] = None,
     ) -> None:
         """Add runs to an annotation queue with the specified `queue_id`.
 
+        Provide exactly one of `runs` or `run_ids`:
+
+        - `runs` (preferred): each entry carries the run's full lookup key
+          (`run_id`, `session_id`, `start_time`, and an optional
+          `source_proposed_example_id`). This lets the run be located directly,
+          without a scan, and is required for workspaces served by SmithDB.
+        - `run_ids`: a plain list of run IDs. This path is deprecated and will
+          be removed after Jan 31, 2027; prefer `runs`.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
+
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
-            run_ids (list[Union[UUID, str]]): The IDs of the runs to be added to the
-                annotation queue.
+            run_ids (Optional[list[Union[UUID, str]]]): The IDs of the runs to be
+                added to the annotation queue.
+            runs (Optional[Sequence[RunKey]]): The runs to add, each with
+                its full lookup key.
         """
-        response = await self._arequest_with_retries(
-            "POST",
-            f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs",
-            json=[
+        if runs is not None and run_ids is not None:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        base = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
+        json_body: Union[list[str], list[dict[str, str]]]
+        if runs is not None:
+            path = f"{base}/by-key"
+            json_body = [
+                ls_client._serialize_run_key(run, i) for i, run in enumerate(runs)
+            ]
+        elif run_ids is not None:
+            warnings.warn(
+                "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
+                "Use the runs parameter with RunKey objects instead. "
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            path = base
+            json_body = [
                 str(ls_client._as_uuid(id_, f"run_ids[{i}]"))
                 for i, id_ in enumerate(run_ids)
-            ],
-        )
+            ]
+        else:
+            raise ls_utils.LangSmithUserError(
+                "Provide exactly one of `runs` or `run_ids`."
+            )
+        response = await self._arequest_with_retries("POST", path, json=json_body)
         ls_utils.raise_for_status_with_text(response)
 
     async def delete_run_from_annotation_queue(
@@ -1094,6 +1656,41 @@ class AsyncClient:
         response = await self._arequest_with_retries("GET", f"{base_url}/{index}")
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
+
+    async def list_runs_from_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        *,
+        status: Optional[
+            Literal["needs_my_review", "needs_others_review", "completed"]
+        ] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        """List runs in an annotation queue with the specified `queue_id`.
+
+        Args:
+            queue_id (Union[UUID, str]): The ID of the annotation queue.
+            status: Filter runs by review status. Must be one of
+                ``"needs_my_review"``, ``"needs_others_review"``, or
+                ``"completed"``. If None, returns runs across all review states.
+            limit: The maximum number of runs to return.
+
+        Yields:
+            The runs currently in the annotation queue, with queue metadata
+            (e.g. ``added_at``, ``last_reviewed_time``).
+        """
+        params: dict = {
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        if status is not None:
+            params["status"] = status
+        path = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs"
+        ix = 0
+        async for run in self._aget_paginated_list(path, params=params):
+            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
 
     # Feedback Config API
 
@@ -1220,165 +1817,6 @@ class AsyncClient:
             params={"feedback_key": feedback_key},
         )
         ls_utils.raise_for_status_with_text(response)
-
-    @ls_beta.warn_beta
-    async def index_dataset(
-        self,
-        *,
-        dataset_id: ls_client.ID_TYPE,
-        tag: str = "latest",
-        **kwargs: Any,
-    ) -> None:
-        """Enable dataset indexing. Examples are indexed by their inputs.
-
-        This enables searching for similar examples by inputs with
-        `client.similar_examples()`.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to index.
-            tag: The version of the dataset to index.
-
-                If `'latest'` then any updates to the dataset (additions, updates,
-                deletions of examples) will be reflected in the index.
-
-        Raises:
-            requests.HTTPError: If the request fails.
-        """  # noqa: E501
-        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
-        resp = await self._arequest_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index",
-            content=ls_client._dumps_json({"tag": tag, **kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    @ls_beta.warn_beta
-    async def sync_indexed_dataset(
-        self,
-        *,
-        dataset_id: ls_client.ID_TYPE,
-        **kwargs: Any,
-    ) -> None:
-        """Sync dataset index.
-
-        This already happens automatically every 5 minutes, but you can call this to
-        force a sync.
-
-        Args:
-            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
-
-        Raises:
-            requests.HTTPError: If the request fails.
-        """  # noqa: E501
-        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
-        resp = await self._arequest_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/index/sync",
-            content=ls_client._dumps_json({**kwargs}),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-
-    @ls_beta.warn_beta
-    async def similar_examples(
-        self,
-        inputs: dict,
-        /,
-        *,
-        limit: int,
-        dataset_id: ls_client.ID_TYPE,
-        filter: Optional[str] = None,
-        **kwargs: Any,
-    ) -> list[ls_schemas.ExampleSearch]:
-        r"""Retrieve the dataset examples whose inputs best match the current inputs.
-
-        !!! note
-
-            Must have few-shot indexing enabled for the dataset. See `client.index_dataset()`.
-
-        Args:
-            inputs: The inputs to use as a search query.
-
-                Must match the dataset input schema.
-
-                Must be JSON serializable.
-            limit: The maximum number of examples to return.
-            dataset_id (Union[UUID, str]): The ID of the dataset to search over.
-            filter: A filter string to apply to the search results.
-
-                Uses the same syntax as the `filter` parameter in `list_runs()`.
-
-                Only a subset of operations are supported.
-            kwargs: Additional keyword args to pass as part of request body.
-
-        Returns:
-            List of `ExampleSearch` objects.
-
-        Examples:
-            ```python
-            from langsmith import Client
-
-            client = Client()
-            await client.similar_examples(
-                {"question": "When would i use the runnable generator"},
-                limit=3,
-                dataset_id="...",
-            )
-            ```
-
-            ```python
-            [
-                ExampleSearch(
-                    inputs={
-                        "question": "How do I cache a Chat model? What caches can I use?"
-                    },
-                    outputs={
-                        "answer": "You can use LangChain's caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you're often requesting the same completion multiple times, and speed up your application.\n\n```python\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke')\n\n```\n\nYou can also use SQLite Cache which uses a SQLite database:\n\n```python\n  rm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=\".langchain.db\")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke') \n```\n"
-                    },
-                    metadata=None,
-                    id=UUID("b2ddd1c4-dff6-49ae-8544-f48e39053398"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "What's a runnable lambda?"},
-                    outputs={
-                        "answer": "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."
-                    },
-                    metadata=None,
-                    id=UUID("f94104a7-2434-4ba7-8293-6a283f4860b4"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-                ExampleSearch(
-                    inputs={"question": "Show me how to use RecursiveURLLoader"},
-                    outputs={
-                        "answer": 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'
-                    },
-                    metadata=None,
-                    id=UUID("0308ea70-a803-4181-a37d-39e95f138f8c"),
-                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
-                ),
-            ]
-            ```
-
-        """  # noqa: E501
-        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
-        req = {
-            "inputs": inputs,
-            "limit": limit,
-            **kwargs,
-        }
-        if filter:
-            req["filter"] = filter
-
-        resp = await self._arequest_with_retries(
-            "POST",
-            f"/datasets/{dataset_id}/search",
-            content=ls_client._dumps_json(req),
-        )
-        ls_utils.raise_for_status_with_text(resp)
-        examples = []
-        for ex in resp.json()["examples"]:
-            examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
-        return examples
 
     async def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
@@ -1613,7 +2051,8 @@ class AsyncClient:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
             response = await self._arequest_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}"
+                "GET",
+                f"/repos/{owner}/{prompt_name}",
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
@@ -1681,6 +2120,7 @@ class AsyncClient:
         *,
         parent_commit_hash: Optional[str] = None,
         tags: Optional[str | list[str]] = None,
+        description: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -1693,6 +2133,8 @@ class AsyncClient:
             tags: A single tag or list of tags to apply to the commit.
 
                 Defaults to `None`.
+            description: Optional human-readable description for the commit
+                (max 1000 chars). Defaults to `None`.
 
         Returns:
             The url of the prompt commit.
@@ -1730,7 +2172,12 @@ class AsyncClient:
                 prompt_owner_and_name
             )
 
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        request_dict: dict[str, Any] = {
+            "parent_commit": parent_commit_hash,
+            "manifest": manifest_dict,
+        }
+        if description is not None:
+            request_dict["description"] = description
         response = await self._arequest_with_retries(
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
@@ -1871,14 +2318,29 @@ class AsyncClient:
         *,
         include_model: Optional[bool] = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> ls_schemas.PromptCommit:
         """Pull a prompt object from the LangSmith API.
+
+        Public prompts referenced by owner/name cross a trust boundary because the
+        prompt manifest may contain serialized LangChain objects and configuration
+        that affect runtime behavior. For example, a prompt can intentionally
+        configure a model with a custom base URL, headers, model name, or other
+        constructor arguments. These are supported features, but they also mean
+        the prompt contents should be treated as executable configuration rather
+        than plain text.
+
+        Set `dangerously_pull_public_prompt=True` only after reviewing and
+        trusting the prompt contents, not merely the publishing account. Prompts
+        from your own or your organization's account can still be unsafe if that
+        account or prompt was compromised.
 
         Args:
             prompt_identifier: The identifier of the prompt.
             include_model: Whether to include model information.
-            skip_cache: Whether to skip the prompt cache.
-
+            skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name, for example `username/promptname`.
                 Defaults to `False`.
 
         Returns:
@@ -1887,6 +2349,11 @@ class AsyncClient:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        ls_client._validate_public_prompt_pull(
+            prompt_identifier,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
+        )
+
         # Create refresh function bound to this specific prompt
         refresh_func = partial(
             self._afetch_prompt_from_api, prompt_identifier, include_model
@@ -1976,6 +2443,7 @@ class AsyncClient:
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
         skip_cache: bool = False,
+        dangerously_pull_public_prompt: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -1983,34 +2451,52 @@ class AsyncClient:
 
         Args:
             prompt_identifier: The identifier of the prompt.
-            include_model: Whether to include the model information in the prompt data.
-            secrets: A map of secrets to use when loading, e.g.
-                `{'OPENAI_API_KEY': 'sk-...'}`.
+            include_model: Whether to include model configuration in the loaded
+                prompt.
+            secrets: A map of secrets to use for explicit serialized LangChain secret
+                references in the manifest, e.g. `{'OPENAI_API_KEY': 'sk-...'}`.
 
-                If a secret is not found in the map, it will be loaded from the
-                environment if `secrets_from_env` is `True`. Should only be needed when
-                `include_model=True`.
-            secrets_from_env: Whether to load secrets from the environment.
-
-                **SECURITY NOTE**: Should only be set to `True` when pulling trusted
-                prompts.
+                If a manifest secret reference is not found in the map, it will be
+                loaded from the environment only if `secrets_from_env` is `True`.
+                Deserialized model integrations may still use their own
+                environment-based credential defaults during initialization.
+            secrets_from_env: Whether explicit serialized LangChain secret
+                references in the manifest may be loaded from environment variables
+                during deserialization.
             skip_cache: Whether to skip the prompt cache. Defaults to `False`.
+            dangerously_pull_public_prompt: Set to `True` to allow pulling a
+                public prompt by owner/name (for example, `username/promptname`).
+                Only do this for trusted prompts. Defaults to `False`.
 
         Returns:
             The prompt object in the specified format.
+
+        !!! warning "Security note"
+
+            Pulled prompts should be treated as executable configuration, not plain
+            text.
+
+            The `secrets` and `secrets_from_env` arguments only control explicit
+            serialized LangChain secret references in the manifest. They do not
+            prevent deserialized model integrations from using their own
+            environment-based credential defaults during initialization. For example,
+            a deserialized OpenAI chat model may still use `OPENAI_API_KEY` from the
+            environment if its constructor supports that default.
+
+            Avoid pulling public prompts or prompts outside your own organization
+            unless you have reviewed and trust their contents. When you do pull a
+            trusted external prompt, prefer pinning to a specific commit SHA rather
+            than following a mutable latest version. This is especially important
+            when `include_model=True`.
 
         !!! warning "Behavior changed in `langsmith` 0.5.1"
 
             Updated to take arguments `secrets` and `secrets_from_env` which default
             to None and False, respectively.
 
-            By default secrets needed to initialize a pulled object will no longer be
-            read from environment variables. This is relevant when
-            `include_model=True`. For example, to load an OpenAI model you need to
-            have an OPENAI_API_KEY. Previously this was read from environment
-            variables by default. To do so now you must specify
-            `secrets={"OPENAI_API_KEY": "sk-..."}` or `secrets_from_env=True`.
-            `secrets_from_env` should only be used when pulling trusted prompts.
+            By default, explicit serialized LangChain secret references in a pulled
+            manifest are not resolved from environment variables unless you specify
+            `secrets_from_env=True`.
 
             These updates were made to remediate vulnerability
             [GHSA-c67j-w6g6-q2cm](https://github.com/langchain-ai/langchain/security/advisories/GHSA-c67j-w6g6-q2cm)
@@ -2018,7 +2504,10 @@ class AsyncClient:
             langsmith package) depends on.
         """
         prompt_object = await self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model, skip_cache=skip_cache
+            prompt_identifier,
+            include_model=include_model,
+            skip_cache=skip_cache,
+            dangerously_pull_public_prompt=dangerously_pull_public_prompt,
         )
         return ls_client._process_prompt_manifest(
             prompt_object,
@@ -2038,6 +2527,7 @@ class AsyncClient:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         commit_tags: Optional[str | list[str]] = None,
+        commit_description: Optional[str] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -2071,6 +2561,8 @@ class AsyncClient:
             commit_tags: A single tag or list of tags for the prompt commit.
 
                 Defaults to an empty list.
+            commit_description: Optional human-readable description for the commit
+                (max 1000 chars). Defaults to `None`.
 
         Returns:
             The URL of the prompt.
@@ -2105,8 +2597,324 @@ class AsyncClient:
             object,
             parent_commit_hash=parent_commit_hash,
             tags=commit_tags,
+            description=commit_description,
         )
         return url
+
+    async def pull_agent(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.AgentContext:
+        """Pull an agent from Hub.
+
+        Args:
+            identifier: Repo identifier (owner/name:hash, owner/name, or name).
+            version: Commit hash or tag; overrides any hash in identifier.
+
+        Returns:
+            AgentContext: The agent snapshot.
+        """
+        data = await self._pull_hub_directory(identifier, "agent", version=version)
+        return ls_schemas.AgentContext.model_validate(data)
+
+    async def push_agent(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push an agent to Hub, creating the repo if it does not exist."""
+        return await self._push_hub_directory(
+            identifier,
+            "agent",
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    async def pull_skill(
+        self,
+        identifier: str,
+        *,
+        version: Optional[str] = None,
+    ) -> ls_schemas.SkillContext:
+        """Pull a skill from Hub."""
+        data = await self._pull_hub_directory(identifier, "skill", version=version)
+        return ls_schemas.SkillContext.model_validate(data)
+
+    async def push_skill(
+        self,
+        identifier: str,
+        *,
+        files: dict[str, Optional[ls_schemas.Entry]],
+        parent_commit: Optional[str] = None,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: Optional[bool] = None,
+    ) -> str:
+        """Push a skill to Hub."""
+        return await self._push_hub_directory(
+            identifier,
+            "skill",
+            files=files,
+            parent_commit=parent_commit,
+            description=description,
+            readme=readme,
+            tags=tags,
+            is_public=is_public,
+        )
+
+    async def delete_agent(self, identifier: str) -> None:
+        """Delete an agent and its owned child file repos."""
+        await self._delete_hub_directory(identifier)
+
+    async def delete_skill(self, identifier: str) -> None:
+        """Delete a skill and its owned child file repos."""
+        await self._delete_hub_directory(identifier)
+
+    async def agent_exists(self, identifier: str) -> bool:
+        """Check if an agent repo exists."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        return await self._hub_repo_exists(owner, name)
+
+    async def skill_exists(self, identifier: str) -> bool:
+        """Check if a skill repo exists."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        return await self._hub_repo_exists(owner, name)
+
+    async def list_agents(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List agents with pagination."""
+        return await self._list_hub_repos(
+            "agent",
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
+
+    async def list_skills(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List skills with pagination."""
+        return await self._list_hub_repos(
+            "skill",
+            limit=limit,
+            offset=offset,
+            is_public=is_public,
+            is_archived=is_archived,
+            query=query,
+        )
+
+    async def _pull_hub_directory(
+        self,
+        identifier: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        version: Optional[str],
+    ) -> dict[str, Any]:
+        """Fetch hub directory payload, merged with owner/repo from identifier."""
+        owner, name, commit = ls_utils.parse_hub_identifier(identifier)
+        target = (
+            version if version is not None else (commit if commit != "latest" else None)
+        )
+        params: dict[str, Any] = {"repo_type": repo_type}
+        if target:
+            params["commit"] = target
+        response = await self._arequest_with_retries(
+            "GET",
+            f"{platform_hub_path(self._api_url)}/{owner}/{name}/directories",
+            params=params,
+        )
+        return response.json()
+
+    async def _push_hub_directory(
+        self,
+        identifier: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        files: dict[str, Any],
+        parent_commit: Optional[str],
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: Optional[bool],
+    ) -> str:
+        """Create a hub directory commit, creating the repo if it does not exist."""
+        validate_parent_commit(parent_commit)
+
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        if not (await self._current_tenant_is_owner(owner)):
+            raise (await self._owner_conflict_error(f"push {repo_type}", owner))
+
+        if await self._hub_repo_exists(owner, name):
+            if any(v is not None for v in (description, readme, tags, is_public)):
+                await self._update_hub_repo_metadata(
+                    owner,
+                    name,
+                    description=description,
+                    readme=readme,
+                    tags=tags,
+                    is_public=is_public,
+                )
+        else:
+            if not REPO_HANDLE_PATTERN.match(name):
+                raise ls_utils.LangSmithUserError(
+                    f"Invalid repo_handle {name!r}: "
+                    f"must match {REPO_HANDLE_PATTERN.pattern}."
+                )
+            await self._create_hub_repo(
+                name,
+                repo_type,
+                description=description,
+                readme=readme,
+                tags=tags,
+                is_public=bool(is_public),
+            )
+
+        request_files: dict[str, Optional[dict[str, Any]]] = {}
+        for path, entry in files.items():
+            if entry is None:
+                request_files[path] = None
+            else:
+                request_files[path] = entry.model_dump(exclude_none=True)
+
+        body: dict[str, Any] = {"files": request_files}
+        if parent_commit is not None:
+            body["parent_commit"] = parent_commit
+
+        response = await self._arequest_with_retries(
+            "POST",
+            f"{platform_hub_path(self._api_url)}/{owner}/{name}/directories/commits",
+            json=body,
+        )
+        commit_hash = response.json()["commit"]["commit_hash"]
+        settings = await self._get_settings()
+        return build_commit_url(self._host_url, name, commit_hash, settings.id)
+
+    async def _delete_hub_directory(self, identifier: str) -> None:
+        """Delete a hub directory repo."""
+        owner, name, _ = ls_utils.parse_hub_identifier(identifier)
+        if not (await self._current_tenant_is_owner(owner)):
+            raise (await self._owner_conflict_error("delete", owner))
+        await self._arequest_with_retries(
+            "DELETE",
+            f"{platform_hub_path(self._api_url)}/{owner}/{name}/directories",
+        )
+
+    async def _list_hub_repos(
+        self,
+        repo_type: Literal["agent", "skill"],
+        *,
+        limit: int,
+        offset: int,
+        is_public: Optional[bool],
+        is_archived: Optional[bool],
+        query: Optional[str],
+    ) -> ls_schemas.ListPromptsResponse:
+        """List hub repos filtered by type.
+
+        Returns ``ListPromptsResponse`` because ``/repos`` is polymorphic — the
+        list shape is shared across prompt, agent, and skill repos.
+        """
+        params: dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+            "repo_type": repo_type,
+            "is_archived": "true" if is_archived else "false",
+        }
+        if is_public is not None:
+            params["is_public"] = "true" if is_public else "false"
+        if query:
+            params["query"] = query
+            params["match_prefix"] = "true"
+        response = await self._arequest_with_retries("GET", HUB, params=params)
+        return ls_schemas.ListPromptsResponse(**response.json())
+
+    async def _hub_repo_exists(self, owner: str, name: str) -> bool:
+        """Check if a hub repo exists."""
+        try:
+            await self._arequest_with_retries("GET", f"{HUB}/{owner}/{name}")
+            return True
+        except ls_utils.LangSmithNotFoundError:
+            return False
+
+    async def _create_hub_repo(
+        self,
+        name: str,
+        repo_type: Literal["agent", "skill"],
+        *,
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: bool,
+    ) -> None:
+        """Create a new hub repo of the given type."""
+        body: dict[str, Any] = {
+            "repo_handle": name,
+            "repo_type": repo_type,
+            "is_public": is_public,
+        }
+        if description is not None:
+            body["description"] = description
+        if readme is not None:
+            body["readme"] = readme
+        if tags is not None:
+            body["tags"] = list(tags)
+        try:
+            await self._arequest_with_retries("POST", "/repos/", json=body)
+        except ls_utils.LangSmithConflictError:
+            pass
+
+    async def _update_hub_repo_metadata(
+        self,
+        owner: str,
+        name: str,
+        *,
+        description: Optional[str],
+        readme: Optional[str],
+        tags: Optional[Sequence[str]],
+        is_public: Optional[bool],
+    ) -> None:
+        """Patch hub repo metadata fields that were explicitly provided."""
+        body: dict[str, Any] = {}
+        if description is not None:
+            body["description"] = description
+        if readme is not None:
+            body["readme"] = readme
+        if tags is not None:
+            body["tags"] = list(tags)
+        if is_public is not None:
+            body["is_public"] = is_public
+        if body:
+            await self._arequest_with_retries(
+                "PATCH", f"{HUB}/{owner}/{name}", json=body
+            )
 
 
 def _exclude_none(d: dict) -> dict:

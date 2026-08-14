@@ -1,47 +1,55 @@
-import { v4 as uuid4, validate } from "uuid";
+import { v4 as uuid4, validate } from "../utils/uuid/src/index.js";
 import { Client } from "../index.js";
 import {
+  ComparativeExperiment,
   ComparisonEvaluationResult as ComparisonEvaluationResultRow,
   Example,
   Run,
+  TracerSession,
 } from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { evaluate } from "./index.js";
 import pRetry from "../utils/p-retry/index.js";
 import { getCurrentRunTree, traceable } from "../traceable.js";
+import { loadTracesV2 } from "../utils/v2_migration.js";
 
 type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
 
 function isExperimentResultsList(
-  value: ExperimentResults[] | string[]
+  value: ExperimentResults[] | string[],
 ): value is ExperimentResults[] {
   return value.some((x) => typeof x !== "string");
 }
 
 async function loadExperiment(
   client: Client,
-  experiment: string | ExperimentResults
+  experiment: string | ExperimentResults,
 ) {
   const value =
     typeof experiment === "string" ? experiment : experiment.experimentName;
 
   return client.readProject(
-    validate(value) ? { projectId: value } : { projectName: value }
+    validate(value) ? { projectId: value } : { projectName: value },
   );
 }
 
-async function loadTraces(
+export async function loadTracesForExperiment(
   client: Client,
-  experiment: string,
-  options: { loadNested: boolean }
-) {
-  const executionOrder = options.loadNested ? undefined : 1;
-  const runs = await client.listRuns(
-    validate(experiment)
-      ? { projectId: experiment, executionOrder }
-      : { projectName: experiment, executionOrder }
-  );
+  project: TracerSession,
+  options: { loadNested: boolean },
+): Promise<Run[]> {
+  // v1 `/runs/query` returns 501 on SmithDB-only backends; use v2 when it's available.
+  const isRoot = options.loadNested ? undefined : true;
+  const runs = (await client._supportsSDBQuery())
+    ? await loadTracesV2(client, project, { isRoot })
+    : // Via _listRuns() rather than listRuns(): evaluate() is supported, so
+      // callers have nothing to migrate; how it loads traces is an
+      // implementation detail.
+      await client._listRuns({
+        projectId: project.id,
+        executionOrder: options.loadNested ? undefined : 1,
+      });
 
   const treeMap: Record<string, Run[]> = {};
   const runIdMap: Record<string, Run> = {};
@@ -54,7 +62,6 @@ async function loadTraces(
     } else {
       results.push(run);
     }
-
     runIdMap[run.id] = run;
   }
 
@@ -72,7 +79,7 @@ async function loadTraces(
 /** @deprecated Use ComparativeEvaluatorNew instead: (args: { runs, example, inputs, outputs, referenceOutputs }) => ... */
 export type _ComparativeEvaluatorLegacy = (
   runs: Run[],
-  example: Example
+  example: Example,
 ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
 
 export type _ComparativeEvaluator = (args: {
@@ -130,8 +137,14 @@ export interface EvaluateComparativeOptions {
 }
 
 export interface ComparisonEvaluationResults {
+  /** The name of the comparative experiment. */
   experimentName: string;
+  /** The per-example comparison results. */
   results: ComparisonEvaluationResultRow[];
+  /** URL of the pairwise comparison view in the LangSmith UI, if available. */
+  url: string | null;
+  /** The comparative experiment, exposing its id, dataset, and metadata. */
+  comparativeExperiment: ComparativeExperiment;
 }
 
 /** @deprecated Use `evaluate` and pass two experiments as targets. */
@@ -139,7 +152,7 @@ export async function evaluateComparative(
   experiments:
     | Array<string>
     | Array<Promise<ExperimentResults> | ExperimentResults>,
-  options: EvaluateComparativeOptions
+  options: EvaluateComparativeOptions,
 ): Promise<ComparisonEvaluationResults> {
   if (experiments.length < 2) {
     throw new Error("Comparative evaluation requires at least 2 experiments.");
@@ -147,7 +160,7 @@ export async function evaluateComparative(
 
   if (!options.evaluators.length) {
     throw new Error(
-      "At least one evaluator is required for comparative evaluation."
+      "At least one evaluator is required for comparative evaluation.",
     );
   }
 
@@ -162,8 +175,8 @@ export async function evaluateComparative(
     if (!isExperimentResultsList(resolvedExperiments)) {
       return Promise.all(
         resolvedExperiments.map((experiment) =>
-          loadExperiment(client, experiment)
-        )
+          loadExperiment(client, experiment),
+        ),
       );
     }
 
@@ -179,9 +192,9 @@ export async function evaluateComparative(
             }
             return project;
           },
-          { factor: 2, minTimeout: 1000, retries: 10 }
-        )
-      )
+          { factor: 2, minTimeout: 1000, retries: 10 },
+        ),
+      ),
     );
   })();
 
@@ -192,7 +205,7 @@ export async function evaluateComparative(
   const referenceDatasetId = projects.at(0)?.reference_dataset_id;
   if (!referenceDatasetId) {
     throw new Error(
-      "Reference dataset is required for comparative evaluation."
+      "Reference dataset is required for comparative evaluation.",
     );
   }
 
@@ -200,7 +213,7 @@ export async function evaluateComparative(
     new Set(projects.map((p) => p.extra?.metadata?.dataset_version)).size > 1
   ) {
     console.warn(
-      "Detected multiple dataset versions used by experiments, which may lead to inaccurate results."
+      "Detected multiple dataset versions used by experiments, which may lead to inaccurate results.",
     );
   }
 
@@ -243,12 +256,12 @@ export async function evaluateComparative(
       const result = new URL(`${hostUrl}/datasets/${datasetId}/compare`);
       result.searchParams.set(
         "selectedSessions",
-        projects.map((p) => p.id).join(",")
+        projects.map((p) => p.id).join(","),
       );
 
       result.searchParams.set(
         "comparativeExperiment",
-        comparativeExperiment.id
+        comparativeExperiment.id,
       );
       return result.toString();
     }
@@ -261,9 +274,11 @@ export async function evaluateComparative(
   }
 
   const experimentRuns = await Promise.all(
-    projects.map((p) =>
-      loadTraces(client, p.id, { loadNested: !!options.loadNested })
-    )
+    projects.map((project) =>
+      loadTracesForExperiment(client, project, {
+        loadNested: !!options.loadNested,
+      }),
+    ),
   );
 
   let exampleIdsIntersect: Set<string> | undefined;
@@ -271,14 +286,14 @@ export async function evaluateComparative(
     const exampleIdsSet = new Set(
       runs
         .map((r) => r.reference_example_id)
-        .filter((x): x is string => x != null)
+        .filter((x): x is string => x != null),
     );
 
     if (!exampleIdsIntersect) {
       exampleIdsIntersect = exampleIdsSet;
     } else {
       exampleIdsIntersect = new Set(
-        [...exampleIdsIntersect].filter((x) => exampleIdsSet.has(x))
+        [...exampleIdsIntersect].filter((x) => exampleIdsSet.has(x)),
       );
     }
   }
@@ -323,7 +338,7 @@ export async function evaluateComparative(
   async function evaluateAndSubmitFeedback(
     runs: Run[],
     example: Example,
-    evaluator: ComparativeEvaluator
+    evaluator: ComparativeEvaluator,
   ) {
     const expectedRunIds = new Set(runs.map((r) => r.id));
     // Check if evaluator expects an object parameter
@@ -362,7 +377,7 @@ export async function evaluateComparative(
     traceable(
       async (
         runs: Run[],
-        example: Example
+        example: Example,
       ): Promise<ComparisonEvaluationResultRow> => {
         const evaluatorRun = getCurrentRunTree();
         const result =
@@ -388,8 +403,8 @@ export async function evaluateComparative(
       {
         project_name: "evaluators",
         name: evaluator.name || "evaluator",
-      }
-    )
+      },
+    ),
   );
 
   const promises = Object.entries(runMapByExampleId).flatMap(
@@ -402,13 +417,13 @@ export async function evaluateComparative(
           evaluateAndSubmitFeedback,
           runs,
           exampleMap[exampleId],
-          evaluator
-        )
+          evaluator,
+        ),
       );
-    }
+    },
   );
 
   const results: ComparisonEvaluationResultRow[] = await Promise.all(promises);
   await client.awaitPendingTraceBatches();
-  return { experimentName, results };
+  return { experimentName, results, url: viewUrl, comparativeExperiment };
 }

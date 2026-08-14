@@ -1,10 +1,16 @@
+import { jest } from "@jest/globals";
+import type { Run as V2Run } from "../_openapi_client/resources/runs/runs.js";
+import type { Client } from "../client.js";
 import {
+  _collectEvaluatorKeys,
+  _extractEvaluatorFeedbackKeys,
   _mapWithConcurrency,
   _reorderResultRowsByExampleIndex,
   evaluate,
 } from "../evaluation/_runner.js";
+import { loadTracesForExperiment } from "../evaluation/evaluate_comparative.js";
 import { PQueue } from "../utils/p-queue.js";
-import { Example } from "../schemas.js";
+import { Example, Run, TracerSession } from "../schemas.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,7 +43,7 @@ describe("evaluation runner internals", () => {
         await sleep(10);
         active -= 1;
         return value;
-      })
+      }),
     );
 
     expect(output).toHaveLength(5);
@@ -56,7 +62,7 @@ describe("evaluation runner internals", () => {
         await sleep(10);
         active -= 1;
         return value;
-      })
+      }),
     );
 
     expect(output).toEqual([1, 2, 3]);
@@ -80,7 +86,7 @@ describe("evaluation runner internals", () => {
         await sleep(delays[value]);
         active -= 1;
         return value;
-      })
+      }),
     );
 
     expect(output).toEqual([2, 3, 1]);
@@ -98,8 +104,8 @@ describe("evaluation runner internals", () => {
           }
           await sleep(1);
           return value;
-        })
-      )
+        }),
+      ),
     ).rejects.toThrow("mapper boom");
   });
 
@@ -111,8 +117,121 @@ describe("evaluation runner internals", () => {
 
     const queue = new PQueue({ concurrency: 2 });
     await expect(
-      collect(_mapWithConcurrency(source(), queue, async (value) => value))
+      collect(_mapWithConcurrency(source(), queue, async (value) => value)),
     ).rejects.toThrow("source boom");
+  });
+
+  test("evaluate supplies the experiment ID when logging run feedback", async () => {
+    const experimentId = "00000000-0000-0000-0000-000000000004";
+    const datasetId = "00000000-0000-0000-0000-000000000000";
+    const now = new Date().toISOString();
+    const feedbackCalls: any[][] = [];
+    const mockClient = {
+      createProject: async () => ({
+        id: experimentId,
+        name: "test-project",
+        reference_dataset_id: datasetId,
+      }),
+      updateProject: async () => ({}),
+      logEvaluationFeedback: async (...args: any[]) => {
+        feedbackCalls.push(args);
+        return [];
+      },
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(async () => ({ output: "ok" }), {
+      data: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          inputs: { input: "hello" },
+          outputs: {},
+          dataset_id: datasetId,
+          created_at: now,
+          modified_at: now,
+          runs: [],
+        },
+      ],
+      evaluators: [async () => ({ key: "quality", score: 1 })],
+      client: mockClient,
+    });
+    for await (const _ of results) {
+      // Drain the result stream.
+    }
+
+    expect(feedbackCalls).toHaveLength(1);
+    expect(feedbackCalls[0]).toEqual([
+      expect.objectContaining({
+        run: expect.objectContaining({ start_time: expect.anything() }),
+        projectId: experimentId,
+      }),
+    ]);
+  });
+
+  test("evaluate resolves existing runs by session_id and logs routing fields", async () => {
+    const experimentId = "00000000-0000-0000-0000-000000000004";
+    const datasetId = "00000000-0000-0000-0000-000000000000";
+    const exampleId = "00000000-0000-0000-0000-000000000001";
+    const runId = "00000000-0000-0000-0000-000000000002";
+    const startTime = "2026-07-21T12:34:56.789Z";
+    const readProject = jest.fn(async () => ({
+      id: experimentId,
+      name: "existing-project",
+      reference_dataset_id: datasetId,
+    }));
+    const logEvaluationFeedback = jest.fn(async () => []);
+    const mockClient = {
+      readProject,
+      logEvaluationFeedback,
+      getDatasetUrl: async () => "http://test.com",
+      createRun: async () => undefined,
+      updateRun: async () => undefined,
+      awaitPendingTraceBatches: async () => undefined,
+    } as any;
+    const run = {
+      id: runId,
+      name: "existing-run",
+      run_type: "chain",
+      start_time: startTime,
+      trace_id: runId,
+      dotted_order: "",
+      session_id: experimentId,
+      reference_example_id: exampleId,
+      inputs: { input: "hello" },
+      outputs: { output: "ok" },
+    } as Run;
+    const now = new Date().toISOString();
+
+    const results = await evaluate(fromArray([run]) as never, {
+      data: [
+        {
+          id: exampleId,
+          inputs: { input: "hello" },
+          outputs: {},
+          dataset_id: datasetId,
+          created_at: now,
+          modified_at: now,
+          runs: [],
+        },
+      ],
+      evaluators: [async () => ({ key: "quality", score: 1 })],
+      client: mockClient,
+    });
+    for await (const _ of results) {
+      // Drain the result stream.
+    }
+
+    expect(readProject).toHaveBeenCalledWith({ projectId: experimentId });
+    expect(logEvaluationFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        run: expect.objectContaining({
+          session_id: experimentId,
+          start_time: startTime,
+        }),
+        projectId: experimentId,
+      }),
+    );
   });
 
   test("reorderResultRowsByExampleIndex restores original example order", () => {
@@ -146,7 +265,7 @@ describe("evaluation runner internals", () => {
       "example-2",
     ]);
     expect(
-      orderedRows.map((row) => row.evaluationResults.results[0].key)
+      orderedRows.map((row) => row.evaluationResults.results[0].key),
     ).toEqual(["key-0", "key-1", "key-2"]);
     expect(orderedRuns.map((run) => run.id)).toEqual([
       "run-0",
@@ -204,7 +323,7 @@ describe("evaluation runner internals", () => {
       async (value) => {
         await sleep(delays[value]);
         return value;
-      }
+      },
     )) {
       resultsOrder.push(value);
       const elapsed = Date.now() - startTime;
@@ -476,4 +595,309 @@ describe("evaluation runner internals", () => {
     // Verify sequential execution - order should match input order
     expect(executionOrder).toEqual([1, 2, 3]);
   }, 10000);
+
+  test("evaluate infers numExamples from list data", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: examples,
+        evaluators: [],
+        numRepetitions: 4,
+        client: mockClient,
+      },
+    );
+    const collected = [];
+    for await (const r of results) {
+      collected.push(r);
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].numExamples).toBe(3);
+    expect(createProjectCalls[0].numRepetitions).toBe(4);
+  });
+
+  test("evaluate omits numExamples for async-iterable data", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    async function* exampleGen() {
+      for (const e of examples) yield e;
+    }
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: exampleGen(),
+        evaluators: [],
+        client: mockClient,
+      },
+    );
+    for await (const _ of results) {
+      // drain
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].numExamples).toBeNull();
+    expect(createProjectCalls[0].numRepetitions).toBe(1);
+  });
+});
+
+describe("evaluator feedback-key extraction", () => {
+  test("prefers the returned key over the function name", () => {
+    // The bug: function name (binding) != returned feedback key.
+    const completenessEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({
+      key: "field_completeness",
+      score: Object.keys(outputs ?? {}).length,
+    });
+    expect(_extractEvaluatorFeedbackKeys(completenessEvaluator as any)).toEqual(
+      ["field_completeness"],
+    );
+  });
+
+  test("named function literal key", () => {
+    function relevance({ outputs }: { outputs?: Record<string, any> }) {
+      return { key: "answer_relevance", score: outputs ? 1 : 0 };
+    }
+    expect(_extractEvaluatorFeedbackKeys(relevance as any)).toEqual([
+      "answer_relevance",
+    ]);
+  });
+
+  test("multi-result evaluator returns all keys", () => {
+    const multi = ({ outputs }: { outputs?: Record<string, any> }) => ({
+      results: [
+        { key: "k1", score: outputs ? 1 : 0 },
+        { key: "k2", score: 0 },
+      ],
+    });
+    expect(_extractEvaluatorFeedbackKeys(multi as any)).toEqual(["k1", "k2"]);
+  });
+
+  test("falls back to the function name when the key is dynamic", () => {
+    const dynamicKey = "computed_at_runtime";
+    function dynamicEval({ outputs }: { outputs?: Record<string, any> }) {
+      return { key: dynamicKey, score: outputs ? 1 : 0 };
+    }
+    expect(_extractEvaluatorFeedbackKeys(dynamicEval as any)).toEqual([
+      "dynamicEval",
+    ]);
+  });
+
+  test("returns empty when neither a literal key nor a name is available", () => {
+    const runtimeKey = "x";
+    expect(
+      _extractEvaluatorFeedbackKeys(((_args: any) => ({
+        key: runtimeKey,
+        score: 1,
+      })) as any),
+    ).toEqual([]);
+  });
+
+  test("_collectEvaluatorKeys aggregates across evaluators", () => {
+    const completenessEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "field_completeness", score: outputs ? 1 : 0 });
+    const qualityEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "analysis_quality", score: outputs ? 1 : 0 });
+    expect(
+      _collectEvaluatorKeys([
+        completenessEvaluator as any,
+        qualityEvaluator as any,
+      ]),
+    ).toEqual(["field_completeness", "analysis_quality"]);
+  });
+
+  test("createProject receives the returned feedback keys, not function names", async () => {
+    const now = new Date().toISOString();
+    const examples: Example[] = [1, 2, 3].map((v) => ({
+      id: `e${v}`,
+      inputs: { value: v },
+      outputs: {},
+      dataset_id: "test",
+      created_at: now,
+      modified_at: now,
+      runs: [],
+    }));
+
+    const completenessEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "field_completeness", score: outputs ? 1 : 0 });
+    const qualityEvaluator = async ({
+      outputs,
+    }: {
+      outputs?: Record<string, any>;
+    }) => ({ key: "analysis_quality", score: outputs ? 1 : 0 });
+
+    const createProjectCalls: any[] = [];
+    const mockClient = {
+      createProject: async (params: any) => {
+        createProjectCalls.push(params);
+        return { id: "test", name: "test", reference_dataset_id: "test" };
+      },
+      updateProject: async () => ({}),
+      createFeedback: async () => ({}),
+      logEvaluationFeedback: async () => [],
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(
+      async (input: any) => ({ result: input.value }),
+      {
+        data: examples,
+        evaluators: [completenessEvaluator, qualityEvaluator],
+        client: mockClient,
+      },
+    );
+    for await (const _ of results) {
+      // drain
+    }
+
+    expect(createProjectCalls).toHaveLength(1);
+    expect(createProjectCalls[0].evaluatorKeys).toEqual([
+      "field_completeness",
+      "analysis_quality",
+    ]);
+  });
+});
+
+describe("loadTracesForExperiment", () => {
+  const project: TracerSession = {
+    id: "00000000-0000-0000-0000-000000000001",
+    tenant_id: "00000000-0000-0000-0000-000000000002",
+    start_time: 0,
+    end_time: 1_000,
+  };
+
+  const v2Run: V2Run = {
+    id: "00000000-0000-0000-0000-000000000003",
+    name: "root",
+    run_type: "CHAIN",
+    start_time: "1970-01-01T00:00:00.000Z",
+    trace_id: "00000000-0000-0000-0000-000000000003",
+    project_id: project.id,
+    parent_run_ids: [],
+    reference_example_id: "00000000-0000-0000-0000-000000000004",
+    inputs: { question: "test" },
+    outputs: { answer: "test" },
+    status: "SUCCESS",
+  };
+
+  test("loads runs from v2 when SDB querying is enabled", async () => {
+    const queryV2 = jest.fn(() => fromArray([v2Run]));
+    const listRuns = jest.fn();
+    const client = {
+      _supportsSDBQuery: async () => true,
+      runs: { queryV2 },
+      _listRuns: listRuns,
+    } as unknown as Client;
+
+    const runs = await loadTracesForExperiment(client, project, {
+      loadNested: false,
+    });
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0].session_id).toBe(project.id);
+    expect(queryV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_ids: [project.id],
+        min_start_time: "1970-01-01T00:00:00.000Z",
+        max_start_time: "1970-01-01T00:00:01.000Z",
+        is_root: true,
+      }),
+    );
+    expect(listRuns).not.toHaveBeenCalled();
+  });
+
+  test("loads and nests runs from v1 when SDB querying is disabled", async () => {
+    const root: Run = {
+      id: "00000000-0000-0000-0000-000000000005",
+      name: "root",
+      run_type: "chain",
+      inputs: {},
+    };
+    const child: Run = {
+      id: "00000000-0000-0000-0000-000000000006",
+      name: "child",
+      run_type: "tool",
+      inputs: {},
+      parent_run_id: root.id,
+      dotted_order: "2",
+    };
+    const listRuns = jest.fn(() => fromArray([child, root]));
+    const queryV2 = jest.fn();
+    const client = {
+      _supportsSDBQuery: async () => false,
+      runs: { queryV2 },
+      _listRuns: listRuns,
+    } as unknown as Client;
+
+    const runs = await loadTracesForExperiment(client, project, {
+      loadNested: true,
+    });
+
+    expect(runs).toEqual([root]);
+    expect(root.child_runs).toEqual([child]);
+    expect(listRuns).toHaveBeenCalledWith({
+      projectId: project.id,
+      executionOrder: undefined,
+    });
+    expect(queryV2).not.toHaveBeenCalled();
+  });
 });

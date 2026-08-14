@@ -1,5 +1,5 @@
 import { Client } from "./client.js";
-import { isTracingEnabled } from "./env.js";
+import { isEnvTracingEnabled } from "./env.js";
 import {
   Attachments,
   BaseRun,
@@ -28,7 +28,7 @@ import {
   uuid7FromTime,
   nonCryptographicUuid7Deterministic,
 } from "./utils/_uuid.js";
-import { v5 as uuidv5 } from "uuid";
+import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -56,7 +56,7 @@ function stripNonAlphanumeric(input: string) {
 
 function getMicrosecondPrecisionDatestring(
   epoch: number,
-  executionOrder = 1
+  executionOrder = 1,
 ): string {
   // Date only has millisecond precision, so we use the microseconds to break
   // possible ties, avoiding incorrect run order
@@ -67,11 +67,11 @@ function getMicrosecondPrecisionDatestring(
 export function convertToDottedOrderFormat(
   epoch: number,
   runId: string,
-  executionOrder = 1
+  executionOrder = 1,
 ) {
   const microsecondPrecisionDatestring = getMicrosecondPrecisionDatestring(
     epoch,
-    executionOrder
+    executionOrder,
   );
   return {
     dottedOrder: stripNonAlphanumeric(microsecondPrecisionDatestring) + runId,
@@ -157,19 +157,29 @@ interface HeadersLike {
 }
 
 type ProjectReplica = [string, KVMap | undefined];
-type WriteReplica = {
+export type WriteReplica = {
   apiUrl?: string;
   apiKey?: string;
   workspaceId?: string;
   projectName?: string;
+  /** Whether this replica keeps the original run IDs. */
+  primary?: boolean;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
   reroot?: boolean;
+  /**
+   * Optional dedicated Client for this replica.
+   * When set, the replica's runs are dispatched through this client
+   * (and its tracing mode) instead of the RunTree's default client.
+   * Not serialized in distributed-tracing baggage headers.
+   */
+  client?: Client;
 };
 type Replica = ProjectReplica | WriteReplica;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "projectName",
+  "primary",
   "updates",
   "reroot",
 ]);
@@ -177,6 +187,9 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
 function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
   const filtered: WriteReplica = {};
   for (const key of Object.keys(replica) as (keyof WriteReplica)[]) {
+    if (key === "primary" && typeof replica[key] !== "boolean") {
+      continue;
+    }
     if (HEADER_SAFE_REPLICA_FIELDS.has(key)) {
       (filtered as Record<string, unknown>)[key] = replica[key];
     }
@@ -196,7 +209,7 @@ class Baggage {
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
-    replicas: Replica[] | undefined
+    replicas: Replica[] | undefined,
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -238,8 +251,8 @@ class Baggage {
     if (this.metadata && Object.keys(this.metadata).length > 0) {
       items.push(
         `langsmith-metadata=${encodeURIComponent(
-          JSON.stringify(this.metadata)
-        )}`
+          JSON.stringify(this.metadata),
+        )}`,
       );
     }
     if (this.tags && this.tags.length > 0) {
@@ -328,7 +341,7 @@ export class RunTree implements BaseRun {
     if (!this.dotted_order) {
       this._serialized_start_time = getMicrosecondPrecisionDatestring(
         this.start_time,
-        this.execution_order
+        this.execution_order,
       );
     }
 
@@ -352,7 +365,7 @@ export class RunTree implements BaseRun {
       const { dottedOrder } = convertToDottedOrderFormat(
         this.start_time,
         this.id,
-        this.execution_order
+        this.execution_order,
       );
       if (this.parent_run) {
         this.dotted_order = this.parent_run.dotted_order + "." + dottedOrder;
@@ -477,7 +490,7 @@ export class RunTree implements BaseRun {
       visited.add(current.id);
       current.child_execution_order = Math.max(
         current.child_execution_order,
-        child_execution_order
+        child_execution_order,
       );
 
       current = current.parent_run;
@@ -491,7 +504,7 @@ export class RunTree implements BaseRun {
     outputs?: KVMap,
     error?: string,
     endTime = Date.now(),
-    metadata?: KVMap
+    metadata?: KVMap,
   ): Promise<void> {
     this.outputs = this.outputs ?? outputs;
     this.error = this.error ?? error;
@@ -506,7 +519,7 @@ export class RunTree implements BaseRun {
   private _convertToCreate(
     run: RunTree,
     runtimeEnv: RuntimeEnvironment | undefined,
-    excludeChildRuns = true
+    excludeChildRuns = true,
   ): RunCreate & { id: string } {
     const runExtra = run.extra ?? {};
     // Avoid overwriting the runtime environment if it's already set
@@ -527,7 +540,7 @@ export class RunTree implements BaseRun {
     let child_runs: (RunCreate & { id: string })[];
     if (!excludeChildRuns) {
       child_runs = run.child_runs.map((child_run) =>
-        this._convertToCreate(child_run, runtimeEnv, excludeChildRuns)
+        this._convertToCreate(child_run, runtimeEnv, excludeChildRuns),
       );
     } else {
       child_runs = [];
@@ -557,7 +570,7 @@ export class RunTree implements BaseRun {
 
   private _sliceParentId(
     parentId: string,
-    run: RunCreate & { id: string }
+    run: RunCreate & { id: string },
   ): void {
     /**
      * Slice the parent id from dotted order.
@@ -617,6 +630,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName: string;
+    primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
     reroot?: boolean;
@@ -627,6 +641,7 @@ export class RunTree implements BaseRun {
   }): RunCreate & { id: string } {
     const {
       projectName,
+      primary,
       runtimeEnv,
       excludeChildRuns = true,
       reroot = false,
@@ -637,8 +652,8 @@ export class RunTree implements BaseRun {
     } = params;
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
-    // Skip remapping if project name is the same
-    if (projectName === this.project_name) {
+    // Preserve legacy behavior when `primary` is omitted.
+    if (primary === undefined && projectName === this.project_name) {
       return {
         ...baseRun,
         session_name: projectName,
@@ -722,6 +737,13 @@ export class RunTree implements BaseRun {
       }
     }
 
+    if (primary) {
+      return {
+        ...baseRun,
+        session_name: projectName,
+      };
+    }
+
     // Remap IDs for the replica using nonCryptographicUuid7Deterministic
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
@@ -733,7 +755,7 @@ export class RunTree implements BaseRun {
     if (baseRun.trace_id) {
       newTraceId = nonCryptographicUuid7Deterministic(
         baseRun.trace_id,
-        projectName
+        projectName,
       );
     } else {
       newTraceId = newId;
@@ -744,7 +766,7 @@ export class RunTree implements BaseRun {
     if (baseRun.parent_run_id) {
       newParentId = nonCryptographicUuid7Deterministic(
         baseRun.parent_run_id,
-        projectName
+        projectName,
       );
     }
 
@@ -757,7 +779,7 @@ export class RunTree implements BaseRun {
         const segId = seg.slice(-TIMESTAMP_LENGTH);
         const remappedId = nonCryptographicUuid7Deterministic(
           segId,
-          projectName
+          projectName,
         );
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
@@ -783,10 +805,18 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
-          .replicas) {
+        for (const {
+          projectName,
+          primary,
+          apiKey,
+          apiUrl,
+          workspaceId,
+          reroot,
+          client: replicaClient,
+        } of this.replicas) {
           const runCreate = this._remapForProject({
             projectName: projectName ?? this.project_name,
+            primary,
             runtimeEnv,
             excludeChildRuns: true,
             reroot,
@@ -795,7 +825,8 @@ export class RunTree implements BaseRun {
             apiKey,
             workspaceId,
           });
-          await this.client.createRun(runCreate, {
+          const targetClient = replicaClient ?? this.client;
+          await targetClient.createRun(runCreate, {
             apiKey,
             apiUrl,
             workspaceId,
@@ -805,14 +836,14 @@ export class RunTree implements BaseRun {
         const runCreate = this._convertToCreate(
           this,
           runtimeEnv,
-          excludeChildRuns
+          excludeChildRuns,
         );
         await this.client.createRun(runCreate);
       }
 
       if (!excludeChildRuns) {
         warnOnce(
-          "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
+          "Posting with excludeChildRuns=false is deprecated and will be removed in a future version.",
         );
         for (const childRun of this.child_runs) {
           await childRun.postRun(false);
@@ -829,14 +860,17 @@ export class RunTree implements BaseRun {
     if (this.replicas && this.replicas.length > 0) {
       for (const {
         projectName,
+        primary,
         apiKey,
         apiUrl,
         workspaceId,
         updates,
         reroot,
+        client: replicaClient,
       } of this.replicas) {
         const runData = this._remapForProject({
           projectName: projectName ?? this.project_name,
+          primary,
           runtimeEnv: undefined,
           excludeChildRuns: true,
           reroot,
@@ -870,7 +904,8 @@ export class RunTree implements BaseRun {
         if (!options?.excludeInputs) {
           updatePayload.inputs = runData.inputs;
         }
-        await this.client.updateRun(runData.id, updatePayload, {
+        const targetClient = replicaClient ?? this.client;
+        await targetClient.updateRun(runData.id, updatePayload, {
           apiKey,
           apiUrl,
           workspaceId,
@@ -939,7 +974,7 @@ export class RunTree implements BaseRun {
 
   static fromRunnableConfig(
     parentConfig: RunnableConfigLike,
-    props: RunTreeConfig
+    props: RunTreeConfig,
   ): RunTree {
     // We only handle the callback manager case for now
     const callbackManager = parentConfig?.callbacks as
@@ -949,12 +984,12 @@ export class RunTree implements BaseRun {
     let projectName: string | undefined;
     let client: Client | undefined;
 
-    let tracingEnabled = isTracingEnabled();
+    let tracingEnabled = isEnvTracingEnabled();
 
     if (callbackManager) {
       const parentRunId = callbackManager?.getParentRunId?.() ?? "";
       const langChainTracer = callbackManager?.handlers?.find(
-        (handler: TracerLike) => handler?.name == "langchain_tracer"
+        (handler: TracerLike) => handler?.name == "langchain_tracer",
       ) as LangChainTracerLike | undefined;
 
       parentRun = langChainTracer?.getRun?.(parentRunId);
@@ -1000,7 +1035,7 @@ export class RunTree implements BaseRun {
 
   static fromHeaders(
     headers: Record<string, string | string[]> | HeadersLike,
-    inheritArgs?: Partial<RunTreeConfig>
+    inheritArgs?: Partial<RunTreeConfig>,
   ): RunTree | undefined {
     const rawHeaders: Record<string, string | string[] | null> =
       "get" in headers && typeof headers.get === "function"
@@ -1052,7 +1087,7 @@ export class RunTree implements BaseRun {
         this.extra?.metadata,
         this.tags,
         this.project_name,
-        this.replicas
+        this.replicas,
       ).toHeader(),
     };
 
@@ -1134,7 +1169,7 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
         if (typeof item !== "object" || item === null) {
           console.warn(
             `Invalid item type in LANGSMITH_RUNS_ENDPOINTS: ` +
-              `expected object, got ${typeof item}`
+              `expected object, got ${typeof item}`,
           );
           continue;
         }
@@ -1142,7 +1177,7 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
         if (typeof item.api_url !== "string") {
           console.warn(
             `Invalid api_url type in LANGSMITH_RUNS_ENDPOINTS: ` +
-              `expected string, got ${typeof item.api_url}`
+              `expected string, got ${typeof item.api_url}`,
           );
           continue;
         }
@@ -1150,7 +1185,27 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
         if (typeof item.api_key !== "string") {
           console.warn(
             `Invalid api_key type in LANGSMITH_RUNS_ENDPOINTS: ` +
-              `expected string, got ${typeof item.api_key}`
+              `expected string, got ${typeof item.api_key}`,
+          );
+          continue;
+        }
+
+        if (
+          item.project_name !== undefined &&
+          item.project_name !== null &&
+          typeof item.project_name !== "string"
+        ) {
+          console.warn(
+            `Invalid project_name type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected string, got ${typeof item.project_name}`,
+          );
+          continue;
+        }
+
+        if (item.primary !== undefined && typeof item.primary !== "boolean") {
+          console.warn(
+            `Invalid primary type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected boolean, got ${typeof item.primary}`,
           );
           continue;
         }
@@ -1158,6 +1213,8 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
         replicas.push({
           apiUrl: item.api_url.replace(/\/$/, ""),
           apiKey: item.api_key,
+          projectName: item.project_name ?? undefined,
+          primary: item.primary ?? undefined,
         });
       }
       return replicas;
@@ -1176,7 +1233,7 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
         } else {
           console.warn(
             `Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL ${url}: ` +
-              `expected string, got ${typeof key}`
+              `expected string, got ${typeof key}`,
           );
           continue;
         }
@@ -1185,7 +1242,7 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
     } else {
       console.warn(
         "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON array of " +
-          `objects with api_url and api_key properties, or object mapping url->apiKey, got ${typeof parsed}`
+          `objects with api_url and api_key properties, or object mapping url->apiKey, got ${typeof parsed}`,
       );
       return [];
     }
@@ -1195,26 +1252,28 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
     }
     console.warn(
       "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON array of " +
-        "objects with api_url and api_key properties, or object mapping url->apiKey"
+        "objects with api_url and api_key properties, or object mapping url->apiKey",
     );
     return [];
   }
 }
 
 function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
-  // If null -> fetch from env
-  if (replicas) {
-    return replicas.map((replica) => {
-      if (Array.isArray(replica)) {
-        return {
-          projectName: replica[0],
-          updates: replica[1],
-        };
-      }
-      return replica;
-    });
+  const ensured = replicas
+    ? replicas.map((replica) => {
+        if (Array.isArray(replica)) {
+          return {
+            projectName: replica[0],
+            updates: replica[1],
+          };
+        }
+        return replica;
+      })
+    : _getWriteReplicasFromEnv();
+  if (ensured.filter((replica) => replica.primary === true).length > 1) {
+    throw new Error("Only one replica can be marked as primary.");
   }
-  return _getWriteReplicasFromEnv();
+  return ensured;
 }
 
 function _checkEndpointEnvUnset(parsed: Record<string, unknown>) {

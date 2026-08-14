@@ -72,6 +72,33 @@ def flatten_content_blocks(content: Any) -> Any:
     return result
 
 
+def unwrap_message_dicts(messages: list[Any]) -> list[dict[str, Any]]:
+    """Normalize SDK message dicts into ``{role, content}`` form.
+
+    The Claude SDK wraps messages in ``{"message": {"role": ..., "content": ...}}``
+    envelopes.  This function unwraps them into a flat list.
+    """
+    result: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            result.append(msg)
+            continue
+        if "message" in msg:
+            inner = msg["message"]
+            if isinstance(inner, dict):
+                result.append(
+                    {
+                        "role": inner.get("role", "user"),
+                        "content": inner.get("content", ""),
+                    }
+                )
+            else:
+                result.append(msg)
+        else:
+            result.append(msg)
+    return result
+
+
 def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Construct a combined prompt + history message list."""
     if isinstance(prompt, str):
@@ -79,38 +106,7 @@ def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str
         return [entry, *history] if history else [entry]
 
     if isinstance(prompt, list):
-        formatted = []
-        for msg in prompt:
-            if not isinstance(msg, dict):
-                formatted.append(msg)
-                continue
-
-            if "message" in msg:
-                inner = msg["message"]
-                if isinstance(inner, dict):
-                    formatted.append(
-                        {
-                            "role": inner.get("role", "user"),
-                            "content": inner.get("content", ""),
-                        }
-                    )
-                else:
-                    formatted.append(msg)
-            elif "role" in msg and "content" in msg:
-                formatted.append(msg)
-            else:
-                formatted.append(msg)
-
+        formatted = unwrap_message_dicts(prompt)
         return [*formatted, *history] if history else formatted
 
-    return history or []
-
-
-def extract_usage_from_result_message(msg: Any) -> dict[str, Any]:
-    """Normalize and merge token usage metrics from a `ResultMessage`."""
-    from ._usage import extract_usage_metadata, sum_anthropic_tokens
-
-    if not getattr(msg, "usage", None):
-        return {}
-    metrics = extract_usage_metadata(msg.usage)
-    return sum_anthropic_tokens(metrics) if metrics else {}
+    return list(history) if history else []

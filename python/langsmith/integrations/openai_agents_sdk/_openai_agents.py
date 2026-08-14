@@ -1,10 +1,15 @@
 import logging
+import weakref
 from datetime import datetime
-from functools import cache
 from typing import Optional
 
 from langsmith import run_trees as rt
 from langsmith._internal import _context
+from langsmith._internal._ls_agent_type import (
+    NON_ROOT_LS_AGENT_TYPES,
+    apply_default_ls_agent_type,
+)
+from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree
 
 try:
@@ -92,16 +97,6 @@ from langsmith import client as ls_client
 logger = logging.getLogger(__name__)
 
 
-@cache
-def _get_package_version(package_name: str) -> str | None:
-    try:
-        from importlib.metadata import version
-
-        return version(package_name)
-    except Exception:
-        return None
-
-
 if HAVE_AGENTS:
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
@@ -179,6 +174,9 @@ if HAVE_AGENTS:
             self._last_response_outputs: dict = {}
 
             self._runs: dict[str, rt.RunTree] = {}
+            self._span_data_types: dict[
+                str, type
+            ] = {}  # Track span data types by span_id
             self._unposted_traces: set[str] = set()
             self._unposted_spans: set[str] = set()
 
@@ -193,14 +191,16 @@ if HAVE_AGENTS:
             else:
                 run_name = "Agent workflow"
 
-            # Build metadata
-            run_extra = {
-                "metadata": {
-                    **(self._metadata or {}),
-                    "ls_integration": "openai-agents-sdk",
-                    "ls_integration_version": _get_package_version("openai-agents"),
-                }
+            # Merge three sources: processor defaults, trace.metadata (user's
+            # per-run ls_agent_type), and force-set ls_integration.
+            merged_metadata = {
+                **(self._metadata or {}),
+                **(getattr(trace, "metadata", None) or {}),
+                "ls_integration": "openai-agents-sdk",
+                "ls_integration_version": get_package_version("openai-agents"),
             }
+            apply_default_ls_agent_type(merged_metadata, current_run_tree)
+            run_extra = {"metadata": merged_metadata}
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
@@ -232,7 +232,8 @@ if HAVE_AGENTS:
                 # Delay posting until first response/generation span ends
                 # so inputs can be included in the POST.
                 self._unposted_traces.add(trace.trace_id)
-                _context._PARENT_RUN_TREE.set(new_run)
+                if new_run is not None:
+                    _context._PARENT_RUN_TREE_REF.set(weakref.ref(new_run))
                 self._runs[trace.trace_id] = new_run
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
@@ -243,7 +244,11 @@ if HAVE_AGENTS:
                 return
 
             trace_dict = trace.export() or {}
-            metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
+            # trace.metadata may have new keys since trace-start; pull them in.
+            metadata = {
+                **(self._metadata or {}),
+                **(trace_dict.get("metadata") or {}),
+            }
 
             try:
                 # Update run with final inputs/outputs
@@ -266,7 +271,11 @@ if HAVE_AGENTS:
                     self._first_response_inputs.pop(trace.trace_id, None)
                     run.patch(exclude_inputs=True)
 
-                _context._PARENT_RUN_TREE.set(run.parent_run)
+                # Restore parent context
+                if run.parent_run is not None:
+                    _context._PARENT_RUN_TREE_REF.set(weakref.ref(run.parent_run))
+                else:
+                    _context._PARENT_RUN_TREE_REF.set(None)
             except Exception as e:
                 logger.exception(f"Error updating trace run: {e}")
 
@@ -312,6 +321,26 @@ if HAVE_AGENTS:
                     else None,
                 )
 
+                # Add ls_agent_type metadata for agent spans that are children of
+                # function spans (i.e., agents used as tools via as_tool()).
+                # Note: Handoff agents are considered root agents, not subagents,
+                # since they take over the conversation rather than being called
+                # as tools.
+                if isinstance(span.span_data, tracing.AgentSpanData):
+                    # Check if parent span is a function span (agent used as tool)
+                    parent_span_data_type = (
+                        self._span_data_types.get(span.parent_id)
+                        if span.parent_id
+                        else None
+                    )
+                    if parent_span_data_type is tracing.FunctionSpanData:
+                        metadata = child_run.extra.setdefault("metadata", {})
+                        if metadata.get("ls_agent_type") not in NON_ROOT_LS_AGENT_TYPES:
+                            metadata["ls_agent_type"] = "subagent"
+
+                # Track span data type for parent lookups
+                self._span_data_types[span.span_id] = type(span.span_data)
+
                 # Delay posting for spans whose inputs aren't available at start
                 if isinstance(
                     span.span_data,
@@ -330,6 +359,9 @@ if HAVE_AGENTS:
 
         def on_span_end(self, span: tracing.Span) -> None:
             run = self._runs.pop(span.span_id, None)
+            self._span_data_types.pop(
+                span.span_id, None
+            )  # Clean up span data type tracking
             if not run:
                 return
 

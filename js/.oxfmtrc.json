@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "endOfLine": "lf",
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "src/utils/console-table-printer/**",
+    "src/utils/chalk/**",
+    "src/utils/simple-wcswidth/**"
+  ]
+}

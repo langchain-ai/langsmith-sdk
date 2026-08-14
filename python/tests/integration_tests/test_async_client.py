@@ -3,7 +3,6 @@ import datetime
 import uuid
 
 import pytest
-from pydantic import BaseModel
 
 from langsmith import utils as ls_utils
 from langsmith import uuid7
@@ -13,68 +12,6 @@ from langsmith.utils import LangSmithRateLimitError
 from tests.integration_tests.conftest import skip_if_rate_limited
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky")
-async def test_indexed_datasets():
-    class InputsSchema(BaseModel):
-        name: str  # type: ignore[annotation-unchecked]
-        age: int  # type: ignore[annotation-unchecked]
-
-    dataset = None
-    async with AsyncClient() as client:
-        # Create a new dataset
-        try:
-            dataset = await client.create_dataset(
-                "test_dataset_for_integration_tests_" + uuid.uuid4().hex,
-                inputs_schema_definition=InputsSchema.model_json_schema(),
-            )
-
-            example = await client.create_example(
-                inputs={"name": "Alice", "age": 30},
-                outputs={"hi": "hello"},
-                dataset_id=dataset.id,
-            )
-
-            await client.index_dataset(dataset_id=dataset.id)
-
-            async def check_similar_examples():
-                examples = await client.similar_examples(
-                    {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=1
-                )
-                return len(examples) == 1
-
-            await wait_for(check_similar_examples, timeout=20)
-            examples = await client.similar_examples(
-                {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=1
-            )
-            assert examples[0].id == example.id
-
-            example2 = await client.create_example(
-                inputs={"name": "Bobby", "age": 30},
-                outputs={"hi": "there"},
-                dataset_id=dataset.id,
-            )
-
-            await client.sync_indexed_dataset(dataset_id=dataset.id)
-
-            async def check_similar_examples():
-                examples = await client.similar_examples(
-                    {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
-                )
-                return len(examples) == 2
-
-            await wait_for(check_similar_examples, timeout=20)
-            examples = await client.similar_examples(
-                {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
-            )
-            assert examples[0].id == example2.id
-            assert examples[1].id == example.id
-        finally:
-            if dataset:
-                await client.delete_dataset(dataset_id=dataset.id)
-
-
-# Helper function to wait for a condition
 async def wait_for(condition, timeout=10, **kwargs):
     start_time = asyncio.get_event_loop().time()
     while True:
@@ -95,11 +32,14 @@ async def async_client():
     await client.aclose()
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.asyncio
 @skip_if_rate_limited
 async def test_create_run(async_client: AsyncClient):
     project_name = "__test_create_run" + uuid.uuid4().hex[:8]
+    project_id = (await async_client.create_project(project_name=project_name)).id
     run_id = uuid7()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
 
     await async_client.create_run(
         name="test_run",
@@ -107,22 +47,24 @@ async def test_create_run(async_client: AsyncClient):
         run_type="llm",
         project_name=project_name,
         id=run_id,
-        start_time=datetime.datetime.now(datetime.timezone.utc),
+        start_time=start_time,
     )
 
     async def check_run():
         try:
-            run = await async_client.read_run(run_id)
+            run = await async_client.read_run(run_id, project_id=project_id)
             return run.name == "test_run"
         except ls_utils.LangSmithError:
             return False
 
     await wait_for(check_run)
-    run = await async_client.read_run(run_id)
+
+    run = await async_client.read_run(run_id, project_id=project_id)
     assert run.name == "test_run"
     assert run.inputs == {"input": "hello"}
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.asyncio
 @skip_if_rate_limited
 async def test_list_runs(async_client: AsyncClient):
@@ -308,7 +250,7 @@ async def test_create_feedback(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_feedback(async_client: AsyncClient):
-    project_name = "__test_list_feedback"
+    project_name = "__test_list_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
     await async_client.create_run(
@@ -320,6 +262,15 @@ async def test_list_feedback(async_client: AsyncClient):
         start_time=datetime.datetime.now(datetime.timezone.utc),
     )
 
+    session: dict = {}
+
+    async def check_project_exists():
+        session["project"] = await async_client.read_project(project_name=project_name)
+        return True
+
+    await wait_for(check_project_exists, timeout=20)
+    session_id = session["project"].id
+
     for i in range(3):
         await async_client.create_feedback(
             run_id=run_id,
@@ -327,6 +278,7 @@ async def test_list_feedback(async_client: AsyncClient):
             score=0.9,
             value=f"test_value_{i}",
             comment=f"test_comment_{i}",
+            session_id=session_id,
         )
 
     async def check_feedbacks():
@@ -505,6 +457,7 @@ async def test_list_annotation_queues(async_client: AsyncClient):
             await async_client.delete_annotation_queue(queue_id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.asyncio
 @pytest.mark.slow
 async def test_annotation_queue_runs(async_client: AsyncClient):
@@ -546,6 +499,16 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     )
     assert run_info.id in run_ids
 
+    # Test listing all runs in the queue
+    listed = [r async for r in async_client.list_runs_from_annotation_queue(queue.id)]
+    assert sorted([r.id for r in listed]) == sorted(run_ids)
+
+    # Test limit
+    limited = [
+        r async for r in async_client.list_runs_from_annotation_queue(queue.id, limit=1)
+    ]
+    assert len(limited) == 1
+
     # Test deleting a run from queue
     await async_client.delete_run_from_annotation_queue(
         queue_id=queue.id, run_id=run_ids[2]
@@ -558,6 +521,11 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     run_1 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
     run_2 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=1)
     assert sorted([run_1.id, run_2.id]) == sorted(run_ids[:2])
+
+    remaining = [
+        r async for r in async_client.list_runs_from_annotation_queue(queue.id)
+    ]
+    assert sorted([r.id for r in remaining]) == sorted(run_ids[:2])
 
     # Clean up
     await async_client.delete_annotation_queue(queue.id)

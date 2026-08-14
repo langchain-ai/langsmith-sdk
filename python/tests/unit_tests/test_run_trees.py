@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from requests_toolbelt import MultipartEncoder
 
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
@@ -342,9 +344,17 @@ def test_remap_for_project():
     root = RunTree(name="Root", inputs={}, client=mock_client, session_name="original")
     child = root.create_child(name="Child")
 
-    # Same project: no remapping
+    # Omitted primary preserves legacy same-project behavior.
     same = child._remap_for_project("original")
     assert same["id"] == child.id
+
+    # Explicit primary preserves IDs regardless of project.
+    primary = child._remap_for_project("replica", primary=True)
+    assert primary["id"] == child.id
+
+    # Explicit non-primary remaps even within the same project.
+    non_primary = child._remap_for_project("original", primary=False)
+    assert non_primary["id"] == uuid7_deterministic(child.id, "original")
 
     # Different project: IDs remapped deterministically
     r1 = child._remap_for_project("replica")
@@ -530,6 +540,7 @@ def test_from_headers_filters_replica_credentials():
                 "api_key": "injected-key",
                 "api_url": "https://evil.com/exfil",
                 "project_name": "legit-project",
+                "primary": True,
                 "updates": {"reroot": True},
             }
         ]
@@ -549,4 +560,289 @@ def test_from_headers_filters_replica_credentials():
     assert "api_key" not in replica
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
+    assert replica.get("primary") is True
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_from_headers_drops_non_boolean_replica_primary():
+    replicas_json = json.dumps(
+        [{"project_name": "replica-project", "primary": "false"}]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    replica = parsed.replicas[0]
+    assert replica.get("primary") is None
+    remapped = parsed._remap_for_project(replica["project_name"])
+    assert remapped["id"] != parsed.id
+
+
+def test_from_headers_allowlists_update_fields():
+    """Only allow-listed fields survive in an untrusted baggage replica's `updates`."""
+    replicas_json = json.dumps(
+        [
+            {
+                "project_name": "legit-project",
+                "updates": {
+                    "reroot": True,
+                    "metadata": {"k": "v"},
+                    "tags": ["a"],
+                    "attachments": {"doc": ["text/plain", "notes.txt"]},
+                    "inputs": {"x": 1},
+                    "environment": "prod",
+                },
+            }
+        ]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    assert parsed.replicas[0].get("updates") == {
+        "reroot": True,
+        "metadata": {"k": "v"},
+        "tags": ["a"],
+    }
+
+
+def test_from_headers_allowlists_update_fields_legacy_format():
+    """The legacy [project_name, updates] baggage form is also allow-listed."""
+    replicas_json = json.dumps(
+        [
+            [
+                "legit-project",
+                {
+                    "reroot": True,
+                    "metadata": {"k": "v"},
+                    "attachments": {"doc": ["text/plain", "notes.txt"]},
+                    "environment": "prod",
+                },
+            ]
+        ]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    updates = parsed.replicas[0].get("updates")
+    assert "attachments" not in updates
+    assert updates == {"reroot": True, "metadata": {"k": "v"}}
+
+
+def test_sanitize_header_updates_env_override_keeps_reroot(monkeypatch):
+    """The allow-list can be overridden via env var; `reroot` is always kept."""
+    monkeypatch.setenv("LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS", "environment")
+    run_trees.utils.get_env_var.cache_clear()
+    try:
+        result = run_trees._sanitize_header_updates(
+            {"reroot": True, "environment": "prod", "metadata": {"k": "v"}}
+        )
+        # `environment` now allowed, `reroot` always kept, default `metadata` dropped.
+        assert result == {"reroot": True, "environment": "prod"}
+    finally:
+        run_trees.utils.get_env_var.cache_clear()
+
+
+def test_sanitize_header_updates_warns_on_dropped_fields(caplog):
+    """Dropping a non-allow-listed field logs one actionable warning."""
+    run_trees.utils.get_env_var.cache_clear()
+    with caplog.at_level(logging.WARNING, logger="langsmith.run_trees"):
+        run_trees._sanitize_header_updates(
+            {"reroot": True, "attachments": {"doc": ["text/plain", "notes.txt"]}}
+        )
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "attachments" in message
+    assert "LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS" in message
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="langsmith.run_trees"):
+        run_trees._sanitize_header_updates({"reroot": True, "metadata": {"k": "v"}})
+    assert caplog.records == []
+
+
+def test_sanitize_header_updates_passes_through_non_dict():
+    """Non-dict `updates` is returned unchanged (defensive)."""
+    assert run_trees._sanitize_header_updates(None) is None
+    assert run_trees._sanitize_header_updates("nope") == "nope"
+
+
+# Tests for regression: RunTree should accept Pydantic BaseModel for inputs/outputs
+# https://github.com/langchain-ai/langsmith-sdk/issues/2765
+def test_runtree_accepts_pydantic_basemodel_as_constructor_inputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyInput(PydanticBaseModel):
+        query: str
+
+    rt = RunTree(name="test", run_type="chain", inputs=MyInput(query="hello"))
+    assert rt.inputs == {"query": "hello"}
+
+
+def test_runtree_accepts_pydantic_basemodel_as_constructor_outputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyOutput(PydanticBaseModel):
+        answer: str
+
+    rt = RunTree(
+        name="test", run_type="chain", inputs={}, outputs=MyOutput(answer="hi")
+    )
+    assert rt.outputs == {"answer": "hi"}
+
+
+def test_runtree_end_accepts_pydantic_basemodel_outputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyOutput(PydanticBaseModel):
+        answer: str
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.end(outputs=MyOutput(answer="goodbye"))
+    assert rt.outputs == {"answer": "goodbye"}
+
+
+def test_runtree_set_accepts_nested_pydantic_basemodel_inputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class Inner(PydanticBaseModel):
+        val: int
+
+    class MyNestedInput(PydanticBaseModel):
+        query: str
+        nested: Inner
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.set(inputs=MyNestedInput(query="hello", nested=Inner(val=42)))
+    assert rt.inputs == {"query": "hello", "nested": {"val": 42}}
+
+
+def test_runtree_set_accepts_pydantic_basemodel_outputs():
+    from pydantic import BaseModel as PydanticBaseModel
+
+    class MyOutput(PydanticBaseModel):
+        answer: str
+
+    rt = RunTree(name="test", run_type="chain", inputs={})
+    rt.set(outputs=MyOutput(answer="result"))
+    assert rt.outputs == {"answer": "result"}
+
+
+@pytest.fixture
+def _reset_exclude_inputs_cache():
+    """Reset the memoized `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` lookup."""
+
+    def _clear():
+        run_trees._exclude_inputs_on_patch.cache_clear()
+        ls_utils.get_env_var.cache_clear()
+
+    _clear()
+    yield _clear
+    _clear()
+
+
+@pytest.mark.parametrize(
+    "env_name, env_value, explicit, expect_inputs",
+    [
+        # Unset env var keeps today's behaviour: inputs are re-sent on patch.
+        (None, None, None, True),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true", None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "TRUE", None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "1", None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "false", None, True),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "bogus", None, True),
+        # The LANGCHAIN_ namespace is honoured too.
+        ("LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH", "true", None, False),
+        # An explicit argument always wins over the environment.
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true", False, True),
+        (None, None, True, False),
+    ],
+)
+def test_patch_exclude_inputs_env_flag(
+    monkeypatch,
+    _reset_exclude_inputs_cache,
+    env_name,
+    env_value,
+    explicit,
+    expect_inputs,
+):
+    monkeypatch.delenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    monkeypatch.delenv("LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    if env_name is not None:
+        monkeypatch.setenv(env_name, env_value)
+    _reset_exclude_inputs_cache()
+
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run", run_type="chain", inputs={"a": 1}, client=client
+    )
+    run_tree.patch(**({} if explicit is None else {"exclude_inputs": explicit}))
+
+    sent = client.update_run.call_args.kwargs["inputs"]
+    if expect_inputs:
+        assert sent == {"a": 1}
+    else:
+        assert sent is None
+
+
+def test_patch_exclude_inputs_env_flag_with_replicas(
+    monkeypatch, _reset_exclude_inputs_cache
+):
+    """The replica patch path honours the flag as well."""
+    monkeypatch.setenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true")
+    _reset_exclude_inputs_cache()
+
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run",
+        run_type="chain",
+        inputs={"a": 1},
+        client=client,
+        project_name="test-project",
+        replicas=[run_trees.WriteReplica(project_name="replica-project")],
+    )
+    run_tree.patch()
+
+    assert client.update_run.call_args.kwargs["inputs"] is None
+
+
+def test_patch_exclude_inputs_flag_is_cached(monkeypatch, _reset_exclude_inputs_cache):
+    """The env var is read once per process, not on every patch."""
+    monkeypatch.delenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    monkeypatch.delenv("LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    _reset_exclude_inputs_cache()
+
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run", run_type="chain", inputs={"a": 1}, client=client
+    )
+    run_tree.patch()
+    assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}
+
+    # Flipping the env var mid-process has no effect until the cache is cleared.
+    monkeypatch.setenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true")
+    run_tree.patch()
+    assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}
+
+    _reset_exclude_inputs_cache()
+    run_tree.patch()
+    assert client.update_run.call_args.kwargs["inputs"] is None
