@@ -12,6 +12,8 @@ import re
 import uuid
 from typing import Any
 
+from pydantic import BaseModel
+
 from langsmith._internal import _orjson
 
 try:
@@ -29,6 +31,9 @@ _ORJSON_OPTIONS = (
     | _orjson.OPT_SERIALIZE_UUID
     | _orjson.OPT_NON_STR_KEYS
 )
+# Turn off OPT_NON_STR_KEYS, trading better speed in the general case where
+# all dict keys are strings for worse speed in the exceptional case
+_ORJSON_OPTIONS_FAST = _ORJSON_OPTIONS & ~_orjson.OPT_NON_STR_KEYS
 _JSON_KEY_TYPES = (str, int, float, bool, type(None))
 # Matches escaped lone UTF-16 surrogates (e.g. b"\\ud800") in ensure_ascii
 # json.dumps output; used to strip them on the stdlib-json fallback path.
@@ -85,6 +90,49 @@ def _simple_default(obj):
     return str(obj)
 
 
+_MISSING = object()
+# Maps a Class to its Pydantic core serializer, or to None when the fast path
+# below does not apply to it. Bounded rather than weakly keyed.
+_PYDANTIC_SERIALIZER_CACHE_MAX = 1024
+_pydantic_core_serializers: dict[type, Any] = {}
+
+
+def _remember_pydantic_serializer(cls: type, serializer: Any) -> None:
+    if len(_pydantic_core_serializers) >= _PYDANTIC_SERIALIZER_CACHE_MAX:
+        _pydantic_core_serializers.clear()
+    _pydantic_core_serializers[cls] = serializer
+
+
+def _pydantic_json_dump(obj: Any) -> Any:
+    """Serialize a Pydantic v2 model with its low level core serializer.
+
+    `model_dump()` is a Python wrapper around this serializer. Calling the
+    low-level serializer is measurably cheaper, if it hasn't been overridden.
+
+    Returns `_MISSING` when the shortcut doesn't apply, so callers fall back to
+    other methods. A raise is remembered per class, because
+    `_serialization_methods` starts with the same json-mode dump: retrying it
+    per object would only raise twice instead of once.
+    """
+    cls = type(obj)
+    serializer = _pydantic_core_serializers.get(cls, _MISSING)
+    if serializer is _MISSING:
+        serializer = None
+        if isinstance(obj, BaseModel) and cls.model_dump is BaseModel.model_dump:
+            # getattr: a model whose schema build is still deferred has a
+            # placeholder here, which the try below handles.
+            serializer = getattr(cls, "__pydantic_serializer__", None)
+        _remember_pydantic_serializer(cls, serializer)
+    if serializer is None:
+        return _MISSING
+
+    try:
+        return serializer.to_python(obj, mode="json", exclude_none=True, warnings=False)
+    except Exception:
+        _remember_pydantic_serializer(cls, None)
+        return _MISSING
+
+
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
     # Pydantic v2 primary: coerce fields to JSON-native types.
     # Raises on truly non-serializable fields -> the next entry handles those.
@@ -113,6 +161,11 @@ def _serialize_json(obj: Any) -> Any:
         # A class object has no useful instance serialization method
         if isinstance(obj, type):
             return _simple_default(obj)
+
+        # Try using the speedier Pydantic serialization first
+        fast_serialized = _pydantic_json_dump(obj)
+        if fast_serialized is not _MISSING:
+            return fast_serialized
 
         for attr, kwargs in _serialization_methods:
             method = getattr(obj, attr, None)
@@ -205,11 +258,20 @@ def dumps_json(obj: Any) -> bytes:
         return _orjson.dumps(
             obj,
             default=_serialize_json,
-            option=_ORJSON_OPTIONS,
+            option=_ORJSON_OPTIONS_FAST,
         )
     except TypeError as e:
-        # Usually caused by UTF surrogate characters
+        # Usually caused by UTF surrogate characters or non-str dict keys
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        try:
+            # Let orjson coerce non-str keys. Only stringify the ones it can't handle.
+            return _orjson.dumps(
+                obj,
+                default=_serialize_json,
+                option=_ORJSON_OPTIONS,
+            )
+        except TypeError:
+            pass
         normalized_obj = _normalize_json_keys(obj)
         try:
             return _orjson.dumps(

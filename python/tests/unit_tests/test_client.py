@@ -18,7 +18,7 @@ import time
 import uuid
 import warnings
 import weakref
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from io import BytesIO
 from types import SimpleNamespace
@@ -41,7 +41,7 @@ import httpx
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from requests import HTTPError
 
 import langsmith.env as ls_env
@@ -2418,6 +2418,84 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
         "nested": [{"('a', 'b')": "c"}],
         "custom": {"(1, 2)": "custom"},
     }
+
+
+def test__dumps_json_coerces_json_native_dict_keys():
+    """Keys orjson can coerce must still round-trip to their string form.
+
+    The fast path omits ``OPT_NON_STR_KEYS``, so these are coerced by the
+    retry with the full options rather than on the first attempt. The output
+    must not change either way.
+    """
+    serialized_json = _dumps_json(
+        {1: "int", 2.5: "float", None: "none", date(2020, 1, 2): "date"}
+    )
+
+    assert _orjson.loads(serialized_json) == {
+        "1": "int",
+        "2.5": "float",
+        "null": "none",
+        "2020-01-02": "date",
+    }
+    # `True` is kept apart: it would collide with the `1` key above (True == 1).
+    assert _orjson.loads(_dumps_json({True: "bool"})) == {"true": "bool"}
+
+
+def test__dumps_json_coerces_enum_dict_keys_by_value():
+    """Enum keys must serialize as their value, not ``str(member)``.
+
+    orjson does this coercion itself, but only with ``OPT_NON_STR_KEYS``; the
+    normalizing fallback would emit ``"StrValued.FOO"`` instead.
+    """
+
+    class StrValued(Enum):
+        FOO = "foo"
+
+    class IntValued(Enum):
+        BAR = 3
+
+    class BytesValued(Enum):
+        BAZ = b"x"
+
+    assert _orjson.loads(_dumps_json({StrValued.FOO: 1})) == {"foo": 1}
+    assert _orjson.loads(_dumps_json({IntValued.BAR: 1})) == {"3": 1}
+    # A value orjson can't use as a key falls back to the member name.
+    assert _orjson.loads(_dumps_json({BytesValued.BAZ: 1})) == {"BytesValued.BAZ": 1}
+
+
+def test__dumps_json_honors_json_only_field_serializer():
+    """A field redacted for JSON must stay redacted, including when nested.
+
+    Serializing Pydantic models in python mode would bypass
+    ``when_used="json"`` serializers and emit the raw value.
+    """
+
+    class Redacted(BaseModel):
+        token: str
+
+        @field_serializer("token", when_used="json")
+        def _redact(self, _value: str) -> str:
+            return "REDACTED"
+
+    class Holder(BaseModel):
+        payload: Any = None
+
+    secret = Redacted(token="actual-secret")
+
+    for obj in (secret, Holder(payload=secret), {"k": secret}, [secret]):
+        assert b"actual-secret" not in _dumps_json(obj)
+
+
+def test__dumps_json_honors_model_dump_override():
+    """A model overriding model_dump keeps control of its serialization."""
+
+    class Overridden(BaseModel):
+        value: str
+
+        def model_dump(self, **kwargs: Any) -> Dict:
+            return {"overridden": True}
+
+    assert _orjson.loads(_dumps_json(Overridden(value="x"))) == {"overridden": True}
 
 
 def test__dumps_json_does_not_swallow_keyboard_interrupt():
