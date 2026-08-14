@@ -13,10 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 from urllib.parse import quote
 
-import httpx
-
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import Langsmith
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
