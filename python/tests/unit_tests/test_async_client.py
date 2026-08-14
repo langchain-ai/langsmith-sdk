@@ -982,3 +982,50 @@ async def test_async_client_resource_version_check(
 
     version_warnings = [r for r in caplog.records if r.name == _VERSION_LOGGER]
     assert bool(version_warnings) is expect_warning
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("argument_name", ["reference_outputs", "outputs"])
+async def test_create_example_reference_outputs_alias(argument_name: str) -> None:
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+    dataset_id = uuid.uuid4()
+    reference_outputs = {"answer": 42}
+    response = MagicMock()
+    response.json.return_value = {
+        "id": str(uuid.uuid4()),
+        "dataset_id": str(dataset_id),
+        "inputs": {"question": "meaning"},
+        "outputs": reference_outputs,
+    }
+
+    with mock.patch.object(
+        AsyncClient,
+        "_arequest_with_retries",
+        new_callable=AsyncMock,
+        return_value=response,
+    ) as request:
+        await client.create_example(
+            inputs={"question": "meaning"},
+            dataset_id=dataset_id,
+            **{argument_name: reference_outputs},
+        )
+
+    payload = json.loads(request.call_args.kwargs["content"])
+    assert payload["reference_outputs"] == reference_outputs
+    assert "outputs" not in payload
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_create_example_rejects_reference_outputs_conflict() -> None:
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+
+    with pytest.raises(ValueError, match="both 'reference_outputs' and 'outputs'"):
+        await client.create_example(
+            inputs={"question": "meaning"},
+            dataset_id=uuid.uuid4(),
+            reference_outputs={"answer": 42},
+            outputs={"answer": 43},
+        )
+
+    await client.aclose()

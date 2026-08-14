@@ -4868,27 +4868,30 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async createExample(
     inputs: KVMap,
-    outputs: KVMap,
+    referenceOutputs: KVMap,
     options: CreateExampleOptions,
   ): Promise<Example>;
 
   public async createExample(
     inputsOrUpdate: KVMap | ExampleCreate,
-    outputs?: KVMap,
+    referenceOutputs?: KVMap,
     options?: CreateExampleOptions,
   ): Promise<Example> {
-    if (isExampleCreate(inputsOrUpdate)) {
-      if (outputs !== undefined || options !== undefined) {
+    const usesCreateModel = isExampleCreate(inputsOrUpdate);
+    if (usesCreateModel) {
+      if (referenceOutputs !== undefined || options !== undefined) {
         throw new Error(
-          "Cannot provide outputs or options when using ExampleCreate object",
+          "Cannot provide referenceOutputs or options when using ExampleCreate object",
         );
       }
     }
 
-    let datasetId_ = outputs ? options?.datasetId : inputsOrUpdate.dataset_id;
-    const datasetName_ = outputs
-      ? options?.datasetName
-      : inputsOrUpdate.dataset_name;
+    let datasetId_ = usesCreateModel
+      ? inputsOrUpdate.dataset_id
+      : options?.datasetId;
+    const datasetName_ = usesCreateModel
+      ? inputsOrUpdate.dataset_name
+      : options?.datasetName;
     if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
     } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
@@ -4898,14 +4901,12 @@ export class Client implements LangSmithTracingClientInterface {
       datasetId_ = dataset.id;
     }
 
-    const createdAt_ =
-      (outputs ? options?.createdAt : inputsOrUpdate.created_at) || new Date();
     let data: ExampleCreate;
-    if (!isExampleCreate(inputsOrUpdate)) {
+    if (!usesCreateModel) {
       data = {
         inputs: inputsOrUpdate,
-        outputs,
-        created_at: createdAt_?.toISOString(),
+        reference_outputs: referenceOutputs,
+        created_at: (options?.createdAt ?? new Date()).toISOString(),
         id: options?.exampleId,
         metadata: options?.metadata,
         split: options?.split,
@@ -4929,6 +4930,8 @@ export class Client implements LangSmithTracingClientInterface {
   /** @deprecated Use the uploads-only overload instead */
   public async createExamples(props: {
     inputs?: Array<KVMap>;
+    referenceOutputs?: Array<KVMap>;
+    /** @deprecated Use referenceOutputs instead. */
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
     splits?: Array<string | Array<string>>;
@@ -4945,6 +4948,8 @@ export class Client implements LangSmithTracingClientInterface {
       | ExampleCreate[]
       | {
           inputs?: Array<KVMap>;
+          referenceOutputs?: Array<KVMap>;
+          /** @deprecated Use referenceOutputs instead. */
           outputs?: Array<KVMap>;
           metadata?: Array<KVMap>;
           splits?: Array<string | Array<string>>;
@@ -4986,6 +4991,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const {
       inputs,
+      referenceOutputs,
       outputs,
       metadata,
       splits,
@@ -4998,6 +5004,9 @@ export class Client implements LangSmithTracingClientInterface {
       datasetName,
     } = propsOrUploads;
 
+    if (referenceOutputs !== undefined && outputs !== undefined) {
+      throw new Error("Cannot specify both referenceOutputs and outputs");
+    }
     if (inputs === undefined) {
       throw new Error("Must provide inputs when using legacy parameters");
     }
@@ -5018,7 +5027,7 @@ export class Client implements LangSmithTracingClientInterface {
       return {
         dataset_id: datasetId_,
         inputs: input,
-        outputs: outputs?.[idx],
+        reference_outputs: (referenceOutputs ?? outputs)?.[idx],
         metadata: metadata?.[idx],
         split: splits?.[idx],
         id: exampleIds?.[idx],
@@ -7071,6 +7080,7 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     uploads: ExampleCreate[] = [],
   ): Promise<UploadExamplesResponse> {
+    uploads.forEach(getExampleReferenceOutputs);
     if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
         "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version.",
@@ -7080,6 +7090,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     for (const example of uploads) {
       const exampleId = (example.id ?? uuid.v4()).toString();
+      const referenceOutputs = getExampleReferenceOutputs(example);
 
       // Prepare the main example body
       const exampleBody = {
@@ -7118,10 +7129,10 @@ export class Client implements LangSmithTracingClientInterface {
       }
 
       // Add outputs if present
-      if (example.outputs) {
+      if (referenceOutputs) {
         const stringifiedOutputs = serializePayloadForTracing(
-          example.outputs,
-          `Serializing outputs for uploaded example with id: ${exampleId}`,
+          referenceOutputs,
+          `Serializing reference outputs for uploaded example with id: ${exampleId}`,
         );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
@@ -8033,6 +8044,16 @@ export interface LangSmithTracingClientInterface {
   createRun: (run: CreateRunParams) => Promise<void>;
 
   updateRun: (runId: string, run: RunUpdate) => Promise<void>;
+}
+
+function getExampleReferenceOutputs(example: ExampleCreate): KVMap | undefined {
+  if (
+    example.reference_outputs !== undefined &&
+    example.outputs !== undefined
+  ) {
+    throw new Error("Cannot specify both reference_outputs and outputs");
+  }
+  return example.reference_outputs ?? example.outputs;
 }
 
 function isExampleCreate(input: KVMap | ExampleCreate): input is ExampleCreate {

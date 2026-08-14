@@ -483,7 +483,7 @@ def evaluate_existing(
         >>> dataset = client.create_dataset(dataset_name)
         >>> example = client.create_example(
         ...     inputs={"question": "What is 2+2?"},
-        ...     outputs={"answer": "4"},
+        ...     reference_outputs={"answer": "4"},
         ...     dataset_id=dataset.id,
         ... )
         >>> def predict(inputs: dict) -> dict:
