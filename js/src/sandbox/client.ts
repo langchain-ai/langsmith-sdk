@@ -34,6 +34,7 @@ import {
 import {
   handleClientHttpError,
   handleSandboxCreationError,
+  sandboxUserAgent,
   validateTtl,
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
@@ -445,6 +446,11 @@ export class SandboxClient {
       if (!headers.has(name)) {
         headers.set(name, value);
       }
+    }
+    // Last, so it fills in only when neither the request nor the client
+    // defaults named one.
+    if (!headers.has("User-Agent")) {
+      headers.set("User-Agent", sandboxUserAgent());
     }
     return this._caller.call(() =>
       this._fetchImpl(url, {

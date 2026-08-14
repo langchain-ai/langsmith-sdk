@@ -1,8 +1,8 @@
 /**
- * Shared helper functions for error handling.
+ * Shared helpers for the sandbox clients: request identity, input validation,
+ * and error-response parsing.
  *
- * These functions are used to parse error responses and raise appropriate
- * exceptions. They contain no I/O operations.
+ * They contain no I/O operations.
  */
 
 import {
@@ -18,6 +18,22 @@ import {
   LangSmithSandboxOperationError,
   LangSmithValidationError,
 } from "./errors.js";
+import { userAgent } from "../utils/user_agent.js";
+
+// =============================================================================
+// Request identity
+// =============================================================================
+
+/**
+ * `User-Agent` for a sandbox data-plane request.
+ *
+ * The data-plane paths use `fetch` and `ws` directly rather than the main
+ * `Client`, so without this a server sees only the runtime's default agent and
+ * cannot tell which SDK, or which version of it, a request came from.
+ */
+export function sandboxUserAgent(): string {
+  return userAgent();
+}
 
 // =============================================================================
 // Input validation

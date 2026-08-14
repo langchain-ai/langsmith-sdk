@@ -75,6 +75,7 @@ import {
 
 import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { userAgent } from "./utils/user_agent.js";
 import { Langsmith as OpenAPILangsmith } from "./_openapi_client/index.js";
 import { OnlineEvaluators as Evaluators } from "./_openapi_client/resources/online-evaluators.js";
 import { Runs as OpenAPIRuns } from "./_openapi_client/resources/runs.js";
@@ -1602,7 +1603,7 @@ export class Client implements LangSmithTracingClientInterface {
   private get _mergedHeaders(): { [header: string]: string } {
     // Start with caller-supplied headers so they don't override required headers
     const headers: { [header: string]: string } = {
-      "User-Agent": `langsmith-js/${__version__}`,
+      "User-Agent": userAgent(),
       ...this._callerHeaders,
     };
     // Required headers that should not be overridden

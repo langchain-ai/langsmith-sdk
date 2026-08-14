@@ -31,6 +31,7 @@ from langsmith.sandbox._exceptions import (
 from langsmith.sandbox._helpers import (
     handle_client_http_error,
     handle_sandbox_creation_error,
+    httpx_user_agent,
     merge_headers,
     validate_service_params,
     validate_ttl,
@@ -115,7 +116,8 @@ class AsyncSandboxClient:
         self._timeout = timeout
         self._max_retries = max_retries
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
-        client_headers: dict[str, str] = {}
+        # Seeded before the caller's headers so an explicit User-Agent still wins.
+        client_headers: dict[str, str] = {"User-Agent": httpx_user_agent()}
         if resolved_api_key:
             client_headers["X-Api-Key"] = resolved_api_key
         if self._default_headers:

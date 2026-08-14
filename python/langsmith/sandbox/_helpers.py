@@ -1,7 +1,7 @@
-"""Shared helper functions for error handling.
+"""Shared helpers for the sandbox clients.
 
-These functions are used by both sync and async clients to parse error responses
-and raise appropriate exceptions. They contain no I/O operations.
+Header building and request identity, input validation, and error-response
+parsing. Used by both the sync and async clients; no I/O operations.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 import httpx
 
+from langsmith._internal._user_agent import user_agent
 from langsmith.sandbox._exceptions import (
     QuotaExceededError,
     ResourceCreationError,
@@ -46,6 +47,11 @@ def merge_headers(
         for name, value in (headers or {}).items():
             merged[name.lower()] = value
     return merged
+
+
+def httpx_user_agent() -> str:
+    """``User-Agent`` for the httpx-backed data-plane clients."""
+    return user_agent(f"python-httpx/{httpx.__version__}")
 
 
 # =============================================================================

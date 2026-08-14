@@ -76,21 +76,33 @@ class TestBuildAuthHeaders:
     def test_builds_header(self):
         # Header names are normalized to lowercase.
         headers = _build_auth_headers("my-key")
-        assert headers == {"x-api-key": "my-key"}
+        assert headers["x-api-key"] == "my-key"
 
-    def test_none_key_returns_empty(self):
+    def test_none_key_omits_api_key(self):
         headers = _build_auth_headers(None)
-        assert headers == {}
+        assert "x-api-key" not in headers
+
+    # The upgrade must name the SDK and its version: a server otherwise sees
+    # only the websockets default and cannot attribute the request.
+    def test_user_agent_carries_sdk_version_and_transport(self):
+        from websockets.http11 import USER_AGENT
+
+        import langsmith
+
+        agent = _build_auth_headers("my-key")["user-agent"]
+        assert agent == f"langsmith-py/{langsmith.__version__} {USER_AGENT}"
 
     def test_custom_headers_override_auth_header(self):
         headers = _build_auth_headers(
             "default-key",
             {"X-Api-Key": "override-key", "X-Test-Header": "ws-value"},
         )
-        assert headers == {
-            "x-api-key": "override-key",
-            "x-test-header": "ws-value",
-        }
+        assert headers["x-api-key"] == "override-key"
+        assert headers["x-test-header"] == "ws-value"
+
+    def test_custom_user_agent_wins(self):
+        headers = _build_auth_headers("k", {"User-Agent": "caller/1.0"})
+        assert headers["user-agent"] == "caller/1.0"
 
 
 # =============================================================================
@@ -1033,6 +1045,54 @@ class TestRaiseForInvalidHandshake:
         exc.response = mock_response
 
         with pytest.raises(SandboxNotReadyError, match="not ready"):
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    @staticmethod
+    def _rejection(status_code: int, body: object) -> Exception:
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.body = body
+        exc = Exception(f"server rejected WebSocket connection: HTTP {status_code}")
+        exc.response = mock_response
+        return exc
+
+    # A rejection whose whole purpose is to redirect the caller is useless if
+    # only the status code survives.
+    def test_rejection_body_detail_reaches_the_caller(self):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        exc = self._rejection(
+            410,
+            b'{"detail":{"error":"SandboxMoved",'
+            b'"message":"Connect to wss://api/x instead."}}',
+        )
+
+        with pytest.raises(SandboxConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+        msg = str(exc_info.value)
+        assert "HTTP 410" in msg
+        assert "Connect to wss://api/x instead." in msg
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            None,
+            b"",
+            b"not json at all",
+            b"{}",
+            b'{"detail":{}}',
+            b'{"detail":{"message":42}}',
+            b"[1, 2, 3]",
+        ],
+        ids=["none", "empty", "not-json", "no-detail", "no-message", "non-str", "list"],
+    )
+    def test_unusable_rejection_body_falls_back_to_the_exception(self, body):
+        """A body we can't read must not mask the error or raise from parsing."""
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        exc = self._rejection(410, body)
+
+        with pytest.raises(SandboxConnectionError, match="HTTP 410"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
     def test_no_http_response_gives_unreachable_message(self):
