@@ -133,7 +133,7 @@ def _serialize_json(obj: Any) -> Any:
         return str(obj)
 
 
-def _normalize_json_keys(obj: Any) -> Any:
+def _normalize_json_keys(obj: Any, _seen: set[int] | None = None) -> Any:
     """Recursively stringify dict keys that orjson will reject.
 
     Walks ``dict``, ``list``, ``tuple`` and ``deque`` so that unsupported keys
@@ -141,8 +141,10 @@ def _normalize_json_keys(obj: Any) -> Any:
     are covered here even though they're only ever *values*: orjson serializes
     them natively (as arrays) and therefore never routes them through the
     ``default`` hook, so a bad-keyed dict nested inside one would otherwise
-    slip past normalization. Cycles are handled downstream by
-    ``_serialize_json`` (which collapses them to ``str``), not here.
+    slip past normalization. A container reachable from itself is collapsed to
+    ``str`` (mirroring how ``_serialize_json`` collapses object cycles) so a
+    plain ``dict``/``list`` cycle does not recurse forever; ``_seen`` tracks the
+    ids of the containers on the current path for that check.
 
     JSON object keys must ultimately be ``str``/``int``/``float``/``bool``/
     ``None``; other key types are stringified via ``_simple_default`` so they
@@ -154,29 +156,45 @@ def _normalize_json_keys(obj: Any) -> Any:
     overwrites the other (last-in-iteration-order wins); the collision is
     logged at debug level so the data loss is traceable.
     """
-    if isinstance(obj, dict):
-        new: dict[Any, Any] = {}
-        for key, value in obj.items():
-            norm_key: Any = (
-                key if isinstance(key, _JSON_KEY_TYPES) else str(_simple_default(key))
-            )
-            if norm_key in new:
-                logger.debug(
-                    "Dict key collision during JSON key normalization; "
-                    "an existing value will be overwritten."
+    if isinstance(obj, (dict, list, tuple, collections.deque)):
+        if _seen is None:
+            _seen = set()
+        obj_id = id(obj)
+        if obj_id in _seen:
+            # A container reachable from itself. Collapse it the same way object
+            # cycles are collapsed, so dumps_json stays non-raising on cyclic data.
+            return str(obj)
+        _seen.add(obj_id)
+        try:
+            if isinstance(obj, dict):
+                new: dict[Any, Any] = {}
+                for key, value in obj.items():
+                    norm_key: Any = (
+                        key
+                        if isinstance(key, _JSON_KEY_TYPES)
+                        else str(_simple_default(key))
+                    )
+                    if norm_key in new:
+                        logger.debug(
+                            "Dict key collision during JSON key normalization; "
+                            "an existing value will be overwritten."
+                        )
+                    new[norm_key] = _normalize_json_keys(value, _seen)
+                return new
+            if isinstance(obj, list):
+                return [_normalize_json_keys(value, _seen) for value in obj]
+            if isinstance(obj, tuple) and not (
+                hasattr(obj, "_asdict") and callable(obj._asdict)
+            ):
+                # Plain tuples recurse; NamedTuples are left for _serialize_json,
+                # which converts them to dicts (preserving field names) first.
+                return tuple(_normalize_json_keys(value, _seen) for value in obj)
+            if isinstance(obj, collections.deque):
+                return collections.deque(
+                    _normalize_json_keys(value, _seen) for value in obj
                 )
-            new[norm_key] = _normalize_json_keys(value)
-        return new
-    if isinstance(obj, list):
-        return [_normalize_json_keys(value) for value in obj]
-    if isinstance(obj, tuple) and not (
-        hasattr(obj, "_asdict") and callable(obj._asdict)
-    ):
-        # Plain tuples recurse; NamedTuples are left for _serialize_json, which
-        # converts them to dicts (preserving field names) before normalization.
-        return tuple(_normalize_json_keys(value) for value in obj)
-    if isinstance(obj, collections.deque):
-        return collections.deque(_normalize_json_keys(value) for value in obj)
+        finally:
+            _seen.discard(obj_id)
     return obj
 
 
