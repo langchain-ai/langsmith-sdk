@@ -20,13 +20,12 @@ from typing import (
     cast,
 )
 
-import httpx
-
 import langsmith._openapi_client as _langsmith_api_module
 from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
+from langsmith._openapi_client._httpx import httpx
 from langsmith.client import _get_openapi_base_url
 
 if TYPE_CHECKING:

@@ -54,7 +54,6 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import httpx as _httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -125,6 +124,7 @@ from langsmith._openapi_client._base_client import (
 from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
+from langsmith._openapi_client._httpx import httpx as _httpx
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
