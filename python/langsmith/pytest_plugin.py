@@ -15,8 +15,6 @@ from langsmith import utils as ls_utils
 from langsmith.testing._internal import _get_test_suite_name
 from langsmith.testing._internal import test as ls_test
 
-_REPORTED_STATUSES = {"passed", "failed", "skipped"}
-
 logger = logging.getLogger(__name__)
 
 
@@ -120,8 +118,6 @@ class LangSmithPlugin:
 
         self.test_suites = defaultdict(list)
         self.test_suite_urls = {}
-        self.langsmith_nodeids = set()
-        self.completed_nodeids = set()
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
@@ -136,13 +132,10 @@ class LangSmithPlugin:
     def pytest_collection_finish(self, session):
         """Group collected LangSmith tests by suite."""
         self.collected_nodeids = set()
-        self.langsmith_nodeids = set()
-        self.completed_nodeids = set()
         for item in session.items:
             self.collected_nodeids.add(item.nodeid)
             marker = item.get_closest_marker("langsmith")
             if marker:
-                self.langsmith_nodeids.add(item.nodeid)
                 test_suite = marker.kwargs.get("test_suite_name") or (
                     _get_test_suite_name(item.obj)
                 )
@@ -159,8 +152,6 @@ class LangSmithPlugin:
         if not self.process_status:
             self.live.console.print("Running tests...")
 
-        if status.get("status") in _REPORTED_STATUSES:
-            status = {**status, "_reported": True}
         with self.status_lock:
             current_status = self.process_status.get(process_id, {})
             self.process_status[process_id] = _merge_statuses(
@@ -173,36 +164,6 @@ class LangSmithPlugin:
     def pytest_runtest_logstart(self, nodeid):
         """Initialize live display when first test starts."""
         self.update_process_status(nodeid, {"status": "running"})
-
-    def pytest_runtest_logreport(self, report):
-        """Track pytest completion and failures for LangSmith tests."""
-        if report.nodeid not in self.langsmith_nodeids:
-            return
-        should_render = False
-        with self.status_lock:
-            current_status = self.process_status.get(report.nodeid, {})
-            if report.failed and not (
-                report.when == "call" and current_status.get("status") == "failed"
-            ):
-                self.process_status[report.nodeid] = {
-                    **current_status,
-                    "status": "error",
-                }
-                should_render = True
-            elif (
-                report.when == "teardown"
-                and report.skipped
-                and current_status.get("status") == "passed"
-            ):
-                self.process_status[report.nodeid] = {
-                    **current_status,
-                    "status": "skipped",
-                }
-                should_render = True
-            if report.when == "teardown":
-                self.completed_nodeids.add(report.nodeid)
-        if should_render:
-            self.live.update(self.generate_tables())
 
     def generate_tables(self):
         """Generate a collection of tables—one per suite.
@@ -252,9 +213,13 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls.get(suite_name, "--")}[/bright
             max_duration = max(len(f"{duration:.2f}s"), max_duration)
             max_status = max(len(status.get("status", "queued")), max_status)
 
-        aggregate_status = _format_aggregate_status(
-            suite_statuses.values(), len(process_ids)
-        )
+        passed_count = sum(s.get("status") == "passed" for s in suite_statuses.values())
+        if suite_statuses:
+            rate = passed_count / len(suite_statuses)
+            color = "green" if rate == 1 else "red"
+            aggregate_status = f"[{color}]{rate:.0%}[/{color}]"
+        else:
+            aggregate_status = "Passed: --"
         if durations:
             aggregate_duration = f"{sum(durations) / len(durations):.2f}s"
         else:
@@ -273,10 +238,8 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls.get(suite_name, "--")}[/bright
         for pid, status in suite_statuses.items():
             status_color = {
                 "running": "yellow",
-                "unreported": "yellow",
                 "passed": "green",
                 "failed": "red",
-                "error": "red",
                 "skipped": "cyan",
             }.get(status.get("status", "queued"), "white")
 
@@ -328,20 +291,7 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls.get(suite_name, "--")}[/bright
             reporter.warning_summary = lambda *args, **kwargs: None
 
     def pytest_sessionfinish(self, session):
-        """Finalize and stop Rich Live rendering."""
-        with self.status_lock:
-            for process_ids in self.test_suites.values():
-                for process_id in process_ids:
-                    status = self.process_status.get(process_id, {})
-                    incomplete = process_id not in self.completed_nodeids
-                    if status.get("status") != "error" and (
-                        incomplete or status.get("status") not in _REPORTED_STATUSES
-                    ):
-                        self.process_status[process_id] = {
-                            **status,
-                            "status": "unreported",
-                        }
-        self.live.update(self.generate_tables())
+        """Stop Rich Live rendering at the end of the session."""
         self.live.stop()
         self.live.console.print("\nFinishing up...")
 
@@ -375,29 +325,6 @@ def pytest_configure(config):
         config.pluginmanager.register(LangSmithPlugin(), "langsmith_output_plugin")
         # Suppress warnings summary
         config.option.showwarnings = False
-
-
-def _format_aggregate_status(statuses, expected_count: int) -> str:
-    """Format a suite's pass and reporting rates."""
-    if not expected_count:
-        return "Passed: --"
-    statuses = list(statuses)
-    passed_count = sum(s.get("status") == "passed" for s in statuses)
-    failed_count = sum(s.get("status") in {"failed", "error"} for s in statuses)
-    reported_count = sum(
-        s.get("_reported", s.get("status") in _REPORTED_STATUSES) for s in statuses
-    )
-    rate = passed_count / expected_count
-    if failed_count:
-        color = "red"
-    elif reported_count == expected_count and passed_count == expected_count:
-        color = "green"
-    else:
-        color = "yellow"
-    return (
-        f"[{color}]{rate:.0%} passed "
-        f"({reported_count}/{expected_count} reported)[/{color}]"
-    )
 
 
 def _abbreviate(x: str, max_len: int) -> str:
