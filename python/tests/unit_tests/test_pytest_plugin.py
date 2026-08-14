@@ -1,6 +1,9 @@
 from collections import defaultdict
+from threading import Lock
 from types import SimpleNamespace
+from unittest.mock import Mock
 
+import pytest
 from rich.console import Console
 
 from langsmith import pytest_plugin
@@ -30,6 +33,32 @@ def test_collection_groups_langsmith_tests_by_suite(monkeypatch):
     plugin.add_process_to_test_suite("default-suite", langsmith_item.nodeid)
 
     assert plugin.test_suites == {"default-suite": [langsmith_item.nodeid]}
+
+
+@pytest.mark.parametrize(
+    ("failed", "skipped", "expected_status"),
+    [(True, False, "failed"), (False, True, "skipped")],
+)
+def test_setup_outcome_replaces_running_status(failed, skipped, expected_status):
+    plugin = object.__new__(pytest_plugin.LangSmithPlugin)
+    nodeid = "test_example.py::test_setup_outcome"
+    plugin.langsmith_nodeids = {nodeid}
+    plugin.process_status = {}
+    plugin.status_lock = Lock()
+    plugin.live = Mock()
+    plugin.generate_tables = Mock(return_value="tables")
+
+    plugin.pytest_runtest_logstart(nodeid)
+    plugin.pytest_runtest_logreport(
+        SimpleNamespace(
+            nodeid=nodeid,
+            when="setup",
+            failed=failed,
+            skipped=skipped,
+        )
+    )
+
+    assert plugin.process_status[nodeid]["status"] == expected_status
 
 
 def test_table_counts_collected_tests_without_results():

@@ -118,6 +118,7 @@ class LangSmithPlugin:
 
         self.test_suites = defaultdict(list)
         self.test_suite_urls = {}
+        self.langsmith_nodeids = set()
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
@@ -132,10 +133,12 @@ class LangSmithPlugin:
     def pytest_collection_finish(self, session):
         """Group collected LangSmith tests by suite."""
         self.collected_nodeids = set()
+        self.langsmith_nodeids = set()
         for item in session.items:
             self.collected_nodeids.add(item.nodeid)
             marker = item.get_closest_marker("langsmith")
             if marker:
+                self.langsmith_nodeids.add(item.nodeid)
                 test_suite = marker.kwargs.get("test_suite_name") or (
                     _get_test_suite_name(item.obj)
                 )
@@ -164,6 +167,16 @@ class LangSmithPlugin:
     def pytest_runtest_logstart(self, nodeid):
         """Initialize live display when first test starts."""
         self.update_process_status(nodeid, {"status": "running"})
+
+    def pytest_runtest_logreport(self, report):
+        """Track setup failures and skips for LangSmith tests."""
+        if (
+            report.nodeid in self.langsmith_nodeids
+            and report.when == "setup"
+            and (report.failed or report.skipped)
+        ):
+            status = "failed" if report.failed else "skipped"
+            self.update_process_status(report.nodeid, {"status": status})
 
     def generate_tables(self):
         """Generate a collection of tables—one per suite.
