@@ -3,8 +3,7 @@
 from typing import Any, List, Type, Generic, Mapping, TypeVar, Optional, cast
 from typing_extensions import override
 
-from httpx import Response
-
+from ._httpx import Response
 from ._utils import is_mapping
 from ._models import BaseModel
 from ._base_client import BasePage, PageInfo, BaseSyncPage, BaseAsyncPage

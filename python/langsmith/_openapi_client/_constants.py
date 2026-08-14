@@ -1,6 +1,6 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-import httpx
+from ._httpx import httpx
 
 RAW_RESPONSE_HEADER = "X-Stainless-Raw-Response"
 OVERRIDE_CAST_TO_HEADER = "____stainless_override_cast_to"

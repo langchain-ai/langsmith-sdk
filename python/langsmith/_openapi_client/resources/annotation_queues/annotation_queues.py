@@ -7,8 +7,6 @@ from typing import Dict, Union, Iterable, Optional
 from datetime import datetime
 from typing_extensions import Literal
 
-import httpx
-
 from .runs import (
     RunsResource,
     AsyncRunsResource,
@@ -36,6 +34,7 @@ from ...types import (
     annotation_queue_retrieve_total_archived_params,
     annotation_queue_retrieve_annotation_queues_params,
 )
+from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform, async_maybe_transform
 from ..._compat import cached_property
