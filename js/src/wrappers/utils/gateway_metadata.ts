@@ -39,15 +39,14 @@ function readGatewayHeader(value: unknown): string | undefined {
 export function getGatewayResponseMetadata(
   headersOrResponse: unknown,
 ): Record<string, unknown> | undefined {
-  const headers = getHeaders(headersOrResponse) ?? headersOrResponse;
-  const rawMetadata = readGatewayHeader(headers);
-  if (!rawMetadata) return undefined;
-
   try {
+    const headers = getHeaders(headersOrResponse) ?? headersOrResponse;
+    const rawMetadata = readGatewayHeader(headers);
+    if (!rawMetadata) return undefined;
     const gatewayInfo: unknown = JSON.parse(rawMetadata);
     return isRecord(gatewayInfo) ? gatewayInfo : undefined;
   } catch {
-    // Invalid diagnostic metadata must never affect the provider call.
+    // Response diagnostics must never alter provider-call behavior.
     return undefined;
   }
 }
@@ -56,46 +55,55 @@ export function addGatewayResponseMetadata(
   runTree: RunTree | undefined,
   headersOrResponse: unknown,
 ): void {
-  if (!runTree) return;
-  const gatewayInfo = getGatewayResponseMetadata(headersOrResponse);
-  if (!gatewayInfo) return;
-  runTree.extra = {
-    ...runTree.extra,
-    metadata: {
-      ...runTree.extra?.metadata,
-      ls_gateway_info: gatewayInfo,
-    },
-  };
+  try {
+    if (!runTree) return;
+    const gatewayInfo = getGatewayResponseMetadata(headersOrResponse);
+    if (!gatewayInfo) return;
+    runTree.extra = {
+      ...runTree.extra,
+      metadata: {
+        ...runTree.extra?.metadata,
+        ls_gateway_info: gatewayInfo,
+      },
+    };
+  } catch {
+    // Closed or custom run-tree implementations must not break provider calls.
+  }
 }
 
 export function captureGatewayResponseMetadata(
   result: unknown,
-  runTree = getCurrentRunTree(true),
+  explicitRunTree?: RunTree,
 ): void {
-  if (!runTree) return;
+  try {
+    const runTree = explicitRunTree ?? getCurrentRunTree(true);
+    if (!runTree) return;
 
-  if (isRecord(result) && typeof result.asResponse === "function") {
-    void Promise.resolve(result.asResponse())
-      .then((response) => addGatewayResponseMetadata(runTree, response))
-      .catch((error) => addGatewayResponseMetadata(runTree, error));
-    return;
+    if (isRecord(result) && typeof result.asResponse === "function") {
+      void Promise.resolve(result.asResponse())
+        .then((response) => addGatewayResponseMetadata(runTree, response))
+        .catch((error) => addGatewayResponseMetadata(runTree, error));
+      return;
+    }
+
+    if (isRecord(result) && typeof result.withResponse === "function") {
+      void Promise.resolve(result.withResponse())
+        .then((wrapped) => addGatewayResponseMetadata(runTree, wrapped))
+        .catch((error) => addGatewayResponseMetadata(runTree, error));
+      return;
+    }
+
+    if (isRecord(result) && typeof result.then === "function") {
+      void Promise.resolve(result)
+        .then((value) => addGatewayResponseMetadata(runTree, value))
+        .catch((error) => addGatewayResponseMetadata(runTree, error));
+      return;
+    }
+
+    addGatewayResponseMetadata(runTree, result);
+  } catch {
+    // Some SDK objects expose throwing response getters. Ignore diagnostics.
   }
-
-  if (isRecord(result) && typeof result.withResponse === "function") {
-    void Promise.resolve(result.withResponse())
-      .then((wrapped) => addGatewayResponseMetadata(runTree, wrapped))
-      .catch((error) => addGatewayResponseMetadata(runTree, error));
-    return;
-  }
-
-  if (isRecord(result) && typeof result.then === "function") {
-    void Promise.resolve(result)
-      .then((value) => addGatewayResponseMetadata(runTree, value))
-      .catch((error) => addGatewayResponseMetadata(runTree, error));
-    return;
-  }
-
-  addGatewayResponseMetadata(runTree, result);
 }
 
 export function wrapWithGatewayResponseMetadata<

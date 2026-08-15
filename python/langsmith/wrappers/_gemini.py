@@ -395,8 +395,8 @@ def _process_generate_content_response(response: Any) -> dict:
 
 def _reduce_generate_content_chunks(all_chunks: list) -> dict:
     """Reduce streaming chunks into a single response."""
-    for chunk in all_chunks:
-        add_gateway_response_metadata(chunk)
+    if all_chunks:
+        add_gateway_response_metadata(all_chunks[0])
     if not all_chunks:
         return {
             "content": "",

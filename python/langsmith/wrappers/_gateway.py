@@ -20,48 +20,52 @@ def add_gateway_response_metadata(
     *,
     run_tree: RunTree | None = None,
 ) -> None:
-    """Parse the gateway metadata header and merge it into the active run."""
-    headers = getattr(headers_or_response, "headers", headers_or_response)
-    if not isinstance(headers, Mapping) and not hasattr(headers, "get"):
-        sdk_response = getattr(headers_or_response, "sdk_http_response", None)
-        headers = getattr(sdk_response, "headers", None)
-    if headers is None or not hasattr(headers, "get"):
-        return
-
-    if isinstance(headers, Mapping):
-        raw_metadata = next(
-            (
-                value
-                for key, value in headers.items()
-                if str(key).lower() == _GATEWAY_METADATA_HEADER
-            ),
-            None,
-        )
-    else:
-        raw_metadata = headers.get(_GATEWAY_METADATA_HEADER)
-    if not isinstance(raw_metadata, str):
-        return
+    """Best-effort parse and merge of gateway metadata into the active LLM run."""
     try:
-        gateway_metadata = json.loads(raw_metadata)
-    except (TypeError, json.JSONDecodeError):
-        return
-    if not isinstance(gateway_metadata, dict):
-        return
+        headers = getattr(headers_or_response, "headers", headers_or_response)
+        if not isinstance(headers, Mapping) and not hasattr(headers, "get"):
+            sdk_response = getattr(headers_or_response, "sdk_http_response", None)
+            headers = getattr(sdk_response, "headers", None)
+        if headers is None or not hasattr(headers, "get"):
+            return
 
-    run = run_tree or run_helpers.get_current_run_tree()
-    if run is None or (run_tree is None and run.run_type != "llm"):
+        if isinstance(headers, Mapping):
+            raw_metadata = next(
+                (
+                    value
+                    for key, value in headers.items()
+                    if str(key).lower() == _GATEWAY_METADATA_HEADER
+                ),
+                None,
+            )
+        else:
+            raw_metadata = headers.get(_GATEWAY_METADATA_HEADER)
+        if not isinstance(raw_metadata, str):
+            return
+
+        gateway_metadata = json.loads(raw_metadata)
+        if not isinstance(gateway_metadata, dict):
+            return
+
+        run = run_tree or run_helpers.get_current_run_tree()
+        if run is None or (run_tree is None and run.run_type != "llm"):
+            return
+        run.add_metadata({"ls_gateway_info": gateway_metadata})
+    except Exception:
+        # Response diagnostics must never alter provider-call behavior.
         return
-    run.add_metadata({"ls_gateway_info": gateway_metadata})
 
 
 def install_gateway_response_hook(client: Any) -> None:
-    """Install one non-invasive httpx response hook on an SDK client."""
-    http_client = getattr(client, "_client", None)
-    event_hooks = getattr(http_client, "event_hooks", None)
-    if not isinstance(event_hooks, dict) or getattr(http_client, _HOOK_MARKER, False):
-        return
-
+    """Best-effort install of one httpx response hook on an SDK client."""
     try:
+        http_client = getattr(client, "_client", None)
+        event_hooks = getattr(http_client, "event_hooks", None)
+        if not isinstance(event_hooks, dict) or getattr(
+            http_client, _HOOK_MARKER, False
+        ):
+            return
+
         hooks = event_hooks.setdefault("response", [])
         if isinstance(http_client, httpx.AsyncClient):
 
@@ -76,7 +80,6 @@ def install_gateway_response_hook(client: Any) -> None:
 
             hooks.append(capture)
         setattr(http_client, _HOOK_MARKER, True)
-    except (AttributeError, TypeError):
-        # Custom HTTP transports may expose immutable hook collections. Gateway
-        # diagnostics must never prevent the provider wrapper from being installed.
+    except Exception:
+        # Custom transports may expose immutable or unusual hook collections.
         return

@@ -78,3 +78,16 @@ async def test_install_async_gateway_response_hook() -> None:
         {"ls_gateway_info": {"outcome": "success"}}
     )
     await http_client.aclose()
+
+
+def test_gateway_metadata_never_raises() -> None:
+    class ThrowingResponse:
+        @property
+        def headers(self):
+            raise RuntimeError("broken transport")
+
+    add_gateway_response_metadata(ThrowingResponse())
+    add_gateway_response_metadata(
+        {"x-langsmith-gateway-metadata": '{"outcome":"success"}'},
+        run_tree=Mock(add_metadata=Mock(side_effect=RuntimeError("closed run"))),
+    )

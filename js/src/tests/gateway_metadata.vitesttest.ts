@@ -79,6 +79,22 @@ describe("gateway response metadata", () => {
     });
   });
 
+  it("never throws for unusual SDK response objects", () => {
+    const run = createRun();
+    const throwingResponse = Object.defineProperty({}, "headers", {
+      get() {
+        throw new Error("broken response getter");
+      },
+    });
+
+    expect(() =>
+      addGatewayResponseMetadata(run, throwingResponse),
+    ).not.toThrow();
+    expect(() =>
+      captureGatewayResponseMetadata(throwingResponse, run),
+    ).not.toThrow();
+  });
+
   it("ignores malformed metadata", () => {
     const run = createRun();
 

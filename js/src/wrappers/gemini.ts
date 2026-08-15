@@ -50,8 +50,8 @@ const chatAggregator = (input: unknown): KVMap => {
   let finishReason: string | null = null;
   let safetyRatings: SafetyRating[] | null = null;
 
+  captureGatewayResponseMetadata(chunks[0]);
   for (const chunk of chunks) {
-    captureGatewayResponseMetadata(chunk);
     if (chunk?.usageMetadata) {
       usageMetadata = chunk.usageMetadata;
     }
