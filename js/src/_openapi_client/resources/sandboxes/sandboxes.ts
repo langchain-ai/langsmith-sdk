@@ -21,7 +21,12 @@ import {
   RegistryUpdateParams,
 } from './registries.js';
 import * as SnapshotsAPI from './snapshots.js';
-import { SnapshotCreateParams, SnapshotListParams, Snapshots } from './snapshots.js';
+import {
+  SnapshotCreateParams,
+  SnapshotListParams,
+  SnapshotRetrieveByNameResponse,
+  Snapshots,
+} from './snapshots.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
@@ -52,11 +57,15 @@ export interface SandboxResponse {
 
   idle_ttl_seconds?: number;
 
+  labels?: { [key: string]: string };
+
   mem_bytes?: number;
 
   mount_config?: SandboxResponse.MountConfig;
 
   name?: string;
+
+  preserve_memory_on_stop?: boolean;
 
   proxy_config?: SandboxResponse.ProxyConfig;
 
@@ -85,6 +94,7 @@ export namespace SandboxResponse {
       | MountConfig.SandboxapiS3BucketMountSpec
       | MountConfig.SandboxapiGcsBucketMountSpec
       | MountConfig.SandboxapiGitRepoMountSpec
+      | MountConfig.SandboxapiContextHubRepoMountSpec
     >;
   }
 
@@ -142,9 +152,11 @@ export namespace SandboxResponse {
 
       s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      contexthub?: SandboxapiS3BucketMountSpec.Contexthub;
 
       gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
@@ -170,6 +182,21 @@ export namespace SandboxResponse {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Gcs {
@@ -202,9 +229,11 @@ export namespace SandboxResponse {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      contexthub?: SandboxapiGcsBucketMountSpec.Contexthub;
 
       git?: SandboxapiGcsBucketMountSpec.Git;
 
@@ -224,6 +253,21 @@ export namespace SandboxResponse {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Git {
@@ -262,9 +306,11 @@ export namespace SandboxResponse {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      contexthub?: SandboxapiGitRepoMountSpec.Contexthub;
 
       gcs?: SandboxapiGitRepoMountSpec.Gcs;
 
@@ -296,10 +342,102 @@ export namespace SandboxResponse {
         writeback_seconds?: number;
       }
 
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
+      }
+
       export interface Gcs {
         bucket: string;
 
         prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        region: string;
+
+        endpoint_url?: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiContextHubRepoMountSpec {
+      id: string;
+
+      contexthub: SandboxapiContextHubRepoMountSpec.Contexthub;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
+
+      cache?: SandboxapiContextHubRepoMountSpec.Cache;
+
+      gcs?: SandboxapiContextHubRepoMountSpec.Gcs;
+
+      git?: SandboxapiContextHubRepoMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiContextHubRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiContextHubRepoMountSpec {
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
       }
 
       export interface S3 {
@@ -363,6 +501,16 @@ export namespace SandboxResponse {
       aws?: Rule.Aws;
 
       enabled?: boolean;
+
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
 
       gcp?: Rule.Gcp;
 
@@ -470,6 +618,8 @@ export interface SnapshotResponse {
 
   image_digest?: string;
 
+  labels?: { [key: string]: string };
+
   /**
    * MemorySnapshotSizeBytes is non-nil iff the snapshot was captured with VM memory
    * state. A non-nil value is the canonical signal that this snapshot can
@@ -486,6 +636,12 @@ export interface SnapshotResponse {
   status?: string;
 
   status_message?: string;
+
+  /**
+   * Tags currently resolving to this snapshot, under Name. A snapshot with no tags
+   * is dangling — addressable only by id.
+   */
+  tags?: Array<string>;
 
   updated_at?: string;
 }
@@ -524,6 +680,7 @@ export declare namespace Sandboxes {
 
   export {
     Snapshots as Snapshots,
+    type SnapshotRetrieveByNameResponse as SnapshotRetrieveByNameResponse,
     type SnapshotCreateParams as SnapshotCreateParams,
     type SnapshotListParams as SnapshotListParams,
   };

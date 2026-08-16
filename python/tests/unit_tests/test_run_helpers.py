@@ -2587,3 +2587,44 @@ def test_ls_message_view_exclude_metadata_cascades_to_child_runs() -> None:
         f"expected all {len(payloads)} runs to carry "
         f"{LS_MESSAGE_VIEW_EXCLUDE}=True, only {len(excluded)} did"
     )
+
+
+@pytest.mark.parametrize("parent_kind", ["dict", "str"])
+def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str):
+    """`tracing_context(parent=<headers|dotted_order>, replicas=[...])` applies.
+
+    Regression test for LSDK-449. The downstream service's root run is created as
+    a child of the placeholder parent rebuilt from the incoming trace context.
+    That placeholder used to be constructed before `_REPLICAS` was set and without
+    the explicit `replicas` argument, so it ended up with `[]`, and `create_child`
+    propagated that `[]` to the root run and every descendant.
+    """
+    replicas = [{"project_name": "project-b", "primary": True}]
+    upstream = RunTree(name="a_root", run_type="chain", project_name="project-a")
+    parent = upstream.to_headers() if parent_kind == "dict" else upstream.dotted_order
+
+    seen = {}
+
+    @traceable(run_type="chain", name="b_root")
+    def b_root():
+        run = get_current_run_tree()
+        seen["replicas"] = run.replicas
+        seen["parent_run_id"] = run.parent_run_id
+        return nested()
+
+    @traceable(run_type="llm", name="nested")
+    def nested():
+        seen["nested_replicas"] = get_current_run_tree().replicas
+        return "ok"
+
+    with tracing_context(enabled="local"):
+        with tracing_context(parent=parent, replicas=replicas):
+            placeholder = get_current_run_tree()
+            assert placeholder is not None
+            assert placeholder.replicas == replicas
+            b_root()
+
+    assert seen["replicas"] == replicas
+    assert seen["nested_replicas"] == replicas
+    # No reroot: the downstream root still points at the real upstream run id.
+    assert seen["parent_run_id"] == upstream.id

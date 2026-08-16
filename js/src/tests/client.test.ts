@@ -6,16 +6,70 @@ import * as path from "node:path";
 import { inspect } from "node:util";
 import {
   Client,
+  ClientConfig,
   mergeRuntimeEnvIntoRun,
   _checkBackendVersion,
 } from "../client.js";
+import { v4 as uuid } from "../utils/uuid/src/index.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
 import { parseHubIdentifier } from "../utils/prompts.js";
+import { _resetWarnedMessages } from "../utils/warn.js";
 
 describe("Client", () => {
+  describe("resource tags on create", () => {
+    const tagValueIds = [
+      "550e8400-e29b-41d4-a716-446655440000",
+      "550e8400-e29b-41d4-a716-446655440001",
+    ];
+
+    it("includes tag value IDs when creating a project", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createProject({ projectName: "test-project", tagValueIds });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
+        tagValueIds,
+      );
+    });
+
+    it("includes tag value IDs when creating a dataset", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await client.createDataset("test-dataset", { tagValueIds });
+
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
+        tagValueIds,
+      );
+    });
+  });
+
   describe("createFeedback", () => {
     it("can opt out of extending trace retention", async () => {
       const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
@@ -37,6 +91,7 @@ describe("Client", () => {
         {
           score: 1,
           extendTraceRetention: false,
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
         },
       );
 
@@ -47,26 +102,159 @@ describe("Client", () => {
         }),
       );
     });
+
+    it("uses the supplied experiment session ID for evaluation feedback", async () => {
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+      });
+      const createFeedback = jest
+        .spyOn(client, "createFeedback")
+        .mockResolvedValue({} as any);
+      const startTime = "2026-07-21T12:34:56.789Z";
+
+      await client.logEvaluationFeedback(
+        { key: "quality", score: 1 },
+        {
+          id: "550e8400-e29b-41d4-a716-446655440000",
+          start_time: startTime,
+        } as any,
+        undefined,
+        "550e8400-e29b-41d4-a716-446655440001",
+      );
+
+      expect(createFeedback).toHaveBeenCalledWith(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "quality",
+        expect.objectContaining({
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+          startTime,
+        }),
+      );
+    });
+
+    const infoClient = (smithdbOnly: boolean) => {
+      const instance_flags = smithdbOnly
+        ? { ch_query_enabled: false, sdb_query_enabled: true }
+        : { ch_query_enabled: true };
+      const mockFetch = jest.fn<typeof fetch>().mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ instance_flags }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+      const paths = () =>
+        mockFetch.mock.calls.map(([url]) => new URL(String(url)).pathname);
+      return { client, paths };
+    };
+
+    it("throws without a sessionId on a SmithDB-only deployment", async () => {
+      const { client, paths } = infoClient(true);
+
+      await expect(
+        client.createFeedback("550e8400-e29b-41d4-a716-446655440000", "Foo", {
+          score: 1,
+        }),
+      ).rejects.toThrow(/sessionId must be provided/);
+      // Only GET /info was called: the feedback was never sent.
+      expect(paths()).toEqual(["/info"]);
+
+      // startTime stays optional, matching the server.
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+          sessionId: "550e8400-e29b-41d4-a716-446655440001",
+        },
+      );
+      expect(paths()).toContain("/feedback");
+
+      // Session-level feedback has no run to locate.
+      await client.createFeedback(null, "Foo", {
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+    });
+
+    it("accepts the params-object overload, which requires sessionId", async () => {
+      const { client, paths } = infoClient(true);
+
+      await client.createFeedback({
+        runId: "550e8400-e29b-41d4-a716-446655440000",
+        key: "Foo",
+        score: 1,
+        sessionId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+      // sessionId came from the params, so /info was never consulted.
+      expect(paths()).toEqual(["/feedback"]);
+
+      await client.createFeedback({
+        key: "Foo",
+        score: 1,
+        projectId: "550e8400-e29b-41d4-a716-446655440001",
+      });
+
+      // @ts-expect-error sessionId is required alongside runId.
+      await client.createFeedback({ runId: "x", key: "Foo" }).catch(() => {});
+    });
+
+    it("warns without a sessionId on other deployments", async () => {
+      const { client, paths } = infoClient(false);
+      // warnOnce dedupes per process, so this must be the only test that warns.
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      await client.createFeedback(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "Foo",
+        {
+          score: 1,
+        },
+      );
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("smithdb-sdk-migration#feedback-create"),
+      );
+      expect(paths()).toContain("/feedback");
+      warn.mockRestore();
+    });
   });
 
   describe("evaluators", () => {
     it("creates an evaluator through the platform endpoint", async () => {
-      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            evaluator: {
-              id: "eval-1",
-              name: "SDK smoke test code evaluator",
-              type: "code",
-            },
-          }),
-          {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
             status: 200,
             statusText: "OK",
             headers: { "content-type": "application/json" },
-          },
-        ),
-      );
+          }),
+        )
+        .mockResolvedValueOnce(
+          // second call: the actual evaluator create
+          new Response(
+            JSON.stringify({
+              evaluator: {
+                id: "eval-1",
+                name: "SDK smoke test code evaluator",
+                type: "code",
+              },
+            }),
+            {
+              status: 200,
+              statusText: "OK",
+              headers: { "content-type": "application/json" },
+            },
+          ),
+        );
       const client = new Client({
         apiUrl: "http://localhost:8080",
         apiKey: "test-api-key",
@@ -84,9 +272,9 @@ describe("Client", () => {
       });
 
       expect(response.evaluator?.id).toBe("eval-1");
-      const [url, init] = mockFetch.mock.calls[0];
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
       const headers = new Headers(init?.headers);
-      expect(url).toBe("http://localhost:8080/v1/platform/evaluators");
+      expect(url).toBe("http://localhost:8080/api/v1/platform/evaluators");
       expect(init).toEqual(
         expect.objectContaining({
           method: "POST",
@@ -101,6 +289,49 @@ describe("Client", () => {
         }),
       );
       expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-api-key")).toBe("test-api-key");
+      expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
+    });
+  });
+
+  describe("annotationQueues", () => {
+    it("exposes generated annotation queue item endpoints", async () => {
+      const mockFetch = jest
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          // first call: _checkStainlessVersion triggers GET /info
+          new Response(JSON.stringify({ version: "0.16.14" }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ count: 3 }), {
+            status: 200,
+            statusText: "OK",
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        workspaceId: "test-workspace-id",
+        fetchImplementation: mockFetch,
+      });
+
+      const response = await client.annotationQueues.items.retrieveCount(
+        "queue-1",
+        { status: "all" },
+      );
+
+      expect(response.count).toBe(3);
+      const [url, init] = mockFetch.mock.calls[1]; // call[0] is the /info prefetch
+      const headers = new Headers(init?.headers);
+      expect(url).toBe(
+        "http://localhost:8080/api/v1/platform/annotation-queues/queue-1/items/count?status=all",
+      );
+      expect(init).toEqual(expect.objectContaining({ method: "GET" }));
       expect(headers.get("x-api-key")).toBe("test-api-key");
       expect(headers.get("x-tenant-id")).toBe("test-workspace-id");
     });
@@ -333,6 +564,13 @@ describe("Client", () => {
       });
       const mockFetch = jest.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
+          // This deployment serves no discovery document, so refresh falls back
+          // to the configured mount point.
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
           if (String(input) === "https://profile.example.com/oauth/token") {
             expect(init?.method).toBe("POST");
             expect(String(init?.body)).toContain("grant_type=refresh_token");
@@ -358,8 +596,16 @@ describe("Client", () => {
         headers: (client as any)._mergedHeaders,
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-      const requestInit = mockFetch.mock.calls[1][1] as RequestInit;
+      const tokenCalls = mockFetch.mock.calls.filter(
+        ([input]) =>
+          String(input) === "https://profile.example.com/oauth/token",
+      );
+      expect(tokenCalls).toHaveLength(1);
+      const infoCall = mockFetch.mock.calls.find(
+        ([input]) => String(input) === "https://profile.example.com/info",
+      );
+      expect(infoCall).toBeDefined();
+      const requestInit = infoCall![1] as RequestInit;
       expect(requestInit.headers).toMatchObject({
         Authorization: "Bearer new-access-token",
       });
@@ -423,6 +669,11 @@ describe("Client", () => {
       });
       const mockFetch = jest.fn(
         async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
           if (String(input) === "https://profile.example.com/oauth/token") {
             expect(init?.method).toBe("POST");
             return new Response(
@@ -449,7 +700,15 @@ describe("Client", () => {
         headers: (client as any)._mergedHeaders,
       });
 
-      expect(mockFetch.mock.calls.map(([input]) => String(input))).toEqual([
+      // Discovery probes aside, refresh must target the profile's api_url
+      // rather than the client-level override.
+      expect(
+        mockFetch.mock.calls
+          .map(([input]) => String(input))
+          .filter(
+            (url) => !url.includes("/.well-known/oauth-authorization-server"),
+          ),
+      ).toEqual([
         "https://profile.example.com/oauth/token",
         "https://override.example.com/info",
       ]);
@@ -538,6 +797,70 @@ describe("Client", () => {
       });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://smith.langchain.com");
+    });
+  });
+
+  describe("_getOpenAPIBaseUrl", () => {
+    const getOpenAPIBaseUrl = (apiUrl: string) =>
+      (
+        new Client({ apiUrl, apiKey: "test-api-key" }) as any
+      )._getOpenAPIBaseUrl();
+
+    it("should strip a trailing /api/v1", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/v1")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should strip a trailing /api/v1 with a trailing slash", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/v1/")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should not strip a bare trailing /v1", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/v1")).toBe(
+        "https://api.smith.langchain.com/v1",
+      );
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith/v1");
+    });
+
+    it("should strip a trailing /api", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com/api/")).toBe(
+        "https://api.smith.langchain.com",
+      );
+    });
+
+    it("should preserve a self-hosted path prefix", () => {
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api/v1"),
+      ).toBe("https://self-hosted.example.com/langsmith");
+      expect(
+        getOpenAPIBaseUrl("https://self-hosted.example.com/langsmith/api"),
+      ).toBe("https://self-hosted.example.com/langsmith");
+    });
+
+    it("should leave a URL without an /api suffix unchanged", () => {
+      expect(getOpenAPIBaseUrl("https://api.smith.langchain.com")).toBe(
+        "https://api.smith.langchain.com",
+      );
+      expect(getOpenAPIBaseUrl("http://localhost:1984")).toBe(
+        "http://localhost:1984",
+      );
+    });
+
+    it("should only strip /api when it is the trailing path segment", () => {
+      expect(
+        getOpenAPIBaseUrl("https://api.smith.langchain.com/api/runs"),
+      ).toBe("https://api.smith.langchain.com/api/runs");
+      expect(getOpenAPIBaseUrl("https://api.example.com")).toBe(
+        "https://api.example.com",
+      );
     });
   });
 
@@ -1362,6 +1685,78 @@ describe("Client", () => {
     });
   });
 
+  describe("hideMetadata covers runtime env metadata", () => {
+    const postedMetadata = async (
+      hideMetadata: ClientConfig["hideMetadata"],
+    ) => {
+      // Read once at construction, so it has to be set before the client exists.
+      process.env.LANGCHAIN_TEST_ENV_METADATA = "env-value";
+      try {
+        const { client, callSpy } = mockClient({ hideMetadata });
+        await client.createRun({
+          id: uuid(),
+          name: "traced",
+          run_type: "llm",
+          inputs: { in: "put" },
+          extra: { metadata: { random: 123 } },
+        });
+        const { data } = await getAssumedTreeFromCalls(
+          callSpy.mock.calls,
+          client,
+        );
+        return data["traced:0"].extra?.metadata;
+      } finally {
+        delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+      }
+    };
+
+    it("should hide metadata merged in after masking", async () => {
+      expect(await postedMetadata(true)).toEqual({});
+    });
+
+    it("should pass env metadata to a hideMetadata function", async () => {
+      const metadata = await postedMetadata((metadata) =>
+        Object.fromEntries(
+          Object.entries(metadata).filter(
+            ([key]) => !key.startsWith("LANGCHAIN_"),
+          ),
+        ),
+      );
+
+      expect(metadata).not.toHaveProperty("LANGCHAIN_TEST_ENV_METADATA");
+      expect(metadata?.random).toBe(123);
+    });
+
+    // The OTEL exporter consumes queued runs directly, so it needs the same
+    // re-masking the ingest endpoints get from prepareRunCreateOrUpdateInputs.
+    it("should hide metadata merged in before OTEL export", async () => {
+      process.env.LANGCHAIN_TEST_ENV_METADATA = "env-value";
+      try {
+        const client = new Client({ apiKey: "MOCK", hideMetadata: true });
+        const exportBatch = jest.fn();
+        (client as any).langSmithToOTELTranslator = { exportBatch };
+
+        // What processRunOperation queues: masked metadata, then env merged in.
+        const item = mergeRuntimeEnvIntoRun({
+          id: uuid(),
+          name: "traced",
+          run_type: "llm",
+          inputs: { in: "put" },
+          extra: { metadata: {} },
+        } as any);
+
+        await (client as any)._processBatch([
+          { action: "create", item, otelContext: {} },
+        ]);
+
+        const [operations] = exportBatch.mock.calls[0] as [any[]];
+        expect(operations[0].run.extra.metadata).toEqual({});
+      } finally {
+        delete process.env.LANGCHAIN_TEST_ENV_METADATA;
+      }
+    });
+  });
+
   describe("listRuns normalizes naive timestamps", () => {
     it("should append Z to naive timestamps returned by the API", async () => {
       const client = new Client({ apiKey: "test-api-key" });
@@ -1680,20 +2075,266 @@ describe("_checkBackendVersion", () => {
   });
 
   it.each([
-    ["0.4.9", true],
-    ["0.4.99", true],
-    ["0.5.0", false],
-    ["0.5.1", false],
-    ["1.0.0", false],
-    ["0.5.4rc1", false],
-    ["0.4.4rc1", true],
+    ["0.15.9", true],
+    ["0.15.4rc1", true],
+    ["0.16.0", false],
+    ["0.16.1", false],
+    ["0.16.4rc1", false],
+    ["0.17.0", false],
+    ["", false],
     ["not-a-version", true],
   ])("version %s -> warns: %s", (version, expectWarn) => {
-    _checkBackendVersion(version as string, "0.5.0");
+    _checkBackendVersion(version as string, "0.16.0");
     if (expectWarn) {
       expect(warnSpy).toHaveBeenCalledTimes(1);
     } else {
       expect(warnSpy).not.toHaveBeenCalled();
     }
   });
+
+  it.each([
+    ["0.15.9", true],
+    ["0.16.0", false],
+  ])(
+    "resource getter checks the backend version (%s -> warns: %s)",
+    async (version, expectWarn) => {
+      // Guards the min version passed by the getters: drop the call, or declare
+      // a version below 0.16.0, and this fails.
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ version }), {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:8080",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      void client.runs;
+      // The check is fire-and-forget: await the same /info promise it awaits,
+      // then let its callback run.
+      await (
+        client as unknown as { _ensureServerInfo(): Promise<unknown> }
+      )._ensureServerInfo();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      if (expectWarn) {
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("older than the minimum version"),
+        );
+      } else {
+        expect(warnSpy).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("reports both versions and links to the migration docs", () => {
+    _checkBackendVersion("0.15.0", "0.16.0");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Backend version "0.15.0" is older than the minimum version required by this SDK ("0.16.0")',
+      ),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
+      ),
+    );
+  });
+});
+
+describe("getRunUrl deprecation", () => {
+  beforeEach(() => _resetWarnedMessages());
+
+  it("warns and does not emit a nested readRun warning", async () => {
+    const client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    const runId = "00000000-0000-4000-8000-000000000001";
+    const traceId = "00000000-0000-4000-8000-000000000002";
+    const sessionId = "00000000-0000-4000-8000-000000000003";
+
+    const warnings: string[] = [];
+    const emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+    jest
+      .spyOn(client as any, "_getTenantId")
+      .mockResolvedValue("00000000-0000-4000-8000-000000000004" as never);
+
+    try {
+      const url = await client.getRunUrl({
+        run: {
+          id: runId,
+          trace_id: traceId,
+          session_id: sessionId,
+        } as any,
+      });
+      expect(url).toContain(runId);
+      expect(
+        warnings.filter((w) => w.includes("getRunUrl() is deprecated")),
+      ).toHaveLength(1);
+      expect(warnings.filter((w) => w.includes("readRun()"))).toHaveLength(0);
+    } finally {
+      emitWarningSpy.mockRestore();
+    }
+  });
+});
+
+describe("nested deprecation warnings", () => {
+  const RUN_ID = "00000000-0000-4000-8000-000000000011";
+  const PROJECT_ID = "00000000-0000-4000-8000-000000000012";
+
+  let client: Client;
+  let warnings: string[];
+  let emitWarningSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    _resetWarnedMessages();
+    client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    warnings = [];
+    emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+  });
+
+  afterEach(() => emitWarningSpy.mockRestore());
+
+  it("readThread() warns for itself but not for listRuns()", async () => {
+    // _listRuns is what readThread delegates to; stub it so no HTTP happens.
+    jest
+      .spyOn(client as any, "_listRuns")
+      .mockImplementation(async function* () {} as never);
+
+    for await (const _ of client.readThread({
+      threadId: "thread-1",
+      projectId: PROJECT_ID,
+    })) {
+      // drain
+    }
+
+    expect(
+      warnings.filter((w) => w.includes("readThread() is deprecated")),
+    ).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes("listRuns()"))).toHaveLength(0);
+  });
+
+  it("readRun({ loadChildRuns }) warns for itself but not for listRuns()", async () => {
+    jest.spyOn(client as any, "_get").mockResolvedValue({
+      id: RUN_ID,
+      name: "r",
+      run_type: "chain",
+      session_id: PROJECT_ID,
+      trace_id: RUN_ID,
+      dotted_order: "1",
+    } as never);
+    jest
+      .spyOn(client as any, "_listRuns")
+      .mockImplementation(async function* () {} as never);
+
+    await client.readRun(RUN_ID, { loadChildRuns: true });
+
+    expect(
+      warnings.filter((w) => w.includes("readRun() is deprecated")),
+    ).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes("listRuns()"))).toHaveLength(0);
+  });
+
+  it("_listRuns() does not warn at all", async () => {
+    jest
+      .spyOn(client as any, "_getCursorPaginatedList")
+      .mockImplementation(async function* () {} as never);
+
+    for await (const _ of client._listRuns({ projectId: PROJECT_ID })) {
+      // drain
+    }
+
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe("run sharing deprecations", () => {
+  const RUN_ID = "00000000-0000-4000-8000-000000000021";
+  const SHARE_TOKEN = "00000000-0000-4000-8000-000000000022";
+
+  let client: Client;
+  let warnings: string[];
+  let emitWarningSpy: { mockRestore: () => void };
+
+  beforeEach(() => {
+    _resetWarnedMessages();
+    client = new Client({
+      apiKey: "test-key",
+      apiUrl: "https://api.smith.langchain.com",
+    });
+    warnings = [];
+    emitWarningSpy = jest
+      .spyOn(process, "emitWarning")
+      .mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+  });
+
+  afterEach(() => emitWarningSpy.mockRestore());
+
+  /** Stub only the transport, so each real method body still executes. */
+  const stubFetch = (body: unknown) =>
+    jest.spyOn(client as any, "_fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => body,
+      text: async () => "",
+    } as never);
+
+  it.each([
+    [
+      "shareRun",
+      { share_token: SHARE_TOKEN },
+      () => client.shareRun(RUN_ID),
+      "client.runs.share.create()",
+    ],
+    [
+      "unshareRun",
+      {},
+      () => client.unshareRun(RUN_ID),
+      "client.runs.share.delete()",
+    ],
+    [
+      "readRunSharedLink",
+      { share_token: SHARE_TOKEN },
+      () => client.readRunSharedLink(RUN_ID),
+      'client.runs.retrieve({ selects: ["SHARE_URL"] })',
+    ],
+    [
+      "listSharedRuns",
+      [],
+      () => client.listSharedRuns(SHARE_TOKEN),
+      "client.public.runs.query()",
+    ],
+  ])(
+    "%s() warns once and names its replacement",
+    async (name, body, call, replacement) => {
+      stubFetch(body);
+      await call();
+
+      const emitted = warnings.filter((w) =>
+        w.includes(`${name}() is deprecated`),
+      );
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toContain(`Use ${replacement} instead.`);
+      expect(emitted[0]).toContain("#share-and-read-public-runs");
+    },
+  );
 });

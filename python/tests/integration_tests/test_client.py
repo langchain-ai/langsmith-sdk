@@ -122,6 +122,7 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
+@pytest.mark.require_v2
 async def test_evaluators_generated_client_crud(
     langchain_client: Client,
 ) -> None:
@@ -463,6 +464,7 @@ def test_list_examples(langchain_client: "Client") -> None:
         safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -499,6 +501,7 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_update_run_attachments(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -848,6 +851,7 @@ def test_list_datasets(langchain_client: Client) -> None:
                 pass
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 def test_create_run_with_masked_inputs_outputs(
     langchain_client: Client, monkeypatch: pytest.MonkeyPatch
@@ -955,6 +959,7 @@ def test_create_chat_example(
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.parametrize("use_multipart_endpoint", [True, False])
 @pytest.mark.slow
 def test_batch_ingest_runs(
@@ -1111,6 +1116,7 @@ def test_multipart_ingest_create_with_attachments_error(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1159,6 +1165,7 @@ def test_multipart_ingest_create_with_attachments(
         )
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_multipart_ingest_update_with_attachments_no_paths(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1225,6 +1232,7 @@ def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -
         return False
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments_error(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1274,6 +1282,7 @@ def test_multipart_ingest_update_with_attachments_error(
 
 
 # TODO: fix flakiness
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
@@ -1475,6 +1484,7 @@ def test_get_info() -> None:
     assert info.batch_ingest_config["size_limit"] > 0  # type: ignore
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="This test is flaky")
 @pytest.mark.parametrize("add_metadata", [True, False])
 @pytest.mark.parametrize("do_batching", [True, False])
@@ -3451,6 +3461,7 @@ def test_list_annotation_queues(langchain_client: Client):
             langchain_client.delete_annotation_queue(queue_id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_annotation_queue_runs(langchain_client: Client):
     """Test managing runs within an annotation queue."""
@@ -3521,6 +3532,7 @@ def test_annotation_queue_runs(langchain_client: Client):
     langchain_client.delete_annotation_queue(queue.id)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_annotation_queue_runs_by_key(langchain_client: Client):
     """Test adding runs to an annotation queue via the SmithDB by-key path."""
@@ -3653,6 +3665,7 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_list_threads(langchain_client: Client) -> None:
     """Test list_threads returns threads grouped by thread_id."""
@@ -3736,6 +3749,7 @@ def test_list_threads(langchain_client: Client) -> None:
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.slow
 def test_read_thread(langchain_client: Client) -> None:
     """Test read_thread yields runs for a single thread_id."""
@@ -3797,6 +3811,7 @@ def test_read_thread(langchain_client: Client) -> None:
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="flaky")
 def test_list_runs_with_child_runs(langchain_client: Client):
     """Test listing runs with child runs."""
@@ -3833,6 +3848,7 @@ def test_list_runs_with_child_runs(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.require_clickhouse
 @pytest.mark.skip(reason="Flakey")
 def test_run_ops_buffer_integration(langchain_client: Client) -> None:
     project_name = f"test-run-ops-buffer-{str(uuid7())[:8]}"
@@ -4031,6 +4047,7 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
     )
 
 
+@pytest.mark.require_clickhouse
 def test_get_experiment_results(langchain_client: Client) -> None:
     """Test get_experiment_results method with evaluation data."""
     dataset_name = "__test_evaluate_attachments" + uuid7().hex
@@ -4156,92 +4173,6 @@ def test_create_insights_job(langchain_client: Client) -> None:
     assert insights_job.status in ["queued", "running", "success"]
 
 
-def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
-    dataset_name = f"feedback-formula-crud-{uuid7().hex}"
-    feedback_key = f"overall-quality-{uuid7().hex[:8]}"
-    initial_parts = [
-        {"part_type": "weighted_key", "weight": 0.6, "key": "accuracy"},
-        {"part_type": "weighted_key", "weight": 0.4, "key": "helpfulness"},
-    ]
-    updated_parts = [
-        {"part_type": "weighted_key", "weight": 0.25, "key": "coverage"},
-        {"part_type": "weighted_key", "weight": 0.75, "key": "relevance"},
-    ]
-
-    dataset = None
-    feedback_formula_id = None
-    try:
-        dataset = langchain_client.create_dataset(dataset_name)
-        created_formula = langchain_client.create_feedback_formula(
-            feedback_key=feedback_key,
-            aggregation_type="sum",
-            formula_parts=initial_parts,
-            dataset_id=dataset.id,
-        )
-        feedback_formula_id = created_formula.id
-
-        assert created_formula.dataset_id == dataset.id
-        assert created_formula.feedback_key == feedback_key
-        assert [part.key for part in created_formula.formula_parts] == [
-            part["key"] for part in initial_parts
-        ]
-
-        formulas = list(langchain_client.list_feedback_formulas(dataset_id=dataset.id))
-        assert any(formula.id == feedback_formula_id for formula in formulas)
-
-        updated_feedback_key = f"{feedback_key}-updated"
-        updated_formula = langchain_client.update_feedback_formula(
-            feedback_formula_id,
-            feedback_key=updated_feedback_key,
-            aggregation_type="avg",
-            formula_parts=updated_parts,
-        )
-        assert updated_formula.id == feedback_formula_id
-        assert updated_formula.feedback_key == updated_feedback_key
-        assert updated_formula.aggregation_type == "avg"
-        assert [part.key for part in updated_formula.formula_parts] == [
-            part["key"] for part in updated_parts
-        ]
-        assert [part.weight for part in updated_formula.formula_parts] == [
-            part["weight"] for part in updated_parts
-        ]
-
-        fetched_formula = langchain_client.get_feedback_formula_by_id(
-            feedback_formula_id
-        )
-        assert fetched_formula.feedback_key == updated_feedback_key
-        assert fetched_formula.aggregation_type == "avg"
-        assert [part.key for part in fetched_formula.formula_parts] == [
-            part["key"] for part in updated_parts
-        ]
-
-        langchain_client.delete_feedback_formula(feedback_formula_id)
-        deleted_formula_id = feedback_formula_id
-        feedback_formula_id = None
-
-        wait_for(
-            lambda: (
-                deleted_formula_id
-                not in {
-                    formula.id
-                    for formula in langchain_client.list_feedback_formulas(
-                        dataset_id=dataset.id
-                    )
-                }
-            ),
-            max_sleep_time=30,
-            sleep_time=1,
-        )
-    finally:
-        if feedback_formula_id is not None:
-            try:
-                langchain_client.delete_feedback_formula(feedback_formula_id)
-            except Exception:
-                pass
-        if dataset is not None:
-            safe_delete_dataset(langchain_client, dataset_id=dataset.id)
-
-
 # ---------------------------------------------------------------------------
 # v2 resource tests (runs.retrieve / runs.query via AsyncRunsResource)
 # ---------------------------------------------------------------------------
@@ -4326,6 +4257,7 @@ def v2_client() -> Client:
     return Client()
 
 
+@pytest.mark.require_v2
 async def test_runs_retrieve(v2_client: Client) -> None:
     import time as _time
 
@@ -4347,6 +4279,7 @@ async def test_runs_retrieve(v2_client: Client) -> None:
     _v2_cleanup_project(v2_client, project_name)
 
 
+@pytest.mark.require_v2
 async def test_runs_query(v2_client: Client) -> None:
     project_name = _v2_create_project_name("runs_query")
     trace_id, project_id, _ = _v2_post_trace(project_name)

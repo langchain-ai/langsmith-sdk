@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing_extensions import Literal
 
-import httpx
-
 from ..types import issue_list_params
+from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
 from .._utils import path_template, maybe_transform
 from .._compat import cached_property
@@ -30,8 +29,6 @@ class IssuesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return IssuesResourceWithRawResponse(self)
 
@@ -39,8 +36,6 @@ class IssuesResource(SyncAPIResource):
     def with_streaming_response(self) -> IssuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return IssuesResourceWithStreamingResponse(self)
 
@@ -72,7 +67,7 @@ class IssuesResource(SyncAPIResource):
         if not id:
             raise ValueError(f"Expected a non-empty value for `id` but received {id!r}")
         return self._get(
-            path_template("/v1/platform/issues/{id}", id=id),
+            path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -88,7 +83,7 @@ class IssuesResource(SyncAPIResource):
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
         sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
-        status: Literal["open", "completed", "ignored"] | Omit = omit,
+        status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
         tag: str | Omit = omit,
         updated_at: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -132,7 +127,7 @@ class IssuesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v1/platform/issues",
+            "/api/v1/platform/issues",
             page=SyncOffsetPaginationIssues[Issue],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -164,8 +159,6 @@ class AsyncIssuesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncIssuesResourceWithRawResponse(self)
 
@@ -173,8 +166,6 @@ class AsyncIssuesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncIssuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncIssuesResourceWithStreamingResponse(self)
 
@@ -206,7 +197,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         if not id:
             raise ValueError(f"Expected a non-empty value for `id` but received {id!r}")
         return await self._get(
-            path_template("/v1/platform/issues/{id}", id=id),
+            path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -222,7 +213,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
         sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
-        status: Literal["open", "completed", "ignored"] | Omit = omit,
+        status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
         tag: str | Omit = omit,
         updated_at: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -266,7 +257,7 @@ class AsyncIssuesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v1/platform/issues",
+            "/api/v1/platform/issues",
             page=AsyncOffsetPaginationIssues[Issue],
             options=make_request_options(
                 extra_headers=extra_headers,

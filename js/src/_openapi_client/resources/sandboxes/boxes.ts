@@ -11,18 +11,19 @@ import { path } from '../../internal/utils/path.js';
 export class Boxes extends APIResource {
   /**
    * Create a new sandbox from a snapshot. Provide at most one of `snapshot_id` or
-   * `snapshot_name`; if neither is provided, the server uses the default static
-   * blueprint.
+   * `snapshot_name`; if neither is provided, the server uses the default snapshot.
+   * `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+   * name resolves to `name:latest`).
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.post('/v2/sandboxes/boxes', { body, ...options });
+    return this._client.post('/api/v2/sandboxes/boxes', { body, ...options });
   }
 
   /**
    * Retrieve a sandbox by name. Stale provisioning sandboxes are auto-failed.
    */
   retrieve(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.get(path`/v2/sandboxes/boxes/${name}`, options);
+    return this._client.get(path`/api/v2/sandboxes/boxes/${name}`, options);
   }
 
   /**
@@ -33,7 +34,7 @@ export class Boxes extends APIResource {
     body: BoxUpdateParams,
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.patch(path`/v2/sandboxes/boxes/${name}`, { body, ...options });
+    return this._client.patch(path`/api/v2/sandboxes/boxes/${name}`, { body, ...options });
   }
 
   /**
@@ -44,7 +45,7 @@ export class Boxes extends APIResource {
     query: BoxListParams | null | undefined = {},
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SandboxListResponse> {
-    return this._client.get('/v2/sandboxes/boxes', { query, ...options });
+    return this._client.get('/api/v2/sandboxes/boxes', { query, ...options });
   }
 
   /**
@@ -52,7 +53,7 @@ export class Boxes extends APIResource {
    * DB record.
    */
   delete(name: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.delete(path`/v2/sandboxes/boxes/${name}`, {
+    return this._client.delete(path`/api/v2/sandboxes/boxes/${name}`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
@@ -67,7 +68,7 @@ export class Boxes extends APIResource {
     body: BoxCreateSnapshotParams,
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SnapshotResponse> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/snapshot`, { body, ...options });
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/snapshot`, { body, ...options });
   }
 
   /**
@@ -81,21 +82,21 @@ export class Boxes extends APIResource {
     body: BoxGenerateServiceURLParams,
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.ServiceURLResponse> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/service-url`, { body, ...options });
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/service-url`, { body, ...options });
   }
 
   /**
    * Retrieve the lightweight status of a sandbox for polling.
    */
   getStatus(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxStatusResponse> {
-    return this._client.get(path`/v2/sandboxes/boxes/${name}/status`, options);
+    return this._client.get(path`/api/v2/sandboxes/boxes/${name}/status`, options);
   }
 
   /**
    * Start a stopped or failed sandbox. This endpoint is not idempotent.
    */
   start(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/start`, options);
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/start`, options);
   }
 
   /**
@@ -103,7 +104,7 @@ export class Boxes extends APIResource {
    * preserved for later restart.
    */
   stop(name: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.post(path`/v2/sandboxes/boxes/${name}/stop`, {
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/stop`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
@@ -126,11 +127,32 @@ export interface BoxCreateParams {
 
   idle_ttl_seconds?: number;
 
+  /**
+   * Labels are free-form key/value metadata persisted with the sandbox and returned
+   * on reads. Labels from the source snapshot are inherited unless overridden here.
+   */
+  labels?: { [key: string]: string };
+
+  /**
+   * Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+   * it and it follows that ratio; set it and it must stay within 50% of the ratio
+   * for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+   * without CPU derives the CPU from the same ratio. Maximum 64 GiB.
+   */
   mem_bytes?: number;
 
   mount_config?: BoxCreateParams.MountConfig;
 
   name?: string;
+
+  /**
+   * PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
+   * stop (idle timeout or explicit stop) so the next start resumes from where it
+   * left off. Default false discards memory and keeps only the filesystem, so the
+   * next start is a cold boot. Restarts triggered by infrastructure maintenance
+   * always preserve memory regardless of this setting.
+   */
+  preserve_memory_on_stop?: boolean;
 
   proxy_config?: BoxCreateParams.ProxyConfig;
 
@@ -145,8 +167,18 @@ export interface BoxCreateParams {
    */
   restore_memory?: boolean;
 
+  /**
+   * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+   * resolves to name:latest.
+   */
+  snapshot?: string;
+
   snapshot_id?: string;
 
+  /**
+   * SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+   * that predate it. Set one or the other.
+   */
   snapshot_name?: string;
 
   tag_value_ids?: Array<string>;
@@ -162,6 +194,7 @@ export namespace BoxCreateParams {
       | MountConfig.SandboxapiS3BucketMountSpec
       | MountConfig.SandboxapiGcsBucketMountSpec
       | MountConfig.SandboxapiGitRepoMountSpec
+      | MountConfig.SandboxapiContextHubRepoMountSpec
     >;
   }
 
@@ -219,9 +252,11 @@ export namespace BoxCreateParams {
 
       s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiS3BucketMountSpec.Cache;
+
+      contexthub?: SandboxapiS3BucketMountSpec.Contexthub;
 
       gcs?: SandboxapiS3BucketMountSpec.Gcs;
 
@@ -247,6 +282,21 @@ export namespace BoxCreateParams {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Gcs {
@@ -279,9 +329,11 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiGcsBucketMountSpec.Cache;
+
+      contexthub?: SandboxapiGcsBucketMountSpec.Contexthub;
 
       git?: SandboxapiGcsBucketMountSpec.Git;
 
@@ -301,6 +353,21 @@ export namespace BoxCreateParams {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Git {
@@ -339,9 +406,11 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git';
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
 
       cache?: SandboxapiGitRepoMountSpec.Cache;
+
+      contexthub?: SandboxapiGitRepoMountSpec.Contexthub;
 
       gcs?: SandboxapiGitRepoMountSpec.Gcs;
 
@@ -373,10 +442,102 @@ export namespace BoxCreateParams {
         writeback_seconds?: number;
       }
 
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
+      }
+
       export interface Gcs {
         bucket: string;
 
         prefix?: string;
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        region: string;
+
+        endpoint_url?: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiContextHubRepoMountSpec {
+      id: string;
+
+      contexthub: SandboxapiContextHubRepoMountSpec.Contexthub;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'git' | 'contexthub';
+
+      cache?: SandboxapiContextHubRepoMountSpec.Cache;
+
+      gcs?: SandboxapiContextHubRepoMountSpec.Gcs;
+
+      git?: SandboxapiContextHubRepoMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiContextHubRepoMountSpec.S3;
+    }
+
+    export namespace SandboxapiContextHubRepoMountSpec {
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
       }
 
       export interface S3 {
@@ -440,6 +601,16 @@ export namespace BoxCreateParams {
       aws?: Rule.Aws;
 
       enabled?: boolean;
+
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
 
       gcp?: Rule.Gcp;
 
@@ -519,6 +690,10 @@ export interface BoxUpdateParams {
 
   idle_ttl_seconds?: number;
 
+  /**
+   * New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+   * sandbox is created; a resize enforces only the maximum of 64 GiB.
+   */
   mem_bytes?: number;
 
   name?: string;
@@ -578,6 +753,16 @@ export namespace BoxUpdateParams {
       aws?: Rule.Aws;
 
       enabled?: boolean;
+
+      /**
+       * EnvVars are plaintext env vars set for every command in the sandbox while this
+       * rule is enabled. Use them for tools that refuse to run unless a credential env
+       * var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+       * credential on the wire — set a dummy value here so the command starts. Explicit
+       * per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+       * over both.
+       */
+      env_vars?: { [key: string]: string };
 
       gcp?: Rule.Gcp;
 
@@ -655,6 +840,12 @@ export interface BoxListParams {
   created_by?: string;
 
   /**
+   * Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+   * or 'key=value' for equality.
+   */
+  label?: Array<string>;
+
+  /**
    * Maximum number of results
    */
   limit?: number;
@@ -710,6 +901,16 @@ export interface BoxCreateSnapshotParams {
    * snapshots small unless memory restore is explicitly desired.
    */
   include_memory?: boolean;
+
+  /**
+   * Labels seed the captured snapshot's labels.
+   */
+  labels?: { [key: string]: string };
+
+  /**
+   * mutable Docker-style tag; defaults to "latest"
+   */
+  tag?: string;
 }
 
 export interface BoxGenerateServiceURLParams {

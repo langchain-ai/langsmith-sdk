@@ -12,7 +12,15 @@ except ImportError:
     ZSTD_AVAILABLE = False
 
 compression_level = int(ls_utils.get_env_var("RUN_COMPRESSION_LEVEL") or 1)
-compression_threads = int(ls_utils.get_env_var("RUN_COMPRESSION_THREADS") or -1)
+
+# One zstd worker, not one per logical CPU: every worker holds its own job's
+# uncompressed input until it is consumed, so `threads=-1` kept ~the whole batch
+# in RAM on many-core hosts. Compression still runs off the caller's thread.
+# `RUN_COMPRESSION_THREADS=0` compresses inline on the tracing thread instead.
+_compression_threads_env = ls_utils.get_env_var("RUN_COMPRESSION_THREADS")
+compression_threads = (
+    int(_compression_threads_env) if _compression_threads_env is not None else 1
+)
 
 DEFAULT_MAX_UNCOMPRESSED_QUEUE_BYTES = 1024 * 1024 * 1024  # 1GB
 
@@ -52,5 +60,5 @@ class CompressedTraces:
         self.uncompressed_size = 0
         self._context = []
         self.compressor_writer = ZstdCompressor(
-            level=compression_level, threads=-1
+            level=compression_level, threads=compression_threads
         ).stream_writer(self.buffer, closefd=False)

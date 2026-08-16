@@ -1,4 +1,5 @@
 import type {
+  ContextHubMountSpec,
   GCSMountSpec,
   GitMountRefSpec,
   GitMountSpec,
@@ -198,6 +199,36 @@ export function gcsMount({
   return mount;
 }
 
+/**
+ * Build a read-only Context Hub mount. The sync is one-way: files written
+ * under the mount path inside the sandbox are never pushed back to the repo,
+ * and the next sync overwrites them.
+ */
+export function contextHubMount({
+  id,
+  mountPath,
+  repo,
+  initialPullOnly,
+}: {
+  id: string;
+  mountPath: string;
+  repo: string;
+  initialPullOnly?: boolean;
+}): ContextHubMountSpec {
+  const mount: ContextHubMountSpec = {
+    id: requireNonEmptyString(id, "id"),
+    type: "contexthub",
+    mount_path: requireNonEmptyString(mountPath, "mountPath"),
+    contexthub: {
+      repo: requireNonEmptyString(repo, "repo"),
+    },
+  };
+  if (initialPullOnly !== undefined) {
+    mount.contexthub.initial_pull_only = initialPullOnly;
+  }
+  return mount;
+}
+
 function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
   if (!Array.isArray(mounts) || mounts.length === 0) {
     throw new Error("mounts must be a non-empty array of mount objects");
@@ -206,8 +237,15 @@ function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
     if (mount === null || typeof mount !== "object" || Array.isArray(mount)) {
       throw new Error("mounts must be a non-empty array of mount objects");
     }
-    if (mount.type !== "s3" && mount.type !== "gcs" && mount.type !== "git") {
-      throw new Error("mountConfig only supports s3, gcs, and git mounts");
+    if (
+      mount.type !== "s3" &&
+      mount.type !== "gcs" &&
+      mount.type !== "git" &&
+      mount.type !== "contexthub"
+    ) {
+      throw new Error(
+        "mountConfig only supports s3, gcs, git, and contexthub mounts",
+      );
     }
     rejectProviderCredentialsInMount(mount);
     return mount;

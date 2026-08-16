@@ -3,8 +3,16 @@
 import warnings
 from unittest.mock import MagicMock
 
+import pytest
+
 from langsmith._internal._orjson import loads as _loads
-from langsmith.wrappers._anthropic import _create_usage_metadata, _message_to_outputs
+from langsmith.anonymizer import SECRET_PLACEHOLDER
+from langsmith.wrappers._anthropic import (
+    _create_usage_metadata,
+    _infer_ls_params,
+    _message_to_outputs,
+    _strip_not_given,
+)
 
 
 class TestCreateUsageMetadata:
@@ -247,3 +255,81 @@ class TestMessageToOutputsParsedMessage:
 
         assert len(caught) == 1
         assert "some other warning" in str(caught[0].message)
+
+
+FAKE_TOKEN = "fake-token-for-tests-only"
+
+
+def _mcp_servers(token: str = FAKE_TOKEN) -> list:
+    return [
+        {
+            "type": "url",
+            "url": "https://mcp.example.com/sse",
+            "name": "example",
+            "authorization_token": token,
+        }
+    ]
+
+
+class TestRedactMCPServers:
+    """`mcp_servers` may carry a bearer credential that must not be traced."""
+
+    def test_strip_not_given_masks_authorization_token(self) -> None:
+        server = _strip_not_given({"model": "m", "mcp_servers": _mcp_servers()})[
+            "mcp_servers"
+        ][0]
+
+        assert server["authorization_token"] == SECRET_PLACEHOLDER
+        assert server["type"] == "url"
+        assert server["url"] == "https://mcp.example.com/sse"
+        assert server["name"] == "example"
+
+    def test_infer_ls_params_never_carries_the_token(self) -> None:
+        """Guards against building invocation params from the raw kwargs."""
+        params = _infer_ls_params({}, {"model": "m", "mcp_servers": _mcp_servers()})
+
+        assert FAKE_TOKEN not in str(params)
+
+    def test_does_not_mutate_the_callers_servers(self) -> None:
+        """The same objects are sent to Anthropic, so they keep the real token."""
+        servers = _mcp_servers()
+        kwargs = {"model": "m", "mcp_servers": servers}
+
+        _strip_not_given(kwargs)
+        _infer_ls_params({}, kwargs)
+
+        assert servers[0]["authorization_token"] == FAKE_TOKEN
+
+    def test_masks_fields_that_are_not_explicitly_allowed(self) -> None:
+        """A credential field added to the API later is masked by default."""
+        server = _strip_not_given(
+            {
+                "mcp_servers": [
+                    {"name": "x", "type": "url", "url": "u", "future_secret": "s3cret"}
+                ]
+            }
+        )["mcp_servers"][0]
+
+        assert server["future_secret"] == SECRET_PLACEHOLDER
+        assert server["name"] == "x"
+
+    def test_leaves_allowed_fields_untouched(self) -> None:
+        servers = [{"name": "x", "type": "url", "url": "u"}]
+
+        assert _strip_not_given({"mcp_servers": servers})["mcp_servers"] == servers
+
+    @pytest.mark.parametrize(
+        ("servers", "expected"),
+        [
+            ("not-a-list", "not-a-list"),
+            ([None], [None]),
+            ([["nested"]], [["nested"]]),
+            ([], []),
+            ((), []),  # tuples are normalized to lists
+        ],
+    )
+    def test_tolerates_unexpected_shapes(self, servers, expected) -> None:
+        assert _strip_not_given({"mcp_servers": servers})["mcp_servers"] == expected
+
+    def test_none_is_dropped_by_strip_not_given(self) -> None:
+        assert "mcp_servers" not in _strip_not_given({"mcp_servers": None})

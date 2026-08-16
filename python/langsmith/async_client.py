@@ -23,6 +23,11 @@ from typing import (
 import httpx
 
 import langsmith._openapi_client as _langsmith_api_module
+from langsmith._internal._beta_decorator import deprecated as _deprecated
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
+from langsmith.client import _get_openapi_base_url
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
@@ -39,6 +44,12 @@ from langsmith._internal._hub import (
     platform_hub_path,
     validate_parent_commit,
 )
+from langsmith._internal._v2_migration_utils import (
+    _V2_RUN_SELECTS,
+    QueryBackend,
+    _v2_run_to_schema,
+    get_query_backend,
+)
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -46,11 +57,17 @@ logger = logging.getLogger(__name__)
 ID_TYPE = Union[uuid.UUID, str]
 
 if TYPE_CHECKING:
+    from langsmith._openapi_client.resources.annotation_queues.annotation_queues import (
+        AsyncAnnotationQueuesResource,
+    )
     from langsmith._openapi_client.resources.datasets.datasets import (
         AsyncDatasetsResource,
     )
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
+    )
+    from langsmith._openapi_client.resources.public.public import (
+        AsyncPublicResource,
     )
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
@@ -76,6 +93,8 @@ class AsyncClient:
         "_profile_auth_headers",
         "_langsmith_api",
         "_info",
+        "_checked_min_versions",
+        "_version_check_tasks",
     )
 
     _custom_headers: dict[str, str]
@@ -256,6 +275,8 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
         self._info: Optional[ls_schemas.LangSmithInfo] = None
+        self._checked_min_versions: set[str] = set()
+        self._version_check_tasks: set[asyncio.Task] = set()
 
         # Initialize prompt cache
         # Handle backwards compatibility for deprecated `cache` parameter
@@ -297,7 +318,7 @@ class AsyncClient:
         self._langsmith_api = _langsmith_api_module.AsyncLangsmith(
             api_key=self._api_key,
             tenant_id=self._workspace_id,
-            base_url=str(self._client.base_url),
+            base_url=_get_openapi_base_url(str(self._client.base_url)),
             timeout=self._client.timeout,
             default_headers=_headers or None,
         )
@@ -309,42 +330,82 @@ class AsyncClient:
     # __dict__; the stainless client caches each resource internally.
     # ------------------------------------------------------------------
 
+    def _schedule_backend_version_check(self, min_version: str) -> None:
+        """Warn if the backend is older than *min_version*, without blocking.
+
+        These properties are sync while `info()` is async, so the check runs as a
+        background task (as the JS client does) instead of inline. Scheduled at
+        most once per version, and only when a resource is actually accessed.
+        """
+        if min_version in self._checked_min_versions:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # no event loop: nothing to schedule the check on
+            return
+        self._checked_min_versions.add(min_version)
+        task = loop.create_task(self._acheck_backend_version(min_version))
+        # Keep a strong reference so the task is not garbage collected mid-flight.
+        self._version_check_tasks.add(task)
+        task.add_done_callback(self._version_check_tasks.discard)
+
+    async def _acheck_backend_version(self, min_version: str) -> None:
+        info = await self.info()
+        _check_backend_version(info.version, min_version=min_version)
+
     @property
     def runs(self) -> AsyncRunsResource:
         """Access the runs resource."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.runs
 
     @property
     def evaluators(self) -> AsyncEvaluatorsResource:
         """Access the evaluator resource."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.online_evaluators
 
     @property
     def sandboxes(self) -> AsyncSandboxesResource:
         """Access the sandboxes resource (registries, snapshots, boxes)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.sandboxes
 
     @property
     def datasets(self) -> AsyncDatasetsResource:
         """Access the v2 datasets resource (experiment_runs, etc.)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.datasets
+
+    @property
+    def annotation_queues(self) -> AsyncAnnotationQueuesResource:
+        """Access the annotation queues resource (runs, items)."""
+        # The items endpoints landed in backend 0.16.14; the rest are older.
+        self._schedule_backend_version_check("0.16.14")
+        return self._langsmith_api.annotation_queues
 
     @property
     def threads(self) -> AsyncThreadsResource:
         """Access the threads resource (query, stats, list_traces)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.threads
 
     @property
     def traces(self) -> AsyncTracesResource:
         """Access the traces resource (query, list_runs)."""
+        self._schedule_backend_version_check("0.16.0")
         return self._langsmith_api.traces
+
+    @property
+    def public(self) -> AsyncPublicResource:
+        """Access the public shared-run resource."""
+        self._schedule_backend_version_check("0.16.0")
+        return self._langsmith_api.public
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
         if self._cache is not None:
             await self._cache.start()
-        info = await self.info()
-        _check_backend_version(info.version)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -572,14 +633,60 @@ class AsyncClient:
             content=ls_client._dumps_json(data),
         )
 
-    async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
-        """Read a run."""
-        response = await self._arequest_with_retries(
-            "GET",
-            f"/runs/{ls_client._as_uuid(run_id)}",
-        )
-        return ls_schemas.Run(**response.json())
+    @_deprecated(
+        "read_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.retrieve() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-retrieve for the migration guide."
+    )
+    async def read_run(
+        self,
+        run_id: ls_client.ID_TYPE,
+        *,
+        project_id: Optional[ls_client.ID_TYPE] = None,
+    ) -> ls_schemas.Run:
+        """Read a run.
 
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            Will be removed after Jan 31, 2027.
+
+        Args:
+            run_id: The ID of the run to read.
+            project_id: The ID of the project (session) that owns the run.
+                Required on SmithDB-only backends (no ClickHouse query
+                support), where it's used to look up the run via the v2 API.
+        """
+        run_id_ = ls_client._as_uuid(run_id)
+        info = await self.info()
+        backend = get_query_backend(info.instance_flags)
+        if backend != QueryBackend.SMITHDB_ONLY:
+            response = await self._arequest_with_retries(
+                "GET",
+                f"/runs/{run_id_}",
+            )
+            return ls_schemas.Run(**response.json())
+
+        if project_id is None:
+            raise ls_utils.LangSmithError(
+                "read_run requires project_id on SmithDB-only backends"
+                " (no ClickHouse query support)."
+            )
+        run = await self.runs.retrieve_v2(
+            run_id=str(run_id_),
+            project_id=str(ls_client._as_uuid(project_id)),
+            selects=_V2_RUN_SELECTS,
+        )
+        return _v2_run_to_schema(run)
+
+    @_deprecated(
+        "list_runs() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.query() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#runs-query for the migration guide."
+    )
     async def list_runs(
         self,
         *,
@@ -604,6 +711,12 @@ class AsyncClient:
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.query` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             project_id: The ID(s) of the project to filter by.
@@ -744,10 +857,22 @@ class AsyncClient:
             if limit is not None and ix >= limit:
                 break
 
+    @_deprecated(
+        "share_run() is deprecated and will be removed after Jan 31, 2027. "
+        "Use client.runs.share.create() instead. "
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     async def share_run(
         self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
     ) -> str:
         """Get a share link for a run asynchronously.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.share.create` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (ID_TYPE): The ID of the run to share.
@@ -777,11 +902,24 @@ class AsyncClient:
 
     async def run_is_shared(self, run_id: ls_client.ID_TYPE) -> bool:
         """Get share state for a run asynchronously."""
-        link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
+        with _suppress_deprecation_warning():
+            link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
         return link is not None
 
+    @_deprecated(
+        "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
+        'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "#share-and-read-public-runs for the migration guide."
+    )
     async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
         """Retrieve the shared link for a specific run asynchronously.
+
+        .. admonition:: Deprecated
+
+            Use :meth:`langsmith.AsyncClient.runs.retrieve` with ``selects=["SHARE_URL"]`` instead.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            Will be removed after Jan 31, 2027.
 
         Args:
             run_id (ID_TYPE): The ID of the run.
@@ -1019,8 +1157,10 @@ class AsyncClient:
                 feedback.
             extra: Metadata for the feedback.
             error: Whether the feedback represents an error.
-            session_id: The project ID of the run this feedback is for.
-            start_time: The start time of the run this feedback is for.
+            session_id: The project ID of the run. Required for run-level feedback;
+                omitting it is deprecated. See
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+            start_time: The start time of the run. Better performance if provided.
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
@@ -1039,6 +1179,8 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
+        if run_id is not None and session_id is None:
+            ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -1436,8 +1578,9 @@ class AsyncClient:
           (`run_id`, `session_id`, `start_time`, and an optional
           `source_proposed_example_id`). This lets the run be located directly,
           without a scan, and is required for workspaces served by SmithDB.
-        - `run_ids`: a plain list of run IDs. This path will be deprecated in a
-          future release; prefer `runs`.
+        - `run_ids`: a plain list of run IDs. This path is deprecated and will
+          be removed after Jan 31, 2027; prefer `runs`.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -1458,6 +1601,13 @@ class AsyncClient:
                 ls_client._serialize_run_key(run, i) for i, run in enumerate(runs)
             ]
         elif run_ids is not None:
+            warnings.warn(
+                "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
+                "Use the runs parameter with RunKey objects instead. "
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             path = base
             json_body = [
                 str(ls_client._as_uuid(id_, f"run_ids[{i}]"))

@@ -2,7 +2,7 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../core/resource.js';
-import * as RunsAPI from './runs.js';
+import * as RunsAPI from './runs/runs.js';
 import { APIPromise } from '../core/api-promise.js';
 import {
   ItemsCursorPostPagination,
@@ -15,9 +15,10 @@ import { path } from '../internal/utils/path.js';
 
 export class Traces extends APIResource {
   /**
-   * **Alpha:** The request and response contract may change; Returns runs for a
-   * trace ID within min/max start time. Optional `filter`; repeatable `selects` to
-   * select fields to return.
+   * Returns runs for a trace ID within min/max start time. Optional `filter`;
+   * repeatable `selects` to select fields to return.
+   *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
    * ```ts
@@ -33,7 +34,7 @@ export class Traces extends APIResource {
     options?: RequestOptions,
   ): APIPromise<TraceListRunsResponse> {
     const { Accept, ...query } = params;
-    return this._client.get(path`/v2/traces/${traceID}/runs`, {
+    return this._client.get(path`/api/v2/traces/${traceID}/runs`, {
       query,
       ...options,
       headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
@@ -53,6 +54,8 @@ export class Traces extends APIResource {
    * Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
    * and field projection (`selects`).
    *
+   * Self-hosted deployments require LangSmith `v0.16` or later.
+   *
    * @example
    * ```ts
    * // Automatically fetches more pages as needed.
@@ -65,7 +68,7 @@ export class Traces extends APIResource {
     body: TraceQueryParams,
     options?: RequestOptions,
   ): PagePromise<TracesItemsCursorPostPagination, Trace> {
-    return this._client.getAPIList('/v2/traces/query', ItemsCursorPostPagination<Trace>, {
+    return this._client.getAPIList('/api/v2/traces/query', ItemsCursorPostPagination<Trace>, {
       body,
       method: 'post',
       ...options,
@@ -194,6 +197,7 @@ export interface TraceListRunsParams {
     | 'ATTACHMENTS'
     | 'THREAD_EVALUATION_TIME'
     | 'IS_IN_DATASET'
+    | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
   >;
@@ -229,52 +233,7 @@ export interface TraceQueryParams extends ItemsCursorPostPaginationParams {
    * `trace_aggregates`; everything else appears under `root_run`. If omitted, only
    * `id` is returned on `root_run`.
    */
-  selects?: Array<
-    | 'ID'
-    | 'NAME'
-    | 'RUN_TYPE'
-    | 'STATUS'
-    | 'START_TIME'
-    | 'END_TIME'
-    | 'LATENCY_SECONDS'
-    | 'FIRST_TOKEN_TIME'
-    | 'ERROR'
-    | 'ERROR_PREVIEW'
-    | 'EXTRA'
-    | 'METADATA'
-    | 'EVENTS'
-    | 'INPUTS'
-    | 'INPUTS_PREVIEW'
-    | 'OUTPUTS'
-    | 'OUTPUTS_PREVIEW'
-    | 'MANIFEST'
-    | 'PARENT_RUN_IDS'
-    | 'PROJECT_ID'
-    | 'TRACE_ID'
-    | 'THREAD_ID'
-    | 'DOTTED_ORDER'
-    | 'IS_ROOT'
-    | 'REFERENCE_EXAMPLE_ID'
-    | 'REFERENCE_DATASET_ID'
-    | 'TOTAL_TOKENS'
-    | 'PROMPT_TOKENS'
-    | 'COMPLETION_TOKENS'
-    | 'TOTAL_COST'
-    | 'PROMPT_COST'
-    | 'COMPLETION_COST'
-    | 'PROMPT_TOKEN_DETAILS'
-    | 'COMPLETION_TOKEN_DETAILS'
-    | 'PROMPT_COST_DETAILS'
-    | 'COMPLETION_COST_DETAILS'
-    | 'PRICE_MODEL_ID'
-    | 'TAGS'
-    | 'APP_PATH'
-    | 'ATTACHMENTS'
-    | 'THREAD_EVALUATION_TIME'
-    | 'IS_IN_DATASET'
-    | 'SHARE_URL'
-    | 'FEEDBACK_STATS'
-  >;
+  selects?: Array<RunsAPI.RunSelectField>;
 
   /**
    * `trace_filter` narrows results to traces whose root run matches this LangSmith

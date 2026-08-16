@@ -9,6 +9,7 @@ import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
 import {
   awsAuth,
+  contextHubMount,
   gitMount,
   gcpAuth,
   gcsMount,
@@ -35,6 +36,8 @@ import {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
+  LangSmithSandboxConnectionError,
+  LangSmithStreamEndedBeforeStartedError,
 } from "../sandbox/errors.js";
 import type {
   WsMessage,
@@ -68,6 +71,12 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
+
+// run() uses WebSocket and only falls back to the blocking HTTP endpoint when
+// the 'ws' package can't be loaded. Simulate that so the tests below can pin
+// the HTTP fallback path's request/response shaping.
+const forceHttpFallback = (sandbox: any) =>
+  jest.spyOn(sandbox, "_wsAvailable").mockResolvedValue(false);
 
 describe("sandbox proxy config helpers", () => {
   it("workspaceSecret wraps names and preserves references", () => {
@@ -117,6 +126,50 @@ describe("sandbox proxy config helpers", () => {
       },
     });
   });
+
+  it("provider rules carry env vars and omit them when unset", () => {
+    expect(
+      awsAuth({
+        accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+        secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+        envVars: { AWS_ACCESS_KEY_ID: "dummy" },
+      }).env_vars,
+    ).toEqual({ AWS_ACCESS_KEY_ID: "dummy" });
+
+    const gcpRule = gcpAuth({
+      serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      envVars: { GOOGLE_API_KEY: "dummy" },
+    });
+    expect(gcpRule.env_vars).toEqual({ GOOGLE_API_KEY: "dummy" });
+
+    expect(
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      }),
+    ).not.toHaveProperty("env_vars");
+  });
+
+  it("preserves surrounding whitespace in env var values", () => {
+    expect(
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+        envVars: { PREFIX: "  /opt/bin  " },
+      }).env_vars,
+    ).toEqual({ PREFIX: "  /opt/bin  " });
+  });
+
+  it.each<Record<string, string>>([{}, { "": "value" }, { NAME: "" }])(
+    "rejects invalid env vars %j",
+    (envVars) => {
+      expect(() =>
+        awsAuth({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+          envVars,
+        }),
+      ).toThrow();
+    },
+  );
 
   it("gcpAuth builds a GCP auth rule with built-in Google API host matching", () => {
     expect(
@@ -312,6 +365,50 @@ describe("sandbox proxy config helpers", () => {
       id: "repo",
       mountPath: "/mnt/repo",
       remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+    });
+
+    expect(mountConfig({ mounts: [mount] })).toEqual({
+      auth: {},
+      mounts: [mount],
+    });
+  });
+
+  it("contextHubMount serializes the backend shape", () => {
+    expect(
+      contextHubMount({
+        id: "memories",
+        mountPath: "/memories",
+        repo: "-/my-agent",
+        initialPullOnly: true,
+      }),
+    ).toEqual({
+      id: "memories",
+      type: "contexthub",
+      mount_path: "/memories",
+      contexthub: { repo: "-/my-agent", initial_pull_only: true },
+    });
+  });
+
+  it("contextHubMount omits optional fields", () => {
+    expect(
+      contextHubMount({
+        id: "memories",
+        mountPath: "/memories",
+        repo: "-/my-agent",
+      }),
+    ).toEqual({
+      id: "memories",
+      type: "contexthub",
+      mount_path: "/memories",
+      contexthub: { repo: "-/my-agent" },
+    });
+  });
+
+  it("mountConfig accepts Context Hub mounts without provider auth", () => {
+    const mount = contextHubMount({
+      id: "memories",
+      mountPath: "/memories",
+      repo: "-/my-agent",
     });
 
     expect(mountConfig({ mounts: [mount] })).toEqual({
@@ -575,6 +672,7 @@ describe("Sandbox", () => {
         mockClient,
         false,
       );
+      forceHttpFallback(sandbox);
 
       const result = await sandbox.run('echo "Hello, World!"');
 
@@ -605,6 +703,7 @@ describe("Sandbox", () => {
         mockClient,
         false,
       );
+      forceHttpFallback(sandbox);
 
       await sandbox.run("echo $MY_VAR", {
         env: { MY_VAR: "test-value" },
@@ -615,6 +714,31 @@ describe("Sandbox", () => {
       const body = JSON.parse(options.body as string);
       expect(body.env).toEqual({ MY_VAR: "test-value" });
       expect(body.cwd).toBe("/tmp");
+    });
+
+    it("propagates a WebSocket error without falling back to HTTP", async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: async () => ({ stdout: "", stderr: "", exit_code: 0 }),
+      });
+      const sandbox = new (Sandbox as any)(
+        {
+          id: "sandbox-123",
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com",
+        },
+        createMockClient({ _fetch: mockFetch }),
+        false,
+      );
+      jest.spyOn(sandbox as any, "_wsAvailable").mockResolvedValue(true);
+      jest
+        .spyOn(sandbox as any, "_runWs")
+        .mockRejectedValue(new LangSmithSandboxConnectionError("WS failed"));
+
+      await expect(sandbox.run("echo hello")).rejects.toThrow(
+        LangSmithSandboxConnectionError,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -1298,6 +1422,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
       },
       createMockClient({ _fetch: mockFetch }),
     );
+    forceHttpFallback(sandbox);
 
     const result = await sandbox.run("echo ok");
     expect(result.stdout).toBe("ok\n");
@@ -1321,6 +1446,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
       },
       createMockClient({ _fetch: mockFetch }),
     );
+    forceHttpFallback(sandbox);
 
     const result = await sandbox.run("echo hello");
     expect(result.stdout).toBe("hello\n");
@@ -1600,6 +1726,14 @@ describe("CommandHandle", () => {
       });
       // Should already be started
       expect(handle.commandId).toBe("cmd-123");
+    });
+
+    it("throws the early-close marker when the stream ends before started", async () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox());
+      await expect(handle._ensureStarted()).rejects.toThrow(
+        LangSmithStreamEndedBeforeStartedError,
+      );
     });
   });
 
@@ -2060,7 +2194,7 @@ describe("SandboxClient - snapshot operations", () => {
     }
   });
 
-  it("createSnapshotFromDockerfile should forward vCpus/memBytes to the builder", async () => {
+  it("createSnapshotFromDockerfile should default capacity and forward builder size", async () => {
     const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
     const client = createClientWithMock(jest.fn<typeof fetch>());
     const fakeSandbox = {
@@ -2080,29 +2214,35 @@ describe("SandboxClient - snapshot operations", () => {
     const createSandboxSpy = jest
       .spyOn(client, "createSandbox")
       .mockResolvedValue(fakeSandbox as any);
-    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
-      id: "snap-1",
-      name: "snap",
-      status: "ready",
-      fs_capacity_bytes: 4294967296,
-    });
+    const captureSnapshotSpy = jest
+      .spyOn(client, "captureSnapshot")
+      .mockResolvedValue({
+        id: "snap-1",
+        name: "snap",
+        status: "ready",
+        fs_capacity_bytes: 4294967296,
+      });
 
     try {
       await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
 
-      await client.createSnapshotFromDockerfile(
-        "snap",
-        "Dockerfile",
-        4294967296,
-        {
-          context,
-          vCpus: 2,
-          memBytes: 8589934592,
-        },
-      );
+      await client.createSnapshotFromDockerfile("snap", "Dockerfile", {
+        context,
+        vCpus: 2,
+        memBytes: 8589934592,
+      });
 
       expect(createSandboxSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ vCpus: 2, memBytes: 8589934592 }),
+        expect.objectContaining({
+          vCpus: 2,
+          memBytes: 8589934592,
+          fsCapacityBytes: undefined,
+        }),
+      );
+      expect(captureSnapshotSpy).toHaveBeenCalledWith(
+        "builder",
+        "snap",
+        expect.objectContaining({ fsCapacityBytes: undefined }),
       );
     } finally {
       await rm(context, { recursive: true, force: true });
@@ -2392,7 +2532,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
     expect(sandbox.dataplane_url).toBe("https://dp.example.com/my-vm");
   });
 
-  it("stop should set status to stopped and clear dataplane_url", async () => {
+  it("stop should set status to stopped and keep dataplane_url", async () => {
     const mockClient = createMockClient({
       stopSandbox: jest
         .fn<(name: string) => Promise<void>>()
@@ -2411,7 +2551,7 @@ describe("Sandbox - start/stop/captureSnapshot", () => {
     await sandbox.stop();
 
     expect(sandbox.status).toBe("stopped");
-    expect(sandbox.dataplane_url).toBeUndefined();
+    expect(sandbox.dataplane_url).toBe("https://dp.example.com/my-vm");
   });
 
   it("captureSnapshot should delegate to client", async () => {

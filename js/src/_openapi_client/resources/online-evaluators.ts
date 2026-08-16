@@ -20,14 +20,14 @@ export class OnlineEvaluators extends APIResource {
     body: OnlineEvaluatorCreateParams,
     options?: RequestOptions,
   ): APIPromise<CreateOnlineEvaluatorResponse> {
-    return this._client.post('/v1/platform/evaluators', { body, ...options });
+    return this._client.post('/api/v1/platform/evaluators', { body, ...options });
   }
 
   /**
    * Retrieve a single evaluator by its ID.
    */
   retrieve(evaluatorID: string, options?: RequestOptions): APIPromise<OnlineEvaluator> {
-    return this._client.get(path`/v1/platform/evaluators/${evaluatorID}`, options);
+    return this._client.get(path`/api/v1/platform/evaluators/${evaluatorID}`, options);
   }
 
   /**
@@ -38,7 +38,7 @@ export class OnlineEvaluators extends APIResource {
     body: OnlineEvaluatorUpdateParams,
     options?: RequestOptions,
   ): APIPromise<UpdateOnlineEvaluatorResponse> {
-    return this._client.patch(path`/v1/platform/evaluators/${evaluatorID}`, { body, ...options });
+    return this._client.patch(path`/api/v1/platform/evaluators/${evaluatorID}`, { body, ...options });
   }
 
   /**
@@ -50,7 +50,7 @@ export class OnlineEvaluators extends APIResource {
     options?: RequestOptions,
   ): PagePromise<OnlineEvaluatorsOffsetPaginationOnlineEvaluators, OnlineEvaluator> {
     return this._client.getAPIList(
-      '/v1/platform/evaluators',
+      '/api/v1/platform/evaluators',
       OffsetPaginationOnlineEvaluators<OnlineEvaluator>,
       { query, ...options },
     );
@@ -68,7 +68,7 @@ export class OnlineEvaluators extends APIResource {
     options?: RequestOptions,
   ): APIPromise<void> {
     const { delete_run_rules } = params ?? {};
-    return this._client.delete(path`/v1/platform/evaluators/${evaluatorID}`, {
+    return this._client.delete(path`/api/v1/platform/evaluators/${evaluatorID}`, {
       query: { delete_run_rules },
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
@@ -83,7 +83,7 @@ export class OnlineEvaluators extends APIResource {
     options?: RequestOptions,
   ): APIPromise<BulkDeleteEvaluatorsResponse> {
     const { evaluator_ids, delete_run_rules } = params;
-    return this._client.delete('/v1/platform/evaluators', {
+    return this._client.delete('/api/v1/platform/evaluators', {
       query: { evaluator_ids, delete_run_rules },
       ...options,
     });
@@ -92,14 +92,14 @@ export class OnlineEvaluators extends APIResource {
   /**
    * Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
    * evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-   * session_id, or dataset_id is required. resource_id, type, and feedback_key may
-   * be supplied with group_by to narrow listing aggregations.
+   * session_id, or dataset_id is required. resource_id, type, feedback_key, and
+   * tag_value_id may be supplied with group_by to narrow listing aggregations.
    */
   spend(
     query: OnlineEvaluatorSpendParams,
     options?: RequestOptions,
   ): APIPromise<GetOnlineEvaluatorSpendResponse> {
-    return this._client.get('/v1/platform/evaluators/spend', { query, ...options });
+    return this._client.get('/api/v1/platform/evaluators/spend', { query, ...options });
   }
 }
 
@@ -144,6 +144,11 @@ export interface CreateOnlineEvaluatorResponse {
 export interface CreateOnlineLlmEvaluatorRequest {
   commit_hash_or_tag?: string;
 
+  /**
+   * Model Configuration ID
+   */
+  playground_settings_id?: string;
+
   prompt_repo_handle?: string;
 
   variable_mapping?: unknown;
@@ -178,6 +183,12 @@ export interface OnlineEvaluator {
   created_by?: string;
 
   feedback_keys?: Array<string>;
+
+  /**
+   * IsManaged marks a LangChain-managed evaluator (currently the managed Perceived
+   * Error judge). NULL in the DB is read as false via COALESCE.
+   */
+  is_managed?: boolean;
 
   /**
    * Embedded child evaluator (populated based on type)
@@ -328,6 +339,11 @@ export interface UpdateOnlineLlmEvaluatorRequest {
 
   num_few_shot_examples?: number;
 
+  /**
+   * Model Configuration ID
+   */
+  playground_settings_id?: string;
+
   prompt_repo_handle?: string;
 
   use_corrections_dataset?: boolean;
@@ -446,6 +462,12 @@ export interface OnlineEvaluatorSpendParams {
    * Filter to a specific project (UUID). Mutually exclusive with group_by.
    */
   session_id?: string;
+
+  /**
+   * Filter grouped results to evaluators, projects, or datasets tagged with all
+   * supplied tag value IDs. Only valid with group_by.
+   */
+  tag_value_id?: Array<string>;
 
   /**
    * Filter grouped results by evaluator type: 'llm' or 'code'. Only valid with

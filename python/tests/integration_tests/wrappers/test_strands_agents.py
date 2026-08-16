@@ -19,6 +19,7 @@ from opentelemetry.sdk.trace.export import (
     SpanExportResult,
 )
 from strands import Agent
+from strands.models.bedrock import BedrockModel
 from strands_tools import file_read, file_write, journal, python_repl, shell
 
 from langsmith.integrations.otel.processor import OtelExporter
@@ -183,3 +184,104 @@ def test_exporter_transforms_live_strands_agent_spans(tmp_path, monkeypatch):
     roles = [message["role"] for message in prompt["messages"]]
     assert "user" in roles
     assert "system" in roles
+
+    tool_spans = [
+        span for span in recorder.spans if span.name.startswith("execute_tool")
+    ]
+    assert tool_spans, [span.name for span in recorder.spans]
+    for tool_span in tool_spans:
+        assert tool_span.attributes["langsmith.span.kind"] == "tool"
+        assert _span_has_completion(tool_span)
+        completion = json.loads(tool_span.attributes["gen_ai.completion"])
+        assert completion["role"] == "tool"
+        assert "content" in completion
+        assert "name" in completion
+        assert "tool_call_id" in completion
+
+
+@pytest.mark.skipif(
+    not (
+        os.getenv("AWS_ACCESS_KEY_ID")
+        or os.getenv("AWS_PROFILE")
+        or os.getenv("AWS_WEB_IDENTITY_TOKEN_FILE")
+    ),
+    reason="Live Strands/Bedrock integration test requires AWS credentials.",
+)
+@pytest.mark.skipif(
+    not os.getenv("LANGSMITH_API_KEY"),
+    reason="Live Strands/LangSmith integration test requires LANGSMITH_API_KEY.",
+)
+def test_exporter_transforms_thinking_blocks(tmp_path, monkeypatch):
+    """Invoke a Strands Agent with extended thinking and verify thinking blocks."""
+    (tmp_path / "otel_strands_share.py").write_text(
+        "def setup_langsmith_telemetry():\n"
+        "    return 'sets up Strands OTEL tracing for LangSmith'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    recorder = RecordingSpanExporter()
+    langsmith_exporter = OtelExporter()
+    delegate = TeeSpanExporter(recorder, langsmith_exporter)
+    provider = TracerProvider()
+    provider.add_span_processor(
+        SimpleSpanProcessor(LangSmithSpanExporter(delegate=delegate))
+    )
+
+    import strands.telemetry.tracer as strands_tracer
+
+    previous_tracer = _install_strands_tracer(provider)
+    try:
+        model = BedrockModel(
+            model_id=MODEL_ID,
+            additional_request_fields={
+                "thinking": {"type": "enabled", "budget_tokens": 5000}
+            },
+            max_tokens=16000,
+        )
+        agent = Agent(
+            model=model,
+            tools=[file_read],
+            system_prompt=SYSTEM_PROMPT,
+        )
+
+        response = agent(INPUT)
+        provider.force_flush()
+    finally:
+        provider.shutdown()
+        strands_tracer._tracer_instance = previous_tracer
+
+    assert response is not None
+
+    llm_spans = [span for span in recorder.spans if span.name == "chat"]
+    assert llm_spans, [span.name for span in recorder.spans]
+    assert any(_span_has_prompt_text(span, INPUT) for span in llm_spans)
+    assert any(_span_has_completion(span) for span in llm_spans)
+
+    for llm_span in llm_spans:
+        assert llm_span.attributes["langsmith.span.kind"] == "llm"
+        assert llm_span.attributes["gen_ai.request.model"] == MODEL_ID
+        assert llm_span.attributes["langsmith.metadata.ls_provider"] == "amazon_bedrock"
+        assert llm_span.attributes["langsmith.metadata.ls_model_type"] == "chat"
+        assert not any(event.name.startswith("gen_ai.") for event in llm_span.events)
+
+    found_thinking = False
+    for span in llm_spans:
+        completion_str = span.attributes.get("gen_ai.completion")
+        if not isinstance(completion_str, str):
+            continue
+        completion = json.loads(completion_str)
+        messages = completion if isinstance(completion, list) else [completion]
+        for msg in messages:
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "thinking":
+                        found_thinking = True
+                        assert isinstance(block["thinking"], str)
+                        assert len(block["thinking"]) > 0
+
+    assert found_thinking, (
+        "Expected at least one thinking block in LLM completions. "
+        f"Spans checked: {len(llm_spans)}"
+    )

@@ -7,6 +7,8 @@ import {
   TraceableConfig,
 } from "../traceable.js";
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
+import { getCurrentRunTree } from "../singletons/traceable.js";
+import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -360,7 +362,15 @@ const getChatModelInvocationParamsFn = (
       ls_invocation_params.use_responses_api = true;
     }
 
+    const requestMetadata =
+      typeof params.metadata === "object" &&
+      params.metadata !== null &&
+      !Array.isArray(params.metadata)
+        ? (params.metadata as Record<string, unknown>)
+        : {};
+
     return {
+      ...requestMetadata,
       ls_provider: provider,
       ls_model_type: "chat",
       ls_model_name: params.model,
@@ -372,6 +382,7 @@ const getChatModelInvocationParamsFn = (
         ...prepopulatedInvocationParams,
         ...ls_invocation_params,
       },
+      ...defaultLsAgentTypeMetadata(requestMetadata, getCurrentRunTree(true)),
     } as InvocationParamsSchema;
   };
 };
@@ -587,6 +598,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             ...prepopulatedInvocationParams,
             ...ls_invocation_params,
           },
+          ...defaultLsAgentTypeMetadata({}, getCurrentRunTree(true)),
         };
       },
       ...cleanedOptions,

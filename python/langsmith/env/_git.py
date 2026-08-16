@@ -21,6 +21,27 @@ def exec_git(command: List[str]) -> Optional[str]:
         return None
 
 
+def _sanitize_remote_url(remote_url: Optional[str]) -> Optional[str]:
+    if remote_url is None:
+        return None
+    scheme_separator = remote_url.find("://")
+    if scheme_separator == -1:
+        return remote_url
+    scheme = remote_url[:scheme_separator].lower()
+    if scheme not in ("http", "https"):
+        return remote_url
+    authority_start = scheme_separator + len("://")
+    authority_end = len(remote_url)
+    for delimiter in ("/", "?", "#"):
+        delimiter_index = remote_url.find(delimiter, authority_start)
+        if delimiter_index != -1:
+            authority_end = min(authority_end, delimiter_index)
+    userinfo_end = remote_url.rfind("@", authority_start, authority_end)
+    if userinfo_end == -1:
+        return remote_url
+    return remote_url[:authority_start] + remote_url[userinfo_end + 1 :]
+
+
 class GitInfo(TypedDict, total=False):
     repo_name: Optional[str]
     remote_url: Optional[str]
@@ -50,7 +71,7 @@ def get_git_info(remote: str = "origin") -> GitInfo:
         )
 
     return {
-        "remote_url": exec_git(["remote", "get-url", remote]),
+        "remote_url": _sanitize_remote_url(exec_git(["remote", "get-url", remote])),
         "commit": exec_git(["rev-parse", "HEAD"]),
         "commit_time": exec_git(["log", "-1", "--format=%ct"]),
         "branch": exec_git(["rev-parse", "--abbrev-ref", "HEAD"]),

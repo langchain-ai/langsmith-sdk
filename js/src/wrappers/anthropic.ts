@@ -10,8 +10,41 @@ import {
 } from "../traceable.js";
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
+import { SECRET_PLACEHOLDER } from "../anonymizer/index.js";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
+
+/** Keys of an MCP server definition that are safe to trace. */
+const MCP_SERVER_SAFE_KEYS = new Set([
+  "name",
+  "type",
+  "url",
+  "tool_configuration",
+]);
+
+/**
+ * Mask credentials in `mcp_servers` before tracing. Anything outside
+ * {@link MCP_SERVER_SAFE_KEYS} keeps its name but gets
+ * {@link SECRET_PLACEHOLDER} as its value, so the trace shows the field was set
+ * without exposing it, and fields the API adds later are masked by default.
+ *
+ * Returns new objects; the caller's are also sent to Anthropic.
+ */
+function redactMcpServers(servers: unknown): unknown {
+  if (!Array.isArray(servers)) return servers;
+
+  return servers.map((server) => {
+    if (typeof server !== "object" || server == null || Array.isArray(server)) {
+      return server;
+    }
+    return Object.fromEntries(
+      Object.entries(server).map(([key, value]) => [
+        key,
+        MCP_SERVER_SAFE_KEYS.has(key) ? value : SECRET_PLACEHOLDER,
+      ]),
+    );
+  });
+}
 
 type ExtraRunTreeConfig = Pick<
   Partial<RunTreeConfig>,
@@ -348,14 +381,19 @@ export const wrapAnthropic = <T extends AnthropicType>(
    * This provides parity with the Python SDK behavior and enables system prompts
    * to be viewed and edited in the LangSmith playground.
    */
-  function processSystemMessage(
+  function processTracedInputs(
     params: Record<string, unknown>,
   ): Record<string, unknown> {
-    if (!params.system) {
-      return params;
+    // Copy first: `params` also goes to the API and must keep its real values.
+    const processed = { ...params };
+
+    if (processed.mcp_servers != null) {
+      processed.mcp_servers = redactMcpServers(processed.mcp_servers);
     }
 
-    const processed = { ...params };
+    if (!params.system) {
+      return processed;
+    }
 
     // Handle both string and ContentBlock[] formats
     const systemContent = Array.isArray(params.system)
@@ -386,7 +424,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
     run_type: "llm",
     aggregator: messageAggregator,
     argsConfigPath: [1, "langsmithExtra"],
-    processInputs: processSystemMessage,
+    processInputs: processTracedInputs,
     getInvocationParams: (payload: unknown) => {
       if (typeof payload !== "object" || payload == null) return undefined;
       const params = payload as Anthropic.MessageCreateParams;
@@ -470,7 +508,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
       run_type: "llm",
       aggregator: messageAggregator,
       argsConfigPath: [1, "langsmithExtra"],
-      processInputs: processSystemMessage,
+      processInputs: processTracedInputs,
       getInvocationParams: messagesCreateConfig.getInvocationParams,
       processOutputs: processMessageOutput,
       ...cleanedOptions,
@@ -516,7 +554,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
             run_type: "llm",
             aggregator: messageAggregator,
             argsConfigPath: [1, "langsmithExtra"],
-            processInputs: processSystemMessage,
+            processInputs: processTracedInputs,
             getInvocationParams: messagesCreateConfig.getInvocationParams,
             processOutputs: processMessageOutput,
             ...cleanedOptions,

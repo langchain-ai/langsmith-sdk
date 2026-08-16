@@ -5,6 +5,7 @@ from datetime import datetime
 from typing_extensions import Literal
 
 from .._models import BaseModel
+from .run_type import RunType
 
 __all__ = [
     "Run",
@@ -233,6 +234,12 @@ class Run(BaseModel):
     is_root: Optional[bool] = None
     """`is_root` is true when this run has no parent (it is the trace root)."""
 
+    last_queued_at: Optional[datetime] = None
+    """
+    `last_queued_at` is the most recent time this run was added to an annotation
+    queue.
+    """
+
     latency_seconds: Optional[float] = None
     """`latency_seconds` is wall-clock duration from start to end in seconds."""
 
@@ -301,7 +308,7 @@ class Run(BaseModel):
     against, if any.
     """
 
-    run_type: Optional[Literal["TOOL", "CHAIN", "LLM", "RETRIEVER", "EMBEDDING", "PROMPT", "PARSER"]] = None
+    run_type: Optional[RunType] = None
     """
     `run_type` identifies what kind of operation this run represents (for example an
     LLM call, a tool invocation, or a chain step). See the `RunType` enum for

@@ -12,6 +12,10 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "../singletons/traceable.js";
+import {
+  NON_ROOT_LS_AGENT_TYPES,
+  defaultLsAgentTypeMetadata,
+} from "../utils/ls_agent_type.js";
 import type { ContextPlaceholder } from "../singletons/types.js";
 import type {
   AgentSpanData,
@@ -583,14 +587,18 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       runName = "Agent workflow";
     }
 
-    // Build metadata
-    const runExtra: Record<string, unknown> = {
-      metadata: {
-        ...this._metadata,
-        ls_integration: "openai-agents-sdk",
-        ls_agent_type: "root",
-      },
+    // Merge three sources: processor defaults, trace.metadata (user's per-run
+    // ls_agent_type), and force-set ls_integration.
+    const mergedMetadata: Record<string, unknown> = {
+      ...this._metadata,
+      ...((trace.metadata as Record<string, unknown> | undefined) ?? {}),
+      ls_integration: "openai-agents-sdk",
     };
+    Object.assign(
+      mergedMetadata,
+      defaultLsAgentTypeMetadata(mergedMetadata, currentRunTree),
+    );
+    const runExtra: Record<string, unknown> = { metadata: mergedMetadata };
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
     const groupId =
@@ -659,9 +667,10 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     this._runs.delete(trace.traceId);
 
     const traceDict = (trace.toJSON() as Record<string, unknown>) ?? {};
-    const metadata = {
-      ...(traceDict.metadata as Record<string, unknown>),
+    // trace.metadata may have new keys since onTraceStart; pull them in.
+    const metadata: Record<string, unknown> = {
       ...this._metadata,
+      ...(traceDict.metadata as Record<string, unknown>),
     };
 
     try {
@@ -772,10 +781,10 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
         if (!childRun.extra.metadata) {
           childRun.extra.metadata = {};
         }
-        childRun.extra.metadata = {
-          ...childRun.extra.metadata,
-          ls_agent_type: "subagent",
-        };
+        const meta = childRun.extra.metadata as Record<string, unknown>;
+        if (!NON_ROOT_LS_AGENT_TYPES.has(meta.ls_agent_type as string)) {
+          meta.ls_agent_type = "subagent";
+        }
       }
     }
 

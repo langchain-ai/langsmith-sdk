@@ -133,13 +133,14 @@ class TestSandboxClientInit:
             api_key="api-key",
             headers={"X-Service-Key": "svc-jwt"},
         )
-        assert client._ws_default_headers(None) == {"X-Service-Key": "svc-jwt"}
+        # merge_headers normalizes names to lowercase.
+        assert client._ws_default_headers(None) == {"x-service-key": "svc-jwt"}
         assert client._ws_default_headers({"X-Test": "v"}) == {
-            "X-Service-Key": "svc-jwt",
-            "X-Test": "v",
+            "x-service-key": "svc-jwt",
+            "x-test": "v",
         }
         assert client._ws_default_headers({"X-Service-Key": "override"}) == {
-            "X-Service-Key": "override"
+            "x-service-key": "override"
         }
         client.close()
 
@@ -1147,12 +1148,12 @@ class TestSnapshotOperations:
             snapshot = client.create_snapshot_from_dockerfile(
                 "snap",
                 "Dockerfile",
-                4294967296,
                 context=tmp_path,
             )
 
         assert snapshot.id == "snap-1"
         sandbox_mock.assert_called_once()
+        assert sandbox_mock.call_args.kwargs["fs_capacity_bytes"] is None
         # Build scratch must live on the capacity-backed root filesystem, not
         # the RAM-backed /tmp tmpfs that fs_capacity_bytes does not size.
         assert len(fake_sandbox.writes) == 1
@@ -1172,7 +1173,7 @@ class TestSnapshotOperations:
         assert args[0] == "builder"
         assert args[1] == "snap"
         assert kwargs["docker_image"].startswith("langsmith-snapshot-build:")
-        assert kwargs["fs_capacity_bytes"] == 4294967296
+        assert kwargs["fs_capacity_bytes"] is None
 
     def test_create_snapshot_from_dockerfile_forwards_builder_size(
         self, client: SandboxClient, tmp_path
@@ -1611,7 +1612,7 @@ class TestRegistries:
     def test_registries_create(self, httpx_mock: HTTPXMock):
         httpx_mock.add_response(
             method="POST",
-            url="http://test-server:8080/v2/sandboxes/registries",
+            url="http://test-server:8080/api/v2/sandboxes/registries",
             json={"id": "reg-1", "name": "internal", "url": "registry.example.com"},
         )
         client = SandboxClient(api_endpoint="http://test-server:8080", api_key="k")

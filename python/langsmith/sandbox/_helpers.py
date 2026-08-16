@@ -34,10 +34,17 @@ def merge_headers(
     base_headers: Optional[Mapping[str, str]] = None,
     override_headers: Optional[Mapping[str, str]] = None,
 ) -> dict[str, str]:
-    """Merge request headers, giving precedence to overrides."""
-    merged: dict[str, str] = dict(base_headers or {})
-    if override_headers:
-        merged.update(override_headers)
+    """Merge request headers, giving precedence to overrides.
+
+    Names are normalized to lowercase so an override replaces a base header that
+    differs only in casing. HTTP header names are case-insensitive, so keeping
+    both would be ambiguous — a server reading the first value would see the
+    base header instead of the override.
+    """
+    merged: dict[str, str] = {}
+    for headers in (base_headers, override_headers):
+        for name, value in (headers or {}).items():
+            merged[name.lower()] = value
     return merged
 
 

@@ -14,6 +14,7 @@ from requests_toolbelt import MultipartEncoder
 
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
@@ -343,9 +344,17 @@ def test_remap_for_project():
     root = RunTree(name="Root", inputs={}, client=mock_client, session_name="original")
     child = root.create_child(name="Child")
 
-    # Same project: no remapping
+    # Omitted primary preserves legacy same-project behavior.
     same = child._remap_for_project("original")
     assert same["id"] == child.id
+
+    # Explicit primary preserves IDs regardless of project.
+    primary = child._remap_for_project("replica", primary=True)
+    assert primary["id"] == child.id
+
+    # Explicit non-primary remaps even within the same project.
+    non_primary = child._remap_for_project("original", primary=False)
+    assert non_primary["id"] == uuid7_deterministic(child.id, "original")
 
     # Different project: IDs remapped deterministically
     r1 = child._remap_for_project("replica")
@@ -531,6 +540,7 @@ def test_from_headers_filters_replica_credentials():
                 "api_key": "injected-key",
                 "api_url": "https://evil.com/exfil",
                 "project_name": "legit-project",
+                "primary": True,
                 "updates": {"reroot": True},
             }
         ]
@@ -550,7 +560,28 @@ def test_from_headers_filters_replica_credentials():
     assert "api_key" not in replica
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
+    assert replica.get("primary") is True
     assert replica.get("updates") == {"reroot": True}
+
+
+def test_from_headers_drops_non_boolean_replica_primary():
+    replicas_json = json.dumps(
+        [{"project_name": "replica-project", "primary": "false"}]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    replica = parsed.replicas[0]
+    assert replica.get("primary") is None
+    remapped = parsed._remap_for_project(replica["project_name"])
+    assert remapped["id"] != parsed.id
 
 
 def test_from_headers_allowlists_update_fields():
@@ -714,3 +745,104 @@ def test_runtree_set_accepts_pydantic_basemodel_outputs():
     rt = RunTree(name="test", run_type="chain", inputs={})
     rt.set(outputs=MyOutput(answer="result"))
     assert rt.outputs == {"answer": "result"}
+
+
+@pytest.fixture
+def _reset_exclude_inputs_cache():
+    """Reset the memoized `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` lookup."""
+
+    def _clear():
+        run_trees._exclude_inputs_on_patch.cache_clear()
+        ls_utils.get_env_var.cache_clear()
+
+    _clear()
+    yield _clear
+    _clear()
+
+
+@pytest.mark.parametrize(
+    "env_name, env_value, explicit, expect_inputs",
+    [
+        # Unset env var: inputs are not re-sent on patch.
+        (None, None, None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true", None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "TRUE", None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "1", None, False),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "false", None, True),
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "bogus", None, True),
+        # The LANGCHAIN_ namespace is honoured too.
+        ("LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH", "true", None, False),
+        # An explicit argument always wins over the environment.
+        ("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true", False, True),
+        (None, None, True, False),
+    ],
+)
+def test_patch_exclude_inputs_env_flag(
+    monkeypatch,
+    _reset_exclude_inputs_cache,
+    env_name,
+    env_value,
+    explicit,
+    expect_inputs,
+):
+    monkeypatch.delenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    monkeypatch.delenv("LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    if env_name is not None:
+        monkeypatch.setenv(env_name, env_value)
+    _reset_exclude_inputs_cache()
+
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run", run_type="chain", inputs={"a": 1}, client=client
+    )
+    run_tree.patch(**({} if explicit is None else {"exclude_inputs": explicit}))
+
+    sent = client.update_run.call_args.kwargs["inputs"]
+    if expect_inputs:
+        assert sent == {"a": 1}
+    else:
+        assert sent is None
+
+
+def test_patch_exclude_inputs_env_flag_with_replicas(
+    monkeypatch, _reset_exclude_inputs_cache
+):
+    """The replica patch path honours the flag as well."""
+    monkeypatch.setenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true")
+    _reset_exclude_inputs_cache()
+
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run",
+        run_type="chain",
+        inputs={"a": 1},
+        client=client,
+        project_name="test-project",
+        replicas=[run_trees.WriteReplica(project_name="replica-project")],
+    )
+    run_tree.patch()
+
+    assert client.update_run.call_args.kwargs["inputs"] is None
+
+
+def test_patch_exclude_inputs_flag_is_cached(monkeypatch, _reset_exclude_inputs_cache):
+    """The env var is read once per process, not on every patch."""
+    monkeypatch.delenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    monkeypatch.delenv("LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH", raising=False)
+    _reset_exclude_inputs_cache()
+
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run", run_type="chain", inputs={"a": 1}, client=client
+    )
+    run_tree.patch()
+    assert client.update_run.call_args.kwargs["inputs"] is None
+
+    # Flipping the env var mid-process has no effect until the cache is cleared.
+    monkeypatch.setenv("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "false")
+    run_tree.patch()
+    assert client.update_run.call_args.kwargs["inputs"] is None
+
+    _reset_exclude_inputs_cache()
+    run_tree.patch()
+    assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}

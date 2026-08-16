@@ -31,9 +31,9 @@ from typing_extensions import (
     runtime_checkable,
 )
 
-import httpx
 import pydantic
-from httpx import URL, Proxy, Timeout, Response, BaseTransport, AsyncBaseTransport
+
+from ._httpx import URL, Proxy, Timeout, Response, BaseTransport, AsyncBaseTransport, httpx
 
 if TYPE_CHECKING:
     from ._models import BaseModel
@@ -104,7 +104,7 @@ HttpxRequestFiles = Union[Mapping[str, HttpxFileTypes], Sequence[Tuple[str, Http
 # This unfortunately means that you will either have
 # to import this type and pass it explicitly:
 #
-# from langsmith_api import NoneType
+# from langsmith._openapi_client import NoneType
 # client.get('/foo', cast_to=NoneType)
 #
 # or build it yourself:

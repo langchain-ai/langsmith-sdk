@@ -6,9 +6,8 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-import httpx
-
 from ..types import thread_query_params, thread_stats_params, thread_list_traces_params
+from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
 from .._utils import path_template, maybe_transform, async_maybe_transform
 from .._compat import cached_property
@@ -26,9 +25,9 @@ from ..pagination import (
     AsyncItemsCursorPostPagination,
 )
 from .._base_client import AsyncPaginator, make_request_options
-from ..types.thread_list_item import ThreadListItem
-from ..types.thread_stats_response import ThreadStatsResponse
-from ..types.thread_trace_list_item import ThreadTraceListItem
+from ..types.thread import Thread
+from ..types.thread_stats import ThreadStats
+from ..types.thread_trace import ThreadTrace
 
 __all__ = ["ThreadsResource", "AsyncThreadsResource"]
 
@@ -39,8 +38,6 @@ class ThreadsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return ThreadsResourceWithRawResponse(self)
 
@@ -48,8 +45,6 @@ class ThreadsResource(SyncAPIResource):
     def with_streaming_response(self) -> ThreadsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return ThreadsResourceWithStreamingResponse(self)
 
@@ -75,6 +70,9 @@ class ThreadsResource(SyncAPIResource):
                 "FIRST_TOKEN_TIME",
                 "INPUTS_PREVIEW",
                 "OUTPUTS_PREVIEW",
+                "INPUTS",
+                "OUTPUTS",
+                "ERROR",
                 "PROMPT_COST",
                 "COMPLETION_COST",
                 "TOTAL_COST",
@@ -93,10 +91,11 @@ class ThreadsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SyncItemsCursorGetPagination[ThreadTraceListItem]:
+    ) -> SyncItemsCursorGetPagination[ThreadTrace]:
         """
-        **Alpha:** The request and response contract may change; Retrieve all traces
-        belonging to a specific thread within a project.
+        Retrieve all traces belonging to a specific thread within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the tracing project UUID (required).
@@ -129,8 +128,8 @@ class ThreadsResource(SyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get_api_list(
-            path_template("/v2/threads/{thread_id}/traces", thread_id=thread_id),
-            page=SyncItemsCursorGetPagination[ThreadTraceListItem],
+            path_template("/api/v2/threads/{thread_id}/traces", thread_id=thread_id),
+            page=SyncItemsCursorGetPagination[ThreadTrace],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -147,7 +146,7 @@ class ThreadsResource(SyncAPIResource):
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
             ),
-            model=ThreadTraceListItem,
+            model=ThreadTrace,
         )
 
     def query(
@@ -159,17 +158,22 @@ class ThreadsResource(SyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
+        thread_filter: str | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SyncItemsCursorPostPagination[ThreadListItem]:
-        """
-        **Alpha:** The request and response contract may change; Query threads within a
-        project (session), with cursor-based pagination. Returns threads matching the
-        given time range and optional filter.
+    ) -> SyncItemsCursorPostPagination[Thread]:
+        """Query threads within a project (session), with cursor-based pagination.
+
+        Returns
+        threads matching the given time range and optional filters.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Omit on
@@ -182,10 +186,10 @@ class ThreadsResource(SyncAPIResource):
               for syntax.
 
           max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to now (UTC) when omitted.
 
           min_start_time: `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to 1 day before now (UTC) when omitted.
 
           page_size: `page_size` is the maximum number of threads to return in this response.
               Defaults to 20 when omitted; must be between 1 and 100 inclusive when set. The
@@ -193,6 +197,25 @@ class ThreadsResource(SyncAPIResource):
               non-null.
 
           project_id: `project_id` is the tracing project UUID.
+
+          thread_filter: `thread_filter` narrows results using a LangSmith filter expression evaluated
+              against each complete thread summary. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          trace_filter: `trace_filter` narrows results to threads containing at least one trace whose
+              root run matches this LangSmith filter expression. Trace-level aggregate fields
+              are evaluated using the complete trace summary. Self-hosted deployments require
+              LangSmith v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          tree_filter: `tree_filter` narrows results to threads containing at least one trace with a
+              matching run anywhere in its run tree. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
 
           extra_headers: Send extra headers
 
@@ -203,8 +226,8 @@ class ThreadsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/threads/query",
-            page=SyncItemsCursorPostPagination[ThreadListItem],
+            "/api/v2/threads/query",
+            page=SyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
                     "cursor": cursor,
@@ -213,13 +236,16 @@ class ThreadsResource(SyncAPIResource):
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_id": project_id,
+                    "thread_filter": thread_filter,
+                    "trace_filter": trace_filter,
+                    "tree_filter": tree_filter,
                 },
                 thread_query_params.ThreadQueryParams,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=ThreadListItem,
+            model=Thread,
             method="post",
         )
 
@@ -249,17 +275,19 @@ class ThreadsResource(SyncAPIResource):
             ]
         ],
         session_id: str,
+        filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> ThreadStatsResponse:
+    ) -> ThreadStats:
         """
-        **Alpha:** The request and response contract may change; Compute aggregate stats
-        for a single thread (turn count, latency percentiles, token/cost sums, and
-        detail breakdowns) within a project.
+        Compute aggregate stats for a single thread (turn count, latency percentiles,
+        token/cost sums, and detail breakdowns) within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which aggregate stats to compute and return (repeatable query
@@ -267,6 +295,12 @@ class ThreadsResource(SyncAPIResource):
               `SingleThreadStatsSelectField`.
 
           session_id: `session_id` is the tracing project (session) UUID (required).
+
+          filter: `filter` narrows which of the thread's traces are aggregated, using a LangSmith
+              filter expression. For example: lt(start_time, "2025-01-01T00:00:00Z") or
+              eq(trace_id, "0190a1b2-c3d4-7ef0-a5b6-6ea3a82e9328"). See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
 
           extra_headers: Send extra headers
 
@@ -279,7 +313,7 @@ class ThreadsResource(SyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get(
-            path_template("/v2/threads/{thread_id}/stats", thread_id=thread_id),
+            path_template("/api/v2/threads/{thread_id}/stats", thread_id=thread_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -289,11 +323,12 @@ class ThreadsResource(SyncAPIResource):
                     {
                         "selects": selects,
                         "session_id": session_id,
+                        "filter": filter,
                     },
                     thread_stats_params.ThreadStatsParams,
                 ),
             ),
-            cast_to=ThreadStatsResponse,
+            cast_to=ThreadStats,
         )
 
 
@@ -303,8 +338,6 @@ class AsyncThreadsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncThreadsResourceWithRawResponse(self)
 
@@ -312,8 +345,6 @@ class AsyncThreadsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncThreadsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncThreadsResourceWithStreamingResponse(self)
 
@@ -339,6 +370,9 @@ class AsyncThreadsResource(AsyncAPIResource):
                 "FIRST_TOKEN_TIME",
                 "INPUTS_PREVIEW",
                 "OUTPUTS_PREVIEW",
+                "INPUTS",
+                "OUTPUTS",
+                "ERROR",
                 "PROMPT_COST",
                 "COMPLETION_COST",
                 "TOTAL_COST",
@@ -357,10 +391,11 @@ class AsyncThreadsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> AsyncPaginator[ThreadTraceListItem, AsyncItemsCursorGetPagination[ThreadTraceListItem]]:
+    ) -> AsyncPaginator[ThreadTrace, AsyncItemsCursorGetPagination[ThreadTrace]]:
         """
-        **Alpha:** The request and response contract may change; Retrieve all traces
-        belonging to a specific thread within a project.
+        Retrieve all traces belonging to a specific thread within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the tracing project UUID (required).
@@ -393,8 +428,8 @@ class AsyncThreadsResource(AsyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return self._get_api_list(
-            path_template("/v2/threads/{thread_id}/traces", thread_id=thread_id),
-            page=AsyncItemsCursorGetPagination[ThreadTraceListItem],
+            path_template("/api/v2/threads/{thread_id}/traces", thread_id=thread_id),
+            page=AsyncItemsCursorGetPagination[ThreadTrace],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -411,7 +446,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
             ),
-            model=ThreadTraceListItem,
+            model=ThreadTrace,
         )
 
     def query(
@@ -423,17 +458,22 @@ class AsyncThreadsResource(AsyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
+        thread_filter: str | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> AsyncPaginator[ThreadListItem, AsyncItemsCursorPostPagination[ThreadListItem]]:
-        """
-        **Alpha:** The request and response contract may change; Query threads within a
-        project (session), with cursor-based pagination. Returns threads matching the
-        given time range and optional filter.
+    ) -> AsyncPaginator[Thread, AsyncItemsCursorPostPagination[Thread]]:
+        """Query threads within a project (session), with cursor-based pagination.
+
+        Returns
+        threads matching the given time range and optional filters.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Omit on
@@ -446,10 +486,10 @@ class AsyncThreadsResource(AsyncAPIResource):
               for syntax.
 
           max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to now (UTC) when omitted.
 
           min_start_time: `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-              date-time).
+              date-time). Defaults to 1 day before now (UTC) when omitted.
 
           page_size: `page_size` is the maximum number of threads to return in this response.
               Defaults to 20 when omitted; must be between 1 and 100 inclusive when set. The
@@ -457,6 +497,25 @@ class AsyncThreadsResource(AsyncAPIResource):
               non-null.
 
           project_id: `project_id` is the tracing project UUID.
+
+          thread_filter: `thread_filter` narrows results using a LangSmith filter expression evaluated
+              against each complete thread summary. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          trace_filter: `trace_filter` narrows results to threads containing at least one trace whose
+              root run matches this LangSmith filter expression. Trace-level aggregate fields
+              are evaluated using the complete trace summary. Self-hosted deployments require
+              LangSmith v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
+
+          tree_filter: `tree_filter` narrows results to threads containing at least one trace with a
+              matching run anywhere in its run tree. Self-hosted deployments require LangSmith
+              v0.17 or later; unsupported deployments return 501. See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
 
           extra_headers: Send extra headers
 
@@ -467,8 +526,8 @@ class AsyncThreadsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/threads/query",
-            page=AsyncItemsCursorPostPagination[ThreadListItem],
+            "/api/v2/threads/query",
+            page=AsyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
                     "cursor": cursor,
@@ -477,13 +536,16 @@ class AsyncThreadsResource(AsyncAPIResource):
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_id": project_id,
+                    "thread_filter": thread_filter,
+                    "trace_filter": trace_filter,
+                    "tree_filter": tree_filter,
                 },
                 thread_query_params.ThreadQueryParams,
             ),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
-            model=ThreadListItem,
+            model=Thread,
             method="post",
         )
 
@@ -513,17 +575,19 @@ class AsyncThreadsResource(AsyncAPIResource):
             ]
         ],
         session_id: str,
+        filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> ThreadStatsResponse:
+    ) -> ThreadStats:
         """
-        **Alpha:** The request and response contract may change; Compute aggregate stats
-        for a single thread (turn count, latency percentiles, token/cost sums, and
-        detail breakdowns) within a project.
+        Compute aggregate stats for a single thread (turn count, latency percentiles,
+        token/cost sums, and detail breakdowns) within a project.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           selects: `selects` lists which aggregate stats to compute and return (repeatable query
@@ -531,6 +595,12 @@ class AsyncThreadsResource(AsyncAPIResource):
               `SingleThreadStatsSelectField`.
 
           session_id: `session_id` is the tracing project (session) UUID (required).
+
+          filter: `filter` narrows which of the thread's traces are aggregated, using a LangSmith
+              filter expression. For example: lt(start_time, "2025-01-01T00:00:00Z") or
+              eq(trace_id, "0190a1b2-c3d4-7ef0-a5b6-6ea3a82e9328"). See
+              https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+              for syntax.
 
           extra_headers: Send extra headers
 
@@ -543,7 +613,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         if not thread_id:
             raise ValueError(f"Expected a non-empty value for `thread_id` but received {thread_id!r}")
         return await self._get(
-            path_template("/v2/threads/{thread_id}/stats", thread_id=thread_id),
+            path_template("/api/v2/threads/{thread_id}/stats", thread_id=thread_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -553,11 +623,12 @@ class AsyncThreadsResource(AsyncAPIResource):
                     {
                         "selects": selects,
                         "session_id": session_id,
+                        "filter": filter,
                     },
                     thread_stats_params.ThreadStatsParams,
                 ),
             ),
-            cast_to=ThreadStatsResponse,
+            cast_to=ThreadStats,
         )
 
 

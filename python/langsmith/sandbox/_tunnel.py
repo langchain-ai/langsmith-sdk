@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith.sandbox._helpers import merge_headers
+from langsmith.sandbox._ws_execute import WS_OPEN_TIMEOUT
 
 if TYPE_CHECKING:
     from langsmith.sandbox._yamux import YamuxSession, YamuxStream
@@ -313,7 +314,7 @@ class Tunnel:
         self._ws = ws_connect(
             ws_url,
             additional_headers=headers,
-            open_timeout=15,
+            open_timeout=WS_OPEN_TIMEOUT,
             close_timeout=5,
             ping_interval=None,  # yamux handles keepalive
         )

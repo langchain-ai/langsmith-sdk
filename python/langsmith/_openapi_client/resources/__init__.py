@@ -24,6 +24,14 @@ from .issues import (
     IssuesResourceWithStreamingResponse,
     AsyncIssuesResourceWithStreamingResponse,
 )
+from .public import (
+    PublicResource,
+    AsyncPublicResource,
+    PublicResourceWithRawResponse,
+    AsyncPublicResourceWithRawResponse,
+    PublicResourceWithStreamingResponse,
+    AsyncPublicResourceWithStreamingResponse,
+)
 from .traces import (
     TracesResource,
     AsyncTracesResource,
@@ -55,6 +63,14 @@ from .sandboxes import (
     AsyncSandboxesResourceWithRawResponse,
     SandboxesResourceWithStreamingResponse,
     AsyncSandboxesResourceWithStreamingResponse,
+)
+from .annotation_queues import (
+    AnnotationQueuesResource,
+    AsyncAnnotationQueuesResource,
+    AnnotationQueuesResourceWithRawResponse,
+    AsyncAnnotationQueuesResourceWithRawResponse,
+    AnnotationQueuesResourceWithStreamingResponse,
+    AsyncAnnotationQueuesResourceWithStreamingResponse,
 )
 from .online_evaluators import (
     OnlineEvaluatorsResource,
@@ -96,6 +112,18 @@ __all__ = [
     "AsyncOnlineEvaluatorsResourceWithRawResponse",
     "OnlineEvaluatorsResourceWithStreamingResponse",
     "AsyncOnlineEvaluatorsResourceWithStreamingResponse",
+    "PublicResource",
+    "AsyncPublicResource",
+    "PublicResourceWithRawResponse",
+    "AsyncPublicResourceWithRawResponse",
+    "PublicResourceWithStreamingResponse",
+    "AsyncPublicResourceWithStreamingResponse",
+    "AnnotationQueuesResource",
+    "AsyncAnnotationQueuesResource",
+    "AnnotationQueuesResourceWithRawResponse",
+    "AsyncAnnotationQueuesResourceWithRawResponse",
+    "AnnotationQueuesResourceWithStreamingResponse",
+    "AsyncAnnotationQueuesResourceWithStreamingResponse",
     "InfoResource",
     "AsyncInfoResource",
     "InfoResourceWithRawResponse",

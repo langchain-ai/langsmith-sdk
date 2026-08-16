@@ -1,25 +1,25 @@
 import logging
 
-import packaging.version
-
-from langsmith._internal._constants import _MIN_BACKEND_VERSION
+from packaging.version import InvalidVersion, parse
 
 logger = logging.getLogger(__name__)
 
 
-def _check_backend_version(version: str) -> None:
+def _check_backend_version(backend_version: str, *, min_version: str) -> None:
+    if not backend_version:
+        # /info was unreachable (or skipped): nothing to compare against.
+        return
     try:
-        _parsed = packaging.version.parse(version)
-        _supported = packaging.version.parse(_MIN_BACKEND_VERSION)
-        if _parsed < _supported:
+        if parse(backend_version) < parse(min_version):
             logger.warning(
                 "Backend version %r is older than the minimum version required by "
-                "this SDK (%r). Some features may not work as expected.",
-                version,
-                _MIN_BACKEND_VERSION,
+                "this SDK (%r). Some features may not work as expected. See "
+                "https://docs.langchain.com/langsmith/smithdb-sdk-migration",
+                backend_version,
+                min_version,
             )
-    except packaging.version.InvalidVersion:
+    except InvalidVersion:
         logger.warning(
             "Could not parse backend version %r for compatibility check.",
-            version,
+            backend_version,
         )

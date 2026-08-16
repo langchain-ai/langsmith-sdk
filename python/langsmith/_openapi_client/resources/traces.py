@@ -6,9 +6,8 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-import httpx
-
 from ..types import trace_query_params, trace_list_runs_params
+from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from .._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
 from .._compat import cached_property
@@ -22,6 +21,7 @@ from .._response import (
 from ..pagination import SyncItemsCursorPostPagination, AsyncItemsCursorPostPagination
 from ..types.trace import Trace
 from .._base_client import AsyncPaginator, make_request_options
+from ..types.run_select_field import RunSelectField
 from ..types.trace_list_runs_response import TraceListRunsResponse
 
 __all__ = ["TracesResource", "AsyncTracesResource"]
@@ -33,8 +33,6 @@ class TracesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return TracesResourceWithRawResponse(self)
 
@@ -42,8 +40,6 @@ class TracesResource(SyncAPIResource):
     def with_streaming_response(self) -> TracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return TracesResourceWithStreamingResponse(self)
 
@@ -99,6 +95,7 @@ class TracesResource(SyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -112,10 +109,12 @@ class TracesResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TraceListRunsResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns runs for a
-        trace ID within min/max start time. Optional `filter`; repeatable `selects` to
-        select fields to return.
+        """Returns runs for a trace ID within min/max start time.
+
+        Optional `filter`;
+        repeatable `selects` to select fields to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the trace.
@@ -148,7 +147,7 @@ class TracesResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `trace_id` but received {trace_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get(
-            path_template("/v2/traces/{trace_id}/runs", trace_id=trace_id),
+            path_template("/api/v2/traces/{trace_id}/runs", trace_id=trace_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -176,55 +175,7 @@ class TracesResource(SyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_ids: SequenceNotStr[str] | Omit = omit,
         tree_filter: str | Omit = omit,
@@ -247,6 +198,8 @@ class TracesResource(SyncAPIResource):
 
         Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
         and field projection (`selects`).
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string returned in a previous response's `next_cursor`.
@@ -290,7 +243,7 @@ class TracesResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/traces/query",
+            "/api/v2/traces/query",
             page=SyncItemsCursorPostPagination[Trace],
             body=maybe_transform(
                 {
@@ -320,8 +273,6 @@ class AsyncTracesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncTracesResourceWithRawResponse(self)
 
@@ -329,8 +280,6 @@ class AsyncTracesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncTracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncTracesResourceWithStreamingResponse(self)
 
@@ -386,6 +335,7 @@ class AsyncTracesResource(AsyncAPIResource):
                 "ATTACHMENTS",
                 "THREAD_EVALUATION_TIME",
                 "IS_IN_DATASET",
+                "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
             ]
@@ -399,10 +349,12 @@ class AsyncTracesResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> TraceListRunsResponse:
-        """
-        **Alpha:** The request and response contract may change; Returns runs for a
-        trace ID within min/max start time. Optional `filter`; repeatable `selects` to
-        select fields to return.
+        """Returns runs for a trace ID within min/max start time.
+
+        Optional `filter`;
+        repeatable `selects` to select fields to return.
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           project_id: `project_id` is the UUID of the tracing project that owns the trace.
@@ -435,7 +387,7 @@ class AsyncTracesResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `trace_id` but received {trace_id!r}")
         extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return await self._get(
-            path_template("/v2/traces/{trace_id}/runs", trace_id=trace_id),
+            path_template("/api/v2/traces/{trace_id}/runs", trace_id=trace_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -463,55 +415,7 @@ class AsyncTracesResource(AsyncAPIResource):
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_id: str | Omit = omit,
-        selects: List[
-            Literal[
-                "ID",
-                "NAME",
-                "RUN_TYPE",
-                "STATUS",
-                "START_TIME",
-                "END_TIME",
-                "LATENCY_SECONDS",
-                "FIRST_TOKEN_TIME",
-                "ERROR",
-                "ERROR_PREVIEW",
-                "EXTRA",
-                "METADATA",
-                "EVENTS",
-                "INPUTS",
-                "INPUTS_PREVIEW",
-                "OUTPUTS",
-                "OUTPUTS_PREVIEW",
-                "MANIFEST",
-                "PARENT_RUN_IDS",
-                "PROJECT_ID",
-                "TRACE_ID",
-                "THREAD_ID",
-                "DOTTED_ORDER",
-                "IS_ROOT",
-                "REFERENCE_EXAMPLE_ID",
-                "REFERENCE_DATASET_ID",
-                "TOTAL_TOKENS",
-                "PROMPT_TOKENS",
-                "COMPLETION_TOKENS",
-                "TOTAL_COST",
-                "PROMPT_COST",
-                "COMPLETION_COST",
-                "PROMPT_TOKEN_DETAILS",
-                "COMPLETION_TOKEN_DETAILS",
-                "PROMPT_COST_DETAILS",
-                "COMPLETION_COST_DETAILS",
-                "PRICE_MODEL_ID",
-                "TAGS",
-                "APP_PATH",
-                "ATTACHMENTS",
-                "THREAD_EVALUATION_TIME",
-                "IS_IN_DATASET",
-                "SHARE_URL",
-                "FEEDBACK_STATS",
-            ]
-        ]
-        | Omit = omit,
+        selects: List[RunSelectField] | Omit = omit,
         trace_filter: str | Omit = omit,
         trace_ids: SequenceNotStr[str] | Omit = omit,
         tree_filter: str | Omit = omit,
@@ -534,6 +438,8 @@ class AsyncTracesResource(AsyncAPIResource):
 
         Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
         and field projection (`selects`).
+
+        Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
           cursor: `cursor` is the opaque string returned in a previous response's `next_cursor`.
@@ -577,7 +483,7 @@ class AsyncTracesResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v2/traces/query",
+            "/api/v2/traces/query",
             page=AsyncItemsCursorPostPagination[Trace],
             body=maybe_transform(
                 {

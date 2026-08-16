@@ -12,6 +12,8 @@ import re
 import uuid
 from typing import Any
 
+from pydantic import BaseModel
+
 from langsmith._internal import _orjson
 
 try:
@@ -29,13 +31,25 @@ _ORJSON_OPTIONS = (
     | _orjson.OPT_SERIALIZE_UUID
     | _orjson.OPT_NON_STR_KEYS
 )
+# Turn off OPT_NON_STR_KEYS, trading better speed in the general case where
+# all dict keys are strings for worse speed in the exceptional case
+_ORJSON_OPTIONS_FAST = _ORJSON_OPTIONS & ~_orjson.OPT_NON_STR_KEYS
 _JSON_KEY_TYPES = (str, int, float, bool, type(None))
+# Matches escaped lone UTF-16 surrogates (e.g. b"\\ud800") in ensure_ascii
+# json.dumps output; used to strip them on the stdlib-json fallback path.
+_SURROGATE_RE = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
 
 
 def _simple_default(obj):
     try:
         # Only need to handle types that orjson doesn't serialize by default
         # https://github.com/ijl/orjson#serialize
+        #
+        # datetime/UUID look redundant with orjson's native encoders, but this
+        # function is reached via two paths that bypass them, so keep them:
+        #   (a) non-str dict keys normalized through _normalize_json_keys, and
+        #   (b) the stdlib json.dumps fallback in dumps_json (surrogate path),
+        #       which routes these *values* through this hook.
         if isinstance(obj, datetime.datetime):
             return obj.isoformat()
         elif isinstance(obj, uuid.UUID):
@@ -71,19 +85,63 @@ def _simple_default(obj):
         elif isinstance(obj, (bytes, bytearray)):
             return base64.b64encode(obj).decode()
         return str(obj)
-    except BaseException as e:
+    except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
     return str(obj)
 
 
+_MISSING = object()
+# Maps a Class to its Pydantic core serializer, or to None when the fast path
+# below does not apply to it. Bounded rather than weakly keyed.
+_PYDANTIC_SERIALIZER_CACHE_MAX = 1024
+_pydantic_core_serializers: dict[type, Any] = {}
+
+
+def _remember_pydantic_serializer(cls: type, serializer: Any) -> None:
+    if len(_pydantic_core_serializers) >= _PYDANTIC_SERIALIZER_CACHE_MAX:
+        _pydantic_core_serializers.clear()
+    _pydantic_core_serializers[cls] = serializer
+
+
+def _pydantic_json_dump(obj: Any) -> Any:
+    """Serialize a Pydantic v2 model with its low level core serializer.
+
+    `model_dump()` is a Python wrapper around this serializer. Calling the
+    low-level serializer is measurably cheaper, if it hasn't been overridden.
+
+    Returns `_MISSING` when the shortcut doesn't apply, so callers fall back to
+    other methods. A raise is remembered per class, because
+    `_serialization_methods` starts with the same json-mode dump: retrying it
+    per object would only raise twice instead of once.
+    """
+    cls = type(obj)
+    serializer = _pydantic_core_serializers.get(cls, _MISSING)
+    if serializer is _MISSING:
+        serializer = None
+        if isinstance(obj, BaseModel) and cls.model_dump is BaseModel.model_dump:
+            # getattr: a model whose schema build is still deferred has a
+            # placeholder here, which the try below handles.
+            serializer = getattr(cls, "__pydantic_serializer__", None)
+        _remember_pydantic_serializer(cls, serializer)
+    if serializer is None:
+        return _MISSING
+
+    try:
+        return serializer.to_python(obj, mode="json", exclude_none=True, warnings=False)
+    except Exception:
+        _remember_pydantic_serializer(cls, None)
+        return _MISSING
+
+
 _serialization_methods: list[tuple[str, dict[str, Any]]] = [
-    (
-        "model_dump",
-        {"exclude_none": True, "mode": "json"},
-    ),  # Pydantic V2 with non-serializable fields
-    ("model_dump", {"exclude_none": True}),  # Pydantic V2 without json mode
-    ("dict", {}),  # Pydantic V1 with non-serializable field
-    ("to_dict", {}),  # dataclasses-json
+    # Pydantic v2 primary: coerce fields to JSON-native types.
+    # Raises on truly non-serializable fields -> the next entry handles those.
+    ("model_dump", {"exclude_none": True, "mode": "json"}),
+    # Pydantic v2 fallback: python-mode dump; leaves non-JSON values as objects
+    # for orjson / _simple_default to serialize.
+    ("model_dump", {"exclude_none": True}),
+    ("dict", {}),  # Pydantic v1 .dict()
+    ("to_dict", {}),  # dataclasses-json to_dict()
 ]
 
 
@@ -100,14 +158,19 @@ def _serialize_json(obj: Any) -> Any:
                 return obj._asdict()
             return list(obj)
 
+        # A class object has no useful instance serialization method
+        if isinstance(obj, type):
+            return _simple_default(obj)
+
+        # Try using the speedier Pydantic serialization first
+        fast_serialized = _pydantic_json_dump(obj)
+        if fast_serialized is not _MISSING:
+            return fast_serialized
+
         for attr, kwargs in _serialization_methods:
-            if (
-                hasattr(obj, attr)
-                and callable(getattr(obj, attr))
-                and not isinstance(obj, type)
-            ):
+            method = getattr(obj, attr, None)
+            if callable(method):
                 try:
-                    method = getattr(obj, attr)
                     response = method(**kwargs)
                     if not isinstance(response, dict):
                         return str(response)
@@ -117,9 +180,8 @@ def _serialize_json(obj: Any) -> Any:
                         f"Failed to use {attr} to serialize {type(obj)} to"
                         f" JSON: {repr(e)}"
                     )
-                    pass
         return _simple_default(obj)
-    except BaseException as e:
+    except Exception as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return str(obj)
 
@@ -176,9 +238,7 @@ def _serialize_json_with_normalized_keys(obj: Any) -> Any:
 
 
 def _elide_surrogates(s: bytes) -> bytes:
-    pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
-    result = pattern.sub(b"", s)
-    return result
+    return _SURROGATE_RE.sub(b"", s)
 
 
 def dumps_json(obj: Any) -> bytes:
@@ -188,23 +248,30 @@ def dumps_json(obj: Any) -> bytes:
     ----------
     obj : Any
         The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
 
     Returns:
     -------
-    str
-        The JSON formatted string.
+    bytes
+        The JSON formatted string, encoded as UTF-8 bytes.
     """
     try:
         return _orjson.dumps(
             obj,
             default=_serialize_json,
-            option=_ORJSON_OPTIONS,
+            option=_ORJSON_OPTIONS_FAST,
         )
     except TypeError as e:
-        # Usually caused by UTF surrogate characters
+        # Usually caused by UTF surrogate characters or non-str dict keys
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        try:
+            # Let orjson coerce non-str keys. Only stringify the ones it can't handle.
+            return _orjson.dumps(
+                obj,
+                default=_serialize_json,
+                option=_ORJSON_OPTIONS,
+            )
+        except TypeError:
+            pass
         normalized_obj = _normalize_json_keys(obj)
         try:
             return _orjson.dumps(

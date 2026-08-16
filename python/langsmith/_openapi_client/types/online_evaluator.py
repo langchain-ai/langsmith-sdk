@@ -22,6 +22,12 @@ class OnlineEvaluator(BaseModel):
 
     feedback_keys: Optional[List[str]] = None
 
+    is_managed: Optional[bool] = None
+    """
+    IsManaged marks a LangChain-managed evaluator (currently the managed Perceived
+    Error judge). NULL in the DB is read as false via COALESCE.
+    """
+
     llm_evaluator: Optional[OnlineLlmEvaluator] = None
     """Embedded child evaluator (populated based on type)"""
 

@@ -111,6 +111,55 @@ def extract_model_from_lk_metrics(metrics: Any) -> Optional[str]:
     return None
 
 
+def _as_int(value: Any) -> Optional[int]:
+    """Coerce a numeric metrics value to ``int``, or ``None`` if not numeric."""
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def extract_llm_usage(metrics: Any) -> dict[str, Any]:
+    """Parse a ``lk.llm_metrics`` blob into ``set_usage`` kwargs."""
+    parsed = try_parse_json_object(metrics)
+    if not isinstance(parsed, dict):
+        return {}
+    usage: dict[str, Any] = {}
+    if (v := _as_int(parsed.get("prompt_tokens"))) is not None:
+        usage["input_tokens"] = v
+    if (v := _as_int(parsed.get("completion_tokens"))) is not None:
+        usage["output_tokens"] = v
+    if (v := _as_int(parsed.get("total_tokens"))) is not None:
+        usage["total_tokens"] = v
+    if (v := _as_int(parsed.get("prompt_cached_tokens"))) is not None:
+        usage["input_token_details"] = {"cache_read": v}
+    return usage
+
+
+def extract_realtime_usage(metrics: Any) -> dict[str, Any]:
+    """Parse a ``lk.realtime_model_metrics`` blob into ``set_usage`` kwargs."""
+    parsed = try_parse_json_object(metrics)
+    if not isinstance(parsed, dict):
+        return {}
+    usage: dict[str, Any] = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        if (count := _as_int(parsed.get(key))) is not None:
+            usage[key] = count
+
+    in_details = parsed.get("input_token_details")
+    input_detail: dict[str, int] = {}
+    if isinstance(in_details, dict):
+        if (audio := _as_int(in_details.get("audio_tokens"))) is not None:
+            input_detail["audio"] = audio
+        if (cached := _as_int(in_details.get("cached_tokens"))) is not None:
+            input_detail["cache_read"] = cached
+    if input_detail:
+        usage["input_token_details"] = input_detail
+
+    out_details = parsed.get("output_token_details")
+    if isinstance(out_details, dict):
+        if (audio := _as_int(out_details.get("audio_tokens"))) is not None:
+            usage["output_token_details"] = {"audio": audio}
+    return usage
+
+
 def flatten_lk_attributes_to_ls_metadata(
     obj: dict, prefix: str, _depth: int = 0
 ) -> dict:

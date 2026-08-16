@@ -7,8 +7,7 @@ from typing import Any, Optional
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal.voice import set_thread_id, thread_id_from_context
-
-from .processor import PipecatLangSmithSpanProcessor
+from langsmith.integrations.pipecat.processor import PipecatLangSmithSpanProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,11 @@ def configure_pipecat(
     asyncio task). The processor captures it as the conversation's spans start
     and applies it to every span in the trace — so it holds even for spans
     finished on a background task, and concurrent conversations stay separated.
+
+    For a realtime (speech-to-speech) service, also call
+    :meth:`PipecatLangSmithSpanProcessor.instrument_user_aggregator` on the
+    returned processor. Pipecat delivers finalized user text through the user
+    context aggregator rather than an OTel span.
 
     Args:
         llm_span_kind: LangSmith run kind for Pipecat's ``llm`` span; see the

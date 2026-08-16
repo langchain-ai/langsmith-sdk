@@ -13,14 +13,16 @@ export class Snapshots extends APIResource {
    * Create a snapshot from a Docker image (async build).
    */
   create(body: SnapshotCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
-    return this._client.post('/v2/sandboxes/snapshots', { body, ...options });
+    return this._client.post('/api/v2/sandboxes/snapshots', { body, ...options });
   }
 
   /**
-   * Get a sandbox snapshot by ID.
+   * Get a sandbox snapshot by ID or by a Docker-style reference. A bare name means
+   * name:latest, falling back to the newest ready untagged snapshot of that name. To
+   * list the tags under a name, use /api/v2/sandboxes/snapshots-by-name/{name}.
    */
   retrieve(snapshotID: string, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
-    return this._client.get(path`/v2/sandboxes/snapshots/${snapshotID}`, options);
+    return this._client.get(path`/api/v2/sandboxes/snapshots/${snapshotID}`, options);
   }
 
   /**
@@ -31,17 +33,40 @@ export class Snapshots extends APIResource {
     query: SnapshotListParams | null | undefined = {},
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SnapshotListResponse> {
-    return this._client.get('/v2/sandboxes/snapshots', { query, ...options });
+    return this._client.get('/api/v2/sandboxes/snapshots', { query, ...options });
   }
 
   /**
-   * Delete a snapshot by ID. The underlying storage is reclaimed asynchronously.
+   * Delete a snapshot by ID or by a Docker-style name[:tag] reference. The
+   * underlying storage is reclaimed asynchronously.
    */
   delete(snapshotID: string, options?: RequestOptions): APIPromise<void> {
-    return this._client.delete(path`/v2/sandboxes/snapshots/${snapshotID}`, {
+    return this._client.delete(path`/api/v2/sandboxes/snapshots/${snapshotID}`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
+  }
+
+  /**
+   * Get a snapshot name and every tag under it, with the snapshot each tag resolves
+   * to. To fetch one snapshot, use /api/v2/sandboxes/snapshots/{snapshot_id}.
+   */
+  retrieveByName(name: string, options?: RequestOptions): APIPromise<SnapshotRetrieveByNameResponse> {
+    return this._client.get(path`/api/v2/sandboxes/snapshots-by-name/${name}`, options);
+  }
+}
+
+export interface SnapshotRetrieveByNameResponse {
+  name?: string;
+
+  tags?: Array<SnapshotRetrieveByNameResponse.Tag>;
+}
+
+export namespace SnapshotRetrieveByNameResponse {
+  export interface Tag {
+    snapshot_id?: string;
+
+    tag?: string;
   }
 }
 
@@ -52,7 +77,18 @@ export interface SnapshotCreateParams {
 
   name: string;
 
+  /**
+   * Labels seed the snapshot's labels, overriding any label of the same key derived
+   * from the Docker image.
+   */
+  labels?: { [key: string]: string };
+
   registry_id?: string;
+
+  /**
+   * mutable Docker-style tag; defaults to "latest"
+   */
+  tag?: string;
 }
 
 export interface SnapshotListParams {
@@ -60,6 +96,12 @@ export interface SnapshotListParams {
    * Filter by creator identity. Only 'me' is supported.
    */
   created_by?: string;
+
+  /**
+   * Filter by label. Repeatable; all must match. Use 'key' to match on key presence
+   * or 'key=value' for equality.
+   */
+  label?: Array<string>;
 
   /**
    * Maximum number of results
@@ -93,5 +135,9 @@ export interface SnapshotListParams {
 }
 
 export declare namespace Snapshots {
-  export { type SnapshotCreateParams as SnapshotCreateParams, type SnapshotListParams as SnapshotListParams };
+  export {
+    type SnapshotRetrieveByNameResponse as SnapshotRetrieveByNameResponse,
+    type SnapshotCreateParams as SnapshotCreateParams,
+    type SnapshotListParams as SnapshotListParams,
+  };
 }

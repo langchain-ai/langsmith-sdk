@@ -180,7 +180,9 @@ def tracing_context(
         )
     current_context = get_tracing_context()
     parent_run = (
-        _get_parent_run({"parent": parent or kwargs.get("parent_run")})
+        _get_parent_run(
+            {"parent": parent or kwargs.get("parent_run"), "replicas": replicas}
+        )
         if parent is not False
         else None
     )
@@ -281,6 +283,8 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional ID for the run."""
     client: Optional[ls_client.Client]
     """Optional LangSmith client."""
+    replicas: Optional[Sequence[WriteReplica]]
+    """Optional write replicas to apply to the run and its descendants."""
     # Optional callback function to be called if the run succeeds and before it is sent.
     _on_success: Optional[Callable[[run_trees.RunTree], None]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
@@ -1519,6 +1523,7 @@ def _get_parent_run(
             client=langsmith_extra.get("client"),
             # Precedence: headers -> cvar -> explicit -> env var
             project_name=_get_project_name(langsmith_extra.get("project_name")),
+            replicas=langsmith_extra.get("replicas"),
         )
     if isinstance(parent, str):
         dort = run_trees.RunTree.from_dotted_order(
@@ -1526,6 +1531,7 @@ def _get_parent_run(
             client=langsmith_extra.get("client"),
             # Precedence: cvar -> explicit ->  env var
             project_name=_get_project_name(langsmith_extra.get("project_name")),
+            replicas=langsmith_extra.get("replicas"),
         )
         return dort
     run_tree = langsmith_extra.get("run_tree")

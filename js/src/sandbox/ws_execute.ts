@@ -8,10 +8,64 @@
 import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxConnectTimeoutError,
   LangSmithSandboxOperationError,
   LangSmithSandboxServerReloadError,
 } from "./errors.js";
 import type { WsMessage, WsRunOptions } from "./types.js";
+import { getLangSmithEnvironmentVariable } from "../utils/env.js";
+
+/** Read a WebSocket timeout override, in seconds. `<= 0` disables it. */
+function envTimeout(name: string, defaultSeconds: number): number | undefined {
+  const raw = getLangSmithEnvironmentVariable(name);
+  if (raw === undefined || raw.trim() === "") return defaultSeconds;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.warn(
+      `Ignoring invalid LANGSMITH_${name}=${raw}, using ${defaultSeconds}`,
+    );
+    return defaultSeconds;
+  }
+  return value > 0 ? value : undefined;
+}
+
+// A slow cold start is recovered by the retry loop in run(), not by waiting here.
+export const WS_OPEN_TIMEOUT = envTimeout("SANDBOX_WS_TIMEOUT_OPEN", 30);
+// Ceiling on the whole connect phase. Without it, retrying a blackholed
+// handshake costs MAX_AUTO_RECONNECTS + 1 full open timeouts plus backoff.
+export const WS_CONNECT_BUDGET = envTimeout(
+  "SANDBOX_WS_TIMEOUT_CONNECT_BUDGET",
+  120,
+);
+
+function nowSeconds(): number {
+  return performance.now() / 1000;
+}
+
+/** Instant after which connect attempts must stop, if bounded. */
+export function connectDeadline(): number | undefined {
+  return WS_CONNECT_BUDGET === undefined
+    ? undefined
+    : nowSeconds() + WS_CONNECT_BUDGET;
+}
+
+/** Seconds left in the connect budget, or undefined when unbounded. */
+export function remainingBudget(
+  deadline: number | undefined,
+): number | undefined {
+  return deadline === undefined ? undefined : deadline - nowSeconds();
+}
+
+/** Per-attempt open timeout, clamped so it cannot outlive `deadline`. */
+export function openTimeoutFor(
+  deadline: number | undefined,
+): number | undefined {
+  if (deadline === undefined) return WS_OPEN_TIMEOUT;
+  const remaining = Math.max(deadline - nowSeconds(), 0);
+  return WS_OPEN_TIMEOUT === undefined
+    ? remaining
+    : Math.min(WS_OPEN_TIMEOUT, remaining);
+}
 
 // =============================================================================
 // Lazy ws import (optional peer dependency)
@@ -20,19 +74,31 @@ import type { WsMessage, WsRunOptions } from "./types.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WsWebSocket = any;
 
+// Load the optional 'ws' package once, at module load, instead of importing on
+// every call. Resolves to the WebSocket constructor, or null if 'ws' isn't
+// installed. run() reads isWsAvailable() to choose WS vs the HTTP fallback.
+const wsWebSocketPromise: Promise<WsWebSocket | null> = import("ws").then(
+  (ws) => ws.default || ws.WebSocket || ws,
+  () => null,
+);
+
+/** Whether the optional `ws` package could be loaded (resolved once). */
+export async function isWsAvailable(): Promise<boolean> {
+  return (await wsWebSocketPromise) !== null;
+}
+
 async function ensureWs(): Promise<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   WebSocket: any;
 }> {
-  try {
-    const ws = await import("ws");
-    return { WebSocket: ws.default || ws.WebSocket || ws };
-  } catch {
+  const WebSocket = await wsWebSocketPromise;
+  if (!WebSocket) {
     throw new Error(
       "WebSocket-based execution requires the 'ws' package. " +
         "Install it with: npm install ws",
     );
   }
+  return { WebSocket };
 }
 
 // =============================================================================
@@ -157,24 +223,58 @@ export function raiseForWsError(msg: WsMessage, commandId = ""): never {
 /**
  * Create a ws WebSocket connection and return a promise that resolves when open
  * or rejects on error.
+ *
+ * A socket-level failure rejects with the retryable connect-timeout error; a
+ * non-101 response rejects with the permanent connection error.
  */
 async function connectWs(
   url: string,
   headers: Record<string, string>,
+  openTimeout: number | undefined = WS_OPEN_TIMEOUT,
 ): Promise<WsWebSocket> {
   const { WebSocket: WS } = await ensureWs();
   return new Promise((resolve, reject) => {
-    const ws = new WS(url, { headers });
+    const ws = new WS(url, {
+      headers,
+      handshakeTimeout:
+        openTimeout === undefined ? undefined : openTimeout * 1000,
+    });
+    let settled = false;
 
     ws.on("open", () => {
-      ws.removeAllListeners("error");
+      if (settled) return;
+      settled = true;
       resolve(ws);
     });
 
+    // Attaching this suppresses ws's own "error" for a non-101 response, so the
+    // rejected upgrade cannot be misreported as a retryable socket failure. ws
+    // leaves cleanup to the handler once a listener is present.
+    ws.on(
+      "unexpected-response",
+      (
+        req: { destroy?: () => void },
+        res: { statusCode?: number; resume?: () => void },
+      ) => {
+        res.resume?.();
+        req.destroy?.();
+        if (settled) return;
+        settled = true;
+        reject(
+          new LangSmithSandboxConnectionError(
+            `WebSocket upgrade to ${url} rejected by server (HTTP ${res.statusCode})`,
+          ),
+        );
+      },
+    );
+
+    // Stays attached after settling so a late error has a listener and cannot
+    // become an unhandled 'error' event.
     ws.on("error", (err: Error) => {
-      ws.removeAllListeners("open");
+      if (settled) return;
+      settled = true;
       reject(
-        new LangSmithSandboxConnectionError(
+        new LangSmithSandboxConnectTimeoutError(
           `Failed to connect to sandbox WebSocket: ${err.message}`,
         ),
       );
@@ -309,6 +409,7 @@ export async function runWsStream(
     ttlSeconds = 600,
     pty,
     headers: extraHeaders,
+    openTimeout = WS_OPEN_TIMEOUT,
   } = options;
 
   const wsUrl = buildWsUrl(dataplaneUrl);
@@ -318,7 +419,7 @@ export async function runWsStream(
   async function* stream(): AsyncIterableIterator<WsMessage> {
     let ws: WsWebSocket | undefined;
     try {
-      ws = await connectWs(wsUrl, headers);
+      ws = await connectWs(wsUrl, headers, openTimeout);
       control._bind(ws);
 
       // Send execute request
@@ -372,8 +473,10 @@ export async function runWsStream(
  * Reconnect to an existing command over WebSocket.
  *
  * Returns a tuple of [async_message_iterator, control], same as runWsStream.
- * The iterator yields stdout, stderr, exit, and error messages.
- * No 'started' message is sent on reconnection.
+ * The iterator yields the server's 'started' acknowledgement, then stdout,
+ * stderr, exit, and error messages. That acknowledgement is the only evidence a
+ * reattachment landed for a command producing no output, so it is forwarded
+ * rather than dropped.
  */
 export async function reconnectWsStream(
   dataplaneUrl: string,
@@ -411,7 +514,11 @@ export async function reconnectWsStream(
       for await (const msg of readWsMessages(ws)) {
         const msgType = msg.type;
 
-        if (msgType === "stdout" || msgType === "stderr") {
+        if (
+          msgType === "started" ||
+          msgType === "stdout" ||
+          msgType === "stderr"
+        ) {
           yield msg;
         } else if (msgType === "exit") {
           yield msg;

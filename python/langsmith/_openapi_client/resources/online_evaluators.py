@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import httpx
-
 from ..types import (
     OnlineEvaluatorType,
     online_evaluator_list_params,
@@ -13,6 +11,7 @@ from ..types import (
     online_evaluator_update_params,
     online_evaluator_bulk_delete_params,
 )
+from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NoneType, NotGiven, SequenceNotStr, omit, not_given
 from .._utils import path_template, maybe_transform, async_maybe_transform
 from .._compat import cached_property
@@ -45,8 +44,6 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return OnlineEvaluatorsResourceWithRawResponse(self)
 
@@ -54,8 +51,6 @@ class OnlineEvaluatorsResource(SyncAPIResource):
     def with_streaming_response(self) -> OnlineEvaluatorsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return OnlineEvaluatorsResourceWithStreamingResponse(self)
 
@@ -86,7 +81,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._post(
-            "/v1/platform/evaluators",
+            "/api/v1/platform/evaluators",
             body=maybe_transform(
                 {
                     "code_evaluator": code_evaluator,
@@ -128,7 +123,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         if not evaluator_id:
             raise ValueError(f"Expected a non-empty value for `evaluator_id` but received {evaluator_id!r}")
         return self._get(
-            path_template("/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
+            path_template("/api/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -164,7 +159,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         if not evaluator_id:
             raise ValueError(f"Expected a non-empty value for `evaluator_id` but received {evaluator_id!r}")
         return self._patch(
-            path_template("/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
+            path_template("/api/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
             body=maybe_transform(
                 {
                     "code_evaluator": code_evaluator,
@@ -230,7 +225,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v1/platform/evaluators",
+            "/api/v1/platform/evaluators",
             page=SyncOffsetPaginationOnlineEvaluators[OnlineEvaluator],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -289,7 +284,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `evaluator_id` but received {evaluator_id!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return self._delete(
-            path_template("/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
+            path_template("/api/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -332,7 +327,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._delete(
-            "/v1/platform/evaluators",
+            "/api/v1/platform/evaluators",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -359,6 +354,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         group_by: str | Omit = omit,
         resource_id: SequenceNotStr[str] | Omit = omit,
         session_id: str | Omit = omit,
+        tag_value_id: SequenceNotStr[str] | Omit = omit,
         type: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -370,8 +366,8 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         """
         Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
         evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-        session_id, or dataset_id is required. resource_id, type, and feedback_key may
-        be supplied with group_by to narrow listing aggregations.
+        session_id, or dataset_id is required. resource_id, type, feedback_key, and
+        tag_value_id may be supplied with group_by to narrow listing aggregations.
 
         Args:
           period_start: Start of the 7-day window (YYYY-MM-DD).
@@ -390,6 +386,9 @@ class OnlineEvaluatorsResource(SyncAPIResource):
 
           session_id: Filter to a specific project (UUID). Mutually exclusive with group_by.
 
+          tag_value_id: Filter grouped results to evaluators, projects, or datasets tagged with all
+              supplied tag value IDs. Only valid with group_by.
+
           type: Filter grouped results by evaluator type: 'llm' or 'code'. Only valid with
               group_by.
 
@@ -402,7 +401,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get(
-            "/v1/platform/evaluators/spend",
+            "/api/v1/platform/evaluators/spend",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -417,6 +416,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
                         "group_by": group_by,
                         "resource_id": resource_id,
                         "session_id": session_id,
+                        "tag_value_id": tag_value_id,
                         "type": type,
                     },
                     online_evaluator_spend_params.OnlineEvaluatorSpendParams,
@@ -432,8 +432,6 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncOnlineEvaluatorsResourceWithRawResponse(self)
 
@@ -441,8 +439,6 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncOnlineEvaluatorsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncOnlineEvaluatorsResourceWithStreamingResponse(self)
 
@@ -473,7 +469,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._post(
-            "/v1/platform/evaluators",
+            "/api/v1/platform/evaluators",
             body=await async_maybe_transform(
                 {
                     "code_evaluator": code_evaluator,
@@ -515,7 +511,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         if not evaluator_id:
             raise ValueError(f"Expected a non-empty value for `evaluator_id` but received {evaluator_id!r}")
         return await self._get(
-            path_template("/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
+            path_template("/api/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
             options=make_request_options(
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
@@ -551,7 +547,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         if not evaluator_id:
             raise ValueError(f"Expected a non-empty value for `evaluator_id` but received {evaluator_id!r}")
         return await self._patch(
-            path_template("/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
+            path_template("/api/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
             body=await async_maybe_transform(
                 {
                     "code_evaluator": code_evaluator,
@@ -617,7 +613,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return self._get_api_list(
-            "/v1/platform/evaluators",
+            "/api/v1/platform/evaluators",
             page=AsyncOffsetPaginationOnlineEvaluators[OnlineEvaluator],
             options=make_request_options(
                 extra_headers=extra_headers,
@@ -676,7 +672,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
             raise ValueError(f"Expected a non-empty value for `evaluator_id` but received {evaluator_id!r}")
         extra_headers = {"Accept": "*/*", **(extra_headers or {})}
         return await self._delete(
-            path_template("/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
+            path_template("/api/v1/platform/evaluators/{evaluator_id}", evaluator_id=evaluator_id),
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -719,7 +715,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._delete(
-            "/v1/platform/evaluators",
+            "/api/v1/platform/evaluators",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -746,6 +742,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         group_by: str | Omit = omit,
         resource_id: SequenceNotStr[str] | Omit = omit,
         session_id: str | Omit = omit,
+        tag_value_id: SequenceNotStr[str] | Omit = omit,
         type: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -757,8 +754,8 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         """
         Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
         evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-        session_id, or dataset_id is required. resource_id, type, and feedback_key may
-        be supplied with group_by to narrow listing aggregations.
+        session_id, or dataset_id is required. resource_id, type, feedback_key, and
+        tag_value_id may be supplied with group_by to narrow listing aggregations.
 
         Args:
           period_start: Start of the 7-day window (YYYY-MM-DD).
@@ -777,6 +774,9 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
 
           session_id: Filter to a specific project (UUID). Mutually exclusive with group_by.
 
+          tag_value_id: Filter grouped results to evaluators, projects, or datasets tagged with all
+              supplied tag value IDs. Only valid with group_by.
+
           type: Filter grouped results by evaluator type: 'llm' or 'code'. Only valid with
               group_by.
 
@@ -789,7 +789,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
           timeout: Override the client-level default timeout for this request, in seconds
         """
         return await self._get(
-            "/v1/platform/evaluators/spend",
+            "/api/v1/platform/evaluators/spend",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -804,6 +804,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
                         "group_by": group_by,
                         "resource_id": resource_id,
                         "session_id": session_id,
+                        "tag_value_id": tag_value_id,
                         "type": type,
                     },
                     online_evaluator_spend_params.OnlineEvaluatorSpendParams,

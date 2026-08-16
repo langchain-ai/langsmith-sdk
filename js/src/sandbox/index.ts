@@ -39,7 +39,13 @@ export {
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
-export { gcsMount, gitMount, mountConfig, s3Mount } from "./mounts.js";
+export {
+  contextHubMount,
+  gcsMount,
+  gitMount,
+  mountConfig,
+  s3Mount,
+} from "./mounts.js";
 
 // Types
 export type {
@@ -66,6 +72,8 @@ export type {
   SandboxProxySecret,
   SandboxMount,
   MountCacheConfig,
+  ContextHubMountConfig,
+  ContextHubMountSpec,
   GCSMountConfig,
   GCSMountSpec,
   GitMountConfig,
@@ -90,6 +98,7 @@ export {
   LangSmithSandboxAPIError,
   LangSmithSandboxAuthenticationError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxConnectTimeoutError,
   LangSmithSandboxServerReloadError,
   // Resource errors (type-based with resourceType attribute)
   LangSmithResourceNotFoundError,

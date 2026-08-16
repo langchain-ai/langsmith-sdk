@@ -8,6 +8,7 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     SandboxClient,
     aws_auth,
+    context_hub_mount,
     gcp_auth,
     gcs_mount,
     git_mount,
@@ -64,6 +65,50 @@ def test_aws_auth_builds_aws_rule() -> None:
             },
         },
     }
+
+
+def test_aws_auth_includes_env_vars() -> None:
+    rule = aws_auth(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+        env_vars={"AWS_ACCESS_KEY_ID": "dummy"},
+    )
+
+    assert rule["env_vars"] == {"AWS_ACCESS_KEY_ID": "dummy"}
+
+
+def test_gcp_auth_includes_env_vars() -> None:
+    rule = gcp_auth(
+        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+        env_vars={"GOOGLE_API_KEY": "dummy"},
+    )
+
+    assert rule["env_vars"] == {"GOOGLE_API_KEY": "dummy"}
+
+
+def test_env_vars_preserve_surrounding_whitespace_in_values() -> None:
+    rule = gcp_auth(
+        service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+        env_vars={"PREFIX": "  /opt/bin  "},
+    )
+
+    assert rule["env_vars"] == {"PREFIX": "  /opt/bin  "}
+
+
+def test_provider_rules_omit_env_vars_when_unset() -> None:
+    rule = gcp_auth(service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"))
+
+    assert "env_vars" not in rule
+
+
+@pytest.mark.parametrize("env_vars", [{}, {"": "value"}, {"NAME": ""}])
+def test_env_vars_rejects_empty_names_and_values(env_vars: dict[str, str]) -> None:
+    with pytest.raises(ValueError):
+        aws_auth(
+            access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+            env_vars=env_vars,
+        )
 
 
 def test_gcp_auth_builds_gcp_rule_with_builtin_google_api_host_matching() -> None:
@@ -255,6 +300,46 @@ def test_mount_config_accepts_git_mount_without_provider_auth() -> None:
         id="repo",
         mount_path="/mnt/repo",
         remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+    )
+
+    assert mount_config(mounts=[mount]) == {
+        "auth": {},
+        "mounts": [mount],
+    }
+
+
+def test_context_hub_mount_serializes_backend_shape() -> None:
+    assert context_hub_mount(
+        id="memories",
+        mount_path="/memories",
+        repo="-/my-agent",
+        initial_pull_only=True,
+    ) == {
+        "id": "memories",
+        "type": "contexthub",
+        "mount_path": "/memories",
+        "contexthub": {"repo": "-/my-agent", "initial_pull_only": True},
+    }
+
+
+def test_context_hub_mount_omits_optional_fields() -> None:
+    assert context_hub_mount(
+        id="memories",
+        mount_path="/memories",
+        repo="-/my-agent",
+    ) == {
+        "id": "memories",
+        "type": "contexthub",
+        "mount_path": "/memories",
+        "contexthub": {"repo": "-/my-agent"},
+    }
+
+
+def test_mount_config_accepts_context_hub_mount_without_provider_auth() -> None:
+    mount = context_hub_mount(
+        id="memories",
+        mount_path="/memories",
+        repo="-/my-agent",
     )
 
     assert mount_config(mounts=[mount]) == {

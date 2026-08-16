@@ -17,6 +17,7 @@ from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
 
 # ``_create_usage_metadata`` lives in a non-deprecated internal module so
 # integrations can reuse it without importing the ``wrappers`` package (whose
@@ -133,7 +134,12 @@ def _infer_invocation_params(
     if use_responses_api:
         invocation_params["use_responses_api"] = True
 
+    request_metadata = stripped.get("metadata")
+    if not isinstance(request_metadata, Mapping):
+        request_metadata = {}
+
     return {
+        **request_metadata,
         "ls_provider": provider,
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),
@@ -147,6 +153,20 @@ def _infer_invocation_params(
             **invocation_params,
         },
     }
+
+
+def _traceable_kwargs_with_ls_agent_type(textra: dict) -> dict:
+    """Return textra with ls_agent_type defaulted at the wrapper-config layer.
+
+    A user-supplied value (including None) is preserved unchanged; None flows
+    through as an explicit opt-out that overrides any propagated parent tag via
+    traceable's metadata_.update(wrapper_metadata) step.
+    """
+    result = dict(textra)
+    metadata = dict(result.get("metadata") or {})
+    apply_default_ls_agent_type(metadata, run_helpers.get_current_run_tree())
+    result["metadata"] = metadata
+    return result
 
 
 def _reduce_choices(choices: list[Choice]) -> dict:
@@ -292,7 +312,7 @@ def _get_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
 
         return decorator(original_create)(*args, **kwargs)
@@ -306,7 +326,7 @@ def _get_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
         return await decorator(original_create)(*args, **kwargs)
 
@@ -331,7 +351,7 @@ def _get_parse_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
         return decorator(original_parse)(*args, **kwargs)
 
@@ -344,7 +364,7 @@ def _get_parse_wrapper(
             process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
-            **textra,
+            **_traceable_kwargs_with_ls_agent_type(textra),
         )
         return await decorator(original_parse)(*args, **kwargs)
 

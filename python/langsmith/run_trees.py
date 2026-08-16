@@ -14,12 +14,13 @@ from datetime import datetime, timezone
 from typing import Any, NamedTuple, Optional, Union, cast
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal import _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 from langsmith.uuid import uuid7_from_datetime
@@ -57,6 +58,11 @@ class WriteReplica(TypedDict, total=False):
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
+    primary: bool
+    """Whether this replica keeps the original run IDs.
+
+    When omitted, legacy project-based remapping behavior is preserved.
+    """
     updates: Optional[dict]
     client: Optional[Client]
     """Optional dedicated :class:`~langsmith.Client` for this replica.
@@ -72,7 +78,9 @@ class WriteReplica(TypedDict, total=False):
     """
 
 
-_HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
+_HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
+    {"project_name", "primary", "updates"}
+)
 
 # Untrusted header-supplied replica `updates` is merged into the run, so restrict it
 # to a fail-closed allow-list. `reroot` (re-parenting control) is always kept;
@@ -126,9 +134,27 @@ def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
         for key, value in replica.items()
         if key in _HEADER_SAFE_REPLICA_FIELDS
     }
+    if "primary" in filtered and not isinstance(filtered["primary"], bool):
+        filtered.pop("primary")
     if "updates" in filtered:
         filtered["updates"] = _sanitize_header_updates(filtered.get("updates"))
     return cast(WriteReplica, filtered)
+
+
+@functools.lru_cache(maxsize=1)
+def _exclude_inputs_on_patch() -> bool:
+    """Whether `RunTree.patch()` should omit `inputs` by default.
+
+    Controlled by ``LANGSMITH_EXCLUDE_INPUTS_ON_PATCH``; defaults to ``True``, i.e.
+    inputs are not re-sent on patch. Skipping them avoids serializing and uploading
+    a second copy of what `post()` already sent, which is a meaningful saving for
+    large payloads, but it also means inputs first set *after* `post()` are never
+    persisted. Set the variable to ``false`` to re-send them.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    env = utils.get_env_var("EXCLUDE_INPUTS_ON_PATCH")
+    return True if env is None else utils.is_truish(env)
 
 
 LANGSMITH_PREFIX = "langsmith-"
@@ -332,6 +358,8 @@ class RunTree(ls_schemas.RunBase):
         description="Projects to replicate this run to with optional updates.",
     )
 
+    _cached_url: Optional[str] = PrivateAttr(default=None)
+
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         populate_by_name=True,
@@ -509,6 +537,10 @@ class RunTree(ls_schemas.RunBase):
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
         """Upsert the given inputs into the run.
+
+        Note: unless `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` is disabled, inputs added
+        after the initial `post()` are not sent by `patch()`. Call
+        `patch(exclude_inputs=False)` explicitly to persist them.
 
         Args:
             inputs: A dictionary containing the inputs to be added.
@@ -702,17 +734,28 @@ class RunTree(ls_schemas.RunBase):
             run_dict.pop("parent_run_id", None)
 
     def _remap_for_project(
-        self, project_name: str, updates: Optional[dict] = None
+        self,
+        project_name: str,
+        updates: Optional[dict] = None,
+        *,
+        primary: Optional[bool] = None,
     ) -> dict:
         """Rewrites ids/dotted_order for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
-        if project_name == self.session_name:
+        if primary is None and project_name == self.session_name:
             return run_dict
 
         if updates and updates.get("reroot", False):
             distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
             if distributed_parent_id:
                 self._slice_parent_id(distributed_parent_id, run_dict)
+
+        if primary:
+            dup = utils.deepish_copy(run_dict)
+            dup["session_name"] = project_name
+            if updates:
+                dup.update(updates)
+            return dup
 
         old_id = run_dict["id"]
         new_id = uuid7_deterministic(UUID(str(old_id)), project_name)
@@ -760,7 +803,9 @@ class RunTree(ls_schemas.RunBase):
             for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
-                run_dict = self._remap_for_project(project_name, updates)
+                run_dict = self._remap_for_project(
+                    project_name, updates, primary=replica.get("primary")
+                )
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
@@ -795,12 +840,18 @@ class RunTree(ls_schemas.RunBase):
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
 
-    def patch(self, *, exclude_inputs: bool = False) -> None:
+    def patch(self, *, exclude_inputs: Optional[bool] = None) -> None:
         """Patch the run tree to the API in a background thread.
 
         Args:
             exclude_inputs: Whether to exclude inputs from the patch request.
+                Defaults to `None`, meaning the value of the
+                `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH` environment variable is used
+                (itself defaulting to `True`). Pass an explicit `True` or `False`
+                to override the environment for this call.
         """
+        if exclude_inputs is None:
+            exclude_inputs = _exclude_inputs_on_patch()
         if not self.end_time:
             self.end()
         attachments = {
@@ -829,7 +880,9 @@ class RunTree(ls_schemas.RunBase):
             for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
-                run_dict = self._remap_for_project(project_name, updates)
+                run_dict = self._remap_for_project(
+                    project_name, updates, primary=replica.get("primary")
+                )
                 api_url, api_key, service_key, tenant_id, authorization, cookie = (
                     _extract_replica_auth(replica)
                 )
@@ -894,8 +947,49 @@ class RunTree(ls_schemas.RunBase):
         pass
 
     def get_url(self) -> str:
-        """Return the URL of the run."""
-        return self.client.get_run_url(run=self)
+        """Return the URL of the run.
+
+        The result is resolved once and then cached on the run, since callers
+        often ask for it per log line.
+        """
+        if self._cached_url is None:
+            self._cached_url = self._resolve_url()
+        return self._cached_url
+
+    def _resolve_url(self) -> str:
+        """Ask the backend for the run's URL, falling back to building it locally."""
+        client = self.client
+        try:
+            backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
+            if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
+                # The v2 endpoint doesn't exist on ClickHouse-only backends, which
+                # may predate it; build the URL locally there instead.
+                return client._construct_run_url(run=self)
+            session_id = self.session_id or (
+                client.read_project(
+                    project_name=self.session_name or utils.get_tracer_project()
+                ).id
+            )
+            response = client._get_langsmith_api_sync().runs.get_url(
+                str(self.id),
+                project_id=str(session_id),
+                trace_id=str(self.trace_id),
+                start_time=self.start_time.isoformat(),
+            )
+            if response.url is not None:
+                return response.url
+            logger.debug(
+                "No URL returned for run %s; building it locally instead.", self.id
+            )
+        except Exception:
+            # get_url() is called from logging and callbacks, where it must not
+            # start failing just because a request blipped.
+            logger.debug(
+                "Failed to fetch the URL for run %s; building it locally instead.",
+                self.id,
+                exc_info=True,
+            )
+        return client._construct_run_url(run=self)
 
     @classmethod
     def from_dotted_order(
@@ -1187,6 +1281,9 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
 
                 api_url = item.get("api_url")
                 api_key = item.get("api_key")
+                project_name = item.get("project_name")
+                primary = item.get("primary")
+                has_primary = "primary" in item
 
                 if not isinstance(api_url, str):
                     logger.warning(
@@ -1202,14 +1299,29 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                     )
                     continue
 
-                replicas.append(
-                    WriteReplica(
-                        api_url=api_url.rstrip("/"),
-                        auth=AuthHeaders(api_key=api_key),
-                        project_name=None,
-                        updates=None,
+                if project_name is not None and not isinstance(project_name, str):
+                    logger.warning(
+                        f"Invalid project_name type in LANGSMITH_RUNS_ENDPOINTS: "
+                        f"expected string, got {type(project_name).__name__}"
                     )
+                    continue
+
+                if has_primary and not isinstance(primary, bool):
+                    logger.warning(
+                        f"Invalid primary type in LANGSMITH_RUNS_ENDPOINTS: "
+                        f"expected boolean, got {type(primary).__name__}"
+                    )
+                    continue
+
+                replica = WriteReplica(
+                    api_url=api_url.rstrip("/"),
+                    auth=AuthHeaders(api_key=api_key),
+                    project_name=project_name,
+                    updates=None,
                 )
+                if has_primary:
+                    replica["primary"] = cast(bool, primary)
+                replicas.append(replica)
             return replicas
         elif isinstance(parsed, dict):
             _check_endpoint_env_unset(parsed)
@@ -1275,11 +1387,10 @@ def _ensure_write_replicas(
     replicas: Optional[Sequence[WriteReplica]],
 ) -> list[WriteReplica]:
     """Convert replicas to WriteReplica format."""
-    if replicas is None:
-        return _get_write_replicas_from_env()
-
-    # All replicas should now be WriteReplica dicts
-    return list(replicas)
+    ensured = _get_write_replicas_from_env() if replicas is None else list(replicas)
+    if sum(replica.get("primary") is True for replica in ensured) > 1:
+        raise ValueError("Only one replica can be marked as primary.")
+    return ensured
 
 
 def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:

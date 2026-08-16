@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
-
+from .._httpx import httpx
 from .._types import Body, Query, Headers, NotGiven, not_given
 from .._compat import cached_property
 from .._resource import SyncAPIResource, AsyncAPIResource
@@ -25,8 +24,6 @@ class InfoResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return InfoResourceWithRawResponse(self)
 
@@ -34,8 +31,6 @@ class InfoResource(SyncAPIResource):
     def with_streaming_response(self) -> InfoResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return InfoResourceWithStreamingResponse(self)
 
@@ -49,7 +44,11 @@ class InfoResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> InfoListResponse:
-        """Get information about the current deployment of LangSmith."""
+        """
+        Returns information about the current LangSmith deployment: version, instance
+        feature flags, batch-ingest limits, and max SDK versions. Unauthenticated by
+        default; set FF_INFO_ENDPOINT_AUTH_REQUIRED=true to require auth.
+        """
         return self._get(
             "/api/v1/info",
             options=make_request_options(
@@ -65,8 +64,6 @@ class AsyncInfoResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#accessing-raw-response-data-eg-headers
         """
         return AsyncInfoResourceWithRawResponse(self)
 
@@ -74,8 +71,6 @@ class AsyncInfoResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncInfoResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
-
-        For more information, see https://www.github.com/stainless-sdks/langchain-python#with_streaming_response
         """
         return AsyncInfoResourceWithStreamingResponse(self)
 
@@ -89,7 +84,11 @@ class AsyncInfoResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> InfoListResponse:
-        """Get information about the current deployment of LangSmith."""
+        """
+        Returns information about the current LangSmith deployment: version, instance
+        feature flags, batch-ingest limits, and max SDK versions. Unauthenticated by
+        default; set FF_INFO_ENDPOINT_AUTH_REQUIRED=true to require auth.
+        """
         return await self._get(
             "/api/v1/info",
             options=make_request_options(

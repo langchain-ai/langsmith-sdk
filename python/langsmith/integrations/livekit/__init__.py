@@ -48,6 +48,11 @@ def configure_livekit(
     and applies it to every span in the trace — so it holds even for spans
     finished on a background task, and concurrent conversations stay separated.
 
+    For a realtime (speech-to-speech) model, also call
+    :meth:`LiveKitLangSmithSpanProcessor.instrument_session` on the returned
+    processor: the user transcript arrives as a session event rather than on a
+    span, so without it the trace shows only the agent's turns.
+
     Args:
         audio_path_provider: zero-arg callable returning a local recording path
             whose bytes are embedded in the root span (console/dev only). For

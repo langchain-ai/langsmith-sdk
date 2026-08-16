@@ -14,7 +14,7 @@ export class Issues extends APIResource {
    * Returns one issue for the authenticated tenant.
    */
   retrieve(id: string, options?: RequestOptions): APIPromise<Issue> {
-    return this._client.get(path`/v1/platform/issues/${id}`, options);
+    return this._client.get(path`/api/v1/platform/issues/${id}`, options);
   }
 
   /**
@@ -27,7 +27,7 @@ export class Issues extends APIResource {
     query: IssueListParams | null | undefined = {},
     options?: RequestOptions,
   ): PagePromise<IssuesOffsetPaginationIssues, Issue> {
-    return this._client.getAPIList('/v1/platform/issues', OffsetPaginationIssues<Issue>, {
+    return this._client.getAPIList('/api/v1/platform/issues', OffsetPaginationIssues<Issue>, {
       query,
       ...options,
     });
@@ -40,6 +40,14 @@ export interface Issue {
   id?: string;
 
   actions?: unknown;
+
+  auto_resolution_evidence?: unknown;
+
+  /**
+   * Nil unless eligible: "auto_close" or "prompt". Evidence carries the deciding
+   * gate.
+   */
+  auto_resolution_state?: string;
 
   created_at?: string;
 
@@ -69,11 +77,17 @@ export interface Issue {
 
   proposed_prompt_fixes?: Array<unknown>;
 
+  /**
+   * RecurrencesSinceWatching counts linked traces whose run start_time is after
+   * watching_since — i.e. recurrences observed during the current watch period.
+   */
+  recurrences_since_watching?: number;
+
   session_id?: string;
 
   severity?: 0 | 1 | 2 | 3;
 
-  status?: 'open' | 'completed' | 'ignored';
+  status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
 
   tags?: Array<string>;
 
@@ -82,6 +96,8 @@ export interface Issue {
   traces?: unknown;
 
   updated_at?: string;
+
+  watching_since?: string;
 }
 
 export interface IssueListParams extends OffsetPaginationIssuesParams {
@@ -108,7 +124,7 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
   /**
    * Filter by status
    */
-  status?: 'open' | 'completed' | 'ignored';
+  status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
 
   /**
    * Filter by tag (exact match)

@@ -11,24 +11,37 @@ import logging
 import math
 import os
 import pathlib
+import ssl
 import sys
 import threading
 import time
 import uuid
 import warnings
 import weakref
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Type, Union
+from types import SimpleNamespace
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Type,
+    Union,
+)
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import dataclasses_json
+import httpx
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from requests import HTTPError
 
 import langsmith.env as ls_env
@@ -36,6 +49,9 @@ import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
+from langsmith._internal._beta_decorator import (
+    suppress_deprecation_warning as _suppress_deprecation_warning,
+)
 from langsmith._internal._multipart import MultipartPartsAndContext
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
@@ -50,11 +66,14 @@ from langsmith.client import (
     _dataset_examples_path,
     _default_retry_config,
     _dumps_json,
+    _get_openapi_base_url,
+    _httpx_kwargs_from_session,
     _is_langchain_hosted,
     _parse_token_or_url,
     _reject_filesystem_attachments,
     _resolve_tracing_mode,
 )
+from langsmith.evaluation.evaluator import RunEvaluator
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
 from tests.unit_tests.conftest import parse_request_data
@@ -69,31 +88,64 @@ def test_is_localhost() -> None:
     assert not ls_utils._is_localhost("http://example.com:1984")
 
 
+_VERSION_LOGGER = "langsmith._internal._backend_version"
+
+
+def _version_warnings(caplog: pytest.LogCaptureFixture) -> List[logging.LogRecord]:
+    """Only the version-check warnings, ignoring other langsmith.client noise."""
+    return [record for record in caplog.records if record.name == _VERSION_LOGGER]
+
+
 @pytest.mark.parametrize(
     "version,expect_warning",
     [
-        ("0.4.9", True),
-        ("0.4.99", True),
-        ("0.5.0", False),
-        ("0.5.1", False),
-        ("1.0.0", False),
-        ("0.5.4rc1", False),
-        ("0.4.4rc1", True),
+        ("0.15.9", True),
+        ("0.15.4rc1", True),
+        ("0.16.0", False),
+        ("0.16.1", False),
+        ("0.16.4rc1", False),
+        ("0.17.0", False),
+        ("", False),
         ("not-a-version", True),
     ],
 )
-@mock.patch("langsmith._internal._backend_version._MIN_BACKEND_VERSION", "0.5.0")
 def test_check_backend_version(
     version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(
-        logging.WARNING, logger="langsmith._internal._backend_version"
-    ):
-        _check_backend_version(version)
-    if expect_warning:
-        assert caplog.records, f"expected a warning for version {version!r}"
-    else:
-        assert not caplog.records, f"unexpected warning for version {version!r}"
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _check_backend_version(version, min_version="0.16.0")
+    assert bool(_version_warnings(caplog)) is expect_warning, (
+        f"version {version!r} vs min 0.16.0"
+    )
+
+
+def test_check_backend_version_warning_links_to_docs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _check_backend_version("0.15.0", min_version="0.16.0")
+    message = _version_warnings(caplog)[0].getMessage()
+    assert "0.15.0" in message
+    assert "0.16.0" in message
+    assert "https://docs.langchain.com/langsmith/smithdb-sdk-migration" in message
+
+
+@pytest.mark.parametrize(
+    "version,expect_warning", [("0.15.9", True), ("0.16.0", False)]
+)
+def test_client_resource_version_check(
+    version: str, expect_warning: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Accessing a v2 resource runs the check against the resource's min version.
+
+    Guards the `min_version` calls in the resource properties: drop one, or
+    declare a version below 0.16.0, and this fails.
+    """
+    client = Client(api_url="http://localhost:1984", api_key="test")
+    client._info = ls_schemas.LangSmithInfo(version=version)
+    with caplog.at_level(logging.WARNING, logger=_VERSION_LOGGER):
+        _ = client.runs
+    assert bool(_version_warnings(caplog)) is expect_warning
 
 
 def test__is_langchain_hosted() -> None:
@@ -284,7 +336,7 @@ def test_profile_config_loads_api_key_and_workspace(
     assert client._headers["X-Tenant-Id"] == "workspace-id"
 
 
-def test_profile_config_uses_oauth_access_token_before_api_key(
+def test_profile_config_uses_api_key_before_oauth_access_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     _clear_profile_env(monkeypatch)
@@ -307,8 +359,8 @@ def test_profile_config_uses_oauth_access_token_before_api_key(
     client = Client(auto_batch_tracing=False)
 
     assert client.api_key is None
-    assert client._headers["Authorization"] == "Bearer profile-access-token"
-    assert "x-api-key" not in client._headers
+    assert client._headers["x-api-key"] == "profile-key"
+    assert "Authorization" not in client._headers
 
 
 def test_profile_config_env_auth_suppresses_profile_auth(
@@ -927,6 +979,31 @@ def test_evaluators_uses_generated_openapi_resource() -> None:
     assert timeout.read == 5.678
 
 
+def test_annotation_queues_uses_generated_openapi_resource() -> None:
+    resource = object()
+
+    with mock.patch("langsmith.client.LangsmithOpenAPIClient") as openapi_client:
+        openapi_client.return_value.annotation_queues = resource
+
+        client = Client(
+            api_url="http://localhost:8080",
+            api_key="test-api-key",
+            workspace_id="test-workspace-id",
+            timeout_ms=(1234, 5678),
+            info=ls_schemas.LangSmithInfo(),
+        )
+
+        assert client.annotation_queues is resource
+
+    openapi_client.assert_called_once()
+    assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
+    assert openapi_client.call_args.kwargs["tenant_id"] == "test-workspace-id"
+    assert openapi_client.call_args.kwargs["base_url"] == "http://localhost:8080"
+    timeout = openapi_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 1.234
+    assert timeout.read == 5.678
+
+
 def test_async_evaluators_uses_generated_openapi_resource() -> None:
     resource = object()
 
@@ -941,6 +1018,34 @@ def test_async_evaluators_uses_generated_openapi_resource() -> None:
         )
 
         assert client.evaluators is resource
+
+    openapi_client.assert_called_once()
+    assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
+    assert openapi_client.call_args.kwargs["tenant_id"] == "test-workspace-id"
+    assert openapi_client.call_args.kwargs["base_url"] == "http://localhost:8080"
+    timeout = openapi_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 1.234
+    assert timeout.read == 5.678
+    assert (
+        openapi_client.call_args.kwargs["default_headers"]["X-Tenant-Id"]
+        == "test-workspace-id"
+    )
+
+
+def test_async_annotation_queues_uses_generated_openapi_resource() -> None:
+    resource = object()
+
+    with mock.patch("langsmith._openapi_client.AsyncLangsmith") as openapi_client:
+        openapi_client.return_value.annotation_queues = resource
+
+        client = AsyncClient(
+            api_url="http://localhost:8080",
+            api_key="test-api-key",
+            workspace_id="test-workspace-id",
+            timeout_ms=(1234, 5678),
+        )
+
+        assert client.annotation_queues is resource
 
     openapi_client.assert_called_once()
     assert openapi_client.call_args.kwargs["api_key"] == "test-api-key"
@@ -1652,6 +1757,139 @@ def test_hide_run_error_passthrough_without_anonymizer() -> None:
     assert client._hide_run_error(None) is None
 
 
+def _client(session: mock.MagicMock, **kwargs: Any) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,  # Easier to inspect single calls
+        session=session,
+        **kwargs,
+    )
+
+
+def _create_run_with_env_metadata(client: Client, metadata: dict) -> None:
+    """Create a run with the runtime env contributing ``LANGCHAIN_REVISION``."""
+    with patch.dict("os.environ", {"LANGCHAIN_REVISION": "abcd2234"}):
+        ls_env.get_langchain_env_var_metadata.cache_clear()
+        try:
+            client.create_run(
+                "my_run",
+                inputs={"in": "put"},
+                run_type="llm",
+                id=uuid.uuid4(),
+                extra={"metadata": metadata},
+            )
+        finally:
+            ls_env.get_langchain_env_var_metadata.cache_clear()
+
+
+def _posted_metadata(session: mock.MagicMock, method: str, url_substr: str) -> dict:
+    payload = _find_request_payload(session, method, url_substr)
+    return payload.get("extra", {}).get("metadata", {})
+
+
+def test_hide_metadata_true_also_hides_runtime_env_metadata() -> None:
+    """Runtime env metadata is merged *after* masking, so it must be re-masked.
+
+    ``LANGCHAIN_*``/``LANGSMITH_*`` env values are copied into metadata verbatim
+    and can carry credentials the user never logged, so ``hide_metadata=True``
+    has to cover them too.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, hide_metadata=True)
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    assert _posted_metadata(session, "POST", "/runs") == {}
+
+
+def test_hide_metadata_callable_sees_runtime_env_metadata() -> None:
+    """A ``hide_metadata`` callable gets the env-derived keys too."""
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(
+        session,
+        hide_metadata=lambda metadata: {
+            k: v for k, v in metadata.items() if not k.startswith("LANGCHAIN_")
+        },
+    )
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    metadata = _posted_metadata(session, "POST", "/runs")
+    assert "LANGCHAIN_REVISION" not in metadata
+    assert metadata["initial_key"] == "initial_value"
+
+
+def test_hide_metadata_callable_applied_once_per_key() -> None:
+    """The env merge must not re-run a callable over already-masked keys.
+
+    ``hide_metadata`` is not required to be idempotent -- hashing, prefixing or
+    otherwise rewriting values is supported -- so applying it twice to the user's
+    own keys corrupts what gets uploaded.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(
+        session,
+        hide_metadata=lambda metadata: {f"masked_{k}": v for k, v in metadata.items()},
+    )
+
+    _create_run_with_env_metadata(client, {"initial_key": "initial_value"})
+
+    metadata = _posted_metadata(session, "POST", "/runs")
+    assert metadata["masked_initial_key"] == "initial_value"
+    assert metadata["masked_LANGCHAIN_REVISION"] == "abcd2234"
+
+
+def test_hide_metadata_true_also_hides_runtime_env_metadata_on_update() -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, hide_metadata=True)
+
+    with patch.dict("os.environ", {"LANGCHAIN_REVISION": "abcd2234"}):
+        ls_env.get_langchain_env_var_metadata.cache_clear()
+        try:
+            client.update_run(
+                uuid.uuid4(), extra={"metadata": {"initial_key": "initial_value"}}
+            )
+        finally:
+            ls_env.get_langchain_env_var_metadata.cache_clear()
+
+    assert _posted_metadata(session, "PATCH", "/runs/") == {}
+
+
+def test_anonymizer_redacts_metadata_on_create() -> None:
+    """``create_secret_anonymizer`` documents metadata coverage; honor it."""
+    fake_key, _ = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.create_run(
+        "my_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=uuid.uuid4(),
+        extra={"metadata": {"config": {"authorization": f"Bearer {fake_key}"}}},
+    )
+
+    metadata = json.dumps(_posted_metadata(session, "POST", "/runs"))
+    assert fake_key not in metadata
+    assert SECRET_PLACEHOLDER in metadata
+
+
+def test_anonymizer_redacts_metadata_on_update() -> None:
+    fake_key, _ = _error_traceback_with_secret()
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.update_run(
+        uuid.uuid4(),
+        extra={"metadata": {"config": {"authorization": f"Bearer {fake_key}"}}},
+    )
+
+    metadata = json.dumps(_posted_metadata(session, "PATCH", "/runs/"))
+    assert fake_key not in metadata
+    assert SECRET_PLACEHOLDER in metadata
+
+
 def test_omit_traced_runtime_info() -> None:
     """Test that omit_traced_runtime_info prevents runtime info from being added."""
     session = mock.MagicMock(spec=requests.Session)
@@ -1945,6 +2183,43 @@ def test_create_feedback_opt_out_uses_direct_post_when_batching_available() -> N
     assert client.tracing_queue.qsize() == 0
 
 
+def _feedback_client(session: mock.Mock, **flags: bool) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(version="0.8.11", instance_flags=flags),
+    )
+
+
+def test_create_feedback_requires_session_id_when_ch_query_disabled() -> None:
+    """SmithDB-only backends cannot locate the run without session_id."""
+    session = mock.Mock()
+    client = _feedback_client(session, ch_query_enabled=False, sdb_query_enabled=True)
+
+    with pytest.raises(ValueError, match="session_id must be provided"):
+        client.create_feedback(uuid.uuid4(), key="Foo")
+
+    session.request.assert_not_called()
+
+    # start_time stays optional, matching the server.
+    client.create_feedback(uuid.uuid4(), key="Foo", session_id=uuid.uuid4())
+    session.request.assert_called_once()
+
+    # Session-level feedback has no run to locate.
+    client.create_feedback(None, key="Foo", project_id=uuid.uuid4())
+
+
+def test_create_feedback_warns_without_session_id() -> None:
+    """Backends that can still look the run up get a deprecation warning."""
+    session = mock.Mock()
+    client = _feedback_client(session, ch_query_enabled=True)
+
+    with pytest.warns(ls_utils.LangSmithWarning, match="smithdb-sdk-migration"):
+        client.create_feedback(uuid.uuid4(), key="Foo")
+    session.request.assert_called_once()
+
+
 def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()
@@ -2168,6 +2443,119 @@ def test__dumps_json_normalizes_unsupported_dict_keys():
         "nested": [{"('a', 'b')": "c"}],
         "custom": {"(1, 2)": "custom"},
     }
+
+
+def test__dumps_json_coerces_json_native_dict_keys():
+    """Keys orjson can coerce must still round-trip to their string form.
+
+    The fast path omits ``OPT_NON_STR_KEYS``, so these are coerced by the
+    retry with the full options rather than on the first attempt. The output
+    must not change either way.
+    """
+    serialized_json = _dumps_json(
+        {1: "int", 2.5: "float", None: "none", date(2020, 1, 2): "date"}
+    )
+
+    assert _orjson.loads(serialized_json) == {
+        "1": "int",
+        "2.5": "float",
+        "null": "none",
+        "2020-01-02": "date",
+    }
+    # `True` is kept apart: it would collide with the `1` key above (True == 1).
+    assert _orjson.loads(_dumps_json({True: "bool"})) == {"true": "bool"}
+
+
+def test__dumps_json_coerces_enum_dict_keys_by_value():
+    """Enum keys must serialize as their value, not ``str(member)``.
+
+    orjson does this coercion itself, but only with ``OPT_NON_STR_KEYS``; the
+    normalizing fallback would emit ``"StrValued.FOO"`` instead.
+    """
+
+    class StrValued(Enum):
+        FOO = "foo"
+
+    class IntValued(Enum):
+        BAR = 3
+
+    class BytesValued(Enum):
+        BAZ = b"x"
+
+    assert _orjson.loads(_dumps_json({StrValued.FOO: 1})) == {"foo": 1}
+    assert _orjson.loads(_dumps_json({IntValued.BAR: 1})) == {"3": 1}
+    # A value orjson can't use as a key falls back to the member name.
+    assert _orjson.loads(_dumps_json({BytesValued.BAZ: 1})) == {"BytesValued.BAZ": 1}
+
+
+def test__dumps_json_honors_json_only_field_serializer():
+    """A field redacted for JSON must stay redacted, including when nested.
+
+    Serializing Pydantic models in python mode would bypass
+    ``when_used="json"`` serializers and emit the raw value.
+    """
+
+    class Redacted(BaseModel):
+        token: str
+
+        @field_serializer("token", when_used="json")
+        def _redact(self, _value: str) -> str:
+            return "REDACTED"
+
+    class Holder(BaseModel):
+        payload: Any = None
+
+    secret = Redacted(token="actual-secret")
+
+    for obj in (secret, Holder(payload=secret), {"k": secret}, [secret]):
+        assert b"actual-secret" not in _dumps_json(obj)
+
+
+def test__dumps_json_honors_model_dump_override():
+    """A model overriding model_dump keeps control of its serialization."""
+
+    class Overridden(BaseModel):
+        value: str
+
+        def model_dump(self, **kwargs: Any) -> Dict:
+            return {"overridden": True}
+
+    assert _orjson.loads(_dumps_json(Overridden(value="x"))) == {"overridden": True}
+
+
+def test__dumps_json_does_not_swallow_keyboard_interrupt():
+    """Serialization must not swallow KeyboardInterrupt/SystemExit.
+
+    The serde error handlers catch ``Exception`` (not ``BaseException``), so a
+    system-exiting signal raised while serializing an object propagates instead
+    of being masked as ``str(obj)``.
+    """
+
+    class _RaisesInterrupt:
+        def model_dump(self, **kwargs):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _dumps_json({"x": _RaisesInterrupt()})
+
+
+def test__dumps_json_type_object_serializes_as_str():
+    # A class object has no useful instance serialization method; it must fall
+    # through to _simple_default -> str rather than be probed like an instance.
+    # The probe attribute has to live at the class level (via a metaclass) for
+    # this to distinguish the guarded and unguarded implementations.
+    class Meta(type):
+        def to_dict(cls):
+            return {"meta": "yes"}
+
+    class WithClassLevelToDict(metaclass=Meta):
+        pass
+
+    # Guarded: falls through to _simple_default -> str.
+    # Unguarded: probed like an instance, emits {"meta": "yes"}.
+    assert isinstance(
+        _orjson.loads(_dumps_json({"cls": WithClassLevelToDict}))["cls"], str
+    )
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -5506,6 +5894,221 @@ def test_construct_url_errors(api_url, pathname, error_match):
         _construct_url(api_url, pathname)
 
 
+@pytest.mark.parametrize(
+    "api_url,expected",
+    [
+        # Cloud API URL: the /api/v1 suffix is stripped so the generated client
+        # can append its own /api/v2/... path segments.
+        (
+            "https://api.smith.langchain.com/api/v1",
+            "https://api.smith.langchain.com",
+        ),
+        # httpx stringifies base_url with a trailing slash.
+        (
+            "https://api.smith.langchain.com/api/v1/",
+            "https://api.smith.langchain.com",
+        ),
+        # A bare /v1 suffix (no /api prefix) is not stripped.
+        (
+            "https://api.smith.langchain.com/v1",
+            "https://api.smith.langchain.com/v1",
+        ),
+        ("https://api.smith.langchain.com/v1/", "https://api.smith.langchain.com/v1"),
+        (
+            "https://self-hosted.example.com/langsmith/v1",
+            "https://self-hosted.example.com/langsmith/v1",
+        ),
+        # Self-hosted deployments under a path prefix.
+        (
+            "https://self-hosted.example.com/langsmith/api/v1",
+            "https://self-hosted.example.com/langsmith",
+        ),
+        # Bare /api suffix (no version segment).
+        ("https://api.smith.langchain.com/api", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/api/", "https://api.smith.langchain.com"),
+        (
+            "https://self-hosted.example.com/api",
+            "https://self-hosted.example.com",
+        ),
+        (
+            "https://self-hosted.example.com/langsmith/api",
+            "https://self-hosted.example.com/langsmith",
+        ),
+        # No /api suffix: left unchanged (aside from trailing slashes).
+        ("https://api.smith.langchain.com", "https://api.smith.langchain.com"),
+        ("https://api.smith.langchain.com/", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+        ("http://localhost:1984/api/v1", "http://localhost:1984"),
+        # /api must be a trailing path segment, not a substring.
+        (
+            "https://api.smith.langchain.com/api/runs",
+            "https://api.smith.langchain.com/api/runs",
+        ),
+        ("https://api.example.com", "https://api.example.com"),
+    ],
+)
+def test_get_openapi_base_url(api_url: str, expected: str) -> None:
+    """Test _get_openapi_base_url strips the handwritten client's /api[/v1] suffix."""
+    assert _get_openapi_base_url(api_url) == expected
+
+
+@pytest.mark.parametrize(
+    "api_url,expected_base_url",
+    [
+        ("https://api.smith.langchain.com/api/v1", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+    ],
+)
+def test_get_langsmith_api_uses_normalized_base_url(
+    api_url: str, expected_base_url: str
+) -> None:
+    """The generated OpenAPI client must not receive the /api/v1 suffix."""
+    client = Client(api_url=api_url, api_key="test-api-key", auto_batch_tracing=False)
+    openapi_client = client._get_langsmith_api()
+    assert str(openapi_client.base_url).rstrip("/") == expected_base_url
+
+
+@pytest.mark.parametrize(
+    "api_url,expected_base_url",
+    [
+        ("https://api.smith.langchain.com/api/v1", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+    ],
+)
+def test_get_langsmith_api_sync_uses_normalized_base_url(
+    api_url: str, expected_base_url: str
+) -> None:
+    """The sync accessor must normalize its base URL like the async one."""
+    client = Client(api_url=api_url, api_key="test-api-key", auto_batch_tracing=False)
+    openapi_client = client._get_langsmith_api_sync()
+    assert str(openapi_client.base_url).rstrip("/") == expected_base_url
+
+
+@pytest.mark.parametrize(
+    "api_url,expected_base_url",
+    [
+        ("https://api.smith.langchain.com/api/v1", "https://api.smith.langchain.com"),
+        ("http://localhost:1984", "http://localhost:1984"),
+    ],
+)
+def test_async_client_uses_normalized_base_url(
+    api_url: str, expected_base_url: str
+) -> None:
+    """The async client normalizes its httpx base_url before the generated client."""
+    from langsmith.async_client import AsyncClient
+
+    client = AsyncClient(api_url=api_url, api_key="test-api-key")
+    assert str(client._langsmith_api.base_url).rstrip("/") == expected_base_url
+
+
+def test_httpx_kwargs_from_session_translates_transport_config() -> None:
+    """A caller-supplied session's transport config carries over to httpx."""
+    session = requests.Session()
+    session.headers["X-Custom"] = "custom-value"
+    session.cookies.set("cookie-name", "cookie-value")
+    session.verify = "/path/to/ca-bundle.pem"
+    session.cert = ("/path/to/client.crt", "/path/to/client.key")
+    session.proxies = {"https": "http://proxy.internal:8080"}
+    session.trust_env = False
+
+    kwargs = _httpx_kwargs_from_session(session)
+
+    assert kwargs["headers"] == {"X-Custom": "custom-value"}
+    assert kwargs["cookies"] is session.cookies
+    assert kwargs["verify"] == "/path/to/ca-bundle.pem"
+    assert kwargs["cert"] == ("/path/to/client.crt", "/path/to/client.key")
+    assert kwargs["trust_env"] is False
+    # httpx renamed `proxies` to `proxy` in 0.26; either name is accepted here.
+    proxy_kwarg = (
+        "proxy"
+        if "proxy" in inspect.signature(httpx.Client.__init__).parameters
+        else "proxies"
+    )
+    assert kwargs[proxy_kwarg] == "http://proxy.internal:8080"
+    # Whichever name this httpx accepts, the kwargs must be usable as-is.
+    httpx.Client(**{**kwargs, "verify": False, "cert": None}).close()
+
+
+def test_httpx_kwargs_from_session_preserves_cookie_scope() -> None:
+    """Cookies keep their domain/path scope instead of being flattened."""
+    session = requests.Session()
+    session.cookies.set("shared", "other-service", domain="internal.example", path="/x")
+    session.cookies.set("shared", "langsmith", domain="api.smith.langchain.com")
+
+    cookies = httpx.Cookies(_httpx_kwargs_from_session(session)["cookies"])
+    request = httpx.Request("GET", "https://api.smith.langchain.com/api/v2/runs")
+    cookies.set_cookie_header(request)
+
+    # The cookie scoped to another host must not be sent to the API.
+    assert request.headers["cookie"] == "shared=langsmith"
+
+
+def test_httpx_kwargs_from_session_omits_requests_defaults() -> None:
+    """`requests`' own default headers must not shadow the httpx/SDK ones."""
+    kwargs = _httpx_kwargs_from_session(requests.Session())
+
+    assert "headers" not in kwargs
+    assert "cookies" not in kwargs
+    assert "verify" not in kwargs
+    assert "cert" not in kwargs
+    assert "proxy" not in kwargs
+    assert "proxies" not in kwargs
+    assert kwargs["trust_env"] is True
+
+
+def test_openapi_clients_apply_provided_session_config() -> None:
+    """Both generated clients honor a caller-supplied session's config."""
+    from langsmith._openapi_client._models import FinalRequestOptions
+
+    session = requests.Session()
+    session.headers["X-Custom"] = "custom-value"
+    session.headers["x-api-key"] = "hijacked"
+    session.cookies.set("cookie-name", "cookie-value")
+    session.verify = False
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+        session=session,
+    )
+
+    for openapi_client in (
+        client._get_langsmith_api(),
+        client._get_langsmith_api_sync(),
+    ):
+        http_client = openapi_client._client
+        assert http_client.headers["X-Custom"] == "custom-value"
+        assert str(http_client.base_url).rstrip("/") == "http://localhost:1984"
+        # verify=False disables certificate verification on the transport.
+        assert http_client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+
+        request = openapi_client._build_request(
+            FinalRequestOptions(method="get", url="/api/v2/runs")
+        )
+        assert request.headers["cookie"] == "cookie-name=cookie-value"
+        # The SDK's own auth headers still win over the session's.
+        assert "hijacked" not in request.headers["x-api-key"]
+        assert "test-api-key" in request.headers["x-api-key"]
+
+
+def test_openapi_clients_keep_defaults_without_provided_session() -> None:
+    """Without an explicit session there is nothing to port over."""
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test-api-key",
+        auto_batch_tracing=False,
+    )
+
+    assert "python-requests" not in client._get_langsmith_api()._client.headers.get(
+        "user-agent", ""
+    )
+    assert (
+        "python-requests"
+        not in client._get_langsmith_api_sync()._client.headers.get("user-agent", "")
+    )
+
+
 def test_process_buffered_run_ops_core_functionality():
     """Test core functionality: parameter validation, basic processing, compressed traces, and mixed operations."""
     # Test 1: Parameter validation - both parameters must be provided together or neither
@@ -5958,10 +6561,10 @@ def test_list_runs_child_run_ids_deprecation_warning(
             )
         )
 
-    # Test that no warning is raised when child_run_ids is not in select
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
+    # Overall list_runs deprecation fires; child_run_ids-specific warning must not
+    with pytest.warns(DeprecationWarning) as warning_list:
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+    assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
 def test_tracing_error_callback_on_429():
@@ -6299,6 +6902,11 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
             {},
             {"reference_dataset_id": "DATASET_ID_PLACEHOLDER"},
         ),
+        (
+            {"tag_value_ids": ["550e8400-e29b-41d4-a716-446655440000"]},
+            {},
+            {"tag_value_ids": ["550e8400-e29b-41d4-a716-446655440000"]},
+        ),
         # All parameters together
         (
             {
@@ -6357,6 +6965,32 @@ def test_create_project(kwargs, expected_params, expected_body_fields):
         assert "id" in body
         for field, value in expected_body_fields.items():
             assert body[field] == value
+
+
+def test_create_dataset_with_tag_value_ids():
+    tag_value_ids = [uuid.uuid4(), uuid.uuid4()]
+    with patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "id": str(uuid.uuid4()),
+            "name": "test-dataset",
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+        mock_session.request.return_value = mock_response
+        mock_session_cls.return_value = mock_session
+
+        client = Client(api_key="test", auto_batch_tracing=False)
+        client.create_dataset("test-dataset", tag_value_ids=tag_value_ids)
+
+        create_call = next(
+            call
+            for call in mock_session.request.call_args_list
+            if call.args[0] == "POST" and call.args[1].endswith("/datasets")
+        )
+        body = json.loads(create_call.kwargs["data"])
+        assert body["tag_value_ids"] == [str(tag_id) for tag_id in tag_value_ids]
 
 
 _MULTIPART_HEADERS = {"Content-Type": "multipart/form-data; boundary=test-boundary"}
@@ -6759,6 +7393,13 @@ def test_create_run_allows_inline_bytes_attachment(mock_session_cls):
     )
 
 
+def test_get_run_stats_requires_project() -> None:
+    """get_run_stats must raise ValueError when no project is specified."""
+    client = Client(api_key="test", api_url="http://localhost")
+    with pytest.raises(ValueError, match="project_names or project_ids"):
+        client.get_run_stats()
+
+
 def test_removed_sdk_methods_absent() -> None:
     """Verify de-publicized methods were removed from the generated SDK in PR #28358."""
     from langsmith._openapi_client.resources.datasets.datasets import DatasetsResource
@@ -6772,3 +7413,583 @@ def test_removed_sdk_methods_absent() -> None:
     assert not hasattr(DatasetsResource, "experiments"), (
         "datasets.experiments.grouped was de-publicized in PR #28358 and should not exist"
     )
+
+
+class _StubEvaluator(RunEvaluator):
+    """Minimal evaluator that returns a fixed result without doing any work."""
+
+    def evaluate_run(self, run, example=None) -> EvaluationResult:
+        return EvaluationResult(key="stub", score=1)
+
+    async def aevaluate_run(self, run, example=None) -> EvaluationResult:
+        return EvaluationResult(key="stub", score=1)
+
+
+def _stub_run() -> ls_schemas.Run:
+    run_id = uuid.uuid4()
+    return ls_schemas.Run(
+        id=run_id,
+        name="stub",
+        run_type="chain",
+        start_time=_CREATED_AT,
+        trace_id=run_id,
+    )
+
+
+def test_evaluate_run_deprecation_warning() -> None:
+    """evaluate_run is deprecated with no replacement."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    result = EvaluationResult(key="stub", score=1)
+
+    with mock.patch.object(
+        Client, "_log_evaluation_feedback", return_value=[result]
+    ) as log_feedback:
+        with pytest.warns(DeprecationWarning, match="evaluate_run\\(\\) is deprecated"):
+            assert client.evaluate_run(_stub_run(), _StubEvaluator()) is result
+    log_feedback.assert_called_once()
+
+
+async def test_aevaluate_run_deprecation_warning() -> None:
+    """aevaluate_run is deprecated with no replacement."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    result = EvaluationResult(key="stub", score=1)
+
+    with mock.patch.object(
+        Client, "_log_evaluation_feedback", return_value=[result]
+    ) as log_feedback:
+        with pytest.warns(
+            DeprecationWarning, match="aevaluate_run\\(\\) is deprecated"
+        ):
+            assert await client.aevaluate_run(_stub_run(), _StubEvaluator()) is result
+    log_feedback.assert_called_once()
+
+
+def test_get_run_url_deprecation_warning() -> None:
+    """get_run_url is deprecated in favor of client.runs.get_url()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+    run.session_id = uuid.uuid4()
+
+    with mock.patch.object(Client, "_get_tenant_id", return_value=uuid.uuid4()):
+        with pytest.warns(DeprecationWarning, match="get_run_url\\(\\) is deprecated"):
+            url = client.get_run_url(run=run)
+    assert str(run.id) in url
+
+
+@pytest.mark.parametrize(
+    "instance_flags",
+    [
+        {"ch_query_enabled": False, "sdb_query_enabled": True},
+        {"ch_query_enabled": True, "sdb_query_enabled": True},
+    ],
+)
+def test_run_tree_get_url_uses_v2_endpoint(instance_flags) -> None:
+    """On SmithDB-only and dual backends, RunTree.get_url() asks the backend.
+
+    It must not emit a deprecation warning either — RunTree.get_url() is supported.
+    """
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url.return_value = mock.Mock(url="http://localhost:1984/run-url")
+    api = mock.Mock()
+    api.runs = runs_resource
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags=instance_flags)),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert run_tree.get_url() == "http://localhost:1984/run-url"
+
+    runs_resource.get_url.assert_called_once_with(
+        str(run_tree.id),
+        project_id=str(project_id),
+        trace_id=str(run_tree.trace_id),
+        start_time=run_tree.start_time.isoformat(),
+    )
+
+
+def test_run_tree_get_url_builds_url_locally_on_clickhouse_only() -> None:
+    """ClickHouse-only backends may predate `/runs/{run_id}/url`.
+
+    Those deployments must keep getting a locally constructed URL rather than a 404.
+    """
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
+
+    api = mock.Mock()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+        mock.patch.object(Client, "_get_tenant_id", return_value=tenant_id),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            url = run_tree.get_url()
+
+    assert url == (
+        f"{client._host_url}/o/{tenant_id}/projects/p/{project_id}/"
+        f"r/{run_tree.id}?poll=true"
+    )
+    api.runs.get_url.assert_not_called()
+
+
+def test_run_tree_get_url_is_cached() -> None:
+    """get_url() is called per log line, so it must only hit the backend once."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run_tree = RunTree(name="stub", project_id=uuid.uuid4(), ls_client=client)
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url.return_value = mock.Mock(url="http://localhost:1984/run-url")
+    api = mock.Mock()
+    api.runs = runs_resource
+    info = mock.Mock(instance_flags={"sdb_query_enabled": True})
+
+    with (
+        patch.object(type(client), "info", property(lambda self: info)),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+    ):
+        assert run_tree.get_url() == "http://localhost:1984/run-url"
+        assert run_tree.get_url() == "http://localhost:1984/run-url"
+
+    runs_resource.get_url.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        {"side_effect": ValueError("boom")},
+        {"return_value": mock.Mock(url=None)},
+    ],
+)
+def test_run_tree_get_url_falls_back_when_backend_call_fails(failure) -> None:
+    """A transient failure must not turn get_url() into a raising call."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", project_id=project_id, ls_client=client)
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url = mock.Mock(**failure)
+    api = mock.Mock()
+    api.runs = runs_resource
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(
+                lambda self: mock.Mock(instance_flags={"sdb_query_enabled": True})
+            ),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+        mock.patch.object(Client, "_get_tenant_id", return_value=tenant_id),
+    ):
+        url = run_tree.get_url()
+
+    assert url == (
+        f"{client._host_url}/o/{tenant_id}/projects/p/{project_id}/"
+        f"r/{run_tree.id}?poll=true"
+    )
+
+
+def test_run_tree_get_url_without_session_uses_tracer_project() -> None:
+    """A run with no project set must not look up `read_project(None)`."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    project_id = uuid.uuid4()
+    run_tree = RunTree(name="stub", ls_client=client)
+    run_tree.session_name = None  # type: ignore[assignment]
+
+    runs_resource = mock.Mock()
+    runs_resource.get_url.return_value = mock.Mock(url="http://localhost:1984/run-url")
+    api = mock.Mock()
+    api.runs = runs_resource
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(
+                lambda self: mock.Mock(instance_flags={"sdb_query_enabled": True})
+            ),
+        ),
+        mock.patch.object(Client, "_get_langsmith_api_sync", return_value=api),
+        mock.patch.object(
+            Client, "read_project", return_value=mock.Mock(id=project_id)
+        ) as read_project,
+        mock.patch.object(
+            ls_utils, "get_tracer_project", return_value="from-the-environment"
+        ),
+    ):
+        assert run_tree.get_url() == "http://localhost:1984/run-url"
+
+    read_project.assert_called_once_with(project_name="from-the-environment")
+
+
+def _deprecation_messages(recorded) -> list[str]:
+    return [
+        str(w.message) for w in recorded if issubclass(w.category, DeprecationWarning)
+    ]
+
+
+def test_read_thread_does_not_warn_about_list_runs() -> None:
+    """read_thread() points at threads.list_traces(), not list_runs()'s runs.query()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with pytest.warns(DeprecationWarning) as recorded:
+        # Deprecation fires when the generator is created, before any iteration.
+        client.read_thread(thread_id="t1", project_id=uuid.uuid4())
+
+    messages = _deprecation_messages(recorded)
+    assert any("read_thread() is deprecated" in m for m in messages)
+    assert not any("list_runs() is deprecated" in m for m in messages)
+
+
+def test_read_run_with_child_runs_does_not_warn_about_list_runs() -> None:
+    """The caller asked for child runs, not for list_runs()."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Only the HTTP layer is stubbed, so the real _load_child_runs() ->
+        # list_runs() chain still executes.
+        mock.patch.object(Client, "request_with_retries") as request,
+        mock.patch.object(
+            Client, "_get_cursor_paginated_list", return_value=iter([])
+        ) as paginate,
+    ):
+        request.return_value = mock.Mock(
+            json=lambda: {
+                "id": str(run.id),
+                "name": "stub",
+                "run_type": "chain",
+                "start_time": _CREATED_AT.isoformat(),
+                "trace_id": str(run.id),
+            }
+        )
+        with pytest.warns(DeprecationWarning) as recorded:
+            client.read_run(run.id, load_child_runs=True)
+
+    paginate.assert_called_once()
+    messages = _deprecation_messages(recorded)
+    assert any("read_run() is deprecated" in m for m in messages)
+    assert not any("list_runs() is deprecated" in m for m in messages)
+
+
+def test_load_child_runs_does_not_warn_about_list_runs() -> None:
+    """_load_child_runs() reaches the real list_runs(); no warning may surface."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run = _stub_run()
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags={"ch_query_enabled": True})),
+        ),
+        # Stub only the HTTP fetch, so the real decorated list_runs() still runs.
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert client._load_child_runs(run) is run
+
+
+def test_suppress_deprecation_warning_is_scoped() -> None:
+    """The suppression must not leak past its block, including on exceptions."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+
+    with pytest.raises(RuntimeError):
+        with _suppress_deprecation_warning():
+            raise RuntimeError("boom")
+
+    with pytest.warns(DeprecationWarning, match="list_runs\\(\\) is deprecated"):
+        client.list_runs(project_id=uuid.uuid4())
+
+
+_SHARE_TOKEN = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+
+def _share_response(run_id: uuid.UUID) -> mock.Mock:
+    """One response body that satisfies every sharing endpoint under test."""
+    return mock.Mock(
+        json=lambda: {
+            "share_token": str(_SHARE_TOKEN),
+            "id": str(run_id),
+            "name": "stub",
+            "run_type": "chain",
+            "start_time": _CREATED_AT.isoformat(),
+            "trace_id": str(run_id),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "method,takes_share_token,expected",
+    [
+        ("share_run", False, "Use client.runs.share.create() instead."),
+        ("unshare_run", False, "Use client.runs.share.delete() instead."),
+        (
+            "read_run_shared_link",
+            False,
+            'Use client.runs.retrieve(selects=["SHARE_URL"]) instead.',
+        ),
+        ("read_shared_run", True, "Use client.public.runs.retrieve() instead."),
+        ("list_shared_runs", True, "Use client.public.runs.query() instead."),
+    ],
+)
+def test_run_sharing_methods_are_deprecated(
+    method: str, takes_share_token: bool, expected: str
+) -> None:
+    """Every method in the guide's sharing section warns once, naming its replacement."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run_id = uuid.uuid4()
+    arg = _SHARE_TOKEN if takes_share_token else run_id
+
+    with (
+        mock.patch.object(
+            Client, "request_with_retries", return_value=_share_response(run_id)
+        ),
+        mock.patch.object(Client, "_get_cursor_paginated_list", return_value=iter([])),
+    ):
+        with pytest.warns(DeprecationWarning) as recorded:
+            result = getattr(client, method)(arg)
+            if method == "list_shared_runs":
+                list(result)  # a generator; drain it so the body runs too
+
+    messages = _deprecation_messages(recorded)
+    assert len(messages) == 1, messages
+    assert f"{method}() is deprecated" in messages[0]
+    assert expected in messages[0]
+    assert "#share-and-read-public-runs" in messages[0]
+
+
+def test_run_is_shared_does_not_warn_about_read_run_shared_link() -> None:
+    """run_is_shared() is supported; it must not warn about its internal call."""
+    client = Client(api_url="http://localhost:1984", api_key="123", session=mock.Mock())
+    run_id = uuid.uuid4()
+
+    # Only the HTTP layer is stubbed, so the real decorated
+    # read_run_shared_link() still executes.
+    with mock.patch.object(
+        Client, "request_with_retries", return_value=_share_response(run_id)
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert client.run_is_shared(run_id) is True
+
+
+@pytest.mark.parametrize(
+    "method,expected",
+    [
+        ("share_run", "Use client.runs.share.create() instead."),
+        (
+            "read_run_shared_link",
+            'Use client.runs.retrieve(selects=["SHARE_URL"]) instead.',
+        ),
+    ],
+)
+async def test_async_run_sharing_methods_are_deprecated(
+    method: str, expected: str
+) -> None:
+    """The async client's sharing methods carry the same deprecations."""
+    from langsmith.async_client import AsyncClient
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="123")
+    run_id = uuid.uuid4()
+
+    with mock.patch.object(
+        AsyncClient,
+        "_arequest_with_retries",
+        new=mock.AsyncMock(return_value=_share_response(run_id)),
+    ):
+        with pytest.warns(DeprecationWarning) as recorded:
+            await getattr(client, method)(run_id)
+
+    messages = _deprecation_messages(recorded)
+    assert len(messages) == 1, messages
+    assert f"{method}() is deprecated" in messages[0]
+    assert expected in messages[0]
+    assert "#share-and-read-public-runs" in messages[0]
+
+
+async def test_async_run_is_shared_does_not_warn_about_read_run_shared_link() -> None:
+    """Same suppression as the sync client, for the async `await` path."""
+    from langsmith.async_client import AsyncClient
+
+    client = AsyncClient(api_url="http://localhost:1984", api_key="123")
+    run_id = uuid.uuid4()
+
+    with mock.patch.object(
+        AsyncClient,
+        "_arequest_with_retries",
+        new=mock.AsyncMock(return_value=_share_response(run_id)),
+    ):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert await client.run_is_shared(run_id) is True
+
+
+def _gtr_example_id() -> uuid.UUID:
+    return uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+
+def _gtr_legacy_run() -> mock.Mock:
+    """A `schemas.Run`-shaped run, as `list_runs` returns it."""
+    run = mock.Mock()
+    run.id = uuid.uuid4()
+    run.reference_example_id = _gtr_example_id()  # UUID
+    run.inputs = {"q": "hi"}
+    run.outputs = {"a": "yo"}
+    run.error = None
+    run.start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    run.end_time = datetime(2024, 1, 1, 0, 0, 5, tzinfo=timezone.utc)
+    run.feedback_stats = {"correctness": {"avg": 0.75}}
+    return run
+
+
+def _gtr_v2_run() -> SimpleNamespace:
+    """A raw v2 `Run`, which types `reference_example_id` as a *str*.
+
+    Uses SimpleNamespace rather than Mock so unset fields read as None, matching
+    the generated model (a Mock would hand `_v2_run_to_schema` truthy garbage).
+    """
+    stat = mock.Mock()
+    stat.model_dump.return_value = {"avg": 0.75}
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        reference_example_id=str(_gtr_example_id()),  # str, not UUID
+        inputs={"q": "hi"},
+        outputs={"a": "yo"},
+        error=None,
+        start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime(2024, 1, 1, 0, 0, 5, tzinfo=timezone.utc),
+        # Selected only so `schemas.Run` validates; absent from the dataframe.
+        name="my_run",
+        run_type="CHAIN",
+        trace_id=str(uuid.uuid4()),
+        feedback_stats={"correctness": stat},
+        # Not selected by get_test_results -> None on the generated model.
+        project_id=None,
+        parent_run_ids=[],
+        dotted_order=None,
+        status=None,
+        tags=None,
+        extra=None,
+        events=None,
+        first_token_time=None,
+        app_path=None,
+        prompt_tokens=None,
+        completion_tokens=None,
+        total_tokens=None,
+        prompt_cost=None,
+        completion_cost=None,
+        total_cost=None,
+        prompt_token_details=None,
+        completion_token_details=None,
+        prompt_cost_details=None,
+        completion_cost_details=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("instance_flags", "expect_v2"),
+    [
+        ({"ch_query_enabled": True}, False),
+        ({"ch_query_enabled": True, "sdb_query_enabled": True}, False),
+        ({"ch_query_enabled": False, "sdb_query_enabled": True}, True),
+    ],
+)
+def test_get_test_results_joins_reference_examples(instance_flags, expect_v2) -> None:
+    """Both backends must join runs to their reference examples.
+
+    Regression test: the SmithDB-only branch used to iterate raw v2 runs, whose
+    `reference_example_id` is a str. Indexing the dataframe on a str and merging
+    against UUID example ids produced an empty inner join, silently returning no
+    rows instead of the expected results.
+    """
+    pytest.importorskip("pandas")
+
+    client = Client(api_key="test", api_url="http://localhost")
+    example = mock.Mock()
+    example.id = _gtr_example_id()
+    example.outputs = {"a": "yo"}
+
+    api = mock.MagicMock()
+    api.runs.query.return_value = [_gtr_v2_run()]
+
+    with (
+        patch.object(
+            type(client),
+            "info",
+            property(lambda self: mock.Mock(instance_flags=instance_flags)),
+        ),
+        patch.object(
+            type(client), "list_runs", return_value=[_gtr_legacy_run()]
+        ) as mock_list_runs,
+        patch.object(type(client), "_get_langsmith_api_sync", return_value=api),
+        patch.object(type(client), "list_examples", return_value=[example]),
+        patch.object(
+            type(client), "read_project", return_value=mock.Mock(id=uuid.uuid4())
+        ),
+    ):
+        with pytest.warns(UserWarning, match="in beta"):
+            df = client.get_test_results(project_name="p")
+
+    # Correct backend was queried.
+    assert mock_list_runs.called is not expect_v2
+    assert api.runs.query.called is expect_v2
+
+    # The run/example join produced a row with both sides' data.
+    assert len(df) == 1, f"expected 1 joined row, got {len(df)}"
+    row = df.iloc[0]
+    assert row["reference.a"] == "yo"
+    assert row["input.q"] == "hi"
+    assert row["outputs.a"] == "yo"
+    assert row["feedback.correctness"] == 0.75
+    assert row["execution_time"] == 5.0
+
+
+def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default to a single zstd worker; the env var (including "0") still wins."""
+    import importlib
+
+    from langsmith._internal import _compressed_traces
+
+    def _reload() -> int:
+        _clear_env_cache()
+        return importlib.reload(_compressed_traces).compression_threads
+
+    try:
+        monkeypatch.delenv("LANGSMITH_RUN_COMPRESSION_THREADS", raising=False)
+        monkeypatch.delenv("LANGCHAIN_RUN_COMPRESSION_THREADS", raising=False)
+        assert _reload() == 1
+
+        monkeypatch.setenv("LANGSMITH_RUN_COMPRESSION_THREADS", "0")
+        assert _reload() == 0
+
+        monkeypatch.setenv("LANGSMITH_RUN_COMPRESSION_THREADS", "4")
+        assert _reload() == 4
+    finally:
+        monkeypatch.undo()
+        _reload()

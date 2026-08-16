@@ -148,6 +148,11 @@ export interface WsMessage {
 export interface WsRunOptions {
   /** Command timeout in seconds. Default: 60. */
   timeout?: number;
+  /**
+   * WebSocket connect timeout in seconds, overriding the module default.
+   * run() passes the remainder of its overall connect budget. @internal
+   */
+  openTimeout?: number;
   /** Environment variables to set for the command. */
   env?: Record<string, string>;
   /** Working directory for command execution. */
@@ -282,6 +287,13 @@ export interface SandboxAwsAuthRule {
   type: "aws";
   /** Whether the rule is enabled. */
   enabled?: boolean;
+  /**
+   * Plaintext environment variables set for every command in the sandbox while
+   * the rule is enabled, for tools that refuse to run unless a credential
+   * variable is present even though the proxy injects the real credential on
+   * the wire.
+   */
+  env_vars?: Record<string, string>;
   /** AWS credentials used by the proxy signer. */
   aws: {
     access_key_id: SandboxProxySecret;
@@ -297,6 +309,13 @@ export interface SandboxGcpAuthRule {
   type: "gcp";
   /** Whether the rule is enabled. */
   enabled?: boolean;
+  /**
+   * Plaintext environment variables set for every command in the sandbox while
+   * the rule is enabled, for tools that refuse to run unless a credential
+   * variable is present even though the proxy injects the real credential on
+   * the wire.
+   */
+  env_vars?: Record<string, string>;
   /** GCP service-account credential and OAuth scopes. */
   gcp: {
     service_account_json: SandboxProxySecret;
@@ -414,8 +433,35 @@ export interface GitMountSpec {
   git: GitMountConfig;
 }
 
+/** Context Hub configuration for a sandbox mount. */
+export interface ContextHubMountConfig {
+  /**
+   * Context Hub repository to sync, as `owner/repo` (e.g. `-/my-agent`, where
+   * `-` is the current workspace).
+   */
+  repo: string;
+  /** Sync once at startup instead of polling for updates. */
+  initial_pull_only?: boolean;
+}
+
+/** Read-only Context Hub-backed sandbox mount specification. */
+export interface ContextHubMountSpec {
+  /** Stable mount identifier. */
+  id: string;
+  /** Mount type. */
+  type: "contexthub";
+  /** Absolute path inside the sandbox where the repo tree appears. */
+  mount_path: string;
+  /** Context Hub mount configuration. */
+  contexthub: ContextHubMountConfig;
+}
+
 /** Sandbox mount specification. */
-export type SandboxMount = S3MountSpec | GCSMountSpec | GitMountSpec;
+export type SandboxMount =
+  | S3MountSpec
+  | GCSMountSpec
+  | GitMountSpec
+  | ContextHubMountSpec;
 
 /** AWS credentials used by the backend to authenticate S3 mounts. */
 export interface SandboxAwsMountAuthConfig {

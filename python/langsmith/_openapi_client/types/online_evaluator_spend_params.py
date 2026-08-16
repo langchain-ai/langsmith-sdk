@@ -37,6 +37,12 @@ class OnlineEvaluatorSpendParams(TypedDict, total=False):
     session_id: str
     """Filter to a specific project (UUID). Mutually exclusive with group_by."""
 
+    tag_value_id: SequenceNotStr[str]
+    """
+    Filter grouped results to evaluators, projects, or datasets tagged with all
+    supplied tag value IDs. Only valid with group_by.
+    """
+
     type: str
     """Filter grouped results by evaluator type: 'llm' or 'code'.
 

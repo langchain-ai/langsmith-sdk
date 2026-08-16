@@ -20,12 +20,14 @@ __all__ = [
     "MountConfigMountSandboxapiS3BucketMountSpec",
     "MountConfigMountSandboxapiS3BucketMountSpecS3",
     "MountConfigMountSandboxapiS3BucketMountSpecCache",
+    "MountConfigMountSandboxapiS3BucketMountSpecContexthub",
     "MountConfigMountSandboxapiS3BucketMountSpecGcs",
     "MountConfigMountSandboxapiS3BucketMountSpecGit",
     "MountConfigMountSandboxapiS3BucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpec",
     "MountConfigMountSandboxapiGcsBucketMountSpecGcs",
     "MountConfigMountSandboxapiGcsBucketMountSpecCache",
+    "MountConfigMountSandboxapiGcsBucketMountSpecContexthub",
     "MountConfigMountSandboxapiGcsBucketMountSpecGit",
     "MountConfigMountSandboxapiGcsBucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpecS3",
@@ -33,8 +35,16 @@ __all__ = [
     "MountConfigMountSandboxapiGitRepoMountSpecGit",
     "MountConfigMountSandboxapiGitRepoMountSpecGitRef",
     "MountConfigMountSandboxapiGitRepoMountSpecCache",
+    "MountConfigMountSandboxapiGitRepoMountSpecContexthub",
     "MountConfigMountSandboxapiGitRepoMountSpecGcs",
     "MountConfigMountSandboxapiGitRepoMountSpecS3",
+    "MountConfigMountSandboxapiContextHubRepoMountSpec",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecContexthub",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecCache",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGcs",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGit",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecGitRef",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecS3",
     "ProxyConfig",
     "ProxyConfigAccessControl",
     "ProxyConfigCallback",
@@ -65,11 +75,33 @@ class BoxCreateParams(TypedDict, total=False):
 
     idle_ttl_seconds: int
 
+    labels: Dict[str, str]
+    """
+    Labels are free-form key/value metadata persisted with the sandbox and returned
+    on reads. Labels from the source snapshot are inherited unless overridden here.
+    """
+
     mem_bytes: int
+    """Memory for the sandbox, in bytes.
+
+    Memory is tied to CPU at 4 GiB per vCPU: omit it and it follows that ratio; set
+    it and it must stay within 50% of the ratio for the requested CPU, so a 1 vCPU
+    sandbox accepts 2-6 GiB. Setting memory without CPU derives the CPU from the
+    same ratio. Maximum 64 GiB.
+    """
 
     mount_config: MountConfig
 
     name: str
+
+    preserve_memory_on_stop: bool
+    """
+    PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
+    stop (idle timeout or explicit stop) so the next start resumes from where it
+    left off. Default false discards memory and keeps only the filesystem, so the
+    next start is a cold boot. Restarts triggered by infrastructure maintenance
+    always preserve memory regardless of this setting.
+    """
 
     proxy_config: ProxyConfig
 
@@ -83,9 +115,19 @@ class BoxCreateParams(TypedDict, total=False):
     Applies to this request only.
     """
 
+    snapshot: str
+    """Snapshot is a Docker-style name or name:tag reference to boot from.
+
+    A bare name resolves to name:latest.
+    """
+
     snapshot_id: str
 
     snapshot_name: str
+    """
+    SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+    that predate it. Set one or the other.
+    """
 
     tag_value_ids: SequenceNotStr[str]
 
@@ -150,6 +192,21 @@ class MountConfigMountSandboxapiS3BucketMountSpecCache(TypedDict, total=False):
     writeback_seconds: int
 
 
+class MountConfigMountSandboxapiS3BucketMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
 class MountConfigMountSandboxapiS3BucketMountSpecGcs(TypedDict, total=False):
     bucket: Required[str]
 
@@ -177,9 +234,11 @@ class MountConfigMountSandboxapiS3BucketMountSpec(TypedDict, total=False):
 
     s3: Required[MountConfigMountSandboxapiS3BucketMountSpecS3]
 
-    type: Required[Literal["s3", "gcs", "git"]]
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiS3BucketMountSpecCache
+
+    contexthub: MountConfigMountSandboxapiS3BucketMountSpecContexthub
 
     gcs: MountConfigMountSandboxapiS3BucketMountSpecGcs
 
@@ -198,6 +257,21 @@ class MountConfigMountSandboxapiGcsBucketMountSpecCache(TypedDict, total=False):
     max_size_bytes: int
 
     writeback_seconds: int
+
+
+class MountConfigMountSandboxapiGcsBucketMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
 
 
 class MountConfigMountSandboxapiGcsBucketMountSpecGitRef(TypedDict, total=False):
@@ -233,9 +307,11 @@ class MountConfigMountSandboxapiGcsBucketMountSpec(TypedDict, total=False):
 
     mount_path: Required[str]
 
-    type: Required[Literal["s3", "gcs", "git"]]
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiGcsBucketMountSpecCache
+
+    contexthub: MountConfigMountSandboxapiGcsBucketMountSpecContexthub
 
     git: MountConfigMountSandboxapiGcsBucketMountSpecGit
 
@@ -264,6 +340,21 @@ class MountConfigMountSandboxapiGitRepoMountSpecCache(TypedDict, total=False):
     writeback_seconds: int
 
 
+class MountConfigMountSandboxapiGitRepoMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
 class MountConfigMountSandboxapiGitRepoMountSpecGcs(TypedDict, total=False):
     bucket: Required[str]
 
@@ -289,9 +380,11 @@ class MountConfigMountSandboxapiGitRepoMountSpec(TypedDict, total=False):
 
     mount_path: Required[str]
 
-    type: Required[Literal["s3", "gcs", "git"]]
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiGitRepoMountSpecCache
+
+    contexthub: MountConfigMountSandboxapiGitRepoMountSpecContexthub
 
     gcs: MountConfigMountSandboxapiGitRepoMountSpecGcs
 
@@ -300,10 +393,84 @@ class MountConfigMountSandboxapiGitRepoMountSpec(TypedDict, total=False):
     s3: MountConfigMountSandboxapiGitRepoMountSpecS3
 
 
+class MountConfigMountSandboxapiContextHubRepoMountSpecContexthub(TypedDict, total=False):
+    repo: Required[str]
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: bool
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecCache(TypedDict, total=False):
+    max_size_bytes: int
+
+    writeback_seconds: int
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGcs(TypedDict, total=False):
+    bucket: Required[str]
+
+    prefix: str
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGitRef(TypedDict, total=False):
+    name: Required[str]
+
+    type: Required[Literal["branch", "tag"]]
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecGit(TypedDict, total=False):
+    remote_url: Required[str]
+
+    ref: MountConfigMountSandboxapiContextHubRepoMountSpecGitRef
+
+    refresh_interval_seconds: int
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecS3(TypedDict, total=False):
+    bucket: Required[str]
+
+    region: Required[str]
+
+    endpoint_url: str
+
+    path_style: bool
+
+    prefix: str
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpec(TypedDict, total=False):
+    id: Required[str]
+
+    contexthub: Required[MountConfigMountSandboxapiContextHubRepoMountSpecContexthub]
+
+    mount_path: Required[str]
+
+    type: Required[Literal["s3", "gcs", "git", "contexthub"]]
+
+    cache: MountConfigMountSandboxapiContextHubRepoMountSpecCache
+
+    gcs: MountConfigMountSandboxapiContextHubRepoMountSpecGcs
+
+    git: MountConfigMountSandboxapiContextHubRepoMountSpecGit
+
+    read_only: bool
+
+    s3: MountConfigMountSandboxapiContextHubRepoMountSpecS3
+
+
 MountConfigMount: TypeAlias = Union[
     MountConfigMountSandboxapiS3BucketMountSpec,
     MountConfigMountSandboxapiGcsBucketMountSpec,
     MountConfigMountSandboxapiGitRepoMountSpec,
+    MountConfigMountSandboxapiContextHubRepoMountSpec,
 ]
 
 
@@ -393,6 +560,16 @@ class ProxyConfigRule(TypedDict, total=False):
     aws: ProxyConfigRuleAws
 
     enabled: bool
+
+    env_vars: Dict[str, str]
+    """
+    EnvVars are plaintext env vars set for every command in the sandbox while this
+    rule is enabled. Use them for tools that refuse to run unless a credential env
+    var is present (e.g. gh needs GH_TOKEN) even though this rule injects the real
+    credential on the wire — set a dummy value here so the command starts. Explicit
+    per-sandbox env_vars win over these, and provider-managed (AWS/GCP) vars win
+    over both.
+    """
 
     gcp: ProxyConfigRuleGcp
 

@@ -25,6 +25,7 @@ from langsmith.integrations.openai_realtime._session import (
     _stringify,
     describe_event,
     raw_input_transcript,
+    raw_response_usage,
     wrap_realtime_session,
 )
 
@@ -126,6 +127,35 @@ class TestCleanAndShape:
         assert (
             raw_input_transcript(
                 NS(data=NS(type="input_audio_transcription_completed", transcript=" "))
+            )
+            is None
+        )
+
+    def test_raw_response_usage(self):
+        ev = NS(
+            type="raw_model_event",
+            data=NS(
+                type="raw_server_event",
+                data={
+                    "type": "response.done",
+                    "response": {"usage": {"input_tokens": 7, "output_tokens": 3}},
+                },
+            ),
+        )
+        usage = raw_response_usage(ev)
+        assert usage["input_tokens"] == 7
+        assert usage["output_tokens"] == 3
+        # Non-usage raw events and unrelated events return None.
+        assert raw_response_usage(NS(data=NS(type="raw_server_event", data={}))) is None
+        assert raw_response_usage(NS(data=NS(type="other"))) is None
+        assert (
+            raw_response_usage(
+                NS(
+                    data=NS(
+                        type="raw_server_event",
+                        data={"type": "response.done", "response": {}},
+                    )
+                )
             )
             is None
         )
@@ -331,6 +361,90 @@ class TestTracer:
         tracer.flush_pending()
         assert session.messages == [{"role": "user", "content": "cancel that"}]
         assert any(n == "user_message" for n, _ in created)
+
+    def test_response_done_usage_attached_to_assistant_span(self, monkeypatch):
+        # The SDK has no semantic usage event, but forwards the raw response.done
+        # (as raw_server_event); its usage must ride on the assistant model span,
+        # with audio/cached detail preserved for correct pricing.
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
+        created = _spy_children(monkeypatch)
+        tracer = _tracer(session)
+
+        tracer.observe(_history_updated(_item("u1", "user", "weather?")))
+        tracer.observe(
+            NS(
+                type="raw_model_event",
+                data=NS(
+                    type="raw_server_event",
+                    data={
+                        "type": "response.done",
+                        "response": {
+                            "usage": {
+                                "input_tokens": 300,
+                                "output_tokens": 120,
+                                "total_tokens": 420,
+                                "input_token_details": {
+                                    "audio_tokens": 250,
+                                    "cached_tokens": 20,
+                                    "text_tokens": 30,
+                                },
+                                "output_token_details": {
+                                    "audio_tokens": 100,
+                                    "text_tokens": 20,
+                                },
+                            }
+                        },
+                    },
+                ),
+            )
+        )
+        tracer.observe(
+            _history_updated(
+                _item("u1", "user", "weather?"),
+                _item("a1", "assistant", "It's sunny."),
+            )
+        )
+        tracer.flush_pending()
+        session.finalize()
+
+        model = next(c for n, c in created if n == "model")
+        usage = (model.extra or {}).get("metadata", {}).get("usage_metadata")
+        assert usage["input_tokens"] == 300
+        assert usage["output_tokens"] == 120
+        assert usage["input_token_details"]["audio"] == 250
+        assert usage["input_token_details"]["cache_read"] == 20
+        assert usage["output_token_details"]["audio"] == 100
+
+    def test_response_done_usage_consumed_once(self, monkeypatch):
+        # Usage is cleared after it's attached, so a later assistant turn without
+        # its own response.done doesn't inherit the previous turn's counts.
+        session = start_session(
+            thread_id="t", sample_rate=24_000, integration="openai-agents-realtime"
+        )
+        created = _spy_children(monkeypatch)
+        tracer = _tracer(session)
+
+        tracer.observe(
+            NS(
+                type="raw_model_event",
+                data=NS(
+                    type="raw_server_event",
+                    data={
+                        "type": "response.done",
+                        "response": {"usage": {"input_tokens": 10, "output_tokens": 5}},
+                    },
+                ),
+            )
+        )
+        tracer.observe(_history_updated(_item("a1", "assistant", "one")))
+        tracer.observe(_history_updated(_item("a2", "assistant", "two")))
+        tracer.flush_pending()
+
+        models = [c for n, c in created if n == "model"]
+        assert (models[0].extra or {}).get("metadata", {}).get("usage_metadata")
+        assert (models[1].extra or {}).get("metadata", {}).get("usage_metadata") is None
 
     def test_on_message_called_once_per_finalized_line(self):
         session = start_session(
