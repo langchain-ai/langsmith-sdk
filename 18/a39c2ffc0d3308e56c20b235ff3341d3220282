@@ -1,0 +1,69 @@
+js/src/client.ts
+  s_ef5f18407a3042::t_64d6f00aff7de8 89,822-899,1059-1060,1062-1066,1443-1452,1560-1599,1601,1604,1621-1658,1669,1681-1704,1713,1719,2414-2416
+js/src/sandbox/command_handle.ts
+  s_ef5f18407a3042::t_0d072ab8ec67ab 18-40,82,186-190,226,231,255-256,258,265
+js/src/sandbox/ws_execute.ts
+  s_ef5f18407a3042::t_d556c0e4461596 476-479,517-521
+js/src/tests/client.test.ts
+  s_ef5f18407a3042::t_5dff5ca0616f6b 83-86,89-92,105,134,156
+js/src/tests/client_headers.test.ts
+  s_ef5f18407a3042::t_584d3a7537eb2d 1-303
+js/src/tests/sandbox_reconnect_ack.test.ts
+  s_ef5f18407a3042::t_aa57656161f891 1-207
+js/src/tests/v2_migration.test.ts
+  s_ef5f18407a3042::t_c110b955a169c8 3-7,31-48
+js/src/utils/v2_migration.ts
+  s_ef5f18407a3042::t_3e5424d5798aac 8-27
+python/.bumpversion.cfg
+  s_ef5f18407a3042::t_237d06181f4259 2
+python/langsmith/__init__.py
+  s_ef5f18407a3042::t_ad004ab5227c76 52
+python/langsmith/_internal/_profiles.py
+  s_ef5f18407a3042::t_7ff33e51e1e977 149-150,359-361
+python/langsmith/client.py
+  s_ef5f18407a3042::t_9b1d8efe50a6a6 119,122-127,176-226,762,1016,1029,1085-1090,1340-1343,1588-1595,1598-1606,1610-1611,1613,1619-1627,1631-1632,1634
+python/langsmith/integrations/_gemini_usage.py
+  s_ef5f18407a3042::t_82034aa0fe5f26 1-67
+python/langsmith/integrations/gemini_live/__init__.py
+  s_ef5f18407a3042::t_1cf5bcbbd37be1 1-19
+python/langsmith/integrations/gemini_live/_session.py
+  s_ef5f18407a3042::t_24ddad897ebe20 1-513
+python/langsmith/integrations/google_adk_live/_plugin.py
+  s_ef5f18407a3042::t_3139b6ba3fc895 62,175
+python/langsmith/run_trees.py
+  s_ef5f18407a3042::t_656f3613ad5ab3 17,345-346,924-966
+python/langsmith/sandbox/_models.py
+  s_ef5f18407a3042::t_c7995feb9c70ee 5,27-48,505-508,549,552-553,615-618,649,653,673-674,676-678,684,773-776,817,820-821,878-881,906,910,930-931,933-935,941
+python/langsmith/sandbox/_ws_execute.py
+  s_ef5f18407a3042::t_51dd761505071f 404-407,449,625
+python/pyproject.toml
+  s_ef5f18407a3042::t_4c01feb05c117f 89-92
+python/tests/unit_tests/sandbox/test_async_ws_execute.py
+  s_ef5f18407a3042::t_19450ea71d0304 504-642,1080-1105
+python/tests/unit_tests/sandbox/test_ws_execute.py
+  s_ef5f18407a3042::t_b513947345cb5a 506-634,1058-1075
+python/tests/unit_tests/test_async_client.py
+  s_ef5f18407a3042::t_281c723663794f 170-217,466-468
+python/tests/unit_tests/test_client.py
+  s_ef5f18407a3042::t_5ba46b51df502b 14,30,60,304,327-328,2030,5723-5830,7240-7331
+python/tests/unit_tests/wrappers/test_gemini_live.py
+  s_ef5f18407a3042::t_d35857fe16803b 1-368
+python/uv.lock
+  s_ef5f18407a3042::t_920d3b1203eac7 1670-1672,1794,1833
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "18a39c2ffc0d3308e56c20b235ff3341d3220282",
+  "prompts": {},
+  "sessions": {
+    "s_ef5f18407a3042": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc9b5a69-ec33-4f0d-865a-4e88ee866c02",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+js/src/tests/utils.ts
+  s_dcd7340e735b57::t_a9738fef14c294 38-68,76
+js/src/tests/lcls_handoff.int.test.ts
+  s_dcd7340e735b57::t_677d0e2bf7052f 12-15,17-18,20-26,29-49,51-55,57-66,68-82,85-98
+  s_dcd7340e735b57::t_366cd196668d77 10
+js/src/tests/vercel/wrapper/openai.int.test.ts
+  s_dcd7340e735b57::t_366cd196668d77 18,322
+js/src/tests/run_trees.int.test.ts
+  s_dcd7340e735b57::t_366cd196668d77 15,250
+  s_dcd7340e735b57::t_677d0e2bf7052f 149-156,158-159,161-164,167-172,174-177,179-184,186-191,193-196,198-204,206-212,216-219,221-233,235-239,241-248
+js/src/tests/batch_client.int.test.ts
+  s_dcd7340e735b57::t_366cd196668d77 15
+  s_dcd7340e735b57::t_677d0e2bf7052f 17-28,30-43,45-49,51-54,56-62,114-125,127-140,142-155,157-159,161-194,196-198,200-210,212-233,235-240,242-245,247-253
+js/src/tests/client.int.test.ts
+  s_dcd7340e735b57::t_366cd196668d77 1219,1323,2312
+  s_dcd7340e735b57::t_677d0e2bf7052f 31,263-269,271-278,280-284,286-291,337-412,414-415,419-420,439,443-445,447-457,594-622,847-850,852-853,855-858,860-870,872-881,884-895,897-899,2363-2368,2370,2374-2467
+js/src/tests/evaluate.int.test.ts
+  s_dcd7340e735b57::t_366cd196668d77 15
+  s_dcd7340e735b57::t_677d0e2bf7052f 581-584,586-590,593-596,599-603,605-608,610-613,615-636,639-648,650-654,656-659,661-667,669-676
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "aa171b4a2b55b660e10b9a8f21d41075f3ba17c1",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_dcd7340e735b57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25bcba52-61cd-455e-b6db-2e3a43b8a6b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+python/tests/unit_tests/test_v2_migration_utils.py
+  s_00da43c60604db::t_63792789eb1984 141
+js/src/tests/v2_migration.test.ts
+  s_00da43c60604db::t_077a612330e54d 85
+  s_00da43c60604db::t_6b0ce93091f10d 118-119
+  s_00da43c60604db::t_59976e25966e35 171-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9b96e4ae09e6d2cf4b70314febc20cb9da3824e6",
+  "prompts": {},
+  "sessions": {
+    "s_00da43c60604db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f69987a4-8bc2-439a-9e9c-6071a213cf27",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

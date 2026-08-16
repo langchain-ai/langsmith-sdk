@@ -1,0 +1,19 @@
+python/tests/unit_tests/wrappers/test_openai_processing.py
+  s_ff080844706851::t_f4c30ed25b13f9 73,107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "0caea620a46c1a0f5b787a03ad754056fd1f3acf",
+  "prompts": {},
+  "sessions": {
+    "s_ff080844706851": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40df46e9-1a8a-41fc-8b66-bb84f7803d70",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}

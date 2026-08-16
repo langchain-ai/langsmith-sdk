@@ -1,0 +1,32 @@
+.github/workflows/ci.yml
+  s_dcd7340e735b57::t_cce13d38679356 562
+  s_dcd7340e735b57::t_def4b8e47e551a 615
+  s_dcd7340e735b57::t_9d7d4ba9c11d7a 621-622
+  s_dcd7340e735b57::t_e155c2c3bf92cf 554
+  s_dcd7340e735b57::t_7f3665c363da12 26,30-37
+.github/actions/python-integration-tests/action.yml
+  s_dcd7340e735b57::t_7d13ce3b94c33c 18-21
+  s_dcd7340e735b57::t_3c7f481b73a754 91-93
+  s_dcd7340e735b57::t_d01d81469d2ef5 109-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fc66b78eb0f89f93b307629f500f7058ea123e0d",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_dcd7340e735b57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25bcba52-61cd-455e-b6db-2e3a43b8a6b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

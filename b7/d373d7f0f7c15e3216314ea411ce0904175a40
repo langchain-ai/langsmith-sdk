@@ -1,0 +1,42 @@
+python/langsmith/_internal/_v2_migration_utils.py
+  s_322a465b6e5eed::t_adad59346cd2fb 130-136,139
+  s_322a465b6e5eed::t_08b06fda725a96 137-138,140-141
+python/tests/integration_tests/test_async_client.py
+  h_53e10026eac609 39,41,49,54,60-61
+python/langsmith/client.py
+  s_322a465b6e5eed::t_e45c4a64d57bea 7606,7620,7622
+  s_322a465b6e5eed::t_d9d16b9afb7441 4061-4066
+  s_322a465b6e5eed::t_b7df570eaa43e3 4028-4032,4041-4044,4067-4071,4074-4076
+  s_322a465b6e5eed::t_3352e1d20bad53 7506-7508,7515
+  s_322a465b6e5eed::t_91845497fbfef3 7708,7722,7724
+  h_53e10026eac609 7621,7723
+  s_322a465b6e5eed::t_9a42cbf7f1333c 4060,4072-4073,4077-4084
+  s_322a465b6e5eed::t_a7dd01fd252c96 7485,7496-7497,7523-7525
+  s_322a465b6e5eed::t_cc10156c1cc587 7635-7637
+  s_322a465b6e5eed::t_66f4c010e9cd1f 7737-7739
+  s_322a465b6e5eed::t_b5a9e0a5e4f2fb 7486,7495,7509-7514,7516-7522
+python/langsmith/async_client.py
+  s_322a465b6e5eed::t_ca6741e0126009 583-598,605-621
+  s_322a465b6e5eed::t_38d47ceb420e65 599-604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b7d373d7f0f7c15e3216314ea411ce0904175a40",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_322a465b6e5eed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c9a142f-5b36-4f64-8896-9a5a3ce814c1",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

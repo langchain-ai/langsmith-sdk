@@ -1,0 +1,41 @@
+python/tests/integration_tests/test_v2_traces.py
+  s_72011fe0490cd0::t_ecad6f1aea59f3 122
+python/tests/integration_tests/wrappers/test_openai_agents.py
+  s_72011fe0490cd0::t_ecad6f1aea59f3 101
+python/tests/integration_tests/test_runs.py
+  s_72011fe0490cd0::t_ecad6f1aea59f3 68,120,157,253,280,313,351,397,451,479,525,591,686,785
+.github/workflows/ci.yml
+  s_72011fe0490cd0::t_56029d6c773cc5 551-552
+  s_72011fe0490cd0::t_36b77e63bd6774 569-571
+  s_72011fe0490cd0::t_e197bd7235a6e3 608
+python/pyproject.toml
+  s_72011fe0490cd0::t_b762425e46a1a5 264-267
+.github/actions/python-integration-tests/action.yml
+  s_72011fe0490cd0::t_4011ad17a22ec7 84,103
+  s_72011fe0490cd0::t_909d9b7f11d423 14-17
+python/tests/integration_tests/test_client.py
+  s_72011fe0490cd0::t_ecad6f1aea59f3 466,503,853,961,1118,1167,1234,1284,1486,3463,3534,3667,3751,3813,3850,4049
+python/tests/integration_tests/test_async_client.py
+  s_72011fe0490cd0::t_ecad6f1aea59f3 35,64,447
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4cc8c093123fd23f811ca2268e8515321a2cdeba",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_72011fe0490cd0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3982bd9b-61f2-4295-8e48-3fe116f4f91d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

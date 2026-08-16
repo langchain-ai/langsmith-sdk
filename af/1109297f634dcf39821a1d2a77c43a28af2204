@@ -1,0 +1,34 @@
+.github/workflows/ci.yml
+  s_bdd0fb908d1638::t_189063d73931a6 53,55
+  s_bdd0fb908d1638::t_dc735cd0966af9 682-686
+  s_bdd0fb908d1638::t_831fb455761a55 704,754
+  s_bdd0fb908d1638::t_1af7ca4aae66c2 54
+  s_bdd0fb908d1638::t_a6135e89252dd4 72-74
+  s_bdd0fb908d1638::t_3f3bc7a741f543 861-888
+  s_bdd0fb908d1638::t_60a00a123ec42b 576-580
+  s_bdd0fb908d1638::t_3395d66fc5d507 550-552,558
+  s_bdd0fb908d1638::t_40af5c41f466c7 529-532,534-538
+  s_bdd0fb908d1638::t_48a579cc37398c 659
+  s_bdd0fb908d1638::t_eb0802d4385a4d 6-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "af1109297f634dcf39821a1d2a77c43a28af2204",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_bdd0fb908d1638": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "efada72b-a6f2-442b-8489-229edb7931f8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

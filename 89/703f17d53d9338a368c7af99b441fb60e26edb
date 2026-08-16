@@ -1,0 +1,19 @@
+js/src/tests/client.test.ts
+  s_0ec3ec5ebea8a5::t_87f3ec2932a702 54-58,62-80,98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "89703f17d53d9338a368c7af99b441fb60e26edb",
+  "prompts": {},
+  "sessions": {
+    "s_0ec3ec5ebea8a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ac01733-6f8b-46c2-9a46-0026d977f672",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

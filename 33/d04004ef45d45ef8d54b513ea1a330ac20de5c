@@ -1,0 +1,21 @@
+python/tests/unit_tests/test_async_client.py
+  s_7c725f7b681658::t_2ae2b5476292da 543
+python/tests/unit_tests/test_client.py
+  s_7c725f7b681658::t_914f2aa7e6cf26 1939
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "33d04004ef45d45ef8d54b513ea1a330ac20de5c",
+  "prompts": {},
+  "sessions": {
+    "s_7c725f7b681658": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e28f278-84ab-48be-b675-f7ac85e74ef3",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

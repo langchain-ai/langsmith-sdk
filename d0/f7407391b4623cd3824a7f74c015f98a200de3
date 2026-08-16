@@ -1,0 +1,18 @@
+js/src/client.ts
+  h_f1ecc43c8f43eb 5124
+python/langsmith/async_client.py
+  h_f1ecc43c8f43eb 1033
+python/langsmith/client.py
+  h_f1ecc43c8f43eb 7791
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d0f7407391b4623cd3824a7f74c015f98a200de3",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

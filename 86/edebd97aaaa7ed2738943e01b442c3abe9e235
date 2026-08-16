@@ -1,0 +1,21 @@
+python/langsmith/wrappers/_gemini.py
+  s_4c09014a9f384f::t_8ba94c52a25266 22,54-133,135-139
+python/tests/unit_tests/wrappers/test_gemini_processing.py
+  s_4c09014a9f384f::t_725bf5b8d6c778 3-5,7,742-1013
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "86edebd97aaaa7ed2738943e01b442c3abe9e235",
+  "prompts": {},
+  "sessions": {
+    "s_4c09014a9f384f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f51d174e-2519-4120-9541-1e23390da05d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+js/src/traceable.ts
+  s_7bc7bd68a2946c::t_74e8a671f832b1 159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "edd4b67ce0f16b7fd51b6772e305e5e7821a36d4",
+  "prompts": {},
+  "sessions": {
+    "s_7bc7bd68a2946c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b2e25b0-7569-4b6d-b1fe-8e27e45caed7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

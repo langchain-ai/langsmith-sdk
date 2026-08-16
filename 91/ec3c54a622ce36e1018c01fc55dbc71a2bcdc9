@@ -1,0 +1,20 @@
+python/langsmith/client.py
+  s_7f5f3a8797e94a::t_6e643982f594b9 75
+  s_7f5f3a8797e94a::t_bb10d9916807fb 758
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "91ec3c54a622ce36e1018c01fc55dbc71a2bcdc9",
+  "prompts": {},
+  "sessions": {
+    "s_7f5f3a8797e94a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f4f60979-12a2-4c51-b4a9-7d27e2ff9aa6",
+        "model": "composer-2.5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

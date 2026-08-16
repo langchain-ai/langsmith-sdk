@@ -1,0 +1,21 @@
+js/src/utils/v2_migration.ts
+  s_00da43c60604db::t_b600dfacc8d67c 59-62
+python/langsmith/client.py
+  s_00da43c60604db::t_6a7a07babd43d1 5179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2eafbea80da6b8db4935835cd94505b292348318",
+  "prompts": {},
+  "sessions": {
+    "s_00da43c60604db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f69987a4-8bc2-439a-9e9c-6071a213cf27",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

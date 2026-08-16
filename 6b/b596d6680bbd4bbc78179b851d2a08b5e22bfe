@@ -1,0 +1,14 @@
+python/tests/integration_tests/test_async_client.py
+  h_53e10026eac609 253-254,271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6bb596d6680bbd4bbc78179b851d2a08b5e22bfe",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

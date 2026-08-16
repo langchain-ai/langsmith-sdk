@@ -1,0 +1,24 @@
+.github/workflows/ci.yml
+  s_dcd7340e735b57::t_045a6397e6b45f 743
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "06c84112db74ff474837efcd73f734cb2df5ebb9",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_dcd7340e735b57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25bcba52-61cd-455e-b6db-2e3a43b8a6b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

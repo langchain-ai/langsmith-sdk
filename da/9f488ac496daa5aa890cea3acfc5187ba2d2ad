@@ -1,0 +1,64 @@
+python/langsmith/_internal/_beta_decorator.py
+  s_238901bcab1a6a::t_41b4a668e5849a 43-44
+  s_238901bcab1a6a::t_2ef900e29e68f0 2-3,6,14-42
+  s_238901bcab1a6a::t_d86e9919592347 64-66,74,84
+python/tests/unit_tests/test_client.py
+  s_238901bcab1a6a::t_8d413965b530b3 7362-7363,7365-7367,7381
+  s_238901bcab1a6a::t_1bda6a7087fb5c 7388,7398-7399
+  s_238901bcab1a6a::t_8e7a67a9e9b697 7334
+  s_238901bcab1a6a::t_e7e97e09f533bc 42-44
+  s_238901bcab1a6a::t_b6e7c22abdb411 7332-7333,7335-7361,7364,7368-7380,7382-7387,7389-7397,7400-7417
+js/src/tests/evaluate_runner.test.ts
+  s_238901bcab1a6a::t_e4f0167de8e23b 848,888
+python/langsmith/beta/_evals.py
+  s_238901bcab1a6a::t_9eca50af351077 17-21
+  s_238901bcab1a6a::t_a65d962d8fd7d5 187-190
+js/src/utils/warn.ts
+  s_238901bcab1a6a::t_35d3d39039f784 3-17
+python/langsmith/client.py
+  s_238901bcab1a6a::t_19d2aa85827a72 7793-7795
+  s_238901bcab1a6a::t_67fdebbcff4103 4311-4323
+  s_238901bcab1a6a::t_c16a79bf817aa1 83-85
+  s_238901bcab1a6a::t_fab0a257c7ba87 4133-4137
+  s_238901bcab1a6a::t_2efc397addcc5f 5392-5409
+  s_238901bcab1a6a::t_b34c45171ae04c 7796-7802
+js/src/evaluation/evaluate_comparative.ts
+  s_238901bcab1a6a::t_1debbc82daefe3 46
+  s_238901bcab1a6a::t_1d68321a8f6756 47-49
+python/langsmith/evaluation/_runner.py
+  s_238901bcab1a6a::t_dd3071523efa5d 1182-1183,1185-1186,1188-1189,1191-1192
+  s_238901bcab1a6a::t_9a737e748d945c 47-50
+js/src/tests/client.test.ts
+  s_238901bcab1a6a::t_cde5dbb1abbe74 2102-2104
+  s_238901bcab1a6a::t_1301b0b784ce90 17
+  s_238901bcab1a6a::t_689634cc887f43 1997-1998
+  s_238901bcab1a6a::t_4d4c09cd06f62f 2036-2042,2044-2101,2105-2112
+  s_238901bcab1a6a::t_c62ecc89a4218c 2043
+python/tests/unit_tests/evaluation/test_runner.py
+  s_238901bcab1a6a::t_ed4fa3e72fb2ba 1790-1824
+  s_238901bcab1a6a::t_1db6161af6b2d6 13
+js/src/client.ts
+  s_238901bcab1a6a::t_71078055474441 3170-3171,3173
+  s_238901bcab1a6a::t_8d2b690f73413b 3592-3594
+  s_238901bcab1a6a::t_b96605bad50555 3237
+  s_238901bcab1a6a::t_bf2c8fcc8026ad 3162-3169,3172,3174-3176
+  s_238901bcab1a6a::t_2981d499c2b366 3366-3373,3376
+  s_238901bcab1a6a::t_2c05148ee2c104 3222,3224
+  s_238901bcab1a6a::t_420f20721fab92 3374-3375,3377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "da9f488ac496daa5aa890cea3acfc5187ba2d2ad",
+  "prompts": {},
+  "sessions": {
+    "s_238901bcab1a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2210c3d4-bb67-4722-abd1-b8240fb4d038",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

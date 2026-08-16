@@ -1,0 +1,43 @@
+.github/workflows/ci.yml
+  s_dcd7340e735b57::t_436e991fce1056 19-20
+  s_dcd7340e735b57::t_6b0c98e16374df 743-749
+  s_dcd7340e735b57::t_d7f8fa19397ae1 533-537,543-544,546-549,552-553,558
+  s_dcd7340e735b57::t_e3bef3c33508cd 618-627,631
+  s_dcd7340e735b57::t_49622348f23103 802
+  s_dcd7340e735b57::t_d69eea72197e09 587-588,592-593,597,599,601-602,604,607-610,612-613
+  s_dcd7340e735b57::t_54b4efc8b4829d 660-661,670-672,718-720
+  s_dcd7340e735b57::t_096541366b4ae1 696-702,708-709
+.github/actions/js-integration-tests/action.yml
+  s_dcd7340e735b57::t_fe5bc77014e576 11-16,27-37,67-68
+.github/actions/js-vitest-eval-test/action.yml
+  s_0705f3079646b0::t_d9d1faa61334c5 11-16,21-31,61-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ea72c15e04294cf90f09b83c68b8e1147a0e6031",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_0705f3079646b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "993df794-2f38-4f09-9646-efb7b37d4cc8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    },
+    "s_dcd7340e735b57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25bcba52-61cd-455e-b6db-2e3a43b8a6b7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

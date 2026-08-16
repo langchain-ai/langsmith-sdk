@@ -1,0 +1,19 @@
+js/src/tests/openai_agents_sdk.test.ts
+  s_312fb3e542ef61::t_8699cd46a05d8d 126-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "c7124f08405e3db4e227a8437eed8452e9414aee",
+  "prompts": {},
+  "sessions": {
+    "s_312fb3e542ef61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d111ae13-7844-42af-95ee-e4496a85ec30",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

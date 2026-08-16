@@ -1,0 +1,28 @@
+python/tests/unit_tests/evaluation/test_runner.py
+  s_04d07f9021b9f5::t_0c8132d526aaaf 1741
+  s_04d07f9021b9f5::t_eecb268ce09f2f 1745,1751,1755,1774
+python/langsmith/evaluation/_runner.py
+  s_04d07f9021b9f5::t_4c4a711a6f7792 1239-1240
+python/langsmith/client.py
+  s_04d07f9021b9f5::t_0b3409529cf0cf 933
+  s_04d07f9021b9f5::t_c1f539d2868069 1473
+  s_04d07f9021b9f5::t_7725d20decba8f 116
+  s_04d07f9021b9f5::t_b3b0828aae48d2 1498-1513
+  s_04d07f9021b9f5::t_6f3d3e77ba4df0 921
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "670710f25e037ce32af0dcfdf771008b51daf358",
+  "prompts": {},
+  "sessions": {
+    "s_04d07f9021b9f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2aa077e8-e816-4ee1-9e83-587e5177e38f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

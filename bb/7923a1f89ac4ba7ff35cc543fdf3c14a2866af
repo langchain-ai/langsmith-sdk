@@ -1,0 +1,24 @@
+js/src/tests/wrapped_anthropic_mcp.test.ts
+  s_39a11d0044d84e::t_349b5062cc93e5 1-140
+js/src/wrappers/anthropic.ts
+  s_39a11d0044d84e::t_363fdfa959fcc9 390,393-398,401-403
+  s_39a11d0044d84e::t_e842e87568a271 434,518,564
+  s_39a11d0044d84e::t_77674db78016d3 13,17-53
+  s_39a11d0044d84e::t_26a17934f72e35 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bb7923a1f89ac4ba7ff35cc543fdf3c14a2866af",
+  "prompts": {},
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

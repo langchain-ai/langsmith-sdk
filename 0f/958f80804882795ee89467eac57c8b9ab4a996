@@ -1,0 +1,19 @@
+python/tests/integration_tests/test_async_client.py
+  s_75cbef382e8efa::t_bad2d9c6c26697 55,62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "0f958f80804882795ee89467eac57c8b9ab4a996",
+  "prompts": {},
+  "sessions": {
+    "s_75cbef382e8efa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1ec2d9f1-8bcc-486d-b975-a5e45acb890c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

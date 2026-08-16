@@ -1,0 +1,14 @@
+js/src/client.ts
+  h_f1ecc43c8f43eb 5124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e4689e0aec58d17eb69c03e423a91438e9381690",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

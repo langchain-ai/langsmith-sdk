@@ -1,0 +1,19 @@
+python/tests/unit_tests/test_replica_endpoints.py
+  s_00da43c60604db::t_99959e877efbc8 891
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ddb8df007a4f94586b8f3f5172673d444d34553a",
+  "prompts": {},
+  "sessions": {
+    "s_00da43c60604db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f69987a4-8bc2-439a-9e9c-6071a213cf27",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

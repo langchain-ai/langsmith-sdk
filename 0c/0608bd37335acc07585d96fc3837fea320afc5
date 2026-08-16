@@ -1,0 +1,25 @@
+js/src/wrappers/openai.ts
+  s_ff080844706851::t_73ed28168a999c 24
+js/src/tests/wrapped_openai_agent_type.test.ts
+  s_ff080844706851::t_31fe52ec89b586 40
+python/langsmith/wrappers/_openai.py
+  s_ff080844706851::t_eb9b4b4a8d9a6c 158,167-169
+python/tests/unit_tests/wrappers/test_openai_processing.py
+  s_ff080844706851::t_12a8d627245149 15,91,101,122-124,127,149,162,189-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "0c0608bd37335acc07585d96fc3837fea320afc5",
+  "prompts": {},
+  "sessions": {
+    "s_ff080844706851": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40df46e9-1a8a-41fc-8b66-bb84f7803d70",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Yashaswi Bathula <yashaswi.bathula@langchain.dev>"
+    }
+  }
+}

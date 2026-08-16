@@ -1,0 +1,36 @@
+python/langsmith/evaluation/_runner.py
+  s_04d07f9021b9f5::t_45f272c4c674bd 898
+  s_04d07f9021b9f5::t_02389952e707c0 510
+  s_04d07f9021b9f5::t_c905107d3e6b73 1172-1176,1202-1225,1227,1230,1232-1234,1236-1243,1245,1248-1261,1266-1267
+  s_04d07f9021b9f5::t_04364f6ba78510 1201
+  s_04d07f9021b9f5::t_4a5959cc7084e8 1231,1235
+  s_04d07f9021b9f5::t_9d4b7a940e3715 1268-1284
+  s_04d07f9021b9f5::t_34c776a921d9a4 8
+  s_04d07f9021b9f5::t_e94ce68a90326f 1244,1246-1247
+  s_04d07f9021b9f5::t_9a30d4b98ea005 1226,1228-1229
+  s_04d07f9021b9f5::t_86be3348610416 1171
+  s_04d07f9021b9f5::t_92ef3f61932413 1262-1265
+  s_04d07f9021b9f5::t_06debbf3eddc21 5
+  s_04d07f9021b9f5::t_94b4705eb7cffe 1285-1286
+python/tests/unit_tests/evaluation/test_runner.py
+  s_04d07f9021b9f5::t_444981cf6fa68f 1660-1661,1691,1712-1713,1731-1732,1736,1739-1743,1772
+  s_04d07f9021b9f5::t_32a40f1b252034 15
+  s_04d07f9021b9f5::t_d0eeb86ef77c2b 30-32
+  s_04d07f9021b9f5::t_468426fcb4796e 1650-1659,1662-1690,1692-1711,1714-1730,1733-1735,1737-1738,1744-1771,1773-1799
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "14eb6d45a76756a5aca0667e31e78f6cfa76924b",
+  "prompts": {},
+  "sessions": {
+    "s_04d07f9021b9f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2aa077e8-e816-4ee1-9e83-587e5177e38f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

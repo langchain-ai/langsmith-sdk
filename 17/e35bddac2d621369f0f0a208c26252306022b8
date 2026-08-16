@@ -1,0 +1,64 @@
+python/tests/unit_tests/evaluation/test_runner.py
+  s_238901bcab1a6a::t_1db6161af6b2d6 13
+  s_238901bcab1a6a::t_ed4fa3e72fb2ba 1790-1824
+js/src/tests/client.test.ts
+  s_238901bcab1a6a::t_1301b0b784ce90 17
+  s_238901bcab1a6a::t_689634cc887f43 1996-1997
+  s_238901bcab1a6a::t_c62ecc89a4218c 2042
+  s_238901bcab1a6a::t_cde5dbb1abbe74 2101-2103
+  s_238901bcab1a6a::t_4d4c09cd06f62f 2035-2041,2043-2100,2104-2111
+js/src/tests/evaluate_runner.test.ts
+  s_238901bcab1a6a::t_e4f0167de8e23b 848,888
+python/tests/unit_tests/test_client.py
+  s_238901bcab1a6a::t_b6e7c22abdb411 7129-7130,7132-7158,7161,7165-7177,7179-7184,7186-7194,7197-7214
+  s_238901bcab1a6a::t_8e7a67a9e9b697 7131
+  s_238901bcab1a6a::t_1bda6a7087fb5c 7185,7195-7196
+  s_238901bcab1a6a::t_459a4b39dd9384 40-42
+  s_238901bcab1a6a::t_8d413965b530b3 7159-7160,7162-7164,7178
+python/langsmith/_internal/_beta_decorator.py
+  s_238901bcab1a6a::t_d86e9919592347 64-66,74,84
+  s_238901bcab1a6a::t_2ef900e29e68f0 2-3,6,14-42
+  s_238901bcab1a6a::t_41b4a668e5849a 43-44
+python/langsmith/client.py
+  s_238901bcab1a6a::t_fab0a257c7ba87 4045-4049
+  s_238901bcab1a6a::t_67fdebbcff4103 4223-4235
+  s_238901bcab1a6a::t_c16a79bf817aa1 83-85
+  s_238901bcab1a6a::t_2efc397addcc5f 5304-5321
+  s_238901bcab1a6a::t_19d2aa85827a72 7705-7707
+  s_238901bcab1a6a::t_b34c45171ae04c 7708-7714
+python/langsmith/evaluation/_runner.py
+  s_238901bcab1a6a::t_dd3071523efa5d 1182-1183,1185-1186,1188-1189,1191-1192
+  s_238901bcab1a6a::t_9a737e748d945c 47-50
+js/src/evaluation/evaluate_comparative.ts
+  s_238901bcab1a6a::t_1d68321a8f6756 47-49
+  s_238901bcab1a6a::t_1debbc82daefe3 46
+js/src/utils/warn.ts
+  s_238901bcab1a6a::t_35d3d39039f784 3-17
+js/src/client.ts
+  s_238901bcab1a6a::t_b96605bad50555 3048
+  s_238901bcab1a6a::t_71078055474441 2981-2982,2984
+  s_238901bcab1a6a::t_2981d499c2b366 3177-3184,3187
+  s_238901bcab1a6a::t_420f20721fab92 3185-3186,3188
+  s_238901bcab1a6a::t_2c05148ee2c104 3033,3035
+  s_238901bcab1a6a::t_8d2b690f73413b 3403-3405
+  s_238901bcab1a6a::t_bf2c8fcc8026ad 2973-2980,2983,2985-2987
+python/langsmith/beta/_evals.py
+  s_238901bcab1a6a::t_9eca50af351077 17-21
+  s_238901bcab1a6a::t_a65d962d8fd7d5 187-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "17e35bddac2d621369f0f0a208c26252306022b8",
+  "prompts": {},
+  "sessions": {
+    "s_238901bcab1a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2210c3d4-bb67-4722-abd1-b8240fb4d038",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

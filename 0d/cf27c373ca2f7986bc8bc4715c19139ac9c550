@@ -1,0 +1,22 @@
+python/langsmith/run_helpers.py
+  s_7bc7bd68a2946c::t_d92855c7575730 1740-1741,1743-1753
+python/tests/unit_tests/test_run_helpers.py
+  s_7bc7bd68a2946c::t_2f08d2fd4e44f6 490,494-497
+  s_7bc7bd68a2946c::t_7feb21bf7d2a6e 498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "0dcf27c373ca2f7986bc8bc4715c19139ac9c550",
+  "prompts": {},
+  "sessions": {
+    "s_7bc7bd68a2946c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b2e25b0-7569-4b6d-b1fe-8e27e45caed7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+python/langsmith/wrappers/_gemini.py
+  h_f1ecc43c8f43eb 22,54-138,140-144
+python/tests/unit_tests/wrappers/test_gemini_processing.py
+  h_f1ecc43c8f43eb 3-5,7,742-969
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2e733d89fbf32b3d3734c78104068f5357b8286b",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
