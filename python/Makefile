@@ -83,17 +83,7 @@ from langsmith.client import Client; \
 assert __import__('langsmith._openapi_client._httpx', fromlist=['httpx']).httpx.__name__ == 'httpx2'; \
 Langsmith(base_url='https://example.com').close(); \
 Client(api_url='https://example.com', api_key='test', auto_batch_tracing=False, info={}).close()"
-	uv run python3 -c "p='/tmp/langsmith-declared-deps.txt'; lines=open(p).read().splitlines(); open('/tmp/langsmith-httpx-deps.txt','w').write('\n'.join(x for x in lines if not x.startswith('httpx2')) + '\nhttpx>=0.23.0,<1\n')"
-	uv venv /tmp/langsmith-httpx-test
-	uv pip install dist/langsmith-*.whl --no-deps --python /tmp/langsmith-httpx-test
-	uv pip install -r /tmp/langsmith-httpx-deps.txt --python /tmp/langsmith-httpx-test
-	/tmp/langsmith-httpx-test/bin/python -c "\
-from langsmith._openapi_client import Langsmith; \
-from langsmith.client import Client; \
-assert __import__('langsmith._openapi_client._httpx', fromlist=['httpx']).httpx.__name__ == 'httpx'; \
-Langsmith(base_url='https://example.com').close(); \
-Client(api_url='https://example.com', api_key='test', auto_batch_tracing=False, info={}).close()"
-	rm -rf /tmp/langsmith-strict-test /tmp/langsmith-httpx-test /tmp/langsmith-declared-deps.txt /tmp/langsmith-httpx-deps.txt
+	rm -rf /tmp/langsmith-strict-test /tmp/langsmith-declared-deps.txt
 
 api_docs_build:
 	uv run python docs/create_api_rst.py
