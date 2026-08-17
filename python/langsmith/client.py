@@ -1821,7 +1821,8 @@ class Client:
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": f"langsmith-py/{langsmith.__version__}",
+            # `_httpx.__name__` is `httpx2` or `httpx`; no version, to keep cardinality low.
+            "User-Agent": f"langsmith-py/{langsmith.__version__}-{_httpx.__name__}",
             "Accept": "application/json",
         }
         # Merge custom headers first so they don't override required headers
