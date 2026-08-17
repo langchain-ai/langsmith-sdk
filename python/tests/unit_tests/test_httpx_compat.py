@@ -9,6 +9,14 @@ def _info_response(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"version": "test"})
 
 
+def test_user_agent_names_the_backend() -> None:
+    from langsmith import AsyncClient, Client
+
+    suffix = f"-{httpx.__name__}"
+    assert Client(api_key="test")._compute_headers()["User-Agent"].endswith(suffix)
+    assert AsyncClient(api_key="test")._compute_headers()["User-Agent"].endswith(suffix)
+
+
 def test_prefers_httpx2_for_sync_requests() -> None:
     assert httpx.__name__ == "httpx2"
     with httpx.Client(transport=httpx.MockTransport(_info_response)) as http_client:

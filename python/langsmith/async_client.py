@@ -20,6 +20,7 @@ from typing import (
     cast,
 )
 
+import langsmith
 import langsmith._openapi_client as _langsmith_api_module
 from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import (
@@ -108,6 +109,7 @@ class AsyncClient:
         headers = {**self._custom_headers}
         # Required headers that should not be overridden
         headers["Content-Type"] = "application/json"
+        headers["User-Agent"] = f"langsmith-py/{langsmith.__version__}-{httpx.__name__}"
         if self._api_key:
             headers[ls_client.X_API_KEY] = self._api_key
         elif self._profile_auth_headers:
