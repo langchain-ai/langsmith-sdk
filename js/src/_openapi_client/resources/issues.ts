@@ -21,7 +21,7 @@ export class Issues extends APIResource {
    * **Beta:** This endpoint is in active development and may change without notice.
    *
    * Returns issues for the authenticated tenant, optionally filtered by session,
-   * status, severity, tag, or last modified time.
+   * status, severity, tag, linked trace, or last modified time.
    */
   list(
     query: IssueListParams | null | undefined = {},
@@ -130,6 +130,11 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
    * Filter by tag (exact match)
    */
   tag?: string;
+
+  /**
+   * Return only issues with a linked run in this trace
+   */
+  trace_id?: string;
 
   /**
    * Return only issues updated at or after this RFC3339 timestamp

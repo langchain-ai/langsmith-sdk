@@ -32,5 +32,8 @@ class IssueListParams(TypedDict, total=False):
     tag: str
     """Filter by tag (exact match)"""
 
+    trace_id: str
+    """Return only issues with a linked run in this trace"""
+
     updated_at: str
     """Return only issues updated at or after this RFC3339 timestamp"""
