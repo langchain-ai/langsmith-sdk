@@ -4,6 +4,25 @@ This repo contains the Python and JS clients for the LangSmith platform.
 
 See [`python/AGENTS.md`](python/AGENTS.md) for Python-specific lint/test instructions.
 
+## Continuous benchmarks (CodSpeed)
+
+Both SDKs have a benchmark suite that runs on every pull request through
+[CodSpeed](https://codspeed.io) (`.github/workflows/codspeed.yml`), which measures
+CPU work in a simulated environment instead of wall time, so results are
+comparable across CI runs.
+
+- **Python** — `python/tests/benchmarks/*.py`, using
+  [`pytest-codspeed`](https://github.com/CodSpeedHQ/pytest-codspeed). Run them
+  locally with `make benchmark-codspeed` from the `python/` directory.
+- **JS** — `js/src/tests/benchmarks/*.bench.ts`, using `vitest bench` and the
+  CodSpeed vitest plugin. Run them locally with `pnpm bench` from the `js/`
+  directory.
+
+Benchmarks must never perform network I/O: clients are constructed with a stubbed
+session/fetch implementation so only SDK work is measured. The pre-existing
+`pyperf` suite in `python/bench/` and the event-loop benchmark in
+`js/src/tests/perf.int.test.ts` are unchanged.
+
 ## Auto-generated OpenAPI client
 
 The directories `python/langsmith/_openapi_client/` and `js/src/_openapi_client/` are **auto-generated** from the LangSmith OpenAPI spec via [Stainless](https://www.stainlessapi.com/). Do not edit files in these directories manually — your changes will be overwritten on the next sync.
