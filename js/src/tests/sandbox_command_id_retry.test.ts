@@ -68,7 +68,6 @@ function makeSandbox() {
     getApiKey: () => "test-key",
     getDefaultHeaders: () => ({}),
     getRequestHeaders: async () => ({ "x-api-key": "test-key" }),
-    getSandboxRuntimeUrl: () => "https://api.example.com/api/v2/sandboxes/sb",
   };
   return new Sandbox(
     {

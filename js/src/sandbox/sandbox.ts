@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 import { uuid7 } from "../uuid.js";
 import {
+  LangSmithDataplaneNotConfiguredError,
   LangSmithSandboxRetryableConnectionError,
   LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
@@ -48,7 +49,7 @@ import {
 export class Sandbox {
   /** Display name (can be updated). */
   readonly name: string;
-  /** Server-provided runtime URL retained as response metadata. */
+  /** URL for data plane operations (file I/O, command execution). */
   dataplane_url?: string;
   /** Provisioning status ("provisioning", "ready", "failed", "stopped"). */
   status?: string;
@@ -108,9 +109,24 @@ export class Sandbox {
     this._client = client;
   }
 
-  /** Return the main client's control-plane URL for this sandbox. */
-  private runtimeUrl(): string {
-    return this._client.getSandboxRuntimeUrl(this.id ?? this.name);
+  /**
+   * Return the dataplane URL.
+   *
+   * The client does not gate on lifecycle status: a stopped sandbox is resumed
+   * by the platform when the dataplane request arrives, so only the presence of
+   * a URL is required here. A genuinely not-ready box surfaces the server's
+   * LangSmithSandboxNotReadyError from the request itself.
+   *
+   * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
+   */
+  private requireDataplaneUrl(): string {
+    if (!this.dataplane_url) {
+      throw new LangSmithDataplaneNotConfiguredError(
+        `Sandbox '${this.name}' does not have a dataplane_url configured. ` +
+          "Runtime operations require a dataplane URL.",
+      );
+    }
+    return this.dataplane_url;
   }
 
   /**
@@ -238,7 +254,7 @@ export class Sandbox {
       ttlSeconds,
       pty,
     } = options;
-    const runtimeUrl = this.runtimeUrl();
+    const dataplaneUrl = this.requireDataplaneUrl();
 
     const clientHeaders = await this._client.getRequestHeaders();
 
@@ -253,7 +269,7 @@ export class Sandbox {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const [stream, control] = await runWsStream(
-        runtimeUrl,
+        dataplaneUrl,
         undefined,
         command,
         {
@@ -324,7 +340,8 @@ export class Sandbox {
     options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {},
   ): Promise<ExecutionResult> {
     const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
-    const url = `${this.runtimeUrl()}/execute`;
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/execute`;
 
     const payload: Record<string, unknown> = {
       command,
@@ -376,11 +393,11 @@ export class Sandbox {
     } = {},
   ): Promise<CommandHandle> {
     const { stdoutOffset = 0, stderrOffset = 0 } = options;
-    const runtimeUrl = this.runtimeUrl();
+    const dataplaneUrl = this.requireDataplaneUrl();
 
     const clientHeaders = await this._client.getRequestHeaders();
     const [stream, control] = await reconnectWsStream(
-      runtimeUrl,
+      dataplaneUrl,
       undefined,
       commandId,
       {
@@ -416,7 +433,8 @@ export class Sandbox {
     content: string | Uint8Array,
     timeout = 60,
   ): Promise<void> {
-    const url = `${this.runtimeUrl()}/upload?path=${encodeURIComponent(path)}`;
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/upload?path=${encodeURIComponent(path)}`;
 
     // Ensure content is bytes for multipart upload
     const bytes =
@@ -454,7 +472,8 @@ export class Sandbox {
    * ```
    */
   async read(path: string, timeout = 60): Promise<Uint8Array> {
-    const url = `${this.runtimeUrl()}/download?path=${encodeURIComponent(path)}`;
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/download?path=${encodeURIComponent(path)}`;
 
     const response = await this._client._fetch(url, {
       method: "GET",
@@ -489,7 +508,7 @@ export class Sandbox {
   /**
    * Start a stopped sandbox and wait until ready.
    *
-   * Updates this sandbox's status and response metadata in place.
+   * Updates this sandbox's status and dataplane_url in place.
    *
    * @param timeout - Timeout in seconds when waiting for ready. Default: 120.
    */
@@ -504,6 +523,8 @@ export class Sandbox {
    */
   async stop(): Promise<void> {
     await this._client.stopSandbox(this.name);
+    // dataplane_url stays set: it is stable across stop/start and a request on
+    // it resumes the sandbox.
     this.status = "stopped";
   }
 

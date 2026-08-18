@@ -108,10 +108,10 @@ async function ensureWs(): Promise<{
 // =============================================================================
 
 /**
- * Convert a sandbox runtime HTTP URL to a WebSocket URL for /execute/ws.
+ * Convert a dataplane HTTP URL to a WebSocket URL for /execute/ws.
  */
-export function buildWsUrl(runtimeUrl: string): string {
-  const wsUrl = runtimeUrl
+export function buildWsUrl(dataplaneUrl: string): string {
+  const wsUrl = dataplaneUrl
     .replace("https://", "wss://")
     .replace("http://", "ws://");
   return `${wsUrl}/execute/ws`;
@@ -398,7 +398,7 @@ async function* readWsMessages(
  * data arrives in addition to yielding the messages.
  */
 export async function runWsStream(
-  runtimeUrl: string,
+  dataplaneUrl: string,
   apiKey: string | undefined,
   command: string,
   options: WsRunOptions = {},
@@ -419,7 +419,7 @@ export async function runWsStream(
     openTimeout = WS_OPEN_TIMEOUT,
   } = options;
 
-  const wsUrl = buildWsUrl(runtimeUrl);
+  const wsUrl = buildWsUrl(dataplaneUrl);
   const headers = buildAuthHeaders(apiKey, extraHeaders);
   const control = new WSStreamControl();
 
@@ -486,7 +486,7 @@ export async function runWsStream(
  * rather than dropped.
  */
 export async function reconnectWsStream(
-  runtimeUrl: string,
+  dataplaneUrl: string,
   apiKey: string | undefined,
   commandId: string,
   options: {
@@ -497,7 +497,7 @@ export async function reconnectWsStream(
 ): Promise<[AsyncIterableIterator<WsMessage>, WSStreamControl]> {
   const { stdoutOffset = 0, stderrOffset = 0, headers: extraHeaders } = options;
 
-  const wsUrl = buildWsUrl(runtimeUrl);
+  const wsUrl = buildWsUrl(dataplaneUrl);
   const headers = buildAuthHeaders(apiKey, extraHeaders);
   const control = new WSStreamControl();
 
