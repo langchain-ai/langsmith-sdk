@@ -90,6 +90,7 @@ class AsyncSandboxClient:
         api_endpoint: Optional[str] = None,
         timeout: float = 10.0,
         api_key: Optional[str] = None,
+        workspace_id: Optional[str] = None,
         max_retries: int = 3,
         headers: Optional[Mapping[str, str]] = None,
     ):
@@ -101,6 +102,10 @@ class AsyncSandboxClient:
             timeout: Default HTTP timeout in seconds.
             api_key: API key for authentication. If not provided, uses
                      LANGSMITH_API_KEY environment variable.
+            workspace_id: Workspace the requests act on, sent as ``X-Tenant-Id``.
+                          If not provided, uses the LANGSMITH_WORKSPACE_ID
+                          environment variable. Required for org-scoped API keys,
+                          which the server rejects when no workspace is named.
             max_retries: Maximum number of retries for transient errors (502, 503,
                          504), rate limits (429), and connection failures. Set to 0
                          to disable retries. Default: 3.
@@ -112,9 +117,16 @@ class AsyncSandboxClient:
         self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
         resolved_api_key = api_key or _get_default_api_key()
         self._api_key = resolved_api_key
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
         self._timeout = timeout
         self._max_retries = max_retries
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
+        # Carried on _default_headers rather than the httpx client so the
+        # WebSocket upgrade and the registries client are scoped the same way.
+        if self._workspace_id and not any(
+            name.lower() == "x-tenant-id" for name in self._default_headers
+        ):
+            self._default_headers["X-Tenant-Id"] = self._workspace_id
         client_headers: dict[str, str] = {}
         if resolved_api_key:
             client_headers["X-Api-Key"] = resolved_api_key
@@ -192,6 +204,7 @@ class AsyncSandboxClient:
             api_endpoint=self._base_url,
             timeout=self._timeout,
             api_key=self._api_key,
+            workspace_id=self._workspace_id,
             max_retries=self._max_retries,
             headers=self._default_headers or None,
         )
