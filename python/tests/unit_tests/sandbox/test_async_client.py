@@ -1,10 +1,12 @@
 """Tests for AsyncSandboxClient."""
 
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from pytest_httpx import HTTPXMock
 
+from langsmith import utils as ls_utils
 from langsmith.sandbox import (
     AsyncSandboxClient,
     AsyncServiceURL,
@@ -119,6 +121,40 @@ class TestAsyncSandboxClientInit:
             # merge_headers normalizes names to lowercase.
             assert client._ws_default_headers(None) == {"x-service-key": "svc-jwt"}
             await client.aclose()
+
+    async def test_workspace_id_from_env_sets_tenant_header(self):
+        """An org-scoped key is rejected unless the request names a workspace."""
+        with patch.dict(os.environ, {"LANGSMITH_WORKSPACE_ID": "env-ws"}):
+            ls_utils.get_env_var.cache_clear()
+            client = AsyncSandboxClient(
+                api_endpoint="http://localhost:8080", api_key="api-key"
+            )
+        ls_utils.get_env_var.cache_clear()
+        assert client._http.headers.get("X-Tenant-Id") == "env-ws"
+        assert client._default_headers == {"X-Tenant-Id": "env-ws"}
+        await client.aclose()
+
+    async def test_tenant_header_overrides_workspace_id(self):
+        """An explicitly passed header wins, whatever its casing."""
+        client = AsyncSandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            workspace_id="ws-from-arg",
+            headers={"x-tenant-id": "header-ws"},
+        )
+        assert client._http.headers.get("X-Tenant-Id") == "header-ws"
+        await client.aclose()
+
+    async def test_to_sync_carries_workspace_id(self):
+        client = AsyncSandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            workspace_id="ws-1",
+        )
+        sync_client = client.to_sync()
+        assert sync_client._http.headers.get("X-Tenant-Id") == "ws-1"
+        sync_client.close()
+        await client.aclose()
 
     async def test_max_retries_default(self):
         """Test default max_retries is 3."""

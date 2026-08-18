@@ -1,10 +1,12 @@
 """Tests for SandboxClient."""
 
+import os
 from unittest.mock import patch
 
 import pytest
 from pytest_httpx import HTTPXMock
 
+from langsmith import utils as ls_utils
 from langsmith.sandbox import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -124,6 +126,64 @@ class TestSandboxClientInit:
         assert client._http.headers.get("X-Service-Key") == "svc-jwt"
         assert client._http.headers.get("X-Api-Key") == "api-key"
         assert client._default_headers == {"X-Service-Key": "svc-jwt"}
+        client.close()
+
+    def test_workspace_id_from_env_sets_tenant_header(self):
+        """An org-scoped key is rejected unless the request names a workspace."""
+        with patch.dict(os.environ, {"LANGSMITH_WORKSPACE_ID": "env-ws"}):
+            ls_utils.get_env_var.cache_clear()
+            client = SandboxClient(
+                api_endpoint="http://localhost:8080", api_key="api-key"
+            )
+        ls_utils.get_env_var.cache_clear()
+        assert client._http.headers.get("X-Tenant-Id") == "env-ws"
+        # The WS upgrade and the registries client read _default_headers.
+        assert client._default_headers == {"X-Tenant-Id": "env-ws"}
+        client.close()
+
+    def test_explicit_workspace_id_overrides_env(self):
+        with patch.dict(os.environ, {"LANGSMITH_WORKSPACE_ID": "env-ws"}):
+            ls_utils.get_env_var.cache_clear()
+            client = SandboxClient(
+                api_endpoint="http://localhost:8080",
+                api_key="api-key",
+                workspace_id="explicit-ws",
+            )
+        ls_utils.get_env_var.cache_clear()
+        assert client._http.headers.get("X-Tenant-Id") == "explicit-ws"
+        client.close()
+
+    def test_tenant_header_overrides_workspace_id(self):
+        """An explicitly passed header wins, whatever its casing."""
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            workspace_id="ws-from-arg",
+            headers={"x-tenant-id": "header-ws"},
+        )
+        assert client._http.headers.get("X-Tenant-Id") == "header-ws"
+        assert client._default_headers == {"x-tenant-id": "header-ws"}
+        client.close()
+
+    def test_no_workspace_id_sends_no_tenant_header(self):
+        with patch.dict(os.environ, {}, clear=True):
+            ls_utils.get_env_var.cache_clear()
+            client = SandboxClient(
+                api_endpoint="http://localhost:8080", api_key="api-key"
+            )
+        ls_utils.get_env_var.cache_clear()
+        assert client._http.headers.get("X-Tenant-Id") is None
+        assert client._default_headers == {}
+        client.close()
+
+    def test_to_async_carries_workspace_id(self):
+        client = SandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="api-key",
+            workspace_id="ws-1",
+        )
+        async_client = client.to_async()
+        assert async_client._http.headers.get("X-Tenant-Id") == "ws-1"
         client.close()
 
     def test_ws_default_headers_merges_per_request(self):
