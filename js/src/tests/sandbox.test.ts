@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
+import { Client } from "../client.js";
 import { SandboxClient } from "../sandbox/client.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { CommandHandle } from "../sandbox/command_handle.js";
@@ -62,12 +63,47 @@ const createMockFetch = (response: any) =>
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(response);
 
+const toResponse = async (response: any): Promise<Response> => {
+  if (response instanceof Response) {
+    return response;
+  }
+  let body: BodyInit | null = null;
+  if (response?.arrayBuffer) {
+    body = await response.arrayBuffer();
+  } else if (response?.json) {
+    body = JSON.stringify(await response.json());
+  } else if (response?.text) {
+    body = await response.text();
+  }
+  const status = response?.status ?? (response?.ok === false ? 500 : 200);
+  return new Response(status === 204 || status === 304 ? null : body, {
+    status,
+    headers: response?.headers,
+  });
+};
+
+const createSandboxClientWithMock = (mockFetch: any): SandboxClient => {
+  const mainClient = new Client({
+    apiUrl: "https://api.example.com",
+    apiKey: "test-key",
+    autoBatchTracing: false,
+    fetchImplementation: async (input, init) =>
+      toResponse(await mockFetch(input, init)),
+  });
+  mainClient._getOpenAPIClient().maxRetries = 0;
+  return new SandboxClient({
+    client: mainClient,
+    apiEndpoint: "https://api.example.com/v2/sandboxes",
+  });
+};
+
 // Helper to create a mock SandboxClient with the required methods
 const createMockClient = (overrides: Record<string, any> = {}) =>
   ({
     _fetch: createMockFetch({}),
     getApiKey: () => "test-key",
     getDefaultHeaders: () => ({}),
+    getRequestHeaders: async () => ({ "x-api-key": "test-key" }),
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
@@ -540,6 +576,93 @@ describe("sandbox proxy config helpers", () => {
 
 describe("SandboxClient", () => {
   describe("constructor", () => {
+    it("reuses a main Client endpoint and request pipeline", async () => {
+      let requestUrl: string | undefined;
+      let requestHeaders: Headers | undefined;
+      const mainClient = new Client({
+        apiUrl: "https://api.example.com/api/v1",
+        apiKey: "main-key",
+        workspaceId: "workspace-123",
+        headers: { "X-Custom-Header": "custom-value" },
+        fetchImplementation: async (input, init) => {
+          requestUrl = input.toString();
+          requestHeaders = new Headers(init?.headers);
+          return new Response(JSON.stringify({ sandboxes: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      });
+
+      const client = new SandboxClient({ client: mainClient });
+      await expect(client.listSandboxes()).resolves.toEqual([]);
+
+      expect(requestUrl).toBe("https://api.example.com/api/v2/sandboxes/boxes");
+      expect(requestHeaders?.get("x-api-key")).toBe("main-key");
+      expect(requestHeaders?.get("x-tenant-id")).toBe("workspace-123");
+      expect(requestHeaders?.get("x-custom-header")).toBe("custom-value");
+    });
+
+    it("exposes the main Client auth and workspace headers for WebSockets", async () => {
+      const mainClient = new Client({
+        apiUrl: "https://api.example.com",
+        apiKey: "main-key",
+        workspaceId: "workspace-123",
+        headers: { "X-Custom-Header": "custom-value" },
+      });
+      const client = new SandboxClient({ client: mainClient });
+
+      await expect(client.getRequestHeaders()).resolves.toEqual(
+        expect.objectContaining({
+          "x-api-key": "main-key",
+          "x-tenant-id": "workspace-123",
+          "x-custom-header": "custom-value",
+        }),
+      );
+    });
+
+    it("maps main Client transport failures to sandbox connection errors", async () => {
+      const mainClient = new Client({
+        apiUrl: "https://api.example.com",
+        apiKey: "main-key",
+        fetchImplementation: async () => {
+          throw new TypeError("network unavailable");
+        },
+      });
+      mainClient._getOpenAPIClient().maxRetries = 0;
+      const client = new SandboxClient({ client: mainClient });
+
+      await expect(client.listSandboxes()).rejects.toThrow(
+        LangSmithSandboxConnectionError,
+      );
+      await expect(client.listSandboxes()).rejects.toThrow(
+        /network unavailable/,
+      );
+    });
+
+    it.each([-1, 1.5, Number.NaN])(
+      "rejects invalid maxRetries values (%s)",
+      (maxRetries) => {
+        expect(
+          () =>
+            new SandboxClient({
+              apiEndpoint: "https://api.example.com/v2/sandboxes",
+              maxRetries,
+            }),
+        ).toThrow(/maxRetries must be a non-negative integer or Infinity/);
+      },
+    );
+
+    it("continues to support infinite retries when explicitly requested", () => {
+      expect(
+        () =>
+          new SandboxClient({
+            apiEndpoint: "https://api.example.com/v2/sandboxes",
+            maxRetries: Number.POSITIVE_INFINITY,
+          }),
+      ).not.toThrow();
+    });
+
     it("should trim trailing slash from endpoint", () => {
       const client = new SandboxClient({
         apiEndpoint: "https://custom.api.com/sandboxes/",
@@ -680,6 +803,44 @@ describe("Sandbox", () => {
       expect(result.stderr).toBe("");
       expect(result.exit_code).toBe(0);
       expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps an absolute dataplane URL on the main Client transport", async () => {
+      let requestUrl: string | undefined;
+      let requestHeaders: Headers | undefined;
+      const mainClient = new Client({
+        apiUrl: "https://api.example.com",
+        apiKey: "main-key",
+        workspaceId: "workspace-123",
+        fetchImplementation: async (input, init) => {
+          requestUrl = input.toString();
+          requestHeaders = new Headers(init?.headers);
+          return new Response(
+            JSON.stringify({ stdout: "ok\n", stderr: "", exit_code: 0 }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        },
+      });
+      const client = new SandboxClient({ client: mainClient });
+      const sandbox = new Sandbox(
+        {
+          name: "test-sandbox",
+          dataplane_url: "https://dataplane.example.com/sandbox-123",
+        },
+        client,
+      );
+      forceHttpFallback(sandbox);
+
+      await expect(sandbox.run("echo ok")).resolves.toEqual({
+        stdout: "ok\n",
+        stderr: "",
+        exit_code: 0,
+      });
+      expect(requestUrl).toBe(
+        "https://dataplane.example.com/sandbox-123/execute",
+      );
+      expect(requestHeaders?.get("x-api-key")).toBe("main-key");
+      expect(requestHeaders?.get("x-tenant-id")).toBe("workspace-123");
     });
 
     it("should pass environment variables and cwd to command", async () => {
@@ -848,15 +1009,7 @@ describe("Sandbox", () => {
 
 describe("SandboxClient - createSandbox", () => {
   // Helper to create a SandboxClient with a mocked fetch
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("should send wait_for_ready: true and include timeout by default", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
@@ -1205,15 +1358,7 @@ describe("validateTtl", () => {
 });
 
 describe("SandboxClient - updateSandbox", () => {
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("should PATCH retention fields when provided in options", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
@@ -1272,21 +1417,13 @@ describe("SandboxClient - updateSandbox", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/boxes/sb-1");
-    expect(init.method).toBeUndefined();
+    expect(init.method).toBe("GET");
     expect(sb.name).toBe("sb-1");
   });
 });
 
 describe("SandboxClient - getSandboxStatus", () => {
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("should return ResourceStatus", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
@@ -1318,15 +1455,7 @@ describe("SandboxClient - getSandboxStatus", () => {
 });
 
 describe("SandboxClient - waitForSandbox", () => {
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("should poll until ready and return sandbox", async () => {
     let callCount = 0;
@@ -1936,15 +2065,7 @@ describe("CommandHandle", () => {
 });
 
 describe("SandboxClient - createSandbox (snapshotId)", () => {
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("should send snapshot_id in the request body", async () => {
     const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
@@ -2056,15 +2177,7 @@ describe("SandboxClient - createSandbox (snapshotId)", () => {
 });
 
 describe("SandboxClient - snapshot operations", () => {
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("createSnapshot should POST and poll until ready", async () => {
     const mockFetch = jest
@@ -2429,15 +2542,7 @@ describe("SandboxClient - snapshot operations", () => {
 });
 
 describe("SandboxClient - start/stop", () => {
-  const createClientWithMock = (mockFetch: any) => {
-    const client = new SandboxClient({
-      apiEndpoint: "https://api.example.com/v2/sandboxes",
-      apiKey: "test-key",
-    });
-    (client as any)._caller = { call: (fn: any) => fn() };
-    (client as any)._fetchImpl = mockFetch;
-    return client;
-  };
+  const createClientWithMock = createSandboxClientWithMock;
 
   it("startSandbox should POST to /start and poll until ready", async () => {
     const mockFetch = jest

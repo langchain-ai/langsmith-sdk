@@ -4,6 +4,8 @@
  * Field names use snake_case to match API response format.
  */
 
+import type { Client } from "../client.js";
+
 /**
  * Result of executing a command in a sandbox.
  */
@@ -90,8 +92,14 @@ export interface SandboxData {
  */
 export interface SandboxClientConfig {
   /**
+   * Main LangSmith client whose endpoint, authentication, workspace, headers,
+   * retries, and HTTP transport should be reused. When provided, apiKey,
+   * timeoutMs, maxRetries, and headers are ignored.
+   */
+  client?: Client;
+  /**
    * Full URL of the sandbox API endpoint.
-   * If not provided, derived from LANGSMITH_ENDPOINT environment variable.
+   * If not provided, derived from the main client's API endpoint.
    */
   apiEndpoint?: string;
   /**

@@ -72,6 +72,7 @@ function makeSandbox() {
   const client = {
     getApiKey: () => "test-key",
     getDefaultHeaders: () => ({}),
+    getRequestHeaders: async () => ({ "x-api-key": "test-key" }),
   };
   return new Sandbox(
     {
