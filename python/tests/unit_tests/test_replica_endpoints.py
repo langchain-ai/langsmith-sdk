@@ -166,7 +166,10 @@ class TestEnvironmentVariableParsing:
             }
 
             # Use a clean environment with only LANGSMITH_RUNS_ENDPOINTS set
-            clean_env = {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(endpoints_config)}
+            clean_env = {
+                "LANGSMITH_RUNS_ENDPOINTS": json.dumps(endpoints_config),
+                "LANGSMITH_CONFIG_FILE": os.devnull,
+            }
 
             with patch.dict(os.environ, clean_env, clear=True):
                 client = Client(auto_batch_tracing=False)

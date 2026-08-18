@@ -173,6 +173,25 @@ def _get_openapi_base_url(api_url: str) -> str:
     return api_url
 
 
+def _get_openapi_default_headers(
+    headers: Mapping[str, str],
+    *,
+    api_key: Optional[str],
+    tenant_id: Optional[str],
+) -> dict[str, str]:
+    """Remove auth headers already configured on the generated client."""
+    generated_auth_headers: set[str] = set()
+    if api_key:
+        generated_auth_headers.add("x-api-key")
+    if tenant_id:
+        generated_auth_headers.add("x-tenant-id")
+    return {
+        name: value
+        for name, value in headers.items()
+        if name.lower() not in generated_auth_headers
+    }
+
+
 def _httpx_kwargs_from_session(session: requests.Session) -> dict[str, Any]:
     """Translate a `requests.Session`'s transport config into `httpx` kwargs.
 
@@ -1609,7 +1628,12 @@ class Client:
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
                 base_url=base_url,
                 timeout=timeout,
-                default_headers=self._headers or None,
+                default_headers=_get_openapi_default_headers(
+                    self._headers,
+                    api_key=self._api_key,
+                    tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                )
+                or None,
                 http_client=http_client,
             )
         return self._langsmith_api
@@ -1630,7 +1654,12 @@ class Client:
                 tenant_id=str(self._workspace_id) if self._workspace_id else None,
                 base_url=base_url,
                 timeout=timeout,
-                default_headers=self._headers or None,
+                default_headers=_get_openapi_default_headers(
+                    self._headers,
+                    api_key=self._api_key,
+                    tenant_id=str(self._workspace_id) if self._workspace_id else None,
+                )
+                or None,
                 http_client=http_client,
             )
         return self._langsmith_api_sync
@@ -1850,6 +1879,15 @@ class Client:
             self, "_oauth_access_token", self._profile_auth.oauth_access_token
         )
         object.__setattr__(self, "_headers", self._compute_headers())
+        openapi_headers = _get_openapi_default_headers(
+            self._headers,
+            api_key=self._api_key,
+            tenant_id=str(self._workspace_id) if self._workspace_id else None,
+        )
+        if self._langsmith_api is not None:
+            self._langsmith_api._custom_headers = openapi_headers
+        if self._langsmith_api_sync is not None:
+            self._langsmith_api_sync._custom_headers = openapi_headers
 
     @property
     def api_key(self) -> Optional[str]:
@@ -10560,6 +10598,11 @@ class Client:
                 close_session(session)
             except Exception as e:
                 logger.warning("Error closing client session: %s", e)
+        if self._langsmith_api_sync is not None:
+            try:
+                self._langsmith_api_sync.close()
+            except Exception as e:
+                logger.warning("Error closing generated client: %s", e)
 
     @overload
     def evaluate(

@@ -27,7 +27,7 @@ from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
-from langsmith.client import _get_openapi_base_url
+from langsmith.client import _get_openapi_base_url, _get_openapi_default_headers
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.runs import AsyncRunsResource
@@ -320,7 +320,12 @@ class AsyncClient:
             tenant_id=self._workspace_id,
             base_url=_get_openapi_base_url(str(self._client.base_url)),
             timeout=self._client.timeout,
-            default_headers=_headers or None,
+            default_headers=_get_openapi_default_headers(
+                _headers,
+                api_key=self._api_key,
+                tenant_id=self._workspace_id,
+            )
+            or None,
         )
 
     # ------------------------------------------------------------------
@@ -416,7 +421,10 @@ class AsyncClient:
         """Close the async client."""
         if self._cache is not None:
             await self._cache.stop()
-        await self._client.aclose()
+        try:
+            await self._langsmith_api.close()
+        finally:
+            await self._client.aclose()
 
     def __repr__(self) -> str:
         """Return a string representation of the instance.
@@ -445,6 +453,11 @@ class AsyncClient:
         self._profile_auth_headers = auth_headers
         self._oauth_access_token = self._profile_auth.oauth_access_token
         self._client.headers = httpx.Headers(self._compute_headers())
+        self._langsmith_api._custom_headers = _get_openapi_default_headers(
+            self._compute_headers(),
+            api_key=self._api_key,
+            tenant_id=self._workspace_id,
+        )
 
     async def _arequest_with_retries(
         self,

@@ -1,10 +1,13 @@
 """Tests for AsyncSandboxClient."""
 
-from unittest.mock import AsyncMock, patch
+import json
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import requests
 from pytest_httpx import HTTPXMock
 
+from langsmith import AsyncClient
 from langsmith.sandbox import (
     AsyncSandboxClient,
     AsyncServiceURL,
@@ -28,7 +31,9 @@ from langsmith.sandbox import (
 async def client():
     """Create an AsyncSandboxClient with retries disabled for test isolation."""
     async with AsyncSandboxClient(
-        api_endpoint="http://test-server:8080", max_retries=0
+        api_endpoint="http://test-server:8080",
+        api_key="test-key",
+        max_retries=0,
     ) as c:
         yield c
 
@@ -53,25 +58,217 @@ class TestAsyncSandboxClientInit:
         async with AsyncSandboxClient(api_endpoint="http://localhost:8080") as client:
             assert client._base_url == "http://localhost:8080"
 
-    async def test_derives_endpoint_from_langsmith_endpoint(self):
-        """Test endpoint derivation from LANGSMITH_ENDPOINT."""
-        with patch(
-            "langsmith.sandbox._async_client._get_default_api_endpoint",
-            return_value="https://custom.langsmith.com/v2/sandboxes",
-        ):
-            client = AsyncSandboxClient()
-            assert client._base_url == "https://custom.langsmith.com/v2/sandboxes"
-            await client.aclose()
+    async def test_reuses_main_client_configuration_and_transport(
+        self, httpx_mock: HTTPXMock
+    ):
+        """The compatibility facade uses the main async client's config."""
+        main_client = AsyncClient(
+            api_url="http://localhost:8080/api/v1",
+            api_key="test-key",
+            workspace_id="workspace-id",
+            headers={"X-Custom-Auth": "custom-value"},
+        )
 
-    async def test_explicit_endpoint_overrides_env(self):
-        """Test explicit endpoint overrides environment variable."""
-        with patch(
-            "langsmith.sandbox._async_client._get_default_api_endpoint",
-            return_value="https://env.langsmith.com/v2/sandboxes",
+        client = AsyncSandboxClient(client=main_client)
+
+        assert client._base_url == "http://localhost:8080/api/v2/sandboxes"
+        assert client._http is main_client._langsmith_api._client
+        httpx_mock.add_response(
+            method="POST",
+            url="http://localhost:8080/api/v2/sandboxes/boxes",
+            json={"name": "test-sandbox"},
+            status_code=201,
+        )
+        await client.create_sandbox(
+            snapshot_id="snap-1",
+            headers={
+                "X-Api-Key": "override-key",
+                "X-Tenant-Id": "override-workspace",
+                "X-Request-Header": "request-value",
+            },
+        )
+        request_headers = httpx_mock.get_request().headers
+        assert request_headers.get_list("X-Api-Key") == ["test-key"]
+        assert request_headers.get_list("X-Tenant-Id") == ["workspace-id"]
+        assert request_headers["X-Custom-Auth"] == "custom-value"
+        assert request_headers["X-Request-Header"] == "request-value"
+        assert client._ws_default_headers(None) == {
+            "x-api-key": "test-key",
+            "x-custom-auth": "custom-value",
+            "x-tenant-id": "workspace-id",
+        }
+
+        await client.aclose()
+        assert not main_client._langsmith_api.is_closed()
+        await main_client.aclose()
+        assert client._http.is_closed
+
+    async def test_default_constructor_uses_profile_workspace_and_auth(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        """Default construction delegates profile resolution to AsyncClient."""
+        for key in (
+            "LANGCHAIN_API_KEY",
+            "LANGSMITH_API_KEY",
+            "LANGCHAIN_ENDPOINT",
+            "LANGSMITH_ENDPOINT",
+            "LANGCHAIN_WORKSPACE_ID",
+            "LANGSMITH_WORKSPACE_ID",
+            "LANGSMITH_PROFILE",
         ):
-            client = AsyncSandboxClient(api_endpoint="http://explicit:8080")
-            assert client._base_url == "http://explicit:8080"
-            await client.aclose()
+            monkeypatch.delenv(key, raising=False)
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "profiles": {
+                        "default": {
+                            "api_key": "profile-key",
+                            "api_url": "http://profile.example.com/api/v1",
+                            "workspace_id": "profile-workspace",
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+        client = AsyncSandboxClient()
+
+        assert client._langsmith_client is not None
+        assert client._base_url == "http://profile.example.com/api/v2/sandboxes"
+        request_headers = client._ws_default_headers(None)
+        assert request_headers is not None
+        assert request_headers["x-api-key"] == "profile-key"
+        assert request_headers["x-tenant-id"] == "profile-workspace"
+        await client.aclose()
+        assert client._http.is_closed
+
+    async def test_default_constructor_uses_profile_oauth_for_rest_and_websockets(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """Profile OAuth is forwarded to REST and WebSocket requests."""
+        for key in (
+            "LANGCHAIN_API_KEY",
+            "LANGSMITH_API_KEY",
+            "LANGCHAIN_ENDPOINT",
+            "LANGSMITH_ENDPOINT",
+            "LANGCHAIN_WORKSPACE_ID",
+            "LANGSMITH_WORKSPACE_ID",
+            "LANGSMITH_PROFILE",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "profiles": {
+                        "default": {
+                            "api_url": "http://profile.example.com/api/v1",
+                            "workspace_id": "profile-workspace",
+                            "oauth": {"access_token": "profile-access-token"},
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+
+        client = AsyncSandboxClient()
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://profile.example.com/api/v2/sandboxes/boxes",
+            json={"name": "test-sandbox"},
+            status_code=201,
+        )
+        await client.create_sandbox(snapshot_id="snap-1")
+        request_headers = httpx_mock.get_request().headers
+        assert request_headers.get_list("Authorization") == [
+            "Bearer profile-access-token"
+        ]
+        assert request_headers.get_list("X-Tenant-Id") == ["profile-workspace"]
+        headers = client._ws_default_headers(None)
+        assert headers is not None
+        assert headers["authorization"] == "Bearer profile-access-token"
+        assert headers["x-tenant-id"] == "profile-workspace"
+        assert "x-api-key" not in headers
+        await client.aclose()
+
+    async def test_refreshes_profile_oauth_for_direct_dataplane_requests(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """Direct dataplane requests use refreshed main-client credentials."""
+        for key in (
+            "LANGCHAIN_API_KEY",
+            "LANGSMITH_API_KEY",
+            "LANGCHAIN_ENDPOINT",
+            "LANGSMITH_ENDPOINT",
+            "LANGCHAIN_WORKSPACE_ID",
+            "LANGSMITH_WORKSPACE_ID",
+            "LANGSMITH_PROFILE",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "profiles": {
+                        "default": {
+                            "api_url": "http://profile.example.com/api/v1",
+                            "oauth": {
+                                "access_token": "old-access-token",
+                                "refresh_token": "refresh-token",
+                                "expires_at": "2000-01-01T00:00:00Z",
+                            },
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(config_path))
+        discovery_response = Mock(status_code=404)
+        monkeypatch.setattr(requests, "get", Mock(return_value=discovery_response))
+        token_response = Mock(status_code=200)
+        token_response.json.return_value = {
+            "access_token": "new-access-token",
+            "expires_in": 300,
+        }
+        monkeypatch.setattr(requests, "post", Mock(return_value=token_response))
+
+        client = AsyncSandboxClient()
+        httpx_mock.add_response(
+            method="POST",
+            url="http://dataplane.example.com/execute",
+            json={"exit_code": 0},
+        )
+
+        await client._dataplane_request(
+            "POST", "http://dataplane.example.com/execute", json={}
+        )
+
+        request_headers = httpx_mock.get_request().headers
+        assert request_headers.get_list("Authorization") == ["Bearer new-access-token"]
+        await client.aclose()
+
+    async def test_derives_endpoint_from_langsmith_endpoint(self, monkeypatch):
+        """Test endpoint derivation from LANGSMITH_ENDPOINT."""
+        monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://custom.langsmith.com/api/v1")
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+        client = AsyncSandboxClient()
+        assert client._base_url == "https://custom.langsmith.com/api/v2/sandboxes"
+        await client.aclose()
+
+    async def test_explicit_endpoint_overrides_env(self, monkeypatch):
+        """Test explicit endpoint overrides environment variable."""
+        monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://env.langsmith.com/api/v1")
+        monkeypatch.setenv("LANGSMITH_API_KEY", "env-key")
+        client = AsyncSandboxClient(api_endpoint="http://explicit:8080")
+        assert client._base_url == "http://explicit:8080"
+        await client.aclose()
 
     async def test_api_key_from_parameter(self):
         """Test API key from parameter."""
@@ -79,30 +276,25 @@ class TestAsyncSandboxClientInit:
             api_endpoint="http://localhost:8080",
             api_key="test-key",
         )
-        assert client._http.headers.get("X-Api-Key") == "test-key"
+        assert client._langsmith_client.api_key == "test-key"
         await client.aclose()
 
-    async def test_api_key_from_environment(self):
+    async def test_api_key_from_environment(self, monkeypatch):
         """Test API key from environment variable."""
-        with patch(
-            "langsmith.sandbox._async_client._get_default_api_key",
-            return_value="env-key",
-        ):
-            client = AsyncSandboxClient(api_endpoint="http://localhost:8080")
-            assert client._http.headers.get("X-Api-Key") == "env-key"
-            await client.aclose()
+        monkeypatch.setenv("LANGSMITH_API_KEY", "env-key")
+        client = AsyncSandboxClient(api_endpoint="http://localhost:8080")
+        assert client._langsmith_client.api_key == "env-key"
+        await client.aclose()
 
-    async def test_explicit_api_key_overrides_env(self):
+    async def test_explicit_api_key_overrides_env(self, monkeypatch):
         """Test explicit API key overrides environment variable."""
-        with patch(
-            "langsmith.sandbox._async_client._get_default_api_key",
-            return_value="env-key",
-        ):
-            client = AsyncSandboxClient(
-                api_endpoint="http://localhost:8080",
-                api_key="explicit-key",
-            )
-            assert client._http.headers.get("X-Api-Key") == "explicit-key"
+        monkeypatch.setenv("LANGSMITH_API_KEY", "env-key")
+        client = AsyncSandboxClient(
+            api_endpoint="http://localhost:8080",
+            api_key="explicit-key",
+        )
+        assert client._langsmith_client.api_key == "explicit-key"
+        await client.aclose()
 
     @pytest.mark.asyncio
     async def test_default_headers_attached_to_http_client(self):
@@ -113,41 +305,34 @@ class TestAsyncSandboxClientInit:
             api_key="api-key",
             headers={"X-Service-Key": "svc-jwt"},
         ) as client:
-            assert client._http.headers.get("X-Service-Key") == "svc-jwt"
-            assert client._http.headers.get("X-Api-Key") == "api-key"
+            request_headers = client._ws_default_headers(None)
+            assert request_headers is not None
+            assert request_headers["x-service-key"] == "svc-jwt"
+            assert request_headers["x-api-key"] == "api-key"
             assert client._default_headers == {"X-Service-Key": "svc-jwt"}
             # merge_headers normalizes names to lowercase.
-            assert client._ws_default_headers(None) == {"x-service-key": "svc-jwt"}
+            ws_headers = client._ws_default_headers(None)
+            assert ws_headers is not None
+            assert ws_headers["x-api-key"] == "api-key"
+            assert ws_headers["x-service-key"] == "svc-jwt"
             await client.aclose()
 
     async def test_max_retries_default(self):
         """Test default max_retries is 3."""
-        from langsmith.sandbox._transport import AsyncRetryTransport
-
         client = AsyncSandboxClient(api_endpoint="http://localhost:8080")
-        transport = client._http._transport
-        assert isinstance(transport, AsyncRetryTransport)
-        assert transport._max_retries == 3
+        assert client._langsmith_client._langsmith_api.max_retries == 3
         await client.aclose()
 
     async def test_max_retries_custom(self):
         """Test custom max_retries value."""
-        from langsmith.sandbox._transport import AsyncRetryTransport
-
         client = AsyncSandboxClient(api_endpoint="http://localhost:8080", max_retries=5)
-        transport = client._http._transport
-        assert isinstance(transport, AsyncRetryTransport)
-        assert transport._max_retries == 5
+        assert client._langsmith_client._langsmith_api.max_retries == 5
         await client.aclose()
 
     async def test_max_retries_zero_disables(self):
         """Test max_retries=0 disables retries."""
-        from langsmith.sandbox._transport import AsyncRetryTransport
-
         client = AsyncSandboxClient(api_endpoint="http://localhost:8080", max_retries=0)
-        transport = client._http._transport
-        assert isinstance(transport, AsyncRetryTransport)
-        assert transport._max_retries == 0
+        assert client._langsmith_client._langsmith_api.max_retries == 0
         await client.aclose()
 
 
@@ -339,10 +524,10 @@ class TestAsyncSandboxOperations:
         body = json.loads(httpx_mock.get_request().content)
         assert "proxy_config" not in body
 
-    async def test_create_sandbox_merges_custom_headers(
+    async def test_create_sandbox_forwards_custom_headers_without_replacing_auth(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
-        """Test per-request headers override default client headers."""
+        """Per-request headers are added without replacing client auth."""
         httpx_mock.add_response(
             method="POST",
             url="http://test-server:8080/boxes",
@@ -362,7 +547,7 @@ class TestAsyncSandboxOperations:
         )
 
         request = httpx_mock.get_request()
-        assert request.headers.get("X-Api-Key") == "override-key"
+        assert request.headers.get_list("X-Api-Key") == ["test-key"]
         assert request.headers.get("X-Test-Header") == "sandbox-client"
 
     async def test_sandbox_async_context_manager(

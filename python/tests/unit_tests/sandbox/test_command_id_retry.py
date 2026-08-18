@@ -38,7 +38,9 @@ def _sandbox():
             "name": "sb",
             "dataplane_url": "https://sandbox-router.example.com/sb-123",
         },
-        client=SandboxClient(api_endpoint="http://test-server:8080", max_retries=0),
+        client=SandboxClient(
+            api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+        ),
         auto_delete=False,
     )
 
@@ -173,7 +175,9 @@ class TestSyncRetry:
 
 
 def _async_sandbox():
-    client = AsyncSandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    client = AsyncSandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
     return AsyncSandbox.from_dict(
         data={
             "name": "sb",

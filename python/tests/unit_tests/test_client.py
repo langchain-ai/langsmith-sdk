@@ -665,6 +665,7 @@ def test_validate_multiple_urls() -> None:
             "LANGCHAIN_ENDPOINT": "https://api.smith.langchain-endpoint.com",
             "LANGSMITH_ENDPOINT": "https://api.smith.langsmith-endpoint.com",
             "LANGSMITH_RUNS_ENDPOINTS": "{}",
+            "LANGSMITH_CONFIG_FILE": os.devnull,
         },
         clear=True,
     ):
@@ -672,7 +673,7 @@ def test_validate_multiple_urls() -> None:
             Client()
 
     # Test 2: Conflicting api_url parameter and api_urls parameter should raise error
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {"LANGSMITH_CONFIG_FILE": os.devnull}, clear=True):
         with pytest.raises(ls_utils.LangSmithUserError):
             Client(
                 api_url="https://api.smith.langchain.com",
@@ -687,7 +688,12 @@ def test_validate_multiple_urls() -> None:
         "https://api.smith.langsmith-endpoint_3.com": "789",
     }
     with patch.dict(
-        os.environ, {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(data)}, clear=True
+        os.environ,
+        {
+            "LANGSMITH_RUNS_ENDPOINTS": json.dumps(data),
+            "LANGSMITH_CONFIG_FILE": os.devnull,
+        },
+        clear=True,
     ):
         client = Client(auto_batch_tracing=False)
         # _write_api_urls should only contain the default endpoint
@@ -696,7 +702,7 @@ def test_validate_multiple_urls() -> None:
         assert client.api_url == "https://api.smith.langchain.com"
 
     # Test 4: Setting api_urls should still be respected
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {"LANGSMITH_CONFIG_FILE": os.devnull}, clear=True):
         client = Client(api_urls=data)
         assert client._write_api_urls == data
         assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
@@ -1001,10 +1007,9 @@ def test_async_evaluators_uses_generated_openapi_resource() -> None:
     timeout = openapi_client.call_args.kwargs["timeout"]
     assert timeout.connect == 1.234
     assert timeout.read == 5.678
-    assert (
-        openapi_client.call_args.kwargs["default_headers"]["X-Tenant-Id"]
-        == "test-workspace-id"
-    )
+    default_headers = openapi_client.call_args.kwargs["default_headers"] or {}
+    assert "X-API-Key" not in default_headers
+    assert "X-Tenant-Id" not in default_headers
 
 
 def test_async_annotation_queues_uses_generated_openapi_resource() -> None:
@@ -1029,10 +1034,9 @@ def test_async_annotation_queues_uses_generated_openapi_resource() -> None:
     timeout = openapi_client.call_args.kwargs["timeout"]
     assert timeout.connect == 1.234
     assert timeout.read == 5.678
-    assert (
-        openapi_client.call_args.kwargs["default_headers"]["X-Tenant-Id"]
-        == "test-workspace-id"
-    )
+    default_headers = openapi_client.call_args.kwargs["default_headers"] or {}
+    assert "X-API-Key" not in default_headers
+    assert "X-Tenant-Id" not in default_headers
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", (True, False))
@@ -3245,7 +3249,12 @@ def test_select_eval_results(mock_session_cls: mock.Mock):
 @mock.patch("langsmith.client.requests.Session")
 @mock.patch.dict(
     os.environ,
-    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "true"},
+    {
+        "LANGCHAIN_API_KEY": "",
+        "LANGSMITH_API_KEY": "",
+        "LANGSMITH_TRACING": "true",
+        "LANGSMITH_CONFIG_FILE": os.devnull,
+    },
     clear=True,
 )
 def test_validate_api_key_if_hosted_with_tracing(
@@ -3266,7 +3275,12 @@ def test_validate_api_key_if_hosted_with_tracing(
 @mock.patch("langsmith.client.requests.Session")
 @mock.patch.dict(
     os.environ,
-    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "false"},
+    {
+        "LANGCHAIN_API_KEY": "",
+        "LANGSMITH_API_KEY": "",
+        "LANGSMITH_TRACING": "false",
+        "LANGSMITH_CONFIG_FILE": os.devnull,
+    },
     clear=True,
 )
 def test_validate_api_key_if_hosted_without_tracing(
