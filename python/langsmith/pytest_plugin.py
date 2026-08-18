@@ -7,11 +7,12 @@ import os
 import time
 from collections import defaultdict
 from threading import Lock
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
 from langsmith import utils as ls_utils
+from langsmith.testing._internal import _get_test_suite_name
 from langsmith.testing._internal import test as ls_test
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,11 @@ def pytest_addoption(parser):
 def _handle_output_args(args):
     """Handle output arguments."""
     if any(opt in args for opt in ["--langsmith-output"]):
-        # Only add --quiet if it's not already there
-        if not any(a in args for a in ["-qq"]):
-            args.insert(0, "-qq")
+        # Only add --quiet if it's not already there. Use -q rather than -qq so
+        # pytest still prints its end-of-run counts; the live table only covers
+        # tests that reached a test suite, so it can't stand in for them.
+        if not any(a in args for a in ["-q", "-qq", "--quiet"]):
+            args.insert(0, "-q")
         # Disable built-in output capturing
         if not any(a in args for a in ["-s", "--capture=no"]):
             args.insert(0, "-s")
@@ -98,13 +101,22 @@ def pytest_runtest_call(item):
     yield
 
 
-@pytest.hookimpl
+@pytest.hookimpl(hookwrapper=True)
 def pytest_report_teststatus(report, config):
     """Remove the short test-status character outputs ("./F")."""
-    # The hook normally returns a 3-tuple: (short_letter, verbose_word, color)
-    # By returning empty strings, the progress characters won't show.
-    if config.getoption("--langsmith-output"):
-        return "", "", ""
+    # The hook returns a 3-tuple: (category, short_letter, verbose_word). Blanking
+    # the short letter stops the progress characters from corrupting the live
+    # table. The category has to be left alone: pytest tallies its end-of-run
+    # counts by category, so blanking it files every test under "" and silently
+    # drops passed/failed/skipped/error counts from the summary.
+    outcome = yield
+    if not config.getoption("--langsmith-output"):
+        return
+    status = outcome.get_result()
+    if status is None:
+        return
+    category, _, verbose_word = status
+    outcome.force_result((category, "", verbose_word))
 
 
 class LangSmithPlugin:
@@ -117,6 +129,14 @@ class LangSmithPlugin:
 
         self.test_suites = defaultdict(list)
         self.test_suite_urls = {}
+        # Tests that collection assigned to each suite, including ones that never
+        # run. A test only reaches self.test_suites once its body starts
+        # executing, so anything that errors or skips before then is missing
+        # there and would otherwise vanish from the results table entirely.
+        self.collected_by_suite = defaultdict(set)
+        self.collected_nodeids = set()
+        # Outcomes for tests that never got far enough to report their own status.
+        self.unrun_statuses = {}
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
@@ -133,6 +153,9 @@ class LangSmithPlugin:
         self.collected_nodeids = set()
         for item in session.items:
             self.collected_nodeids.add(item.nodeid)
+            suite_name = _collected_test_suite_name(item)
+            if suite_name is not None:
+                self.collected_by_suite[suite_name].add(item.nodeid)
 
     def add_process_to_test_suite(self, test_suite, process_id):
         """Group a test case with its test suite."""
@@ -157,6 +180,18 @@ class LangSmithPlugin:
         """Initialize live display when first test starts."""
         self.update_process_status(nodeid, {"status": "running"})
 
+    def pytest_runtest_logreport(self, report):
+        """Record outcomes for tests that never reach their suite.
+
+        A test only registers itself with a suite once its body starts running,
+        so one that errors or skips during setup reports nothing of its own.
+        """
+        if report.when in ("setup", "teardown"):
+            if report.outcome == "failed":
+                self.unrun_statuses[report.nodeid] = "error"
+            elif report.outcome == "skipped":
+                self.unrun_statuses[report.nodeid] = "skipped"
+
     def generate_tables(self):
         """Generate a collection of tables—one per suite.
 
@@ -175,7 +210,11 @@ class LangSmithPlugin:
         """Generate results table."""
         from rich.table import Table  # type: ignore[import-not-found]
 
-        process_ids = self.test_suites[suite_name]
+        executed_ids = self.test_suites[suite_name]
+        # Collected tests that never reached the suite: errored in setup, skipped
+        # before the body ran, or not started yet. Without these the pass rate
+        # would be computed over only the tests that got far enough to report.
+        unrun_ids = self.collected_by_suite.get(suite_name, set()) - set(executed_ids)
 
         title = f"""Test Suite: [bold]{suite_name}[/bold]
 LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]"""  # noqa: E501
@@ -195,24 +234,32 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
         durations = []
         numeric_feedbacks = defaultdict(list)
         # Gather data only for this suite
-        suite_statuses = {pid: self.process_status[pid] for pid in process_ids}
+        suite_statuses = {pid: self.process_status[pid] for pid in executed_ids}
+        for pid in sorted(unrun_ids):
+            suite_statuses[pid] = {"status": self.unrun_statuses.get(pid, "queued")}
         for pid, status in suite_statuses.items():
-            duration = status.get("end_time", now) - status.get("start_time", now)
-            durations.append(duration)
+            if pid not in unrun_ids:
+                duration = status.get("end_time", now) - status.get("start_time", now)
+                durations.append(duration)
+                max_duration = max(len(f"{duration:.2f}s"), max_duration)
             for k, v in status.get("feedback", {}).items():
                 if isinstance(v, (float, int, bool)):
                     numeric_feedbacks[k].append(v)
-            max_duration = max(len(f"{duration:.2f}s"), max_duration)
             max_status = max(len(status.get("status", "queued")), max_status)
 
+        total_count = len(suite_statuses)
         passed_count = sum(s.get("status") == "passed" for s in suite_statuses.values())
-        failed_count = sum(s.get("status") == "failed" for s in suite_statuses.values())
 
         # You could arrange a row to show the aggregated data—here, in the last column:
-        if passed_count + failed_count:
-            rate = passed_count / (passed_count + failed_count)
-            color = "green" if rate == 1 else "red"
-            aggregate_status = f"[{color}]{rate:.0%}[/{color}]"
+        if total_count:
+            rate = passed_count / total_count
+            # Anything that did not pass — failed, skipped, errored, never
+            # started — keeps this red, so a suite only reads green when every
+            # collected test actually passed.
+            color = "green" if passed_count == total_count else "red"
+            aggregate_status = (
+                f"[{color}]{rate:.0%} ({passed_count}/{total_count})[/{color}]"
+            )
         else:
             aggregate_status = "Passed: --"
         if durations:
@@ -220,8 +267,11 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
         else:
             aggregate_duration = "--s"
         if numeric_feedbacks:
+            # Show how many tests each score covers: a mean over 3 of 10 tests
+            # is not the same claim as a mean over all 10.
             aggregate_feedback = "\n".join(
-                f"{k}: {sum(v) / len(v)}" for k, v in numeric_feedbacks.items()
+                f"{k}: {sum(v) / len(v)} ({len(v)}/{total_count})"
+                for k, v in numeric_feedbacks.items()
             )
         else:
             aggregate_feedback = "--"
@@ -235,10 +285,15 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
                 "running": "yellow",
                 "passed": "green",
                 "failed": "red",
+                "error": "red",
                 "skipped": "cyan",
             }.get(status.get("status", "queued"), "white")
 
-            duration = status.get("end_time", now) - status.get("start_time", now)
+            if pid in unrun_ids:
+                duration_cell = "--s"
+            else:
+                duration = status.get("end_time", now) - status.get("start_time", now)
+                duration_cell = f"{duration:.2f}s"
             feedback = "\n".join(
                 f"{_abbreviate(k, max_len=max_dynamic_col_width)}: {int(v) if isinstance(v, bool) else v}"  # noqa: E501
                 for k, v in status.get("feedback", {}).items()
@@ -257,7 +312,7 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
                 ],
                 f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
-                f"{duration:.2f}s",
+                duration_cell,
             )
 
         # Add a blank row or a section separator if you like:
@@ -287,6 +342,9 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
 
     def pytest_sessionfinish(self, session):
         """Stop Rich Live rendering at the end of the session."""
+        # Tests that errored or skipped in setup never trigger a status update,
+        # so render once more to make sure their rows are in the final table.
+        self.live.update(self.generate_tables())
         self.live.stop()
         self.live.console.print("\nFinishing up...")
 
@@ -320,6 +378,24 @@ def pytest_configure(config):
         config.pluginmanager.register(LangSmithPlugin(), "langsmith_output_plugin")
         # Suppress warnings summary
         config.option.showwarnings = False
+
+
+def _collected_test_suite_name(item) -> Optional[str]:
+    """Resolve which suite a collected test belongs to, before it runs.
+
+    Mirrors how the test decorator names a suite so the results table can show a
+    denominator that includes tests which never made it to their suite.
+    """
+    marker = item.get_closest_marker("langsmith")
+    if marker is None:
+        return None
+    if test_suite_name := marker.kwargs.get("test_suite_name"):
+        return test_suite_name
+    try:
+        return _get_test_suite_name(item.obj)
+    except BaseException:
+        logger.debug("Could not determine test suite name for %s.", item.nodeid)
+        return None
 
 
 def _abbreviate(x: str, max_len: int) -> str:
