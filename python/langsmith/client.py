@@ -2856,7 +2856,8 @@ class Client:
         if self._hide_inputs is True:
             return {}
         if self._anonymizer:
-            json_inputs = _orjson.loads(_dumps_json(inputs))
+            # stdlib json.loads keeps ints >= 2**64 exact; orjson.loads floats them.
+            json_inputs = json.loads(_dumps_json(inputs))
             return self._anonymizer(json_inputs)
         if self._hide_inputs is False:
             return inputs
@@ -2866,7 +2867,8 @@ class Client:
         if self._hide_outputs is True:
             return {}
         if self._anonymizer:
-            json_outputs = _orjson.loads(_dumps_json(outputs))
+            # stdlib json.loads keeps ints >= 2**64 exact; orjson.loads floats them.
+            json_outputs = json.loads(_dumps_json(outputs))
             return self._anonymizer(json_outputs)
         if self._hide_outputs is False:
             return outputs
@@ -2898,7 +2900,8 @@ class Client:
         if self._hide_metadata is True:
             return {}
         if self._anonymizer:
-            json_metadata = _orjson.loads(_dumps_json(metadata))
+            # stdlib json.loads keeps ints >= 2**64 exact; orjson.loads floats them.
+            json_metadata = json.loads(_dumps_json(metadata))
             return self._anonymizer(json_metadata)
         if self._hide_metadata is False:
             return metadata

@@ -1865,6 +1865,58 @@ def test_anonymizer_redacts_metadata_on_update() -> None:
     assert SECRET_PLACEHOLDER in metadata
 
 
+def test_anonymizer_preserves_ints_larger_than_64_bits() -> None:
+    """The anonymizer pre-pass must not degrade ints that ``dumps_json`` keeps exact.
+
+    ``_hide_run_*`` round-trip the payload through ``_dumps_json`` so the anonymizer
+    receives plain JSON types. Parsing that back with ``orjson.loads`` turns any int
+    outside the 64-bit range into a float, which would undo the exact stdlib
+    fallback in ``dumps_json`` before the anonymizer ever sees the value.
+    """
+    wei = 19_876_543_210_987_654_321
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.create_run(
+        "my_run",
+        inputs={"balance_wei": wei},
+        outputs={"a": 2**64, "b": 2**64 + 1},
+        run_type="llm",
+        id=uuid.uuid4(),
+        extra={"metadata": {"offset": -(2**80)}},
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    assert payload["inputs"]["balance_wei"] == wei
+    # Floats would collapse these two to the same value.
+    assert payload["outputs"]["a"] != payload["outputs"]["b"]
+    assert _posted_metadata(session, "POST", "/runs")["offset"] == -(2**80)
+
+
+def test_anonymizer_tolerates_non_finite_floats() -> None:
+    """Configuring an anonymizer must not make a payload unserializable.
+
+    A NaN next to an out-of-range int both force the stdlib fallback in
+    ``dumps_json``, which emits the non-standard ``NaN`` literal. ``orjson.loads``
+    rejects that, so the anonymizer pre-pass used to raise ``JSONDecodeError`` and
+    drop the run; stdlib ``json.loads`` accepts it, matching the behavior of the
+    path with no anonymizer configured.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client_with_secret_anonymizer(session)
+
+    client.create_run(
+        "my_run",
+        inputs={"x": float("nan"), "v": 2**70},
+        run_type="llm",
+        id=uuid.uuid4(),
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    assert math.isnan(payload["inputs"]["x"])
+    assert payload["inputs"]["v"] == 2**70
+
+
 def test_omit_traced_runtime_info() -> None:
     """Test that omit_traced_runtime_info prevents runtime info from being added."""
     session = mock.MagicMock(spec=requests.Session)
