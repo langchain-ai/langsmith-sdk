@@ -24,6 +24,7 @@ from langsmith._internal._redaction import as_mapping, mask, redact_outside
 # integrations can reuse it without importing the ``wrappers`` package (whose
 # ``__init__`` warns at import time). Re-exported here for backwards compat.
 from langsmith._internal._usage import _create_usage_metadata
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
@@ -90,6 +91,11 @@ _MCP_TOOL_SAFE_KEYS: frozenset[str] = frozenset(
 _TRANSPORT_SECRET_KEYS = ("extra_headers", "extra_body", "extra_query")
 
 
+def _is_model(value: Any) -> bool:
+    """Whether ``value`` claims to be a Pydantic model."""
+    return callable(getattr(value, "model_dump", None))
+
+
 def _redact_tools(tools: Any) -> Any:
     """Mask hosted MCP entries; function tools carry the caller's schema."""
     if not isinstance(tools, (list, tuple)):
@@ -98,9 +104,13 @@ def _redact_tools(tools: Any) -> Any:
     redacted: list[Any] = []
     for tool in tools:
         mapping = as_mapping(tool)
-        if mapping is not None and mapping.get("type") == "mcp":
-            tool = redact_outside(mapping, _MCP_TOOL_SAFE_KEYS)
-        redacted.append(tool)
+        if mapping is None:
+            # An unreadable model would reach the trace as a repr of its fields.
+            redacted.append(SECRET_PLACEHOLDER if _is_model(tool) else tool)
+        elif mapping.get("type") == "mcp":
+            redacted.append(redact_outside(mapping, _MCP_TOOL_SAFE_KEYS))
+        else:
+            redacted.append(tool)
     return redacted
 
 

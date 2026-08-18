@@ -1,5 +1,6 @@
 """Unit tests for OpenAI wrapper processing functions."""
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -340,3 +341,50 @@ class TestRedactTransportOverrides:
 
     def test_unset_overrides_are_left_alone(self) -> None:
         assert _process_inputs({"model": "gpt-5"}) == {"model": "gpt-5"}
+
+
+class TestUnreadableValuesAreDropped:
+    """A value we cannot read must not reach the trace.
+
+    The serializer falls back to ``repr()``, which renders every field value,
+    so passing an unreadable model through leaks whatever it holds.
+    """
+
+    @staticmethod
+    def _broken_mcp_tool():
+        tool_types = pytest.importorskip("openai.types.responses.tool")
+
+        class BrokenMcp(tool_types.Mcp):
+            def model_dump(self, *args, **kwargs):
+                raise RuntimeError("serializer blew up")
+
+        return BrokenMcp(
+            type="mcp",
+            server_label="example",
+            server_url="https://mcp.example.com/sse",
+            authorization=FAKE_TOKEN,
+            headers={"Authorization": f"Bearer {FAKE_TOKEN}"},
+        )
+
+    def test_tool_whose_model_dump_raises_is_dropped(self, caplog) -> None:
+        with caplog.at_level(logging.WARNING, logger="langsmith._internal._redaction"):
+            result = _process_inputs(
+                {"model": "gpt-5", "tools": [self._broken_mcp_tool()]}
+            )
+
+        assert FAKE_TOKEN not in dumps_json(result).decode()
+        assert result["tools"][0] == SECRET_PLACEHOLDER
+        assert "BrokenMcp" in caplog.text
+
+    def test_ordinary_values_are_not_logged(self, caplog) -> None:
+        """The warning must stay rare, or it is noise nobody reads."""
+        with caplog.at_level(logging.WARNING, logger="langsmith._internal._redaction"):
+            _process_inputs(
+                {
+                    "model": "gpt-5",
+                    "tools": [{"type": "function", "name": "lookup"}, "junk", None],
+                    "extra_headers": {"Authorization": FAKE_TOKEN},
+                }
+            )
+
+        assert caplog.text == ""

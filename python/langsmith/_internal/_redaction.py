@@ -6,12 +6,15 @@ and must keep their real values.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Mapping
 from typing import Any, Optional
 
 from langsmith.anonymizer import SECRET_PLACEHOLDER
 
 __all__ = ["as_mapping", "mask", "redact_outside"]
+
+logger = logging.getLogger(__name__)
 
 
 def as_mapping(value: Any) -> Optional[Mapping]:
@@ -22,7 +25,10 @@ def as_mapping(value: Any) -> Optional[Mapping]:
     if callable(dump):
         try:
             dumped = dump()
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Could not read %s to redact it: %s", type(value).__name__, e
+            )
             return None
         return dumped if isinstance(dumped, Mapping) else None
     return None
