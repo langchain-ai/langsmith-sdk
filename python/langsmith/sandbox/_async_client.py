@@ -11,11 +11,14 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 import httpx
 
-from langsmith import utils as ls_utils
-from langsmith._openapi_client import AsyncLangsmith
+from langsmith._openapi_client._base_client import make_request_options
+from langsmith._openapi_client._exceptions import APIConnectionError, APIStatusError
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,
+    _get_langsmith_api_url,
+    _get_sandbox_api_endpoint,
+    _get_sandbox_request_headers,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
     _quote_path_segment,
@@ -27,6 +30,7 @@ from langsmith.sandbox._exceptions import (
     ResourceNotFoundError,
     ResourceTimeoutError,
     SandboxAPIError,
+    SandboxConnectionError,
 )
 from langsmith.sandbox._helpers import (
     handle_client_http_error,
@@ -45,26 +49,12 @@ from langsmith.sandbox._mounts import (
     validate_mount_config_proxy_config,
 )
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
-from langsmith.sandbox._transport import AsyncRetryTransport
 
 if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.registries import (
         AsyncRegistriesResource,
     )
-
-
-def _get_default_api_endpoint() -> str:
-    """Get the default sandbox API endpoint from environment.
-
-    Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
-    """
-    base = ls_utils.get_env_var("ENDPOINT", default="https://api.smith.langchain.com")
-    return f"{base.rstrip('/')}/v2/sandboxes"
-
-
-def _get_default_api_key() -> Optional[str]:
-    """Get the default API key from environment."""
-    return ls_utils.get_env_var("API_KEY")
+    from langsmith.async_client import AsyncClient
 
 
 RequestHeaders = Optional[Mapping[str, str]]
@@ -87,6 +77,7 @@ class AsyncSandboxClient:
     def __init__(
         self,
         *,
+        client: Optional[AsyncClient] = None,
         api_endpoint: Optional[str] = None,
         timeout: float = 10.0,
         api_key: Optional[str] = None,
@@ -96,42 +87,51 @@ class AsyncSandboxClient:
         """Initialize the AsyncSandboxClient.
 
         Args:
+            client: Main async LangSmith client whose resolved endpoint,
+                    authentication, workspace, headers, and HTTP transport should
+                    be reused. When provided, ``timeout``, ``api_key``,
+                    ``max_retries``, and ``headers`` are ignored.
             api_endpoint: Full URL of the sandbox API endpoint. If not provided,
-                          derived from LANGSMITH_ENDPOINT environment variable.
-            timeout: Default HTTP timeout in seconds.
-            api_key: API key for authentication. If not provided, uses
-                     LANGSMITH_API_KEY environment variable.
-            max_retries: Maximum number of retries for transient errors (502, 503,
-                         504), rate limits (429), and connection failures. Set to 0
-                         to disable retries. Default: 3.
+                          derived from the main client's API endpoint.
+            timeout: Default HTTP timeout in seconds when constructing a client.
+            api_key: API key used when constructing a client.
+            max_retries: Maximum retries for control-plane requests when
+                         constructing a client. Set to 0 to disable retries.
             headers: Optional default headers attached to every request on this
-                     client, including the data-plane ``/execute`` HTTP endpoint
-                     and the ``/execute/ws`` WebSocket upgrade. Use this to pass
-                     additional auth headers (e.g. ``X-Service-Key``).
+                     facade when constructing a client, including direct dataplane
+                     HTTP and WebSocket requests.
         """
-        self._base_url = (api_endpoint or _get_default_api_endpoint()).rstrip("/")
-        resolved_api_key = api_key or _get_default_api_key()
-        self._api_key = resolved_api_key
+        if client is None:
+            from langsmith.async_client import AsyncClient
+
+            client = AsyncClient(
+                api_url=(
+                    _get_langsmith_api_url(api_endpoint)
+                    if api_endpoint is not None
+                    else None
+                ),
+                api_key=api_key,
+                timeout_ms=int(timeout * 1000),
+                retry_config={"max_retries": max_retries},
+                headers=dict(headers) if headers else None,
+            )
+            self._owns_langsmith_client = True
+        else:
+            self._owns_langsmith_client = False
+
+        self._langsmith_client: AsyncClient = client
+        self._base_url = (
+            api_endpoint.rstrip("/")
+            if api_endpoint is not None
+            else _get_sandbox_api_endpoint(client._api_url)
+        )
+        self._api_key = client.api_key
         self._timeout = timeout
         self._max_retries = max_retries
-        self._default_headers: dict[str, str] = dict(headers) if headers else {}
-        client_headers: dict[str, str] = {}
-        if resolved_api_key:
-            client_headers["X-Api-Key"] = resolved_api_key
-        if self._default_headers:
-            client_headers = merge_headers(client_headers, self._default_headers)
-        transport = AsyncRetryTransport(max_retries=max_retries)
-        self._http = httpx.AsyncClient(
-            transport=transport, timeout=timeout, headers=client_headers
-        )
-        self._registries_client: Optional[AsyncLangsmith] = None
-
-    def _api_root(self) -> str:
-        """Return the API root URL, without the ``/v2/sandboxes`` suffix."""
-        suffix = "/v2/sandboxes"
-        if self._base_url.endswith(suffix):
-            return self._base_url[: -len(suffix)]
-        return self._base_url
+        self._default_headers = dict(client.headers)
+        if self._owns_langsmith_client:
+            client._langsmith_api.max_retries = max_retries
+        self._http = client._langsmith_api._client
 
     @property
     def registries(self) -> AsyncRegistriesResource:
@@ -154,19 +154,78 @@ class AsyncSandboxClient:
                 registry_id=registry.id,
             )
         """
-        if self._registries_client is None:
-            self._registries_client = AsyncLangsmith(
-                api_key=self._api_key,
-                base_url=self._api_root(),
-                default_headers=self._default_headers or None,
-            )
-        return self._registries_client.sandboxes.registries
+        return self._langsmith_client.sandboxes.registries
 
-    def _request_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
-        """Merge default client headers with per-request overrides."""
-        if headers is None:
-            return None
-        return merge_headers(self._http.headers, headers)
+    def _request_headers(self, headers: RequestHeaders) -> dict[str, str]:
+        """Build full headers for requests sent directly to a dataplane URL."""
+        client_headers = {
+            name: value
+            for name, value in self._langsmith_client._compute_headers().items()
+            if name.lower() != "content-type"
+        }
+        return merge_headers(client_headers, headers)
+
+    async def _dataplane_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: RequestHeaders = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Send a direct dataplane request on the main client's HTTP pool."""
+        await self._langsmith_client._ensure_profile_auth()
+        try:
+            return await self._http.request(
+                method,
+                url,
+                headers=self._request_headers(headers),
+                **kwargs,
+            )
+        except httpx.RequestError as exc:
+            raise SandboxConnectionError(f"Failed to connect to server: {exc}") from exc
+
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json: Optional[dict[str, Any]] = None,
+        params: Optional[Mapping[str, Any]] = None,
+        headers: RequestHeaders = None,
+        timeout: Optional[float] = None,
+    ) -> httpx.Response:
+        """Send a sandbox REST request through the main client's pipeline."""
+        await self._langsmith_client._ensure_profile_auth()
+        headers = _get_sandbox_request_headers(
+            self._langsmith_client._compute_headers(), headers
+        )
+        api = self._langsmith_client._langsmith_api
+        options = make_request_options(
+            extra_headers=headers,
+            extra_query=params,
+            timeout=timeout,
+        )
+        try:
+            if method == "GET":
+                return await api.get(url, cast_to=httpx.Response, options=options)
+            if method == "POST":
+                return await api.post(
+                    url, cast_to=httpx.Response, body=json, options=options
+                )
+            if method == "PATCH":
+                return await api.patch(
+                    url, cast_to=httpx.Response, body=json, options=options
+                )
+            if method == "DELETE":
+                return await api.delete(url, cast_to=httpx.Response, options=options)
+            raise ValueError(f"Unsupported HTTP method: {method}")
+        except APIStatusError as exc:
+            raise httpx.HTTPStatusError(
+                str(exc), request=exc.request, response=exc.response
+            ) from exc
+        except APIConnectionError as exc:
+            raise SandboxConnectionError(f"Failed to connect to server: {exc}") from exc
 
     def _ws_default_headers(self, headers: RequestHeaders) -> Optional[dict[str, str]]:
         """Merge constructor-supplied default headers with per-request overrides.
@@ -174,9 +233,7 @@ class AsyncSandboxClient:
         Used by the WebSocket exec path so headers like ``X-Service-Key``
         set on the client are attached to the WS upgrade request.
         """
-        if not self._default_headers and headers is None:
-            return None
-        return merge_headers(self._default_headers, headers)
+        return self._request_headers(headers)
 
     def to_sync(self) -> SandboxClient:
         """Create a SandboxClient with the same configuration.
@@ -198,9 +255,8 @@ class AsyncSandboxClient:
 
     async def aclose(self) -> None:
         """Close the async HTTP client."""
-        await self._http.aclose()
-        if self._registries_client is not None:
-            await self._registries_client.close()
+        if self._owns_langsmith_client:
+            await self._langsmith_client.aclose()
 
     def __del__(self) -> None:
         """Best-effort cleanup of the async HTTP client on garbage collection.
@@ -210,7 +266,7 @@ class AsyncSandboxClient:
         For deterministic cleanup, use ``async with`` or ``await aclose()``.
         """
         try:
-            if not self._http.is_closed:
+            if self._owns_langsmith_client and not self._http.is_closed:
                 try:
                     loop = asyncio.get_running_loop()
                     if not loop.is_closed():
@@ -449,11 +505,12 @@ class AsyncSandboxClient:
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
         try:
-            response = await self._http.post(
+            response = await self._request(
+                "POST",
                 url,
                 json=payload,
                 timeout=http_timeout,
-                headers=self._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
             return AsyncSandbox.from_dict(
@@ -483,7 +540,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
+            response = await self._request("GET", url, headers=headers)
             response.raise_for_status()
             return AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
@@ -507,7 +564,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes"
 
         try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
+            response = await self._request("GET", url, headers=headers)
             response.raise_for_status()
             data = response.json()
             return [
@@ -567,9 +624,7 @@ class AsyncSandboxClient:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
 
         try:
-            response = await self._http.patch(
-                url, json=payload, headers=self._request_headers(headers)
-            )
+            response = await self._request("PATCH", url, json=payload, headers=headers)
             response.raise_for_status()
             return AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
@@ -602,9 +657,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
 
         try:
-            response = await self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
+            response = await self._request("DELETE", url, headers=headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -635,7 +688,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/status"
 
         try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
+            response = await self._request("GET", url, headers=headers)
             response.raise_for_status()
             return ResourceStatus.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -689,9 +742,7 @@ class AsyncSandboxClient:
             )
 
         try:
-            response = await self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
-            )
+            response = await self._request("POST", url, json=payload, headers=headers)
             response.raise_for_status()
             return AsyncServiceURL.from_dict(response.json(), _refresher=_refresher)
         except httpx.HTTPStatusError as e:
@@ -775,9 +826,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/start"
 
         try:
-            response = await self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
+            response = await self._request("POST", url, json={}, headers=headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -801,9 +850,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/stop"
 
         try:
-            response = await self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
+            response = await self._request("POST", url, json={}, headers=headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -856,9 +903,7 @@ class AsyncSandboxClient:
             payload["registry_id"] = registry_id
 
         try:
-            response = await self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
-            )
+            response = await self._request("POST", url, json=payload, headers=headers)
             response.raise_for_status()
             snapshot = Snapshot.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -1000,9 +1045,7 @@ class AsyncSandboxClient:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
 
         try:
-            response = await self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
-            )
+            response = await self._request("POST", url, json=payload, headers=headers)
             response.raise_for_status()
             snapshot = Snapshot.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -1035,7 +1078,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
 
         try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
+            response = await self._request("GET", url, headers=headers)
             response.raise_for_status()
             return Snapshot.from_dict(response.json())
         except httpx.HTTPStatusError as e:
@@ -1087,10 +1130,11 @@ class AsyncSandboxClient:
             params["offset"] = offset
 
         try:
-            response = await self._http.get(
+            response = await self._request(
+                "GET",
                 url,
                 params=params or None,
-                headers=self._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
             data = response.json()
@@ -1119,9 +1163,7 @@ class AsyncSandboxClient:
         url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
 
         try:
-            response = await self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
+            response = await self._request("DELETE", url, headers=headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:

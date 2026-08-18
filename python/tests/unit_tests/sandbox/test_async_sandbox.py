@@ -20,7 +20,9 @@ from langsmith.sandbox._async_sandbox import AsyncSandbox
 async def client():
     """Create an AsyncSandboxClient with retries disabled for test isolation."""
     async with AsyncSandboxClient(
-        api_endpoint="http://test-server:8080", max_retries=0
+        api_endpoint="http://test-server:8080",
+        api_key="test-key",
+        max_retries=0,
     ) as c:
         yield c
 

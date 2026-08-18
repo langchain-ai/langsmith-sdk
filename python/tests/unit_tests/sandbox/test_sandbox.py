@@ -19,7 +19,9 @@ from langsmith.sandbox._sandbox import Sandbox
 @pytest.fixture
 def client():
     """Create a SandboxClient with retries disabled for test isolation."""
-    return SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    return SandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
 
 
 @pytest.fixture

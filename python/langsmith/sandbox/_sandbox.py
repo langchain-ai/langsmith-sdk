@@ -481,11 +481,12 @@ class Sandbox:
             payload["cwd"] = cwd
 
         try:
-            response = self._client._http.post(
+            response = self._client._dataplane_request(
+                "POST",
                 url,
                 json=payload,
                 timeout=timeout + 10,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
             data = response.json()
@@ -584,12 +585,13 @@ class Sandbox:
         files = {"file": ("file", content)}
 
         try:
-            response = self._client._http.post(
+            response = self._client._dataplane_request(
+                "POST",
                 url,
                 params={"path": path},
                 files=files,
                 timeout=timeout,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -620,11 +622,12 @@ class Sandbox:
         url = f"{dataplane_url}/download"
 
         try:
-            response = self._client._http.get(
+            response = self._client._dataplane_request(
+                "GET",
                 url,
                 params={"path": path},
                 timeout=timeout,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
             return response.content

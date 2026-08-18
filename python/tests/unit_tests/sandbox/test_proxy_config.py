@@ -433,7 +433,9 @@ def test_proxy_config_rejects_gcp_auth_without_scopes() -> None:
 def test_create_sandbox_forwards_composed_proxy_config(
     httpx_mock: HTTPXMock,
 ) -> None:
-    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    client = SandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
     httpx_mock.add_response(
         method="POST",
         url="http://test-server:8080/boxes",
@@ -459,7 +461,9 @@ def test_create_sandbox_forwards_composed_proxy_config(
 def test_create_sandbox_expands_mount_config(
     httpx_mock: HTTPXMock,
 ) -> None:
-    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    client = SandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
     httpx_mock.add_response(
         method="POST",
         url="http://test-server:8080/boxes",
@@ -488,7 +492,9 @@ def test_create_sandbox_expands_mount_config(
 def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
     httpx_mock: HTTPXMock,
 ) -> None:
-    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    client = SandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
     httpx_mock.add_response(
         method="POST",
         url="http://test-server:8080/boxes",
@@ -584,7 +590,9 @@ def test_create_sandbox_rejects_duplicate_provider_auth_in_proxy_config(
     explicit_auth,
     message: str,
 ) -> None:
-    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    client = SandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
     config = mount_config(auth=[mount_auth()], mounts=mounts())
     extra_proxy_config = proxy_config(rules=[explicit_auth()])
 
@@ -598,7 +606,9 @@ def test_create_sandbox_rejects_duplicate_provider_auth_in_proxy_config(
 
 
 def test_create_sandbox_does_not_accept_raw_mounts() -> None:
-    client = SandboxClient(api_endpoint="http://test-server:8080", max_retries=0)
+    client = SandboxClient(
+        api_endpoint="http://test-server:8080", api_key="test-key", max_retries=0
+    )
 
     with pytest.raises(TypeError):
         getattr(client, "create_sandbox")(

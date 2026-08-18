@@ -485,11 +485,12 @@ class AsyncSandbox:
             payload["cwd"] = cwd
 
         try:
-            response = await self._client._http.post(
+            response = await self._client._dataplane_request(
+                "POST",
                 url,
                 json=payload,
                 timeout=timeout + 10,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
             data = response.json()
@@ -588,12 +589,13 @@ class AsyncSandbox:
         files = {"file": ("file", content)}
 
         try:
-            response = await self._client._http.post(
+            response = await self._client._dataplane_request(
+                "POST",
                 url,
                 params={"path": path},
                 files=files,
                 timeout=timeout,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -624,11 +626,12 @@ class AsyncSandbox:
         url = f"{dataplane_url}/download"
 
         try:
-            response = await self._client._http.get(
+            response = await self._client._dataplane_request(
+                "GET",
                 url,
                 params={"path": path},
                 timeout=timeout,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
             response.raise_for_status()
             return response.content
