@@ -10,6 +10,7 @@ import {
   LangSmithSandboxConnectionError,
   LangSmithSandboxConnectTimeoutError,
   LangSmithSandboxOperationError,
+  LangSmithSandboxRetryableConnectionError,
   LangSmithSandboxServerReloadError,
 } from "./errors.js";
 import type { WsMessage, WsRunOptions } from "./types.js";
@@ -37,6 +38,7 @@ export const WS_CONNECT_BUDGET = envTimeout(
   "SANDBOX_WS_TIMEOUT_CONNECT_BUDGET",
   120,
 );
+const RETRYABLE_HANDSHAKE_STATUS_CODES = new Set([500, 502, 503, 504]);
 
 function nowSeconds(): number {
   return performance.now() / 1000;
@@ -224,8 +226,8 @@ export function raiseForWsError(msg: WsMessage, commandId = ""): never {
  * Create a ws WebSocket connection and return a promise that resolves when open
  * or rejects on error.
  *
- * A socket-level failure rejects with the retryable connect-timeout error; a
- * non-101 response rejects with the permanent connection error.
+ * Socket-level failures and transient 5xx responses are retryable. Other
+ * non-101 responses are permanent connection errors.
  */
 async function connectWs(
   url: string,
@@ -260,8 +262,13 @@ async function connectWs(
         req.destroy?.();
         if (settled) return;
         settled = true;
+        const ErrorType = RETRYABLE_HANDSHAKE_STATUS_CODES.has(
+          res.statusCode ?? 0,
+        )
+          ? LangSmithSandboxRetryableConnectionError
+          : LangSmithSandboxConnectionError;
         reject(
-          new LangSmithSandboxConnectionError(
+          new ErrorType(
             `WebSocket upgrade to ${url} rejected by server (HTTP ${res.statusCode})`,
           ),
         );

@@ -14,7 +14,7 @@ import type {
 import { uuid7 } from "../uuid.js";
 import {
   LangSmithDataplaneNotConfiguredError,
-  LangSmithSandboxConnectTimeoutError,
+  LangSmithSandboxRetryableConnectionError,
   LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
 import { handleSandboxHttpError } from "./helpers.js";
@@ -301,7 +301,7 @@ export class Sandbox {
         // failed connect can have started a second command.
         if (
           !(e instanceof LangSmithStreamEndedBeforeStartedError) &&
-          !(e instanceof LangSmithSandboxConnectTimeoutError)
+          !(e instanceof LangSmithSandboxRetryableConnectionError)
         ) {
           throw e;
         }

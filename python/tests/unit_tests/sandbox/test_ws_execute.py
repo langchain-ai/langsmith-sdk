@@ -11,8 +11,8 @@ import pytest
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
-    SandboxNotReadyError,
     SandboxOperationError,
+    SandboxRetryableConnectionError,
     SandboxServerReloadError,
 )
 from langsmith.sandbox._models import (
@@ -1024,16 +1024,61 @@ class TestRaiseForInvalidHandshake:
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
-    def test_503_raises_not_ready(self):
+    def test_503_is_retryable(self):
         from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
         mock_response = MagicMock()
         mock_response.status_code = 503
+        mock_response.body = json.dumps(
+            {
+                "detail": {
+                    "error": "ServiceUnavailable",
+                    "message": "Service unavailable.",
+                    "error_id": "err-503",
+                }
+            }
+        ).encode()
         exc = Exception("server rejected WebSocket connection: HTTP 503")
         exc.response = mock_response
 
-        with pytest.raises(SandboxNotReadyError, match="not ready"):
+        with pytest.raises(SandboxRetryableConnectionError, match="error_id=err-503"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    @pytest.mark.parametrize("status", [500, 502, 504])
+    def test_transient_5xx_is_retryable_and_preserves_error_id(self, status):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = status
+        mock_response.body = json.dumps(
+            {
+                "detail": {
+                    "error": "ServiceUnavailable",
+                    "message": "Service unavailable.",
+                    "error_id": f"err-{status}",
+                }
+            }
+        ).encode()
+        exc = Exception(f"server rejected WebSocket connection: HTTP {status}")
+        exc.response = mock_response
+
+        with pytest.raises(
+            SandboxRetryableConnectionError, match=f"error_id=err-{status}"
+        ):
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_unstructured_body_is_not_exposed(self):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = 502
+        mock_response.body = b"internal database failure details"
+        exc = Exception("server rejected WebSocket connection: HTTP 502")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxRetryableConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+        assert "internal database failure details" not in str(exc_info.value)
 
     def test_no_http_response_gives_unreachable_message(self):
         """InvalidMessage carries no .response — a stopped/unreachable peer."""

@@ -13,8 +13,8 @@ from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     SandboxConnectionError,
     SandboxConnectTimeoutError,
-    SandboxNotReadyError,
     SandboxOperationError,
+    SandboxRetryableConnectionError,
     SandboxServerReloadError,
 )
 from langsmith.sandbox._helpers import merge_headers
@@ -209,6 +209,36 @@ class _AsyncWSStreamControl:
 # =============================================================================
 
 
+_TRANSIENT_HANDSHAKE_STATUSES = frozenset({500, 502, 503, 504})
+_MAX_HANDSHAKE_ERROR_BYTES = 16 * 1024
+
+
+def _handshake_server_detail(exc: Exception) -> Optional[str]:
+    """Return bounded, user-facing detail from a rejected handshake."""
+    body = getattr(getattr(exc, "response", None), "body", None)
+    if isinstance(body, bytes):
+        body = body[:_MAX_HANDSHAKE_ERROR_BYTES].decode("utf-8", errors="replace")
+    elif isinstance(body, str):
+        body = body[:_MAX_HANDSHAKE_ERROR_BYTES]
+    else:
+        return None
+
+    try:
+        payload = json.loads(body)
+    except (TypeError, ValueError):
+        return None
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if not isinstance(detail, dict):
+        return None
+
+    message = detail.get("message")
+    error_id = detail.get("error_id")
+    parts = [message] if isinstance(message, str) and message else []
+    if isinstance(error_id, str) and error_id:
+        parts.append(f"error_id={error_id}")
+    return " (".join(parts) + ("" if len(parts) < 2 else ")") if parts else None
+
+
 def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
     """Raise a clear error when the WebSocket upgrade handshake fails.
 
@@ -219,6 +249,8 @@ def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
     upgrade with garbage. Both subclass ``InvalidHandshake``.
     """
     status = getattr(getattr(exc, "response", None), "status_code", None)
+    server_detail = _handshake_server_detail(exc)
+    suffix = f": {server_detail}" if server_detail else f": {exc}"
     if status == 404:
         raise SandboxConnectionError(
             f"The sandbox server does not support WebSocket command execution "
@@ -226,9 +258,9 @@ def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
             f"to a version that supports the /execute/ws endpoint, or use "
             f"run() without wait=False or callbacks."
         ) from exc
-    if status == 503:
-        raise SandboxNotReadyError(
-            f"Sandbox is not ready for WebSocket command execution: {exc}"
+    if status in _TRANSIENT_HANDSHAKE_STATUSES:
+        raise SandboxRetryableConnectionError(
+            f"WebSocket upgrade temporarily rejected by server (HTTP {status}){suffix}"
         ) from exc
     if status is not None:
         raise SandboxConnectionError(
