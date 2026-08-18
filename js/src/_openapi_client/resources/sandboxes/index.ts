@@ -7,6 +7,7 @@ export {
   type BoxUpdateParams,
   type BoxListParams,
   type BoxCreateSnapshotParams,
+  type BoxGenerateDownloadURLParams,
   type BoxGenerateServiceURLParams,
 } from './boxes.js';
 export {
@@ -19,6 +20,7 @@ export {
 } from './registries.js';
 export {
   Sandboxes,
+  type DownloadURLResponse,
   type SandboxListResponse,
   type SandboxResponse,
   type SandboxStatusResponse,

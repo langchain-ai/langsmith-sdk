@@ -22,10 +22,12 @@ from ...types.sandboxes import (
     box_update_params,
     box_create_snapshot_params,
     box_generate_service_url_params,
+    box_generate_download_url_params,
 )
 from ...types.sandbox_response import SandboxResponse
 from ...types.snapshot_response import SnapshotResponse
 from ...types.service_url_response import ServiceURLResponse
+from ...types.download_url_response import DownloadURLResponse
 from ...types.sandbox_list_response import SandboxListResponse
 from ...types.sandbox_status_response import SandboxStatusResponse
 
@@ -422,6 +424,59 @@ class BoxesResource(SyncAPIResource):
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=SnapshotResponse,
+        )
+
+    def generate_download_url(
+        self,
+        name: str,
+        *,
+        path: str,
+        content_disposition: str | Omit = omit,
+        content_type: str | Omit = omit,
+        expires_in_seconds: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> DownloadURLResponse:
+        """
+        Generate a tokenized link that downloads a single file from a sandbox with no
+        further authentication. This mints a token rather than creating an addressable
+        resource, so it returns 200 with no Location header. The token pins the sandbox,
+        the file path, and the response content type and disposition, so a link cannot
+        be repointed at another file. Links never expire unless expires_in_seconds is
+        set. The link is served from the sandbox service domain, not the API host.
+
+        Args:
+          expires_in_seconds: ExpiresInSeconds is optional; a link with no expiry never expires.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        return self._post(
+            path_template("/api/v2/sandboxes/boxes/{name}/download-url", name=name),
+            body=maybe_transform(
+                {
+                    "path": path,
+                    "content_disposition": content_disposition,
+                    "content_type": content_type,
+                    "expires_in_seconds": expires_in_seconds,
+                },
+                box_generate_download_url_params.BoxGenerateDownloadURLParams,
+            ),
+            options=make_request_options(
+                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+            ),
+            cast_to=DownloadURLResponse,
         )
 
     def generate_service_url(
@@ -965,6 +1020,59 @@ class AsyncBoxesResource(AsyncAPIResource):
             cast_to=SnapshotResponse,
         )
 
+    async def generate_download_url(
+        self,
+        name: str,
+        *,
+        path: str,
+        content_disposition: str | Omit = omit,
+        content_type: str | Omit = omit,
+        expires_in_seconds: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> DownloadURLResponse:
+        """
+        Generate a tokenized link that downloads a single file from a sandbox with no
+        further authentication. This mints a token rather than creating an addressable
+        resource, so it returns 200 with no Location header. The token pins the sandbox,
+        the file path, and the response content type and disposition, so a link cannot
+        be repointed at another file. Links never expire unless expires_in_seconds is
+        set. The link is served from the sandbox service domain, not the API host.
+
+        Args:
+          expires_in_seconds: ExpiresInSeconds is optional; a link with no expiry never expires.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        return await self._post(
+            path_template("/api/v2/sandboxes/boxes/{name}/download-url", name=name),
+            body=await async_maybe_transform(
+                {
+                    "path": path,
+                    "content_disposition": content_disposition,
+                    "content_type": content_type,
+                    "expires_in_seconds": expires_in_seconds,
+                },
+                box_generate_download_url_params.BoxGenerateDownloadURLParams,
+            ),
+            options=make_request_options(
+                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+            ),
+            cast_to=DownloadURLResponse,
+        )
+
     async def generate_service_url(
         self,
         name: str,
@@ -1136,6 +1244,9 @@ class BoxesResourceWithRawResponse:
         self.create_snapshot = to_raw_response_wrapper(
             boxes.create_snapshot,
         )
+        self.generate_download_url = to_raw_response_wrapper(
+            boxes.generate_download_url,
+        )
         self.generate_service_url = to_raw_response_wrapper(
             boxes.generate_service_url,
         )
@@ -1171,6 +1282,9 @@ class AsyncBoxesResourceWithRawResponse:
         )
         self.create_snapshot = async_to_raw_response_wrapper(
             boxes.create_snapshot,
+        )
+        self.generate_download_url = async_to_raw_response_wrapper(
+            boxes.generate_download_url,
         )
         self.generate_service_url = async_to_raw_response_wrapper(
             boxes.generate_service_url,
@@ -1208,6 +1322,9 @@ class BoxesResourceWithStreamingResponse:
         self.create_snapshot = to_streamed_response_wrapper(
             boxes.create_snapshot,
         )
+        self.generate_download_url = to_streamed_response_wrapper(
+            boxes.generate_download_url,
+        )
         self.generate_service_url = to_streamed_response_wrapper(
             boxes.generate_service_url,
         )
@@ -1243,6 +1360,9 @@ class AsyncBoxesResourceWithStreamingResponse:
         )
         self.create_snapshot = async_to_streamed_response_wrapper(
             boxes.create_snapshot,
+        )
+        self.generate_download_url = async_to_streamed_response_wrapper(
+            boxes.generate_download_url,
         )
         self.generate_service_url = async_to_streamed_response_wrapper(
             boxes.generate_service_url,

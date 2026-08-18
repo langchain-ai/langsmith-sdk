@@ -72,6 +72,22 @@ export class Boxes extends APIResource {
   }
 
   /**
+   * Generate a tokenized link that downloads a single file from a sandbox with no
+   * further authentication. This mints a token rather than creating an addressable
+   * resource, so it returns 200 with no Location header. The token pins the sandbox,
+   * the file path, and the response content type and disposition, so a link cannot
+   * be repointed at another file. Links never expire unless expires_in_seconds is
+   * set. The link is served from the sandbox service domain, not the API host.
+   */
+  generateDownloadURL(
+    name: string,
+    body: BoxGenerateDownloadURLParams,
+    options?: RequestOptions,
+  ): APIPromise<SandboxesAPI.DownloadURLResponse> {
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/download-url`, { body, ...options });
+  }
+
+  /**
    * Create a short-lived JWT for accessing an HTTP service running on a specific
    * port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a
    * service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw
@@ -913,6 +929,19 @@ export interface BoxCreateSnapshotParams {
   tag?: string;
 }
 
+export interface BoxGenerateDownloadURLParams {
+  path: string;
+
+  content_disposition?: string;
+
+  content_type?: string;
+
+  /**
+   * ExpiresInSeconds is optional; a link with no expiry never expires.
+   */
+  expires_in_seconds?: number;
+}
+
 export interface BoxGenerateServiceURLParams {
   expires_in_seconds?: number;
 
@@ -925,6 +954,7 @@ export declare namespace Boxes {
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
   };
 }

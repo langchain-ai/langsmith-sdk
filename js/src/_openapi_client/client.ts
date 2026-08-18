@@ -147,6 +147,7 @@ import {
   RunsItemsCursorPostPagination,
 } from './resources/runs/runs.js';
 import {
+  DownloadURLResponse,
   SandboxListResponse,
   SandboxResponse,
   SandboxStatusResponse,
@@ -1125,6 +1126,7 @@ export declare namespace Langsmith {
 
   export {
     Sandboxes as Sandboxes,
+    type DownloadURLResponse as DownloadURLResponse,
     type SandboxListResponse as SandboxListResponse,
     type SandboxResponse as SandboxResponse,
     type SandboxStatusResponse as SandboxStatusResponse,

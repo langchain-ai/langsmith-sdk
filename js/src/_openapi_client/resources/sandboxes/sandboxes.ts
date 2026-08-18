@@ -6,6 +6,7 @@ import * as BoxesAPI from './boxes.js';
 import {
   BoxCreateParams,
   BoxCreateSnapshotParams,
+  BoxGenerateDownloadURLParams,
   BoxGenerateServiceURLParams,
   BoxListParams,
   BoxUpdateParams,
@@ -32,6 +33,17 @@ export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
   registries: RegistriesAPI.Registries = new RegistriesAPI.Registries(this._client);
   snapshots: SnapshotsAPI.Snapshots = new SnapshotsAPI.Snapshots(this._client);
+}
+
+export interface DownloadURLResponse {
+  token: string;
+
+  download_url: string;
+
+  /**
+   * ExpiresAt is null for a link that never expires.
+   */
+  expires_at?: string | null;
 }
 
 export interface SandboxListResponse {
@@ -652,6 +664,7 @@ Sandboxes.Snapshots = Snapshots;
 
 export declare namespace Sandboxes {
   export {
+    type DownloadURLResponse as DownloadURLResponse,
     type SandboxListResponse as SandboxListResponse,
     type SandboxResponse as SandboxResponse,
     type SandboxStatusResponse as SandboxStatusResponse,
@@ -666,6 +679,7 @@ export declare namespace Sandboxes {
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
   };
 

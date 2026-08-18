@@ -89,6 +89,7 @@ export {
 } from './runs/runs.js';
 export {
   Sandboxes,
+  type DownloadURLResponse,
   type SandboxListResponse,
   type SandboxResponse,
   type SandboxStatusResponse,
