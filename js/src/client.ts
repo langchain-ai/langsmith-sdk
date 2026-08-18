@@ -1621,67 +1621,53 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * How the generated client should authenticate.
-   *
-   * `apiKey` is the credential it is constructed with. A caller may instead
-   * authenticate by supplying `x-api-key` themselves; the generated client
-   * rejects that as a header (its `validateHeaders` requires its own `apiKey`
-   * to be set), so it is promoted to the option and named in
-   * `consumedHeaderNames` so the same value is not also sent as a header.
-   *
-   * `headerOverrides` carries what auth needs of the built client's headers:
-   * with no credential to offer, the generated client's own `X-API-Key` is
-   * suppressed so the wrapped `fetch` can supply auth instead — profile auth,
-   * an explicit `Authorization` header, or none at all.
-   */
-  private get _openAPIAuth(): {
-    apiKey: string | undefined;
-    consumedHeaderNames: readonly string[];
-    headerOverrides: Record<string, string | null>;
-  } {
-    // `_callerHeaders` has already dropped `x-api-key` if this client supplies
-    // its own, so a caller's only survives when there is nothing to override.
-    const callerApiKeyName = Object.keys(this._callerHeaders).find(
-      (name) => name.toLowerCase() === "x-api-key",
-    );
-    const apiKey =
-      this.apiKey ??
-      (callerApiKeyName === undefined
-        ? undefined
-        : this._callerHeaders[callerApiKeyName]);
-    const sendsAPIKeyHeader =
-      apiKey !== undefined || this.workspaceId !== undefined;
-
-    return {
-      apiKey,
-      consumedHeaderNames:
-        callerApiKeyName === undefined ? [] : [callerApiKeyName],
-      headerOverrides: sendsAPIKeyHeader ? {} : { "X-API-Key": null },
-    };
-  }
-
-  /**
-   * The headers the generated client should send on every request, before auth
-   * is applied.
+   * The options to build the generated client with: its auth, and the headers
+   * it should send on every request.
    *
    * The generated client applies `defaultHeaders` *after* its own auth headers,
    * so the ones this SDK sets are already dropped from `_callerHeaders` to keep
    * the precedence of `_mergedHeaders`, where required headers win.
-   *
-   * The User-Agent is defaulted to match `_mergedHeaders`: without it the
-   * generated client falls back to its own `Langsmith/JS <generated version>`,
-   * so the same client would identify itself two different ways depending on
-   * which path a call takes. A caller-supplied one still wins, and is matched
-   * case-insensitively so we don't send the header twice.
    */
-  private get _openAPIHeaders(): Record<string, string> {
-    const headers = { ...this._callerHeaders };
+  private get _openAPIClientOptions(): {
+    apiKey: string | undefined;
+    defaultHeaders: Record<string, string | null> | undefined;
+  } {
+    const headers: Record<string, string | null> = { ...this._callerHeaders };
+
+    // Without this the generated client falls back to its own
+    // `Langsmith/JS <generated version>`, so the same client would identify
+    // itself two different ways depending on which path a call takes. A
+    // caller-supplied one still wins, matched case-insensitively so the header
+    // is not sent twice.
     if (
       !Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")
     ) {
       headers["User-Agent"] = `langsmith-js/${__version__}`;
     }
-    return headers;
+
+    // A caller may authenticate by supplying `x-api-key` themselves. The
+    // generated client rejects that as a header (its `validateHeaders` requires
+    // its own `apiKey` to be set), so hand it over as the `apiKey` option and
+    // drop the header to avoid sending the same value twice.
+    const callerApiKeyName = Object.keys(headers).find(
+      (name) => name.toLowerCase() === "x-api-key",
+    );
+    let apiKey = this.apiKey;
+    if (apiKey === undefined && callerApiKeyName !== undefined) {
+      apiKey = headers[callerApiKeyName] ?? undefined;
+      delete headers[callerApiKeyName];
+    }
+
+    if (apiKey === undefined && this.workspaceId === undefined) {
+      // Let the wrapped `fetch` supply auth (profile auth, an explicit
+      // `Authorization` header, or none at all).
+      headers["X-API-Key"] = null;
+    }
+
+    return {
+      apiKey,
+      defaultHeaders: Object.keys(headers).length > 0 ? headers : undefined,
+    };
   }
 
   /**
@@ -1727,27 +1713,6 @@ export class Client implements LangSmithTracingClientInterface {
       this._openAPIClient = this._newOpenAPIClient(options);
     }
     return this._openAPIClient;
-  }
-
-  /**
-   * The auth and headers the generated client is captured with: the headers it
-   * should send, less the ones auth consumed, plus the ones auth overrides.
-   */
-  private get _openAPIClientOptions(): {
-    apiKey: string | undefined;
-    defaultHeaders: Record<string, string | null> | undefined;
-  } {
-    const auth = this._openAPIAuth;
-    const headers: Record<string, string | null> = this._openAPIHeaders;
-    for (const name of auth.consumedHeaderNames) {
-      delete headers[name];
-    }
-    Object.assign(headers, auth.headerOverrides);
-
-    return {
-      apiKey: auth.apiKey,
-      defaultHeaders: Object.keys(headers).length > 0 ? headers : undefined,
-    };
   }
 
   private _newOpenAPIClient(
