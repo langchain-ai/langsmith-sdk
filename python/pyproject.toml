@@ -178,11 +178,14 @@ dev = [
     "pytest-timeout>=2.3.1",
 ]
 
-# Benchmarking dependencies (`make benchmark-codspeed`). Kept out of `dev` so
-# it's only installed by the bench workflow / when explicitly requested.
+# Benchmarking dependencies (`make benchmark-codspeed`, `make benchmark-pytest`).
+# Kept out of `dev` so it's only installed by the bench workflows, and so the
+# memray-backed memory pass, which is 3.11+/Linux+macOS only, can't break the
+# 3.10 dev resolution.
 bench = [
     "pytest-benchmark>=5.1.0",
     "pytest-codspeed>=4.3.0",  # 4.3.0+ adds the memory instrument
+    "pytest-benchmem>=0.5.4; python_version>='3.11'",
 ]
 
 # Linting dependencies

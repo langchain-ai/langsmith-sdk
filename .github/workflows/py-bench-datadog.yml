@@ -1,0 +1,59 @@
+name: py-bench-datadog
+
+on:
+  pull_request:
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    # Fork PRs can't read DD_API_KEY, so the Datadog step would fail. Same-repo
+    # PRs and main pushes report normally.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.11
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --group bench
+
+      # The Datadog installer runs `python -m venv` and injects the resulting
+      # ddtrace via PYTHONPATH, so `python` must be the same interpreter the
+      # benchmarks run under — a CPython minor mismatch fails to import
+      # ddtrace's native extension.
+      - name: Put the project venv on PATH for the Datadog installer
+        run: echo "$GITHUB_WORKSPACE/python/.venv/bin" >> "$GITHUB_PATH"
+
+      # Must be the step right before the benchmarks: earlier steps (checkout,
+      # uv sync) would wipe out what it installs.
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@d6d648d87563e713b3d396bb3bfebb5e3cc93707 # v3.0.0
+        with:
+          languages: python
+          api_key: ${{ secrets.DD_API_KEY }}
+          service: langsmith-sdk-python
+
+      # PYTEST_ADDOPTS=--ddtrace comes from the step above; the make target is
+      # otherwise identical to a local run.
+      - name: Run benchmarks
+        run: make benchmark-pytest
