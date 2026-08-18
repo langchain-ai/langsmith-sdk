@@ -19,6 +19,7 @@ from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._orjson import dumps as _dumps
+from langsmith._internal._redaction import mask, redact_outside
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -50,7 +51,97 @@ def _to_dict(obj: Any) -> Any:
     return obj
 
 
+# Keys of google-genai's `HttpOptions` that are safe to trace. `headers`,
+# `client_args`, `extra_body` and the live client objects are masked.
+_HTTP_OPTIONS_SAFE_KEYS: frozenset[str] = frozenset(
+    {"base_url", "base_url_resource_scope", "api_version", "timeout", "retry_options"}
+)
+
+# Keys of google-genai's `StreamableHttpTransport` that are safe to trace.
+_MCP_TRANSPORT_SAFE_KEYS: frozenset[str] = frozenset(
+    {"url", "timeout", "sse_read_timeout", "terminate_on_close"}
+)
+
+# Credential-bearing paths inside a `Tool`, masked outright. Enumerated from the
+# google-genai type graph; `test_every_credential_field_is_covered` fails if a
+# release adds one that is not listed here.
+_TOOL_SECRET_PATHS: tuple[tuple[str, ...], ...] = (
+    ("exa_ai_search", "api_key"),
+    ("google_maps", "auth_config"),
+    ("parallel_ai_search", "api_key"),
+    ("retrieval", "external_api", "api_auth"),  # deprecated by `auth_config`
+    ("retrieval", "external_api", "auth_config"),
+)
+
+
+def _mask_path(obj: Any, path: tuple[str, ...]) -> Any:
+    """Copy ``obj`` with the value at ``path`` masked; unchanged if absent."""
+    mapping = _to_dict(obj)
+    if not isinstance(mapping, Mapping) or mapping.get(path[0]) is None:
+        return obj
+    key, rest = path[0], path[1:]
+    value = _mask_path(mapping[key], rest) if rest else mask(mapping[key])
+    return {**mapping, key: value}
+
+
+def _redact_mcp_server(server: Any) -> Any:
+    """Allowlist the MCP transport, so a credential added to it later fails shut."""
+    mapping = _to_dict(server)
+    if (
+        not isinstance(mapping, Mapping)
+        or mapping.get("streamable_http_transport") is None
+    ):
+        return server
+    return {
+        **mapping,
+        "streamable_http_transport": redact_outside(
+            mapping["streamable_http_transport"], _MCP_TRANSPORT_SAFE_KEYS
+        ),
+    }
+
+
+def _redact_tool(tool: Any) -> Any:
+    """Mask only the credential-bearing subtrees of one `Tool`.
+
+    Untouched subtrees are never walked, so a caller's `function_declarations`
+    schema -- which may legitimately declare a property named `headers` -- and
+    any variant google-genai adds later reach the trace intact.
+    """
+    for path in _TOOL_SECRET_PATHS:
+        tool = _mask_path(tool, path)
+    mapping = _to_dict(tool)
+    if not isinstance(mapping, Mapping) or not isinstance(
+        mapping.get("mcp_servers"), list
+    ):
+        return tool
+    return {
+        **mapping,
+        "mcp_servers": [_redact_mcp_server(s) for s in mapping["mcp_servers"]],
+    }
+
+
+def _redact_config(inputs: dict) -> dict:
+    """Mask the known credential sites in the caller's `config`. Returns a new dict."""
+    config = _to_dict(inputs.get("config"))
+    if not isinstance(config, Mapping):
+        return inputs
+
+    redacted = dict(config)
+    if redacted.get("http_options") is not None:
+        redacted["http_options"] = redact_outside(
+            redacted["http_options"], _HTTP_OPTIONS_SAFE_KEYS
+        )
+    if isinstance(redacted.get("tools"), list):
+        redacted["tools"] = [_redact_tool(t) for t in redacted["tools"]]
+    return {**inputs, "config": redacted}
+
+
 def _process_gemini_inputs(inputs: dict) -> dict:
+    """Normalize Gemini inputs for tracing, with credentials masked."""
+    return _redact_config(_normalize_gemini_inputs(inputs))
+
+
+def _normalize_gemini_inputs(inputs: dict) -> dict:
     r"""Process Gemini inputs to normalize them for LangSmith tracing.
 
     Example:

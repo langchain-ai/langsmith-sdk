@@ -1,6 +1,13 @@
 """Unit tests for Gemini wrapper processing functions."""
 
+import pytest
+
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 from langsmith.wrappers._gemini import (
+    _HTTP_OPTIONS_SAFE_KEYS,
+    _MCP_TRANSPORT_SAFE_KEYS,
+    _TOOL_SECRET_PATHS,
+    _convert_config_for_tracing,
     _create_usage_metadata,
     _infer_invocation_params,
     _process_gemini_inputs,
@@ -735,3 +742,374 @@ class TestProcessGeminiInputsWithObjects:
         result = _process_gemini_inputs(inputs)
 
         assert result["messages"][0]["content"] == "from part object"
+
+
+# ---------------------------------------------------------------------------
+# credential masking
+# ---------------------------------------------------------------------------
+
+FAKE_TOKEN = "fake-token-for-tests-only"
+
+
+def _auth_headers() -> dict:
+    return {"Authorization": f"Bearer {FAKE_TOKEN}"}
+
+
+class TestRedactConfigCredentials:
+    """google-genai `config` carries credentials at several known sites."""
+
+    def test_masks_http_options_credentials(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "http_options": {
+                        "headers": _auth_headers(),
+                        "base_url": "https://generativelanguage.googleapis.com",
+                        "timeout": 30,
+                    }
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+        http_options = result["config"]["http_options"]
+        assert http_options["headers"] == SECRET_PLACEHOLDER
+        assert http_options["base_url"] == "https://generativelanguage.googleapis.com"
+        assert http_options["timeout"] == 30
+
+    def test_masks_http_options_fields_that_are_not_allowed(self) -> None:
+        """A credential field added to `HttpOptions` later is masked by default."""
+        result = _process_gemini_inputs(
+            {"contents": "hi", "config": {"http_options": {"future_secret": "s3cret"}}}
+        )
+
+        assert result["config"]["http_options"]["future_secret"] == SECRET_PLACEHOLDER
+
+    def test_masks_mcp_server_transport_headers(self) -> None:
+        """Remote MCP servers authenticate with a bearer token in the transport."""
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "mcp_servers": [
+                                {
+                                    "name": "example",
+                                    "streamable_http_transport": {
+                                        "url": "https://mcp.example.com/mcp",
+                                        "headers": _auth_headers(),
+                                    },
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+        transport = result["config"]["tools"][0]["mcp_servers"][0][
+            "streamable_http_transport"
+        ]
+        assert transport["headers"] == SECRET_PLACEHOLDER
+        assert transport["url"] == "https://mcp.example.com/mcp"
+
+    def test_masks_transport_fields_that_are_not_allowed(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "mcp_servers": [
+                                {
+                                    "streamable_http_transport": {
+                                        "url": "u",
+                                        "future_secret": "s3cret",
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        )
+
+        transport = result["config"]["tools"][0]["mcp_servers"][0][
+            "streamable_http_transport"
+        ]
+        assert transport["future_secret"] == SECRET_PLACEHOLDER
+        assert transport["url"] == "u"
+
+    def test_masks_google_maps_auth_config(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "google_maps": {
+                                "auth_config": {
+                                    "api_key_config": {"api_key_string": FAKE_TOKEN}
+                                },
+                                "enable_widget": True,
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+        google_maps = result["config"]["tools"][0]["google_maps"]
+        assert google_maps["auth_config"] == {"api_key_config": SECRET_PLACEHOLDER}
+        assert google_maps["enable_widget"] is True
+
+    def test_masks_retrieval_api_auth(self) -> None:
+        result = _process_gemini_inputs(
+            {
+                "contents": "hi",
+                "config": {
+                    "tools": [
+                        {
+                            "retrieval": {
+                                "external_api": {
+                                    "api_auth": {
+                                        "api_key_config": {"api_key_string": FAKE_TOKEN}
+                                    },
+                                    "api_spec": "SIMPLE_SEARCH",
+                                }
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert FAKE_TOKEN not in str(result)
+        external_api = result["config"]["tools"][0]["retrieval"]["external_api"]
+        assert external_api["api_auth"] == {"api_key_config": SECRET_PLACEHOLDER}
+        assert external_api["api_spec"] == "SIMPLE_SEARCH"
+
+    def test_function_declaration_schemas_are_left_intact(self) -> None:
+        """A declared parameter may legitimately be named `headers` or `api_key`."""
+        tools = [
+            {
+                "function_declarations": [
+                    {
+                        "name": "send_request",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "url": {"type": "string"},
+                                "headers": {"type": "object"},
+                                "api_key": {"type": "string"},
+                            },
+                        },
+                    }
+                ]
+            }
+        ]
+
+        result = _process_gemini_inputs({"contents": "hi", "config": {"tools": tools}})
+
+        assert result["config"]["tools"] == tools
+
+    @pytest.mark.parametrize("key", ["response_schema", "response_json_schema"])
+    def test_response_schemas_are_left_intact(self, key) -> None:
+        schema = {"type": "object", "properties": {"headers": {"type": "object"}}}
+
+        result = _process_gemini_inputs({"contents": "hi", "config": {key: schema}})
+
+        assert result["config"][key] == schema
+
+    def test_unknown_tool_variants_are_left_intact(self) -> None:
+        """An untouched subtree cannot be corrupted, whatever google-genai adds."""
+        tools = [{"future_tool": {"headers": {"type": "object"}, "api_key": "shape"}}]
+
+        result = _process_gemini_inputs({"contents": "hi", "config": {"tools": tools}})
+
+        assert result["config"]["tools"] == tools
+
+    def test_does_not_mutate_the_callers_config(self) -> None:
+        """The same config is sent to Gemini, so it keeps the real values."""
+        headers = _auth_headers()
+        config = {"http_options": {"headers": headers}}
+
+        _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert headers["Authorization"] == f"Bearer {FAKE_TOKEN}"
+        assert config["http_options"]["headers"] is headers
+
+    def test_leaves_non_secret_config_untouched(self) -> None:
+        config = {"temperature": 0.5, "max_output_tokens": 100, "top_k": 4}
+
+        result = _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert result["config"] == config
+
+    def test_masks_when_contents_is_absent(self) -> None:
+        """The early-return path must redact too."""
+        result = _process_gemini_inputs(
+            {"config": {"http_options": {"headers": _auth_headers()}}}
+        )
+
+        assert FAKE_TOKEN not in str(result)
+
+    @pytest.mark.parametrize("config", [None, "not-a-mapping", 42])
+    def test_tolerates_unexpected_config_shapes(self, config) -> None:
+        result = _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert result["config"] == config
+
+    def test_tolerates_unexpected_tool_shapes(self) -> None:
+        config = {"tools": "not-a-list"}
+
+        result = _process_gemini_inputs({"contents": "hi", "config": config})
+
+        assert result["config"]["tools"] == "not-a-list"
+
+    def test_masks_credentials_on_real_pydantic_config_objects(self) -> None:
+        """The wrapper receives model instances, not dicts, in normal use.
+
+        `google.genai` is imported lazily to keep it out of this module's imports.
+        """
+        types = pytest.importorskip("google.genai").types
+
+        config = types.GenerateContentConfig(
+            temperature=0.5,
+            http_options=types.HttpOptions(headers=_auth_headers()),
+            tools=[
+                types.Tool(
+                    mcp_servers=[
+                        types.McpServer(
+                            name="example",
+                            streamable_http_transport=(
+                                types.StreamableHttpTransport(
+                                    url="https://mcp.example.com/mcp",
+                                    headers=_auth_headers(),
+                                )
+                            ),
+                        )
+                    ]
+                )
+            ],
+        )
+        kwargs = {"model": "m", "contents": "hi", "config": config}
+        _convert_config_for_tracing(kwargs)
+
+        result = _process_gemini_inputs(kwargs)
+
+        assert FAKE_TOKEN not in str(result)
+        assert result["config"]["temperature"] == 0.5
+        transport = result["config"]["tools"][0]["mcp_servers"][0][
+            "streamable_http_transport"
+        ]
+        assert transport["url"] == "https://mcp.example.com/mcp"
+        # The caller's config still goes to the API and keeps its real values.
+        assert config.http_options.headers == _auth_headers()
+        assert (
+            config.tools[0].mcp_servers[0].streamable_http_transport.headers
+            == _auth_headers()
+        )
+
+
+class TestCredentialCoverage:
+    """The explicit-path design is only as good as its enumeration.
+
+    Walking the google-genai type graph turns "someone forgot a path" from a
+    silent leak into a failing test when the library adds a credential field.
+    """
+
+    # Field names and model names that mark a credential-bearing subtree.
+    NAME_HINTS = (
+        "auth",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "bearer",
+        "secret",
+        "password",
+        "credential",
+        "headers",
+        "client_args",
+        "extra_body",
+    )
+    TYPE_HINTS = ("Auth", "ApiKey", "Credential", "ServiceAccount")
+
+    @staticmethod
+    def _unwrap(annotation):
+        """Yield concrete types inside Optional/Union/List wrappers."""
+        import typing
+
+        if typing.get_origin(annotation) is None:
+            yield annotation
+            return
+        for arg in typing.get_args(annotation):
+            if arg is not type(None):
+                yield from TestCredentialCoverage._unwrap(arg)
+
+    @classmethod
+    def _is_credential(cls, name, annotation) -> bool:
+        if name.endswith("tokens"):  # max_output_tokens, num_tokens
+            return False
+        if any(hint in name.lower() for hint in cls.NAME_HINTS):
+            return True
+        return any(
+            any(hint in getattr(t, "__name__", "") for hint in cls.TYPE_HINTS)
+            for t in cls._unwrap(annotation)
+        )
+
+    @classmethod
+    def _credential_paths(cls, model, prefix=(), seen=frozenset(), depth=0):
+        from pydantic import BaseModel
+
+        if depth > 8 or model in seen:
+            return
+        seen = seen | {model}
+        for name, field in model.model_fields.items():
+            here = prefix + (name,)
+            if cls._is_credential(name, field.annotation):
+                yield here
+                continue  # whole subtree is credential; no need to descend
+            for t in cls._unwrap(field.annotation):
+                if isinstance(t, type) and issubclass(t, BaseModel):
+                    yield from cls._credential_paths(t, here, seen, depth + 1)
+
+    @staticmethod
+    def _is_covered(path: tuple[str, ...]) -> bool:
+        if path[0] == "http_options":
+            return path[1] not in _HTTP_OPTIONS_SAFE_KEYS
+        if path[:1] != ("tools",):
+            return False
+        rest = path[1:]
+        if rest[:2] == ("mcp_servers", "streamable_http_transport"):
+            return rest[2] not in _MCP_TRANSPORT_SAFE_KEYS
+        return any(rest[: len(p)] == p for p in _TOOL_SECRET_PATHS)
+
+    def test_every_credential_field_is_covered(self) -> None:
+        types = pytest.importorskip("google.genai").types
+
+        paths = set(self._credential_paths(types.GenerateContentConfig))
+        # `tools` is annotated as a bare `list`, so `Tool` is not reachable from
+        # the annotation and has to be seeded by hand.
+        paths |= set(self._credential_paths(types.Tool, ("tools",)))
+
+        uncovered = sorted(".".join(p) for p in paths if not self._is_covered(p))
+        assert not uncovered, (
+            "google-genai exposes credential fields this wrapper does not mask: "
+            f"{uncovered}. Add them to _TOOL_SECRET_PATHS, or narrow "
+            "_HTTP_OPTIONS_SAFE_KEYS / _MCP_TRANSPORT_SAFE_KEYS."
+        )
+
+    def test_the_walker_finds_the_paths_we_already_know_about(self) -> None:
+        """Guards the guard: a walker that finds nothing would pass vacuously."""
+        types = pytest.importorskip("google.genai").types
+
+        paths = {".".join(p) for p in self._credential_paths(types.Tool, ("tools",))}
+
+        assert "tools.google_maps.auth_config" in paths
+        assert "tools.mcp_servers.streamable_http_transport.headers" in paths
