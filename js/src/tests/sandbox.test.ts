@@ -104,6 +104,10 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
     getApiKey: () => "test-key",
     getDefaultHeaders: () => ({}),
     getRequestHeaders: async () => ({ "x-api-key": "test-key" }),
+    getSandboxRuntimeUrl: (sandboxIdOrName: string) =>
+      `https://api.example.com/api/v2/sandboxes/${encodeURIComponent(
+        sandboxIdOrName,
+      )}`,
     deleteSandbox: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     ...overrides,
   }) as unknown as SandboxClient;
@@ -758,20 +762,30 @@ describe("SandboxClient", () => {
 
 describe("Sandbox", () => {
   describe("run", () => {
-    it("should throw DataplaneNotConfiguredError when dataplane_url is missing", async () => {
+    it("does not require dataplane_url for runtime operations", async () => {
+      const mockFetch = createMockFetch({
+        ok: true,
+        json: async () => ({ stdout: "ok\n", stderr: "", exit_code: 0 }),
+      });
       const sandbox = new (Sandbox as any)(
         {
           id: "sandbox-123",
           name: "test-sandbox",
-          // No dataplane_url
         },
-        createMockClient(),
+        createMockClient({
+          _fetch: mockFetch,
+          getSandboxRuntimeUrl: () =>
+            "https://api.example.com/api/v2/sandboxes/sandbox-123",
+        }),
         false,
       );
+      forceHttpFallback(sandbox);
 
-      await expect(sandbox.run("echo hello")).rejects.toThrow(
-        LangSmithDataplaneNotConfiguredError,
-      );
+      await expect(sandbox.run("echo hello")).resolves.toEqual({
+        stdout: "ok\n",
+        stderr: "",
+        exit_code: 0,
+      });
     });
 
     it("should execute a command and return result", async () => {
@@ -805,7 +819,7 @@ describe("Sandbox", () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    it("keeps an absolute dataplane URL on the main Client transport", async () => {
+    it("routes runtime requests through the main Client control-plane endpoint", async () => {
       let requestUrl: string | undefined;
       let requestHeaders: Headers | undefined;
       const mainClient = new Client({
@@ -824,6 +838,7 @@ describe("Sandbox", () => {
       const client = new SandboxClient({ client: mainClient });
       const sandbox = new Sandbox(
         {
+          id: "sandbox-123",
           name: "test-sandbox",
           dataplane_url: "https://dataplane.example.com/sandbox-123",
         },
@@ -837,7 +852,7 @@ describe("Sandbox", () => {
         exit_code: 0,
       });
       expect(requestUrl).toBe(
-        "https://dataplane.example.com/sandbox-123/execute",
+        "https://api.example.com/api/v2/sandboxes/sandbox-123/execute",
       );
       expect(requestHeaders?.get("x-api-key")).toBe("main-key");
       expect(requestHeaders?.get("x-tenant-id")).toBe("workspace-123");
@@ -1538,7 +1553,7 @@ describe("Sandbox - status fields and not-ready guard", () => {
     expect(sandbox.status_message).toBe("Waiting for resources");
   });
 
-  it("does not gate dataplane ops on status (stopped runs; platform resumes)", async () => {
+  it("does not gate runtime operations on status", async () => {
     const mockFetch = createMockFetch({
       ok: true,
       json: async () => ({ stdout: "ok\n", stderr: "", exit_code: 0 }),

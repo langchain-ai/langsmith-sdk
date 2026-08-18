@@ -518,6 +518,11 @@ export class SandboxClient {
     return this._langsmithClient._getRequestHeaders();
   }
 
+  /** Build the control-plane URL for sandbox runtime operations. @internal */
+  getSandboxRuntimeUrl(sandboxIdOrName: string): string {
+    return `${this._baseUrl}/${encodeURIComponent(sandboxIdOrName)}`;
+  }
+
   /**
    * JSON POST helper. Sends JSON body, checks response status,
    * and returns the Response for further processing.
