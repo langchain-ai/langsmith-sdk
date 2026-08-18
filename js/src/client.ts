@@ -1626,12 +1626,23 @@ export class Client implements LangSmithTracingClientInterface {
    * The generated client applies `defaultHeaders` *after* its own auth headers,
    * so the ones this SDK sets are already dropped from `_callerHeaders` to keep
    * the precedence of `_mergedHeaders`, where required headers win.
+   *
+   * The User-Agent is defaulted here to match `_mergedHeaders`: without it the
+   * generated client falls back to its own `Langsmith/JS <generated version>`,
+   * so the same client would identify itself two different ways depending on
+   * which path a call takes. A caller-supplied one still wins, and is matched
+   * case-insensitively so we don't send the header twice.
    */
   private get _openAPIAuth(): {
     apiKey: string | undefined;
     defaultHeaders: Record<string, string | null> | undefined;
   } {
     const headers: Record<string, string | null> = { ...this._callerHeaders };
+    if (
+      !Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")
+    ) {
+      headers["User-Agent"] = `langsmith-js/${__version__}`;
+    }
 
     // A caller may authenticate by supplying `x-api-key` themselves. The
     // generated client rejects that as a header (its `validateHeaders` requires
