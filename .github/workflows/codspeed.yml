@@ -23,6 +23,9 @@ jobs:
   benchmark:
     name: "Python Benchmarks"
     runs-on: ubuntu-latest
+    # CPU simulation is far slower than a bare run, so the job timeout is what
+    # bounds a hung benchmark (see --timeout=0 below).
+    timeout-minutes: 30
     permissions:
       contents: read # required for actions/checkout
       id-token: write # required for OIDC authentication with CodSpeed
@@ -46,4 +49,6 @@ jobs:
         with:
           mode: simulation,memory
           working-directory: python
-          run: uv run pytest bench/test_bench.py --codspeed
+          # --timeout=0 drops the repo-wide 120s pytest-timeout, which is sized
+          # for unit tests and kills benchmarks under CPU simulation.
+          run: uv run pytest bench/test_bench.py --codspeed --timeout=0
