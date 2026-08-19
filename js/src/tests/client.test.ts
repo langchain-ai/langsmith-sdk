@@ -219,7 +219,9 @@ describe("Client", () => {
       );
 
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("smithdb-sdk-migration-feedback#feedback-create"),
+        expect.stringContaining(
+          "smithdb-sdk-migration-feedback#feedback-create",
+        ),
       );
       expect(paths()).toContain("/feedback");
       warn.mockRestore();
