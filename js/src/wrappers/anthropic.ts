@@ -11,6 +11,10 @@ import {
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
 import { SECRET_PLACEHOLDER } from "../anonymizer/index.js";
+import {
+  captureGatewayResponseMetadata,
+  wrapWithGatewayResponseMetadata,
+} from "./utils/gateway_metadata.js";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
 
@@ -468,7 +472,9 @@ export const wrapAnthropic = <T extends AnthropicType>(
 
   // Wrap messages.create
   tracedAnthropicClient.messages.create = traceable(
-    anthropic.messages.create.bind(anthropic.messages),
+    wrapWithGatewayResponseMetadata(
+      anthropic.messages.create.bind(anthropic.messages),
+    ),
     messagesCreateConfig,
   );
 
@@ -478,6 +484,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return function (...args: any[]) {
       const stream = originalStreamFn(...args);
+      captureGatewayResponseMetadata(stream);
       if (
         "finalMessage" in stream &&
         typeof stream.finalMessage === "function"
@@ -531,14 +538,18 @@ export const wrapAnthropic = <T extends AnthropicType>(
 
       // Wrap beta.messages.create
       tracedBeta.messages.create = traceable(
-        anthropic.beta.messages.create.bind(anthropic.beta.messages),
+        wrapWithGatewayResponseMetadata(
+          anthropic.beta.messages.create.bind(anthropic.beta.messages),
+        ),
         messagesCreateConfig,
       );
 
       // Wrap beta.messages.parse if it exists
       if (typeof anthropic.beta.messages.parse === "function") {
         tracedBeta.messages.parse = traceable(
-          anthropic.beta.messages.parse.bind(anthropic.beta.messages),
+          wrapWithGatewayResponseMetadata(
+            anthropic.beta.messages.parse.bind(anthropic.beta.messages),
+          ),
           messagesCreateConfig,
         );
       }

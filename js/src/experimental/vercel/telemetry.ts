@@ -7,6 +7,7 @@ import { setUsageMetadataOnRunTree } from "./utils.js";
 import type { KVMap } from "../../schemas.js";
 import { isPrimitive, isRecord } from "../../utils/types.js";
 import { vercelLsAgentTypeMetadata } from "./_agent_type.js";
+import { addGatewayResponseMetadata } from "../../wrappers/utils/gateway_metadata.js";
 
 /**
  * Configuration options for creating a LangSmith telemetry integration
@@ -619,6 +620,7 @@ export function LangSmithTelemetry(
     // Set usage metadata
     // @ts-expect-error SharedV4ProviderMetadata is not assignable to SharedV2ProviderMetadata
     setUsageMetadataOnRunTree(event, stepRunTree);
+    addGatewayResponseMetadata(stepRunTree, event.response?.headers);
 
     await stepRunTree.end(outputs);
     const piUsageWorkaround = harnessState?.piAggregateUsageWorkaround;

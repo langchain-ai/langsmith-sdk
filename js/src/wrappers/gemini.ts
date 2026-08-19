@@ -13,6 +13,7 @@ import type {
   SafetyRating,
 } from "@google/genai";
 import { createGeminiUsageMetadata } from "./gemini.utils.js";
+import { captureGatewayResponseMetadata } from "./utils/gateway_metadata.js";
 
 type GoogleGenAIType = {
   models: {
@@ -49,6 +50,7 @@ const chatAggregator = (input: unknown): KVMap => {
   let finishReason: string | null = null;
   let safetyRatings: SafetyRating[] | null = null;
 
+  captureGatewayResponseMetadata(chunks[0]);
   for (const chunk of chunks) {
     if (chunk?.usageMetadata) {
       usageMetadata = chunk.usageMetadata;
@@ -261,6 +263,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
 }
 
 function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
+  captureGatewayResponseMetadata(outputs);
   const response = (outputs?.outputs || outputs) as
     | GenerateContentResponse
     | undefined;

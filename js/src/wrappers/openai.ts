@@ -9,6 +9,7 @@ import {
 import { InvocationParamsSchema, KVMap } from "../schemas.js";
 import { getCurrentRunTree } from "../singletons/traceable.js";
 import { defaultLsAgentTypeMetadata } from "../utils/ls_agent_type.js";
+import { wrapWithGatewayResponseMetadata } from "./utils/gateway_metadata.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -477,7 +478,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
       typeof openai.beta.chat.completions.parse === "function"
     ) {
       tracedOpenAIClient.beta.chat.completions.parse = traceable(
-        openai.beta.chat.completions.parse.bind(openai.beta.chat.completions),
+        wrapWithGatewayResponseMetadata(
+          openai.beta.chat.completions.parse.bind(openai.beta.chat.completions),
+        ),
         chatCompletionParseMetadata,
       );
     }
@@ -527,14 +530,18 @@ export const wrapOpenAI = <T extends OpenAIType>(
 
   // Wrap chat.completions.create
   tracedOpenAIClient.chat.completions.create = traceable(
-    openai.chat.completions.create.bind(openai.chat.completions),
+    wrapWithGatewayResponseMetadata(
+      openai.chat.completions.create.bind(openai.chat.completions),
+    ),
     chatCompletionParseMetadata,
   );
 
   // Wrap chat.completions.parse if it exists
   if (typeof openai.chat.completions.parse === "function") {
     tracedOpenAIClient.chat.completions.parse = traceable(
-      openai.chat.completions.parse.bind(openai.chat.completions),
+      wrapWithGatewayResponseMetadata(
+        openai.chat.completions.parse.bind(openai.chat.completions),
+      ),
       chatCompletionParseMetadata,
     );
   }
@@ -566,43 +573,48 @@ export const wrapOpenAI = <T extends OpenAIType>(
 
   tracedOpenAIClient.completions = {
     ...openai.completions,
-    create: traceable(openai.completions.create.bind(openai.completions), {
-      name: completionsName,
-      run_type: "llm",
-      aggregator: textAggregator,
-      argsConfigPath: [1, "langsmithExtra"],
-      getInvocationParams: (payload: unknown) => {
-        if (typeof payload !== "object" || payload == null) return undefined;
-        // we can safely do so, as the types are not exported in TSC
-        const params = payload as OpenAI.CompletionCreateParams;
+    create: traceable(
+      wrapWithGatewayResponseMetadata(
+        openai.completions.create.bind(openai.completions),
+      ),
+      {
+        name: completionsName,
+        run_type: "llm",
+        aggregator: textAggregator,
+        argsConfigPath: [1, "langsmithExtra"],
+        getInvocationParams: (payload: unknown) => {
+          if (typeof payload !== "object" || payload == null) return undefined;
+          // we can safely do so, as the types are not exported in TSC
+          const params = payload as OpenAI.CompletionCreateParams;
 
-        const ls_stop =
-          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
-          undefined;
+          const ls_stop =
+            (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+            undefined;
 
-        const ls_invocation_params: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(params)) {
-          if (TRACED_INVOCATION_KEYS.includes(key)) {
-            ls_invocation_params[key] = value;
+          const ls_invocation_params: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(params)) {
+            if (TRACED_INVOCATION_KEYS.includes(key)) {
+              ls_invocation_params[key] = value;
+            }
           }
-        }
 
-        return {
-          ls_provider: provider,
-          ls_model_type: "llm",
-          ls_model_name: params.model,
-          ls_max_tokens: params.max_tokens ?? undefined,
-          ls_temperature: params.temperature ?? undefined,
-          ls_stop,
-          ls_invocation_params: {
-            ...prepopulatedInvocationParams,
-            ...ls_invocation_params,
-          },
-          ...defaultLsAgentTypeMetadata({}, getCurrentRunTree(true)),
-        };
+          return {
+            ls_provider: provider,
+            ls_model_type: "llm",
+            ls_model_name: params.model,
+            ls_max_tokens: params.max_tokens ?? undefined,
+            ls_temperature: params.temperature ?? undefined,
+            ls_stop,
+            ls_invocation_params: {
+              ...prepopulatedInvocationParams,
+              ...ls_invocation_params,
+            },
+            ...defaultLsAgentTypeMetadata({}, getCurrentRunTree(true)),
+          };
+        },
+        ...cleanedOptions,
       },
-      ...cleanedOptions,
-    }),
+    ),
   };
 
   // Add responses API support if it exists
@@ -623,7 +635,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
       typeof tracedOpenAIClient.responses.create === "function"
     ) {
       tracedOpenAIClient.responses.create = traceable(
-        openai.responses.create.bind(openai.responses),
+        wrapWithGatewayResponseMetadata(
+          openai.responses.create.bind(openai.responses),
+        ),
         {
           name: chatName,
           run_type: "llm",
@@ -645,7 +659,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
       typeof tracedOpenAIClient.responses.parse === "function"
     ) {
       tracedOpenAIClient.responses.parse = traceable(
-        openai.responses.parse.bind(openai.responses),
+        wrapWithGatewayResponseMetadata(
+          openai.responses.parse.bind(openai.responses),
+        ),
         {
           name: chatName,
           run_type: "llm",

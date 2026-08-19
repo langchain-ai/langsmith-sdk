@@ -8,6 +8,7 @@ import { KVMap } from "../../schemas.js";
 import { RunTree } from "../../run_trees.js";
 import { createUsageMetadata } from "../anthropic.js";
 import { isRecord } from "../../utils/types.js";
+import { addGatewayResponseMetadata } from "./gateway_metadata.js";
 
 type OnlyType<TType extends BetaManagedAgentsStreamSessionEvents["type"]> =
   BetaManagedAgentsStreamSessionEvents extends infer TEvent
@@ -721,9 +722,15 @@ export function wrapManagedAgentSessionEvents({
                 .catch(() => undefined)
             : Promise.resolve(undefined);
 
-        const stream = await originalBeta.sessions?.events?.stream.bind(
+        const streamRequest = originalBeta.sessions?.events?.stream.bind(
           originalBeta.sessions.events,
         )(...sanitizedArgs);
+        const gatewayResponsePromise =
+          streamRequest != null &&
+          typeof streamRequest.asResponse === "function"
+            ? streamRequest.asResponse().catch(() => undefined)
+            : Promise.resolve(undefined);
+        const stream = await streamRequest;
 
         const iterator: AsyncIterator<BetaManagedAgentsStreamSessionEvents> =
           stream[Symbol.asyncIterator]();
@@ -773,6 +780,7 @@ export function wrapManagedAgentSessionEvents({
               requestOptions,
               turnStartTime,
             );
+            addGatewayResponseMetadata(runTree, await gatewayResponsePromise);
             const inputEvents = getManagedAgentInputEvents(chunks);
             runTree.inputs = {
               ...processManagedAgentStreamInputs({

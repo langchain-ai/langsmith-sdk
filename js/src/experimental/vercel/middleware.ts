@@ -9,6 +9,7 @@ import type {
 } from "@ai-sdk/provider";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
+import { addGatewayResponseMetadata } from "../../wrappers/utils/gateway_metadata.js";
 import {
   convertMessageToTracedFormat,
   setUsageMetadataOnRunTree,
@@ -96,12 +97,18 @@ export function LangSmithMiddleware(config?: {
     wrapGenerate: async ({ doGenerate, params }) => {
       const traceableFunc = traceable(
         async (_params: typeof params) => {
-          const result = await doGenerate();
           const currentRunTree = getCurrentRunTree(true);
-          if (currentRunTree !== undefined) {
-            setUsageMetadataOnRunTree(result, currentRunTree);
+          try {
+            const result = await doGenerate();
+            if (currentRunTree !== undefined) {
+              setUsageMetadataOnRunTree(result, currentRunTree);
+              addGatewayResponseMetadata(currentRunTree, result.response);
+            }
+            return result;
+          } catch (error) {
+            addGatewayResponseMetadata(currentRunTree, error);
+            throw error;
           }
-          return result;
         },
         {
           ...lsConfig,
@@ -160,6 +167,7 @@ export function LangSmithMiddleware(config?: {
       await runTree?.postRun();
       try {
         const { stream, ...rest } = await doStream();
+        addGatewayResponseMetadata(runTree, rest.response);
         const chunks: LanguageModelV2StreamPart[] = [];
         const transformStream = new TransformStream({
           async transform(chunk: LanguageModelV2StreamPart, controller) {
@@ -306,6 +314,7 @@ export function LangSmithMiddleware(config?: {
           ...rest,
         };
       } catch (error: any) {
+        addGatewayResponseMetadata(runTree, error);
         await runTree?.end(undefined, error.message ?? String(error));
         await runTree?.patchRun({
           excludeInputs: true,

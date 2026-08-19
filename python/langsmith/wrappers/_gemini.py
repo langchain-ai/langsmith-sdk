@@ -20,6 +20,7 @@ from langsmith import run_helpers
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._orjson import dumps as _dumps
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
+from langsmith.wrappers._gateway import add_gateway_response_metadata
 
 if TYPE_CHECKING:
     from google import genai  # type: ignore[import-untyped, attr-defined]
@@ -246,6 +247,7 @@ def _create_usage_metadata(gemini_usage_metadata: dict) -> UsageMetadata:
 
 def _process_generate_content_response(response: Any) -> dict:
     """Process Gemini response for tracing."""
+    add_gateway_response_metadata(response)
     try:
         # Convert response to dictionary
         if hasattr(response, "to_dict"):
@@ -393,6 +395,8 @@ def _process_generate_content_response(response: Any) -> dict:
 
 def _reduce_generate_content_chunks(all_chunks: list) -> dict:
     """Reduce streaming chunks into a single response."""
+    if all_chunks:
+        add_gateway_response_metadata(all_chunks[0])
     if not all_chunks:
         return {
             "content": "",
