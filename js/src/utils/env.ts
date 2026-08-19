@@ -76,6 +76,24 @@ export function getRuntimeEnvironment(): RuntimeEnvironment {
   return runtimeEnvironment;
 }
 
+// Substrings marking a variable as secret-bearing or personal; matched
+// case-insensitively against the variable name.
+const EXCLUDED_SUBSTRINGS = [
+  "key",
+  "secret",
+  "token",
+  "password",
+  "passwd",
+  "pwd",
+  "credential",
+  "email",
+];
+
+function isSensitiveEnvVarName(key: string): boolean {
+  const lowered = key.toLowerCase();
+  return EXCLUDED_SUBSTRINGS.some((sub) => lowered.includes(sub));
+}
+
 /**
  * Retrieves the LangSmith-specific metadata from the current runtime environment.
  *
@@ -103,9 +121,7 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     if (
       typeof value === "string" &&
       !excluded.includes(key) &&
-      !key.toLowerCase().includes("key") &&
-      !key.toLowerCase().includes("secret") &&
-      !key.toLowerCase().includes("token")
+      !isSensitiveEnvVarName(key)
     ) {
       if (key === "LANGCHAIN_REVISION_ID") {
         envVars["revision_id"] = value;
@@ -138,12 +154,7 @@ export function getLangSmithEnvironmentVariables(): Record<string, string> {
           (key.startsWith("LANGCHAIN_") || key.startsWith("LANGSMITH_")) &&
           value != null
         ) {
-          if (
-            (key.toLowerCase().includes("key") ||
-              key.toLowerCase().includes("secret") ||
-              key.toLowerCase().includes("token")) &&
-            typeof value === "string"
-          ) {
+          if (isSensitiveEnvVarName(key) && typeof value === "string") {
             envVars[key] =
               value.slice(0, 2) +
               "*".repeat(value.length - 4) +
