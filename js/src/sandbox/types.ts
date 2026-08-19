@@ -609,6 +609,11 @@ export interface CaptureSnapshotOptions {
 }
 
 /**
+ * How a download link asks the browser to handle the file.
+ */
+export type DownloadContentDisposition = "attachment" | "inline";
+
+/**
  * Options for minting a sandbox file download link.
  */
 export interface GenerateDownloadURLOptions {
@@ -618,8 +623,8 @@ export interface GenerateDownloadURLOptions {
   expiresInSeconds?: number;
   /** Content-Type to serve the file as. */
   contentType?: string;
-  /** Content-Disposition to serve the file with: "attachment" or "inline". */
-  contentDisposition?: string;
+  /** Content-Disposition to serve the file with. */
+  contentDisposition?: DownloadContentDisposition;
   /** AbortSignal for cancellation. */
   signal?: AbortSignal;
 }
@@ -628,7 +633,9 @@ export interface GenerateDownloadURLOptions {
  * A link that downloads one sandbox file with no LangSmith credential.
  *
  * The link is pinned to the sandbox, the file path, and the response headers,
- * so it cannot be repointed at another file.
+ * so it cannot be repointed at another file. It is pinned to the path rather
+ * than to a snapshot of the contents, so the file must not be modified while
+ * the link is in use.
  */
 export interface DownloadURL {
   /** The full URL to fetch. Supports GET, HEAD, and Range. */

@@ -19,6 +19,7 @@ from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
     AsyncServiceURL,
+    DownloadContentDisposition,
     DownloadURL,
     ExecutionResult,
     Snapshot,
@@ -737,7 +738,7 @@ class AsyncSandbox:
         *,
         expires_in_seconds: Optional[int] = None,
         content_type: Optional[str] = None,
-        content_disposition: Optional[str] = None,
+        content_disposition: Optional[DownloadContentDisposition] = None,
         headers: RequestHeaders = None,
     ) -> DownloadURL:
         """Create a link that downloads one file from this sandbox.
@@ -745,6 +746,12 @@ class AsyncSandbox:
         The link carries its own token, so anyone holding the URL can fetch
         that one file without a LangSmith credential. Fetching wakes a
         stopped sandbox.
+
+        Do not modify the file after minting a link for it. The link is
+        pinned to a path, not to a snapshot of the contents, so a later
+        write to that path may or may not be reflected in what the link
+        serves. Write a new file and mint a new link when the contents
+        change.
 
         Args:
             path: File path inside the sandbox.

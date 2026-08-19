@@ -481,6 +481,11 @@ export class SandboxClient {
    * Callers can add specific status checks (e.g. 404) before calling this.
    * @internal
    */
+  private _boxUrl(name: string, ...segments: string[]): string {
+    const suffix = segments.length ? `/${segments.join("/")}` : "";
+    return `${this._baseUrl}/boxes/${encodeURIComponent(name)}${suffix}`;
+  }
+
   private async _postJson(
     url: string,
     body: Record<string, unknown>,
@@ -639,7 +644,7 @@ export class SandboxClient {
     name: string,
     options?: { signal?: AbortSignal },
   ): Promise<Sandbox> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
+    const url = this._boxUrl(name);
 
     const response = await this._fetch(url, { signal: options?.signal });
 
@@ -725,7 +730,7 @@ export class SandboxClient {
       return this.getSandbox(name);
     }
 
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
+    const url = this._boxUrl(name);
     const payload: Record<string, unknown> = {};
     if (newName !== undefined) {
       payload.name = newName;
@@ -772,7 +777,7 @@ export class SandboxClient {
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
   async deleteSandbox(name: string): Promise<void> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
+    const url = this._boxUrl(name);
 
     const response = await this._fetch(url, { method: "DELETE" });
 
@@ -801,7 +806,7 @@ export class SandboxClient {
     name: string,
     options?: { signal?: AbortSignal },
   ): Promise<ResourceStatus> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
+    const url = this._boxUrl(name, "status");
 
     const response = await this._fetch(url, { signal: options?.signal });
 
@@ -891,7 +896,7 @@ export class SandboxClient {
     options: StartSandboxOptions = {},
   ): Promise<Sandbox> {
     const { timeout = 120, signal } = options;
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
+    const url = this._boxUrl(name, "start");
 
     await this._postJson(url, {}, { signal });
     return this.waitForSandbox(name, { timeout, signal });
@@ -904,6 +909,11 @@ export class SandboxClient {
    * one file without a LangSmith credential. It is pinned to the sandbox and
    * the exact path and cannot be repointed at another file. Fetching wakes a
    * stopped sandbox.
+   *
+   * Do not modify the file after minting a link for it. The link is pinned to
+   * a path, not to a snapshot of the contents, so a later write to that path
+   * may or may not be reflected in what the link serves. Write a new file and
+   * mint a new link when the contents change.
    *
    * @param name - Sandbox name.
    * @param path - File path inside the sandbox.
@@ -930,9 +940,7 @@ export class SandboxClient {
       );
     }
 
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
-      name,
-    )}/download-url`;
+    const url = this._boxUrl(name, "download-url");
     const payload: Record<string, unknown> = { path };
     if (expiresInSeconds !== undefined) {
       payload.expires_in_seconds = expiresInSeconds;
@@ -954,7 +962,7 @@ export class SandboxClient {
    * @param name - Sandbox name.
    */
   async stopSandbox(name: string): Promise<void> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
+    const url = this._boxUrl(name, "stop");
     await this._postJson(url, {});
   }
 
@@ -1123,9 +1131,7 @@ export class SandboxClient {
     options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
     const { dockerImage, fsCapacityBytes, timeout = 60, signal } = options;
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
-      sandboxName,
-    )}/snapshot`;
+    const url = this._boxUrl(sandboxName, "snapshot");
 
     const payload: Record<string, unknown> = { name };
     if (dockerImage !== undefined) {

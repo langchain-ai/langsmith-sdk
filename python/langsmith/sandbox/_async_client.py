@@ -16,6 +16,7 @@ from langsmith._openapi_client import AsyncLangsmith
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,
+    _box_url,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
     _quote_path_segment,
@@ -37,6 +38,7 @@ from langsmith.sandbox._helpers import (
 )
 from langsmith.sandbox._models import (
     AsyncServiceURL,
+    DownloadContentDisposition,
     DownloadURL,
     ResourceStatus,
     Snapshot,
@@ -481,7 +483,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
+        url = _box_url(self._base_url, name)
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
@@ -558,7 +560,7 @@ class AsyncSandboxClient:
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
+        url = _box_url(self._base_url, name)
         payload: dict[str, Any] = {}
         if new_name is not None:
             payload["name"] = new_name
@@ -600,7 +602,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
+        url = _box_url(self._base_url, name)
 
         try:
             response = await self._http.delete(
@@ -633,7 +635,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/status"
+        url = _box_url(self._base_url, name, "status")
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
@@ -678,7 +680,7 @@ class AsyncSandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/service-url"
+        url = _box_url(self._base_url, name, "service-url")
         payload = {"port": port, "expires_in_seconds": expires_in_seconds}
 
         async def _refresher() -> AsyncServiceURL:
@@ -710,7 +712,7 @@ class AsyncSandboxClient:
         *,
         expires_in_seconds: Optional[int] = None,
         content_type: Optional[str] = None,
-        content_disposition: Optional[str] = None,
+        content_disposition: Optional[DownloadContentDisposition] = None,
         headers: RequestHeaders = None,
     ) -> DownloadURL:
         """Create a link that downloads one file from a sandbox.
@@ -719,6 +721,12 @@ class AsyncSandboxClient:
         that one file without a LangSmith credential. It is pinned to the
         sandbox and the exact path and cannot be repointed at another file.
         Fetching wakes a stopped sandbox.
+
+        Do not modify the file after minting a link for it. The link is
+        pinned to a path, not to a snapshot of the contents, so a later
+        write to that path may or may not be reflected in what the link
+        serves. Write a new file and mint a new link when the contents
+        change.
 
         Args:
             name: Sandbox name.
@@ -743,7 +751,7 @@ class AsyncSandboxClient:
                 f"expires_in_seconds must be greater than 0 "
                 f"(got {expires_in_seconds}); omit it for a link that never expires"
             )
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/download-url"
+        url = _box_url(self._base_url, name, "download-url")
         payload: dict[str, Any] = {"path": path}
         if expires_in_seconds is not None:
             payload["expires_in_seconds"] = expires_in_seconds
@@ -836,7 +844,7 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/start"
+        url = _box_url(self._base_url, name, "start")
 
         try:
             response = await self._http.post(
@@ -862,7 +870,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/stop"
+        url = _box_url(self._base_url, name, "stop")
 
         try:
             response = await self._http.post(
@@ -1055,7 +1063,7 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(sandbox_name)}/snapshot"
+        url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}
         if docker_image is not None:

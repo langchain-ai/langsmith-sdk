@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import httpx
 
@@ -464,12 +464,18 @@ class AsyncServiceURL:
 # =============================================================================
 
 
+DownloadContentDisposition = Literal["attachment", "inline"]
+"""How a download link asks the browser to handle the file."""
+
+
 @dataclass
 class DownloadURL:
     """A link that downloads one sandbox file with no LangSmith credential.
 
     The link is pinned to the sandbox, the file path, and the response
-    headers, so it cannot be repointed at another file.
+    headers, so it cannot be repointed at another file. It is pinned to the
+    path rather than to a snapshot of the contents, so the file must not be
+    modified while the link is in use.
 
     Attributes:
         download_url: The full URL to fetch. Supports GET, HEAD, and Range.
