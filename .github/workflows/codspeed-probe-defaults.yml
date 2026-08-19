@@ -1,0 +1,40 @@
+# TEMPORARY diagnostic probe - delete before merging.
+# Variant A but with job-level `defaults.run.working-directory` instead of
+# per-step `working-directory`, to test whether that is what GitHub rejects.
+name: CodSpeed Probe Defaults
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-benchmarks:
+    name: "Python Benchmarks"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # required for actions/checkout
+      id-token: write # required for OIDC authentication with CodSpeed
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --group dev --group bench
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@4296e51e7041e24dadb86d1d6e8b9320d223dbe8 # v5.0.3
+        with:
+          mode: simulation
+          working-directory: python
+          run: uv run pytest bench/test_bench.py --codspeed -k dumps_dataclass_nested_50x100
