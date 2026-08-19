@@ -20,6 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # CPU simulation + memory. Runs everywhere; deterministic enough for hosted
+  # runners because it models the CPU instead of timing it.
   benchmark:
     name: "Python Benchmarks"
     runs-on: ubuntu-latest
@@ -51,4 +53,47 @@ jobs:
           working-directory: python
           # --timeout=0 drops the repo-wide 120s pytest-timeout, which is sized
           # for unit tests and kills benchmarks under CPU simulation.
+          run: uv run pytest bench/test_bench.py --codspeed --timeout=0
+
+  # Real elapsed time on CodSpeed's managed bare-metal ARM64 runners. Unlike
+  # simulation this captures syscalls, I/O and real thread parallelism, which
+  # matters for the create_*_run_trees cases (they drive tracing threads).
+  #
+  # PREREQUISITE, currently unmet: `codspeed-macro` runners are registered by
+  # CodSpeed's GitHub App into the org's built-in Default runner group, which
+  # blocks public repositories unless `allows_public_repositories = true`.
+  # langsmith-sdk is public, so without that toggle this job never gets a
+  # runner and just sits queued. Until it is enabled the job is dispatch-only,
+  # so PR runs stay green; drop the `if:` to put it on push/pull_request.
+  # See langchain-ai/deployments#31733.
+  benchmark-walltime:
+    name: "Python Benchmarks (walltime)"
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: codspeed-macro
+    timeout-minutes: 30
+    permissions:
+      contents: read # required for actions/checkout
+      id-token: write # required for OIDC authentication with CodSpeed
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No cache-suffix for the ARM64 runners: setup-uv already embeds the
+      # arch in its cache key, so x86 and ARM64 entries cannot collide.
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.11
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --group bench
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@4296e51e7041e24dadb86d1d6e8b9320d223dbe8 # v5.0.3
+        with:
+          mode: walltime
+          working-directory: python
           run: uv run pytest bench/test_bench.py --codspeed --timeout=0
