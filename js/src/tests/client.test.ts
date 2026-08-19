@@ -878,6 +878,8 @@ describe("Client", () => {
       process.env.LANGCHAIN_ENDPOINT = "https://example.com";
       // eslint-disable-next-line no-process-env
       process.env.SOME_RANDOM_THING = "random";
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_ADMIN_PASSWORD = "hunter2hunter2";
 
       const envVars = getLangSmithEnvironmentVariables();
       const langchainMetadataEnvVars = getLangSmithEnvVarsMetadata();
@@ -888,6 +890,7 @@ describe("Client", () => {
         LANGCHAIN_OTHER_KEY: "te**********ey",
         LANGCHAIN_ENDPOINT: "https://example.com",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
+        LANGSMITH_ADMIN_PASSWORD: "hu**********r2",
       });
       expect(envVars).not.toHaveProperty("SOME_RANDOM_THING");
 
