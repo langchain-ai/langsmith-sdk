@@ -393,6 +393,9 @@ _UNSET = object()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
+_ATTACHMENT_DEFAULT_PORTS = {"http": 80, "https": 443}
+_ATTACHMENT_DOWNLOAD_TIMEOUT = (10, 60)
+
 _fallback_dirs_created: set[str] = set()
 
 
@@ -11673,14 +11676,71 @@ def convert_prompt_to_anthropic_format(
 class _FailedAttachmentReader(io.BytesIO):
     """BytesIO that raises an error when read, for failed attachment downloads."""
 
-    def __init__(self, error: Exception):
+    def __init__(
+        self, error: Exception, message: str = "Failed to download attachment"
+    ):
         super().__init__()
         self._error = error
+        self._message = message
 
     def read(self, size: Optional[int] = -1) -> bytes:
         raise ls_utils.LangSmithError(
-            f"Failed to download attachment: {self._error}"
+            f"{self._message}: {self._error}"
         ) from self._error
+
+
+class _AttachmentURLRejected(ValueError):
+    """An attachment URL failed validation and was not fetched."""
+
+
+def _attachment_allowed_hosts() -> frozenset[str]:
+    raw = ls_utils.get_env_var("ATTACHMENT_ALLOWED_HOSTS")
+    if raw is None:
+        return frozenset()
+    return frozenset(entry.strip().lower() for entry in raw.split(",") if entry.strip())
+
+
+def _attachment_url_endpoint(url: str) -> tuple[str, str, Optional[int]]:
+    parsed = urllib_parse.urlparse(url)
+    scheme = parsed.scheme.lower()
+    try:
+        port = parsed.port
+    except ValueError as e:
+        raise _AttachmentURLRejected(f"malformed port: {e}") from e
+    return (
+        scheme,
+        (parsed.hostname or "").lower(),
+        port or _ATTACHMENT_DEFAULT_PORTS.get(scheme),
+    )
+
+
+def _validate_attachment_url(full_url: str, api_url: Optional[str]) -> None:
+    scheme, host, port = _attachment_url_endpoint(full_url)
+    if scheme not in _ATTACHMENT_DEFAULT_PORTS:
+        raise _AttachmentURLRejected(
+            f"scheme {scheme or '(none)'!r} is not allowed, expected http or https"
+        )
+    if not host:
+        raise _AttachmentURLRejected("URL has no host")
+
+    allowed_extra = _attachment_allowed_hosts()
+    if host in allowed_extra or f"{host}:{port}" in allowed_extra:
+        return
+
+    if api_url is None:
+        raise _AttachmentURLRejected(
+            f"host {host}:{port} is not allowed because no API URL is configured "
+            "to compare it against"
+        )
+    _, api_host, api_port = _attachment_url_endpoint(api_url)
+    if (host, port) != (api_host, api_port):
+        raise _AttachmentURLRejected(
+            f"host {host}:{port} does not match the LangSmith API host "
+            f"{api_host}:{api_port}. If your deployment serves attachments from "
+            "another host, list it in LANGSMITH_ATTACHMENT_ALLOWED_HOSTS "
+            "(comma-separated; each entry a host or host:port, where a bare host "
+            "admits any port)"
+        )
 
 
 def _convert_stored_attachments_to_attachments_dict(
@@ -11697,9 +11757,24 @@ def _convert_stored_attachments_to_attachments_dict(
             else:
                 full_url = value["presigned_url"]
             try:
-                response = requests.get(full_url, stream=True)
+                _validate_attachment_url(full_url, api_url)
+                response = requests.get(
+                    full_url,
+                    stream=True,
+                    allow_redirects=False,
+                    timeout=_ATTACHMENT_DOWNLOAD_TIMEOUT,
+                )
                 response.raise_for_status()
                 reader = io.BytesIO(response.content)
+            except _AttachmentURLRejected as e:
+                logger.warning(
+                    "Blocked attachment download for %s: %s. Additionally allowed "
+                    "hosts: %s.",
+                    key,
+                    e,
+                    sorted(_attachment_allowed_hosts()) or "(none)",
+                )
+                reader = _FailedAttachmentReader(e, "Blocked attachment download")
             except Exception as e:
                 logger.warning(f"Error downloading attachment {key}: {e}")
                 reader = _FailedAttachmentReader(e)
