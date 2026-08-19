@@ -1,0 +1,19 @@
+python/langsmith/wrappers/_gemini.py
+  s_4c09014a9f384f::t_e61b903e857096 22,54-124,126-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2d3e58456e1c5a6b302a13605173dc91c7d3311a",
+  "prompts": {},
+  "sessions": {
+    "s_4c09014a9f384f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f51d174e-2519-4120-9541-1e23390da05d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

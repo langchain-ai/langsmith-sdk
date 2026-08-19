@@ -1,0 +1,29 @@
+js/src/tests/client_headers.test.ts
+  s_b8b939299efcfd::t_c6034139d1f37d 209-227
+  s_b8b939299efcfd::t_61534646907a8f 122-172,181-191
+js/src/client.ts
+  s_b8b939299efcfd::t_89814c22f1fb42 830-836
+  s_b8b939299efcfd::t_fab8ec117c5786 1680-1703,1712,1718
+  s_b8b939299efcfd::t_eb1e30c14422cd 1063-1065
+  s_b8b939299efcfd::t_616d3937f3d3f6 822,824,826-829,837-847,849-869,875-876
+  s_b8b939299efcfd::t_cefda045b0b6b5 1448-1449
+  s_b8b939299efcfd::t_f45df730bb4f71 1450
+  s_b8b939299efcfd::t_9d9206295e5c7a 1586-1589,1593
+  s_b8b939299efcfd::t_64201da86f9ddb 1668
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "437c32db612140b82a15f92234338905f92d5f2e",
+  "prompts": {},
+  "sessions": {
+    "s_b8b939299efcfd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f0ac8468-854b-43cb-b50c-2f277f28288a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

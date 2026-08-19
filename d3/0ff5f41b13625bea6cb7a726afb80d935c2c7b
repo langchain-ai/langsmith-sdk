@@ -1,0 +1,19 @@
+python/Makefile
+  s_f3809d945b952a::t_9ae48d5cbc8e21 86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d30ff5f41b13625bea6cb7a726afb80d935c2c7b",
+  "prompts": {},
+  "sessions": {
+    "s_f3809d945b952a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "29d2c1bd-76b6-4aff-812b-7ab898ab9b76",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

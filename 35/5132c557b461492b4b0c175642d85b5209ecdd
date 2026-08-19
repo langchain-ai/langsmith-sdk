@@ -1,0 +1,21 @@
+python/langsmith/_internal/_compressed_traces.py
+  s_0fddb520e83532::t_23de830d79c9d5 15-23
+python/tests/unit_tests/test_client.py
+  s_0fddb520e83532::t_cfe3843acb7098 7868-7892
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "355132c557b461492b4b0c175642d85b5209ecdd",
+  "prompts": {},
+  "sessions": {
+    "s_0fddb520e83532": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "226ae20d-60e4-49c7-872e-a2ca97ab7400",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

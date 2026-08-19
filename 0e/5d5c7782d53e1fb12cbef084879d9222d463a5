@@ -1,0 +1,36 @@
+python/tests/unit_tests/test_client.py
+  s_7f5f3a8797e94a::t_31ae8671619731 2026-2028
+python/langsmith/client.py
+  s_7f5f3a8797e94a::t_a5a3121bc98f57 757-760
+python/tests/unit_tests/test_async_client.py
+  s_7f5f3a8797e94a::t_4348c8def82a90 418-420
+js/src/tests/client.test.ts
+  s_7f5f3a8797e94a::t_ebed4d23775252 133
+  s_7f5f3a8797e94a::t_f132b7385dfc54 155
+  s_7f5f3a8797e94a::t_9fc9295d5abe24 104
+  s_7f5f3a8797e94a::t_b249f90a175a58 82-85,88-91
+js/src/client.ts
+  s_7f5f3a8797e94a::t_7e1b1f0658caa8 89
+  s_7f5f3a8797e94a::t_e972517bc0e37c 2229
+js/src/tests/v2_migration.test.ts
+  s_7f5f3a8797e94a::t_1f2468ef0f6964 3-7
+  s_7f5f3a8797e94a::t_27c0eef1155892 31-51
+js/src/utils/v2_migration.ts
+  s_7f5f3a8797e94a::t_b84ab72e10625e 8-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "0e5d5c7782d53e1fb12cbef084879d9222d463a5",
+  "prompts": {},
+  "sessions": {
+    "s_7f5f3a8797e94a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f4f60979-12a2-4c51-b4a9-7d27e2ff9aa6",
+        "model": "composer-2.5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

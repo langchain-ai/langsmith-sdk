@@ -1,0 +1,35 @@
+python/langsmith/integrations/claude_agent_sdk/_transcripts.py
+  s_39a11d0044d84e::t_21843723659140 118
+python/langsmith/testing/_internal.py
+  s_39a11d0044d84e::t_21843723659140 814
+python/langsmith/integrations/claude_agent_sdk/_client.py
+  s_39a11d0044d84e::t_21843723659140 155,624
+python/langsmith/run_helpers.py
+  s_39a11d0044d84e::t_e324b1d26ed302 1490-1492
+  s_39a11d0044d84e::t_21843723659140 1188
+python/bench/tracing_client_bench.py
+  s_39a11d0044d84e::t_28a891ff1e4628 60-77,79,81-85,87-88,112-126,129-130
+  s_39a11d0044d84e::t_5b36f81ca840ec 138-154,159-164,166-178,182-183,185-186
+python/langsmith/_internal/voice/session.py
+  s_39a11d0044d84e::t_21843723659140 129,286,335,394,448
+python/langsmith/integrations/google_adk/_client.py
+  s_39a11d0044d84e::t_21843723659140 306,313,464,473
+python/langsmith/integrations/claude_agent_sdk/_hooks.py
+  s_39a11d0044d84e::t_21843723659140 299,364,509,536,544,552
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "f070d8b158bfe7d0216b9358e9fcb5ecf02d2cdf",
+  "prompts": {},
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

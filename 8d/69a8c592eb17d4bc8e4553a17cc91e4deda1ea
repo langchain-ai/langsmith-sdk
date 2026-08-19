@@ -1,0 +1,16 @@
+js/src/tests/wrapped_gemini_config.test.ts
+  h_f1ecc43c8f43eb 1-228
+js/src/wrappers/gemini.ts
+  h_f1ecc43c8f43eb 8,173-230,232-237,330,467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8d69a8c592eb17d4bc8e4553a17cc91e4deda1ea",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
