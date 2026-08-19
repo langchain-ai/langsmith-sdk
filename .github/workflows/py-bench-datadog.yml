@@ -51,6 +51,9 @@ jobs:
         with:
           languages: python
           api_key: ${{ secrets.DD_API_KEY }}
+          # Our org is on us5, not US1. Leaving this at the action's
+          # `datadoghq.com` default makes every upload 403.
+          site: us5.datadoghq.com
           service: langsmith-sdk-python
 
       # PYTEST_ADDOPTS=--ddtrace comes from the step above; the make target is
