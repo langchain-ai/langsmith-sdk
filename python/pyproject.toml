@@ -176,6 +176,7 @@ dev = [
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
     "pytest-timeout>=2.3.1",
+    "pytest-codspeed>=5.0.3",
 ]
 
 # Linting dependencies
