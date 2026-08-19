@@ -1,4 +1,4 @@
-.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast test-wheel-imports
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast benchmark-codspeed test-wheel-imports
 
 
 OUTPUT ?= out/benchmark.json
@@ -12,6 +12,11 @@ benchmark-fast:
 	mkdir -p out
 	rm -f $(OUTPUT)
 	uv run python -m bench -o $(OUTPUT) --fast
+
+# CodSpeed benchmarks (continuous performance testing, see tests/benchmarks).
+# Locally this runs the benchmarks once, without any instrumentation.
+benchmark-codspeed:
+	uv run --no-default-groups --group bench pytest tests/benchmarks --codspeed
 
 PROFILE_NAME ?= output
 

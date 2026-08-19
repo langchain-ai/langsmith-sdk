@@ -189,6 +189,16 @@ test = [
     "anthropic>=0.45.0",
 ]
 
+# Benchmark dependencies (CodSpeed, see tests/benchmarks).
+# Self-contained so benchmarks can run without the full `dev` group:
+# `uv sync --no-default-groups --group bench`.
+bench = [
+    "pytest-codspeed>=5.0.3",
+    "pytest-asyncio>=0.21.0",
+    "pytest-timeout>=2.3.1",
+    "vcrpy>=7.0.0",
+]
+
 
 [project.entry-points."pytest11"]
 langsmith_plugin = "langsmith.pytest_plugin"

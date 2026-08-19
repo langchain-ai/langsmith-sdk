@@ -3,6 +3,9 @@
   "ignorePatterns": [
     {
       "pattern": "^https://www\\.npmjs\\.com/"
+    },
+    {
+      "pattern": "^https://app\\.codspeed\\.io/"
     }
   ]
 }
