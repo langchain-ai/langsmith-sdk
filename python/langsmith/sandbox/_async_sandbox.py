@@ -19,6 +19,7 @@ from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
     AsyncServiceURL,
+    DownloadURL,
     ExecutionResult,
     Snapshot,
     _StreamEndedBeforeStarted,
@@ -727,6 +728,47 @@ class AsyncSandbox:
             self.name,
             port,
             expires_in_seconds=expires_in_seconds,
+            headers=headers,
+        )
+
+    async def generate_download_url(
+        self,
+        path: str,
+        *,
+        expires_in_seconds: Optional[int] = None,
+        content_type: Optional[str] = None,
+        content_disposition: Optional[str] = None,
+        headers: RequestHeaders = None,
+    ) -> DownloadURL:
+        """Create a link that downloads one file from this sandbox.
+
+        The link carries its own token, so anyone holding the URL can fetch
+        that one file without a LangSmith credential. Fetching wakes a
+        stopped sandbox.
+
+        Args:
+            path: File path inside the sandbox.
+            expires_in_seconds: Link TTL in seconds. Omit for a link that
+                never expires.
+            content_type: Content-Type to serve the file as.
+            content_disposition: Content-Disposition to serve the file with,
+                either ``"attachment"`` or ``"inline"``.
+            headers: Optional per-request header overrides.
+
+        Returns:
+            DownloadURL with the link and its expiry, if any.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ValueError: If expires_in_seconds is not positive.
+            SandboxClientError: For other errors.
+        """
+        return await self._client.generate_download_url(
+            self.name,
+            path,
+            expires_in_seconds=expires_in_seconds,
+            content_type=content_type,
+            content_disposition=content_disposition,
             headers=headers,
         )
 

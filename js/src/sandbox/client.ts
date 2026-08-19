@@ -12,6 +12,8 @@ import type {
   CreateDockerfileSnapshotOptions,
   CreateSandboxOptions,
   CreateSnapshotOptions,
+  DownloadURL,
+  GenerateDownloadURLOptions,
   ListSnapshotsOptions,
   ResourceStatus,
   SandboxClientConfig,
@@ -893,6 +895,57 @@ export class SandboxClient {
 
     await this._postJson(url, {}, { signal });
     return this.waitForSandbox(name, { timeout, signal });
+  }
+
+  /**
+   * Create a link that downloads one file from a sandbox.
+   *
+   * The link carries its own token, so anyone holding the URL can fetch that
+   * one file without a LangSmith credential. It is pinned to the sandbox and
+   * the exact path and cannot be repointed at another file. Fetching wakes a
+   * stopped sandbox.
+   *
+   * @param name - Sandbox name.
+   * @param path - File path inside the sandbox.
+   * @param options - Expiry and response header overrides.
+   * @returns The link and its expiry, if any.
+   *
+   * @example
+   * ```typescript
+   * const link = await client.generateDownloadURL("my-vm", "/tmp/report.pdf");
+   * console.log(link.download_url);
+   * ```
+   */
+  async generateDownloadURL(
+    name: string,
+    path: string,
+    options: GenerateDownloadURLOptions = {},
+  ): Promise<DownloadURL> {
+    const { expiresInSeconds, contentType, contentDisposition, signal } =
+      options;
+    if (expiresInSeconds !== undefined && expiresInSeconds < 1) {
+      throw new LangSmithValidationError(
+        `expiresInSeconds must be greater than 0 (got ${expiresInSeconds}); ` +
+          `omit it for a link that never expires`,
+      );
+    }
+
+    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
+      name,
+    )}/download-url`;
+    const payload: Record<string, unknown> = { path };
+    if (expiresInSeconds !== undefined) {
+      payload.expires_in_seconds = expiresInSeconds;
+    }
+    if (contentType !== undefined) {
+      payload.content_type = contentType;
+    }
+    if (contentDisposition !== undefined) {
+      payload.content_disposition = contentDisposition;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    return (await response.json()) as DownloadURL;
   }
 
   /**

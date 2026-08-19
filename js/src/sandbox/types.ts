@@ -609,6 +609,37 @@ export interface CaptureSnapshotOptions {
 }
 
 /**
+ * Options for minting a sandbox file download link.
+ */
+export interface GenerateDownloadURLOptions {
+  /**
+   * Link TTL in seconds. Omit for a link that never expires.
+   */
+  expiresInSeconds?: number;
+  /** Content-Type to serve the file as. */
+  contentType?: string;
+  /** Content-Disposition to serve the file with: "attachment" or "inline". */
+  contentDisposition?: string;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A link that downloads one sandbox file with no LangSmith credential.
+ *
+ * The link is pinned to the sandbox, the file path, and the response headers,
+ * so it cannot be repointed at another file.
+ */
+export interface DownloadURL {
+  /** The full URL to fetch. Supports GET, HEAD, and Range. */
+  download_url: string;
+  /** The signed token embedded in `download_url`. */
+  token: string;
+  /** Expiry timestamp, or null for a link that never expires. */
+  expires_at: string | null;
+}
+
+/**
  * Options for listing snapshots. All fields are optional and independent.
  *
  * The backend always paginates: when `limit` is omitted the server applies

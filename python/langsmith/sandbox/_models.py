@@ -460,6 +460,38 @@ class AsyncServiceURL:
 
 
 # =============================================================================
+# Download URL Models
+# =============================================================================
+
+
+@dataclass
+class DownloadURL:
+    """A link that downloads one sandbox file with no LangSmith credential.
+
+    The link is pinned to the sandbox, the file path, and the response
+    headers, so it cannot be repointed at another file.
+
+    Attributes:
+        download_url: The full URL to fetch. Supports GET, HEAD, and Range.
+        token: The signed token embedded in ``download_url``.
+        expires_at: Expiry timestamp, or None for a link that never expires.
+    """
+
+    download_url: str
+    token: str
+    expires_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DownloadURL:
+        """Create a DownloadURL from API response dict."""
+        return cls(
+            download_url=data.get("download_url", ""),
+            token=data.get("token", ""),
+            expires_at=data.get("expires_at"),
+        )
+
+
+# =============================================================================
 # WebSocket Command Execution Models
 # =============================================================================
 

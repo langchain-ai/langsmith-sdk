@@ -84,6 +84,8 @@ export type {
   CreateSnapshotOptions,
   CreateDockerfileSnapshotOptions,
   CaptureSnapshotOptions,
+  DownloadURL,
+  GenerateDownloadURLOptions,
   ListSnapshotsOptions,
   WaitForSnapshotOptions,
   StartSandboxOptions,

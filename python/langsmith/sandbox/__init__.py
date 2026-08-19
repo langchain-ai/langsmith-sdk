@@ -60,6 +60,7 @@ from langsmith.sandbox._models import (
     AsyncCommandHandle,
     AsyncServiceURL,
     CommandHandle,
+    DownloadURL,
     ExecutionResult,
     OutputChunk,
     ResourceStatus,
@@ -113,6 +114,7 @@ __all__ = [
     "ExecutionResult",
     "Snapshot",
     "ServiceURL",
+    "DownloadURL",
     "AsyncServiceURL",
     # WebSocket streaming models
     "CommandHandle",
