@@ -369,6 +369,8 @@ describe("OpenAIAgentsTracingProcessor", () => {
     });
 
     test("derives agent inputs and outputs from child response spans", async () => {
+      const createRunSpy = jest.spyOn(client, "createRun");
+      const updateRunSpy = jest.spyOn(client, "updateRun");
       const trace = createMockTrace("trace-4b", "Test Agent");
       const agentSpan = createMockSpan("trace-4b", "span-agent", null, {
         type: "agent",
@@ -425,8 +427,17 @@ describe("OpenAIAgentsTracingProcessor", () => {
 
       await client.awaitPendingTraceBatches();
 
+      expect(
+        createRunSpy.mock.calls.filter(([run]) => run.name === "WeatherAgent"),
+      ).toHaveLength(1);
+      expect(
+        updateRunSpy.mock.calls.filter(
+          ([, run]) => run.name === "WeatherAgent",
+        ),
+      ).toHaveLength(0);
+
       const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-      const agentNode = tree.nodes.find((n) => n.includes("WeatherAgent"));
+      const agentNode = tree.nodes.find((n) => n.startsWith("WeatherAgent:"));
       expect(agentNode).toBeDefined();
       if (agentNode) {
         expect(tree.data[agentNode].inputs).toMatchObject({
