@@ -258,7 +258,7 @@ export class Sandbox {
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
-    const clientHeaders = this._client.getDefaultHeaders();
+    const clientHeaders = await this._client.getRequestHeaders();
 
     // A client-supplied command_id makes execute idempotent: the daemon does
     // get-or-create keyed on it, so if the tunnel closes before "started" we
@@ -272,7 +272,7 @@ export class Sandbox {
     while (true) {
       const [stream, control] = await runWsStream(
         dataplaneUrl,
-        this._client.getApiKey(),
+        undefined,
         command,
         {
           timeout,
@@ -397,10 +397,10 @@ export class Sandbox {
     const { stdoutOffset = 0, stderrOffset = 0 } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
-    const clientHeaders = this._client.getDefaultHeaders();
+    const clientHeaders = await this._client.getRequestHeaders();
     const [stream, control] = await reconnectWsStream(
       dataplaneUrl,
-      this._client.getApiKey(),
+      undefined,
       commandId,
       {
         stdoutOffset,

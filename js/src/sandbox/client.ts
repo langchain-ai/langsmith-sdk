@@ -2,11 +2,10 @@
  * Main SandboxClient class for interacting with the sandbox server API.
  */
 
-import { getLangSmithEnvironmentVariable } from "../utils/env.js";
-import { _getFetchImplementation } from "../singletons/fetch.js";
 import { AsyncCaller } from "../utils/async_caller.js";
-import { Langsmith as OpenAPILangsmith } from "../_openapi_client/index.js";
 import { Registries } from "../_openapi_client/resources/sandboxes/registries.js";
+import { APIConnectionError, APIError } from "../_openapi_client/core/error.js";
+import { Client } from "../client.js";
 import type {
   CaptureSnapshotOptions,
   CreateDockerfileSnapshotOptions,
@@ -31,6 +30,7 @@ import {
   LangSmithResourceNotFoundError,
   LangSmithResourceTimeoutError,
   LangSmithSandboxAPIError,
+  LangSmithSandboxConnectionError,
   LangSmithValidationError,
 } from "./errors.js";
 import {
@@ -64,23 +64,32 @@ function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * Get the default sandbox API endpoint from environment.
- *
- * Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
- */
-function getDefaultApiEndpoint(): string {
-  const base =
-    getLangSmithEnvironmentVariable("ENDPOINT") ??
-    "https://api.smith.langchain.com";
-  return `${base.replace(/\/$/, "")}/v2/sandboxes`;
+function getLangSmithApiUrl(apiEndpoint: string): string {
+  const endpoint = apiEndpoint.replace(/\/$/, "");
+  for (const suffix of ["/api/v2/sandboxes", "/v2/sandboxes"]) {
+    if (endpoint.endsWith(suffix)) {
+      return endpoint.slice(0, -suffix.length);
+    }
+  }
+  return endpoint;
 }
 
-/**
- * Get the default API key from environment.
- */
-function getDefaultApiKey(): string | undefined {
-  return getLangSmithEnvironmentVariable("API_KEY");
+function getSandboxApiEndpoint(apiRoot: string): string {
+  return `${apiRoot.replace(/\/$/, "")}/api/v2/sandboxes`;
+}
+
+function responseFromAPIError(error: APIError): Response | undefined {
+  if (error.status === undefined || error.headers === undefined) {
+    return undefined;
+  }
+  const body =
+    error.error === undefined
+      ? error.message.replace(new RegExp(`^${error.status}\\s*`), "")
+      : JSON.stringify(error.error);
+  return new Response(body || null, {
+    status: error.status,
+    headers: error.headers,
+  });
 }
 
 function shellQuote(value: string): string {
@@ -363,31 +372,52 @@ function makeDockerfileBuildCommand(args: {
  */
 export class SandboxClient {
   private _baseUrl: string;
-  private _apiKey?: string;
-  private _defaultHeaders: Record<string, string>;
-  private _fetchImpl: typeof fetch;
+  private _langsmithClient: Client;
+  private _maxRetries?: number;
   private _caller: AsyncCaller;
-  private _registriesClient?: OpenAPILangsmith;
 
   constructor(config: SandboxClientConfig = {}) {
-    this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(
-      /\/$/,
-      "",
-    );
-    this._apiKey = config.apiKey ?? getDefaultApiKey();
-    this._defaultHeaders = { ...(config.headers ?? {}) };
-    this._fetchImpl = _getFetchImplementation();
+    const ownsClient = config.client === undefined;
+    this._langsmithClient =
+      config.client ??
+      new Client({
+        apiUrl:
+          config.apiEndpoint === undefined
+            ? undefined
+            : getLangSmithApiUrl(config.apiEndpoint),
+        apiKey: config.apiKey,
+        timeout_ms: config.timeoutMs,
+        headers: config.headers,
+        autoBatchTracing: false,
+      });
+    if (ownsClient) {
+      const maxRetries = config.maxRetries ?? 3;
+      if (
+        maxRetries !== Number.POSITIVE_INFINITY &&
+        (!Number.isInteger(maxRetries) || maxRetries < 0)
+      ) {
+        throw new Error(
+          "maxRetries must be a non-negative integer or Infinity",
+        );
+      }
+      this._maxRetries = maxRetries;
+    }
+    const openAPIClient = this._getOpenAPIClient();
+    this._baseUrl = (
+      config.apiEndpoint ?? getSandboxApiEndpoint(openAPIClient.baseURL)
+    ).replace(/\/$/, "");
     this._caller = new AsyncCaller({
-      maxRetries: config.maxRetries ?? 3,
+      maxRetries: 0,
       maxConcurrency: config.maxConcurrency ?? Infinity,
     });
   }
 
-  private _apiRoot(): string {
-    const suffix = "/v2/sandboxes";
-    return this._baseUrl.endsWith(suffix)
-      ? this._baseUrl.slice(0, -suffix.length)
-      : this._baseUrl;
+  private _getOpenAPIClient() {
+    const client = this._langsmithClient._getOpenAPIClient();
+    if (this._maxRetries !== undefined) {
+      client.maxRetries = this._maxRetries;
+    }
+    return client;
   }
 
   /**
@@ -413,47 +443,58 @@ export class SandboxClient {
    * ```
    */
   get registries(): Registries {
-    if (!this._registriesClient) {
-      const defaultHeaders: Record<string, string | null> = {
-        ...this._defaultHeaders,
-      };
-      if (this._apiKey === undefined) {
-        defaultHeaders["X-API-Key"] = null;
-      }
-      this._registriesClient = new OpenAPILangsmith({
-        apiKey: this._apiKey,
-        baseURL: this._apiRoot(),
-        defaultHeaders,
-        fetch: this._fetchImpl,
-      });
-    }
-    return this._registriesClient.sandboxes.registries;
+    return this._getOpenAPIClient().sandboxes.registries;
   }
 
   /**
    * Internal fetch method that adds authentication headers.
    *
-   * Uses AsyncCaller to handle retries for transient failures
-   * (network errors, 5xx, 429).
+   * Uses the main client's generated request pipeline for authentication,
+   * workspace routing, retries, timeouts, and HTTP transport.
    *
    * @internal
    */
   async _fetch(url: string, init: RequestInit = {}): Promise<Response> {
-    const headers = new Headers(init.headers);
-    if (this._apiKey) {
-      headers.set("X-Api-Key", this._apiKey);
-    }
-    for (const [name, value] of Object.entries(this._defaultHeaders)) {
-      if (!headers.has(name)) {
-        headers.set(name, value);
+    const api = this._getOpenAPIClient();
+    const options = {
+      body: init.body,
+      headers: init.headers,
+      signal: init.signal,
+    };
+    const request = () => {
+      switch ((init.method ?? "GET").toUpperCase()) {
+        case "GET":
+          return api.get(url, options).asResponse();
+        case "POST":
+          return api.post(url, options).asResponse();
+        case "PATCH":
+          return api.patch(url, options).asResponse();
+        case "DELETE":
+          return api.delete(url, options).asResponse();
+        default:
+          throw new Error(`Unsupported HTTP method: ${init.method}`);
       }
+    };
+    try {
+      return await this._caller.call(request);
+    } catch (error) {
+      if (error instanceof APIConnectionError) {
+        const cause = (error as Error & { cause?: unknown }).cause;
+        const detail = cause instanceof Error ? cause.message : error.message;
+        const connectionError = new LangSmithSandboxConnectionError(
+          `Failed to connect to the sandbox API: ${detail}`,
+        );
+        (connectionError as Error & { cause?: unknown }).cause = error;
+        throw connectionError;
+      }
+      if (error instanceof APIError) {
+        const response = responseFromAPIError(error);
+        if (response !== undefined) {
+          return response;
+        }
+      }
+      throw error;
     }
-    return this._caller.call(() =>
-      this._fetchImpl(url, {
-        ...init,
-        headers,
-      }),
-    );
   }
 
   /**
@@ -461,7 +502,7 @@ export class SandboxClient {
    * @internal
    */
   getApiKey(): string | undefined {
-    return this._apiKey;
+    return this._getOpenAPIClient().apiKey ?? undefined;
   }
 
   /**
@@ -471,7 +512,12 @@ export class SandboxClient {
    * @internal
    */
   getDefaultHeaders(): Record<string, string> {
-    return { ...this._defaultHeaders };
+    return { ...this._langsmithClient.headers };
+  }
+
+  /** Resolve all current auth, workspace, and custom request headers. @internal */
+  async getRequestHeaders(): Promise<Record<string, string>> {
+    return this._langsmithClient._getRequestHeaders();
   }
 
   /**

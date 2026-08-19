@@ -1135,6 +1135,38 @@ export class Client implements LangSmithTracingClientInterface {
     }) as typeof fetch;
   }
 
+  private async prepareRequestInit(
+    fetchImplementation: typeof fetch,
+    init?: RequestInit,
+  ): Promise<RequestInit | undefined> {
+    let authHeader: ProfileAuthHeader | undefined;
+    const profileManagedAuthorization =
+      this.getProfileManagedAuthorizationHeader(init);
+    if (this.apiKey !== undefined) {
+      authHeader = { name: "x-api-key", value: `${this.apiKey}` };
+    } else if (!this.hasExplicitAuthHeader(init, profileManagedAuthorization)) {
+      authHeader = await this.profileAuth?.getAuthHeader(
+        fetchImplementation,
+        init?.signal,
+      );
+    }
+    return this.applyCurrentAuthHeaders(
+      init,
+      authHeader,
+      profileManagedAuthorization,
+    );
+  }
+
+  /** Resolve the headers used for non-HTTP SDK transports. @internal */
+  public async _getRequestHeaders(): Promise<Record<string, string>> {
+    const fetchImplementation =
+      this.fetchImplementation || _getFetchImplementation(this.debug);
+    const init = await this.prepareRequestInit(fetchImplementation, {
+      headers: this._mergedHeaders,
+    });
+    return Object.fromEntries(new Headers(init?.headers).entries());
+  }
+
   private getProfileManagedAuthorizationHeader(
     init?: RequestInit,
   ): string | undefined {
@@ -1701,6 +1733,11 @@ export class Client implements LangSmithTracingClientInterface {
       this._openAPIClient = this._newOpenAPIClient(auth);
     }
     return this._openAPIClient;
+  }
+
+  /** Return the generated client used by SDK-owned facades. @internal */
+  public _getOpenAPIClient(): OpenAPILangsmith {
+    return this.openAPIClient;
   }
 
   private _newOpenAPIClient(auth = this._openAPIAuth): OpenAPILangsmith {

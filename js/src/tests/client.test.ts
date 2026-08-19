@@ -620,6 +620,53 @@ describe("Client", () => {
       expect(updated.profiles.default).not.toHaveProperty("bearer_token");
     });
 
+    it("refreshes expired profile OAuth tokens for non-HTTP request headers", async () => {
+      writeProfileConfig({
+        profiles: {
+          default: {
+            api_url: "https://profile.example.com",
+            oauth: {
+              access_token: "old-access-token",
+              refresh_token: "old-refresh-token",
+              expires_at: new Date(Date.now() - 60_000).toISOString(),
+            },
+          },
+        },
+      });
+      const mockFetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (
+            String(input).includes("/.well-known/oauth-authorization-server")
+          ) {
+            return new Response("", { status: 404 });
+          }
+          if (String(input) === "https://profile.example.com/oauth/token") {
+            expect(init?.method).toBe("POST");
+            return new Response(
+              JSON.stringify({
+                access_token: "new-access-token",
+                refresh_token: "new-refresh-token",
+                expires_in: 300,
+              }),
+              { status: 200 },
+            );
+          }
+          throw new Error(`Unexpected request: ${String(input)}`);
+        },
+      );
+      const client = new Client({ fetchImplementation: mockFetch as any });
+
+      await expect(client._getRequestHeaders()).resolves.toMatchObject({
+        authorization: "Bearer new-access-token",
+      });
+      expect(
+        mockFetch.mock.calls.filter(
+          ([input]) =>
+            String(input) === "https://profile.example.com/oauth/token",
+        ),
+      ).toHaveLength(1);
+    });
+
     it("preserves explicit Authorization headers during profile refresh", async () => {
       writeProfileConfig({
         profiles: {
