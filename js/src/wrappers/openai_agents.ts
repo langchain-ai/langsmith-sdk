@@ -804,6 +804,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       if (
         spanData.type === "generation" ||
         spanData.type === "response" ||
+        spanData.type === "agent" ||
         spanData.type === "function" ||
         spanData.type === "handoff"
       ) {
@@ -917,9 +918,7 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
         this._unpostedSpans.delete(span.spanId);
         await run.postRun();
       } else {
-        await run.patchRun(
-          span.spanData.type === "agent" ? undefined : { excludeInputs: true },
-        );
+        await run.patchRun({ excludeInputs: true });
       }
     } catch (e) {
       console.error("Error updating span run:", e);
