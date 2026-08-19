@@ -728,7 +728,9 @@ def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
 
     parts = identifier.split(":", 1)
     owner_name = parts[0]
-    commit = parts[1] if len(parts) > 1 else "latest"
+    # A trailing colon with no commit (e.g. "name:") splits to ["name", ""];
+    # treat the empty commit as "latest" (matches the JS SDK's `commit || "latest"`).
+    commit = parts[1] if len(parts) > 1 and parts[1] else "latest"
 
     if "/" in owner_name:
         owner, name = owner_name.split("/", 1)
