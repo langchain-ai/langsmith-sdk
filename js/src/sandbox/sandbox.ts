@@ -5,7 +5,9 @@
 import type { SandboxClient } from "./client.js";
 import type {
   CaptureSnapshotOptions,
+  DownloadURL,
   ExecutionResult,
+  GenerateDownloadURLOptions,
   RunOptions,
   SandboxData,
   Snapshot,
@@ -486,6 +488,36 @@ export class Sandbox {
 
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
+  }
+
+  /**
+   * Create a link that downloads one file from this sandbox.
+   *
+   * The link carries its own token, so anyone holding the URL can fetch that
+   * one file without a LangSmith credential. Fetching wakes a stopped sandbox.
+   *
+   * Do not modify the file after minting a link for it. The link is pinned to
+   * a path, not to a snapshot of the contents, so a later write to that path
+   * may or may not be reflected in what the link serves. Write a new file and
+   * mint a new link when the contents change.
+   *
+   * @param path - File path inside the sandbox.
+   * @param options - Expiry and response header overrides.
+   * @returns The link and its expiry, if any.
+   *
+   * @example
+   * ```typescript
+   * const link = await sandbox.generateDownloadURL("/tmp/report.pdf", {
+   *   expiresInSeconds: 3600,
+   * });
+   * console.log(link.download_url);
+   * ```
+   */
+  async generateDownloadURL(
+    path: string,
+    options: GenerateDownloadURLOptions = {},
+  ): Promise<DownloadURL> {
+    return this._client.generateDownloadURL(this.name, path, options);
   }
 
   /**

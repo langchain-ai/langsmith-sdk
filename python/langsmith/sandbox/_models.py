@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import httpx
 
@@ -456,6 +456,44 @@ class AsyncServiceURL:
         return (
             f"AsyncServiceURL(service_url={self._service_url!r}, "
             f"expires_at={self._expires_at!r})"
+        )
+
+
+# =============================================================================
+# Download URL Models
+# =============================================================================
+
+
+DownloadContentDisposition = Literal["attachment", "inline"]
+"""How a download link asks the browser to handle the file."""
+
+
+@dataclass
+class DownloadURL:
+    """A link that downloads one sandbox file with no LangSmith credential.
+
+    The link is pinned to the sandbox, the file path, and the response
+    headers, so it cannot be repointed at another file. It is pinned to the
+    path rather than to a snapshot of the contents, so the file must not be
+    modified while the link is in use.
+
+    Attributes:
+        download_url: The full URL to fetch. Supports GET, HEAD, and Range.
+        token: The signed token embedded in ``download_url``.
+        expires_at: Expiry timestamp, or None for a link that never expires.
+    """
+
+    download_url: str
+    token: str
+    expires_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DownloadURL:
+        """Create a DownloadURL from API response dict."""
+        return cls(
+            download_url=data.get("download_url", ""),
+            token=data.get("token", ""),
+            expires_at=data.get("expires_at"),
         )
 
 

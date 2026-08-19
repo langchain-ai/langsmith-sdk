@@ -1,5 +1,6 @@
 """Tests for AsyncSandboxClient."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     AsyncSandboxClient,
     AsyncServiceURL,
+    DownloadURL,
     ExecutionResult,
     ResourceCreationError,
     ResourceNameConflictError,
@@ -1090,6 +1092,82 @@ class TestAsyncConnectionErrors:
 
         with pytest.raises(SandboxConnectionError):
             await client.create_sandbox(snapshot_id="snap-1")
+
+
+class TestGenerateDownloadURL:
+    """Tests for AsyncSandboxClient.generate_download_url()."""
+
+    async def test_download_url_happy_path(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test minting a download link returns DownloadURL with correct fields."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={
+                "download_url": "http://uuid--dl.svc.example.com/tok",
+                "token": "tok",
+                "expires_at": None,
+            },
+        )
+
+        link = await client.generate_download_url("my-sandbox", "/tmp/report.pdf")
+
+        assert isinstance(link, DownloadURL)
+        assert link.download_url == "http://uuid--dl.svc.example.com/tok"
+        assert link.expires_at is None
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {"path": "/tmp/report.pdf"}
+
+    async def test_download_url_optional_fields(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test expiry and response headers are sent when provided."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={"download_url": "http://d/tok", "token": "tok", "expires_at": None},
+        )
+
+        await client.generate_download_url(
+            "my-sandbox",
+            "/tmp/page.html",
+            expires_in_seconds=3600,
+            content_type="text/html",
+            content_disposition="inline",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "path": "/tmp/page.html",
+            "expires_in_seconds": 3600,
+            "content_type": "text/html",
+            "content_disposition": "inline",
+        }
+
+    async def test_download_url_not_found(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test 404 raises ResourceNotFoundError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/download-url",
+            json={"detail": "Sandbox 'nonexistent' not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            await client.generate_download_url("nonexistent", "/tmp/f")
+
+    async def test_download_url_invalid_expiry(self, client: AsyncSandboxClient):
+        """Test non-positive expires_in_seconds raises ValueError."""
+        with pytest.raises(ValueError, match="greater than 0"):
+            await client.generate_download_url(
+                "my-sandbox", "/tmp/f", expires_in_seconds=0
+            )
 
 
 class TestService:

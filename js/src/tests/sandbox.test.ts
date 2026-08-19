@@ -2509,6 +2509,90 @@ describe("SandboxClient - start/stop", () => {
   });
 });
 
+describe("SandboxClient - generateDownloadURL", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should POST the path and return the link", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        download_url: "https://uuid--dl.svc.example.com/tok",
+        token: "tok",
+        expires_at: null,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const link = await client.generateDownloadURL("my-vm", "/tmp/report.pdf");
+
+    expect(link.download_url).toBe("https://uuid--dl.svc.example.com/tok");
+    expect(link.expires_at).toBeNull();
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/my-vm/download-url");
+    expect(JSON.parse(init.body as string)).toEqual({
+      path: "/tmp/report.pdf",
+    });
+  });
+
+  it("should send expiry and response headers when provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        download_url: "https://d/tok",
+        token: "tok",
+        expires_at: "2099-01-01T00:00:00Z",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.generateDownloadURL("my-vm", "/tmp/page.html", {
+      expiresInSeconds: 3600,
+      contentType: "text/html",
+      contentDisposition: "inline",
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      path: "/tmp/page.html",
+      expires_in_seconds: 3600,
+      content_type: "text/html",
+      content_disposition: "inline",
+    });
+  });
+
+  it("should reject a non-positive expiry", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(
+      client.generateDownloadURL("my-vm", "/tmp/f", { expiresInSeconds: 0 }),
+    ).rejects.toThrow(LangSmithValidationError);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("should throw ResourceNotFoundError on 404", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "not found" }),
+      text: async () => "not found",
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.generateDownloadURL("nonexistent", "/tmp/f"),
+    ).rejects.toThrow(LangSmithResourceNotFoundError);
+  });
+});
+
 describe("Sandbox - start/stop/captureSnapshot", () => {
   it("start should update status and dataplane_url", async () => {
     const mockClient = createMockClient({

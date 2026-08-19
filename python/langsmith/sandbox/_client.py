@@ -32,6 +32,8 @@ from langsmith.sandbox._helpers import (
     validate_ttl,
 )
 from langsmith.sandbox._models import (
+    DownloadContentDisposition,
+    DownloadURL,
     ResourceStatus,
     ServiceURL,
     Snapshot,
@@ -73,6 +75,12 @@ def _quote_path_segment(value: str) -> str:
     if not value:
         raise ValueError("URL path segment must be a non-empty string")
     return quote(value, safe="")
+
+
+def _box_url(base_url: str, name: str, *segments: str) -> str:
+    """Build the URL for a sandbox, optionally with trailing path segments."""
+    suffix = "/" + "/".join(segments) if segments else ""
+    return f"{base_url}/boxes/{_quote_path_segment(name)}{suffix}"
 
 
 def _make_docker_context_tar(context_path: Path) -> bytes:
@@ -579,7 +587,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
+        url = _box_url(self._base_url, name)
 
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
@@ -652,7 +660,7 @@ class SandboxClient:
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
+        url = _box_url(self._base_url, name)
         payload: dict[str, Any] = {}
         if new_name is not None:
             payload["name"] = new_name
@@ -690,7 +698,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}"
+        url = _box_url(self._base_url, name)
 
         try:
             response = self._http.delete(url, headers=self._request_headers(headers))
@@ -721,7 +729,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/status"
+        url = _box_url(self._base_url, name, "status")
 
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
@@ -765,7 +773,7 @@ class SandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/service-url"
+        url = _box_url(self._base_url, name, "service-url")
         payload = {"port": port, "expires_in_seconds": expires_in_seconds}
 
         def _refresher() -> ServiceURL:
@@ -782,6 +790,75 @@ class SandboxClient:
             )
             response.raise_for_status()
             return ServiceURL.from_dict(response.json(), _refresher=_refresher)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def generate_download_url(
+        self,
+        name: str,
+        path: str,
+        *,
+        expires_in_seconds: Optional[int] = None,
+        content_type: Optional[str] = None,
+        content_disposition: Optional[DownloadContentDisposition] = None,
+        headers: RequestHeaders = None,
+    ) -> DownloadURL:
+        """Create a link that downloads one file from a sandbox.
+
+        The link carries its own token, so anyone holding the URL can fetch
+        that one file without a LangSmith credential. It is pinned to the
+        sandbox and the exact path and cannot be repointed at another file.
+        Fetching wakes a stopped sandbox.
+
+        Do not modify the file after minting a link for it. The link is
+        pinned to a path, not to a snapshot of the contents, so a later
+        write to that path may or may not be reflected in what the link
+        serves. Write a new file and mint a new link when the contents
+        change.
+
+        Args:
+            name: Sandbox name.
+            path: File path inside the sandbox.
+            expires_in_seconds: Link TTL in seconds. Omit for a link that
+                never expires.
+            content_type: Content-Type to serve the file as.
+            content_disposition: Content-Disposition to serve the file with,
+                either ``"attachment"`` or ``"inline"``.
+            headers: Optional per-request header overrides.
+
+        Returns:
+            DownloadURL with the link and its expiry, if any.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ValueError: If expires_in_seconds is not positive.
+            SandboxClientError: For other errors.
+        """
+        if expires_in_seconds is not None and expires_in_seconds < 1:
+            raise ValueError(
+                f"expires_in_seconds must be greater than 0 "
+                f"(got {expires_in_seconds}); omit it for a link that never expires"
+            )
+        url = _box_url(self._base_url, name, "download-url")
+        payload: dict[str, Any] = {"path": path}
+        if expires_in_seconds is not None:
+            payload["expires_in_seconds"] = expires_in_seconds
+        if content_type is not None:
+            payload["content_type"] = content_type
+        if content_disposition is not None:
+            payload["content_disposition"] = content_disposition
+
+        try:
+            response = self._http.post(
+                url, json=payload, headers=self._request_headers(headers)
+            )
+            response.raise_for_status()
+            return DownloadURL.from_dict(response.json())
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -860,7 +937,7 @@ class SandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/start"
+        url = _box_url(self._base_url, name, "start")
 
         try:
             response = self._http.post(
@@ -886,7 +963,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(name)}/stop"
+        url = _box_url(self._base_url, name, "stop")
 
         try:
             response = self._http.post(
@@ -1080,7 +1157,7 @@ class SandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/boxes/{_quote_path_segment(sandbox_name)}/snapshot"
+        url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}
         if docker_image is not None:

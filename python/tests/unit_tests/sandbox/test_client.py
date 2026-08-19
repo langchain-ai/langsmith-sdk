@@ -1,11 +1,13 @@
 """Tests for SandboxClient."""
 
+import json
 from unittest.mock import patch
 
 import pytest
 from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
+    DownloadURL,
     ResourceCreationError,
     ResourceNameConflictError,
     ResourceNotFoundError,
@@ -855,6 +857,99 @@ class TestConnectionErrors:
 
         with pytest.raises(SandboxConnectionError):
             client.create_sandbox(snapshot_id="snap-1")
+
+
+class TestGenerateDownloadURL:
+    """Tests for SandboxClient.generate_download_url()."""
+
+    def test_download_url_happy_path(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test minting a download link returns DownloadURL with correct fields."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={
+                "download_url": "http://uuid--dl.svc.example.com/tok",
+                "token": "tok",
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+
+        link = client.generate_download_url("my-sandbox", "/tmp/report.pdf")
+
+        assert isinstance(link, DownloadURL)
+        assert link.download_url == "http://uuid--dl.svc.example.com/tok"
+        assert link.token == "tok"
+        assert link.expires_at == "2099-01-01T00:00:00Z"
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        body = json.loads(request.content)
+        assert body == {"path": "/tmp/report.pdf"}
+
+    def test_download_url_never_expires(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test a null expires_at is preserved rather than defaulted."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={
+                "download_url": "http://d/tok",
+                "token": "tok",
+                "expires_at": None,
+            },
+        )
+
+        link = client.generate_download_url("my-sandbox", "/tmp/report.pdf")
+
+        assert link.expires_at is None
+
+    def test_download_url_optional_fields(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test expiry and response headers are sent when provided."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={"download_url": "http://d/tok", "token": "tok", "expires_at": None},
+        )
+
+        client.generate_download_url(
+            "my-sandbox",
+            "/tmp/page.html",
+            expires_in_seconds=3600,
+            content_type="text/html",
+            content_disposition="inline",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        body = json.loads(request.content)
+        assert body == {
+            "path": "/tmp/page.html",
+            "expires_in_seconds": 3600,
+            "content_type": "text/html",
+            "content_disposition": "inline",
+        }
+
+    def test_download_url_not_found(self, client: SandboxClient, httpx_mock: HTTPXMock):
+        """Test 404 raises ResourceNotFoundError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/download-url",
+            json={"detail": "Sandbox 'nonexistent' not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.generate_download_url("nonexistent", "/tmp/f")
+
+    def test_download_url_invalid_expiry(self, client: SandboxClient):
+        """Test non-positive expires_in_seconds raises ValueError."""
+        with pytest.raises(ValueError, match="greater than 0"):
+            client.generate_download_url("my-sandbox", "/tmp/f", expires_in_seconds=0)
 
 
 class TestService:
