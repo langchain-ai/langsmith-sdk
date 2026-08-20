@@ -83,6 +83,15 @@ def _fixture() -> dict[str, Any]:
             ],
         ),
     ]
+    spans[0]["traceState"] = "vendor=value"
+    spans[0]["kind"] = 1
+    spans[0]["events"] = [
+        {
+            "timeUnixNano": "2",
+            "name": "conversation.started",
+            "attributes": [_attr("event.detail", "preserved")],
+        }
+    ]
     return {
         "resourceSpans": [
             {
@@ -99,6 +108,7 @@ def _fixture() -> dict[str, Any]:
                         "spans": spans,
                     }
                 ],
+                "schemaUrl": "https://opentelemetry.io/schemas/1.30.0",
             }
         ]
     }
@@ -135,7 +145,6 @@ def test_transform_builds_one_audio_aware_trace() -> None:
     transformed = transform_elevenlabs_trace(
         original,
         post_call_audio=_audio_event(),
-        metadata={"environment": "test"},
     )
 
     assert original == untouched
@@ -148,16 +157,11 @@ def test_transform_builds_one_audio_aware_trace() -> None:
 
     root_attrs = _attrs(spans[0])
     assert root_attrs["langsmith.span.kind"] == "chain"
-    assert root_attrs["langsmith.root_span"] is True
     assert root_attrs["langsmith.metadata.ls_modality"] == "audio"
-    assert root_attrs["langsmith.metadata.thread_id"] == "conv-123"
-    assert root_attrs["langsmith.metadata.environment"] == "test"
-    assert json.loads(root_attrs["gen_ai.prompt"]) == {
-        "messages": [
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi there"},
-        ]
-    }
+    assert root_attrs["langsmith.metadata.ls_integration"] == "elevenlabs"
+    assert "langsmith.root_span" not in root_attrs
+    assert "langsmith.metadata.thread_id" not in root_attrs
+    assert "gen_ai.prompt" not in root_attrs
     assert json.loads(root_attrs["langsmith.attachments"]) == [
         {
             "name": "conversation.mp3",
@@ -175,21 +179,25 @@ def test_transform_builds_one_audio_aware_trace() -> None:
 
     agent_attrs = _attrs(spans[2])
     assert agent_attrs["langsmith.span.kind"] == "llm"
-    assert json.loads(agent_attrs["gen_ai.prompt"])["messages"] == [
-        {"role": "user", "content": "Hello"}
-    ]
+    assert "gen_ai.prompt" not in agent_attrs
     assert json.loads(agent_attrs["gen_ai.completion"])["messages"] == [
         {"role": "assistant", "content": "Hi there"}
     ]
 
     tool_attrs = _attrs(spans[3])
     assert tool_attrs["langsmith.span.kind"] == "tool"
-    assert tool_attrs["gen_ai.prompt"] == '{"city":"SF"}'
-    assert tool_attrs["gen_ai.completion"] == '{"temp":70}'
     assert tool_attrs["elevenlabs.tool.arguments"] == '{"city":"SF"}'
+    assert "gen_ai.prompt" not in tool_attrs
+    assert "gen_ai.completion" not in tool_attrs
 
-    assert all(
-        _attrs(span)["langsmith.metadata.thread_id"] == "conv-123" for span in spans
+    assert spans[0]["traceState"] == "vendor=value"
+    assert spans[0]["kind"] == 1
+    assert (
+        spans[0]["events"]
+        == original["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["events"]
+    )
+    assert transformed["resourceSpans"][0]["schemaUrl"] == (
+        "https://opentelemetry.io/schemas/1.30.0"
     )
 
 
@@ -253,33 +261,12 @@ def test_transform_enforces_span_limit() -> None:
         transform_elevenlabs_trace(_fixture(), max_spans=3)
 
 
-def test_anonymizer_runs_before_audio_and_must_preserve_identity() -> None:
-    saw_attachment = False
+def test_transform_strictly_validates_otlp_types() -> None:
+    malformed = _fixture()
+    _spans(malformed)[0]["attributes"][0]["value"] = {"stringValue": 123}
 
-    def anonymize(payload: dict[str, Any]) -> dict[str, Any]:
-        nonlocal saw_attachment
-        for span in _spans(payload):
-            attrs = _attrs(span)
-            saw_attachment = saw_attachment or "langsmith.attachments" in attrs
-            for attribute in span["attributes"]:
-                if attribute["key"] == "elevenlabs.user.text":
-                    attribute["value"] = {"stringValue": "[redacted]"}
-        return payload
-
-    transformed = transform_elevenlabs_trace(
-        _fixture(), post_call_audio=_audio_event(), anonymizer=anonymize
-    )
-
-    assert saw_attachment is False
-    assert _attrs(_spans(transformed)[1])["elevenlabs.user.text"] == "[redacted]"
-    assert "langsmith.attachments" in _attrs(_spans(transformed)[0])
-
-    def alter_identity(payload: dict[str, Any]) -> dict[str, Any]:
-        _spans(payload)[0]["spanId"] = "f" * 16
-        return payload
-
-    with pytest.raises(ValueError, match="cannot modify OTLP trace topology"):
-        transform_elevenlabs_trace(_fixture(), anonymizer=alter_identity)
+    with pytest.raises(ValueError, match="Invalid OTLP trace envelope"):
+        transform_elevenlabs_trace(malformed)
 
 
 def test_sync_export_uses_langsmith_otel_endpoint() -> None:
