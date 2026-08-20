@@ -1,9 +1,11 @@
 """Unit tests for OTEL exporter and span processor."""
 
+import json
 import os
 import threading
 import time
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from langsmith._internal.otel._otel_exporter import OTELExporter
@@ -12,6 +14,85 @@ from langsmith.integrations.otel import (
     set_langsmith_metadata_attribute,
 )
 from langsmith.integrations.otel.processor import OtelSpanProcessor
+
+
+def _attribute_value(span: MagicMock, name: str) -> object:
+    """Return the last value assigned to an attribute on a mock span."""
+    matches = [
+        call.args[1]
+        for call in span.set_attribute.call_args_list
+        if call.args[0] == name
+    ]
+    assert matches, f"attribute {name!r} was not set"
+    return matches[-1]
+
+
+def test_set_io_attributes_converts_langchain_input_messages_to_gen_ai_schema():
+    """LangChain constructor messages are exported using the current OTel schema."""
+    exporter = object.__new__(OTELExporter)
+    span = MagicMock()
+    inputs = {
+        "messages": [
+            [
+                {
+                    "lc": 1,
+                    "type": "constructor",
+                    "id": ["langchain", "schema", "messages", "HumanMessage"],
+                    "kwargs": {"content": "What is 2 + 2?", "type": "human"},
+                }
+            ]
+        ]
+    }
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=json.dumps(inputs), outputs=None)
+
+    exporter._set_io_attributes(span, op)
+
+    assert json.loads(
+        _attribute_value(span, "gen_ai.input.messages")  # type: ignore[arg-type]
+    ) == [
+        {
+            "role": "user",
+            "parts": [{"type": "text", "content": "What is 2 + 2?"}],
+        }
+    ]
+    assert _attribute_value(span, "gen_ai.prompt") == json.dumps(inputs)
+
+
+def test_set_io_attributes_converts_langchain_generations_to_gen_ai_schema():
+    """LangChain chat generations are exported using the current OTel schema."""
+    exporter = object.__new__(OTELExporter)
+    span = MagicMock()
+    outputs = {
+        "generations": [
+            [
+                {
+                    "text": "4",
+                    "type": "ChatGeneration",
+                    "generation_info": {"finish_reason": "stop"},
+                    "message": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "schema", "messages", "AIMessage"],
+                        "kwargs": {"content": "4", "type": "ai"},
+                    },
+                }
+            ]
+        ]
+    }
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=None, outputs=json.dumps(outputs))
+
+    exporter._set_io_attributes(span, op)
+
+    assert json.loads(
+        _attribute_value(span, "gen_ai.output.messages")  # type: ignore[arg-type]
+    ) == [
+        {
+            "role": "assistant",
+            "parts": [{"type": "text", "content": "4"}],
+            "finish_reason": "stop",
+        }
+    ]
+    assert _attribute_value(span, "gen_ai.completion") == json.dumps(outputs)
 
 
 def test_cleanup_stale_spans():

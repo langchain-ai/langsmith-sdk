@@ -78,6 +78,8 @@ GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p"
 GEN_AI_REQUEST_FREQUENCY_PENALTY = "gen_ai.request.frequency_penalty"
 GEN_AI_REQUEST_PRESENCE_PENALTY = "gen_ai.request.presence_penalty"
 GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
+GEN_AI_INPUT_MESSAGES = "gen_ai.input.messages"
+GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages"
 GENAI_PROMPT = "gen_ai.prompt"
 GENAI_COMPLETION = "gen_ai.completion"
 
@@ -118,9 +120,146 @@ WELL_KNOWN_OPERATION_NAMES = {
     "prompt": "chat",
 }
 
+_GEN_AI_ROLE_ALIASES = {
+    "ai": "assistant",
+    "assistant": "assistant",
+    "developer": "developer",
+    "function": "tool",
+    "human": "user",
+    "system": "system",
+    "tool": "tool",
+    "user": "user",
+}
+
 
 def _get_operation_name(run_type: str) -> str:
     return WELL_KNOWN_OPERATION_NAMES.get(run_type, run_type)
+
+
+def _flatten_message_dicts(value: Any) -> list[dict[str, Any]]:
+    """Flatten batched message lists while retaining only message dictionaries."""
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [message for item in value for message in _flatten_message_dicts(item)]
+    return []
+
+
+def _message_type_and_data(message: dict[str, Any]) -> tuple[Optional[str], dict]:
+    """Unwrap LangChain constructor/stored messages into their data payload."""
+    if message.get("lc") == 1 and isinstance(message.get("kwargs"), dict):
+        message_id = message.get("id")
+        message_type = (
+            message_id[-1]
+            if isinstance(message_id, list) and message_id
+            else message.get("type")
+        )
+        return str(message_type) if message_type else None, message["kwargs"]
+
+    if isinstance(message.get("data"), dict):
+        message_type = message.get("type")
+        return str(message_type) if message_type else None, message["data"]
+
+    message_type = message.get("role") or message.get("type")
+    return str(message_type) if message_type else None, message
+
+
+def _normalize_message_role(message_type: Optional[str], data: dict) -> Optional[str]:
+    """Map common LangChain message types to OTel GenAI roles."""
+    role = data.get("role") or data.get("type") or message_type
+    if not isinstance(role, str):
+        return None
+    role = role.lower().replace("messagechunk", "").replace("message", "")
+    return _GEN_AI_ROLE_ALIASES.get(role)
+
+
+def _text_parts(content: Any) -> list[dict[str, str]]:
+    """Convert LangChain text content to OTel GenAI text parts."""
+    if isinstance(content, str):
+        return [{"type": "text", "content": content}]
+    if not isinstance(content, list):
+        return []
+
+    parts = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append({"type": "text", "content": block})
+        elif isinstance(block, dict) and block.get("type") == "text":
+            text = block.get("text", block.get("content"))
+            if isinstance(text, str):
+                parts.append({"type": "text", "content": text})
+    return parts
+
+
+def _convert_message_to_gen_ai(
+    message: dict[str, Any], *, default_role: Optional[str] = None
+) -> Optional[dict[str, Any]]:
+    """Convert a serialized LangChain/chat message to the OTel GenAI schema."""
+    message_type, data = _message_type_and_data(message)
+    role = _normalize_message_role(message_type, data) or default_role
+    parts = _text_parts(data.get("content"))
+    if not role or not parts:
+        return None
+    return {"role": role, "parts": parts}
+
+
+def _get_gen_ai_input_messages(inputs: Any) -> list[dict[str, Any]]:
+    """Extract current-schema GenAI input messages from a run input payload."""
+    if not isinstance(inputs, dict):
+        return []
+    raw_messages = inputs.get("messages", inputs.get("message"))
+    return [
+        converted
+        for message in _flatten_message_dicts(raw_messages)
+        if (converted := _convert_message_to_gen_ai(message)) is not None
+    ]
+
+
+def _get_generation_finish_reason(generation: dict[str, Any], raw_message: Any) -> str:
+    """Extract a model finish reason, falling back to an explicit unknown value."""
+    candidates = [generation]
+    generation_info = generation.get("generation_info")
+    if isinstance(generation_info, dict):
+        candidates.insert(0, generation_info)
+
+    if isinstance(raw_message, dict):
+        _, message_data = _message_type_and_data(raw_message)
+        response_metadata = message_data.get("response_metadata")
+        if isinstance(response_metadata, dict):
+            candidates.append(response_metadata)
+
+    for candidate in candidates:
+        for key in ("finish_reason", "stop_reason"):
+            finish_reason = candidate.get(key)
+            if finish_reason is not None:
+                return str(finish_reason)
+    return "unknown"
+
+
+def _get_gen_ai_output_messages(outputs: Any) -> list[dict[str, Any]]:
+    """Extract current-schema GenAI output messages from LangChain generations."""
+    if not isinstance(outputs, dict):
+        return []
+
+    messages = []
+    for generation in _flatten_message_dicts(outputs.get("generations")):
+        raw_message = generation.get("message")
+        converted = (
+            _convert_message_to_gen_ai(raw_message, default_role="assistant")
+            if isinstance(raw_message, dict)
+            else None
+        )
+        if converted is None and isinstance(generation.get("text"), str):
+            converted = {
+                "role": "assistant",
+                "parts": [{"type": "text", "content": generation["text"]}],
+            }
+        if converted is not None:
+            converted["finish_reason"] = _get_generation_finish_reason(
+                generation, raw_message
+            )
+            messages.append(converted)
+    return messages
 
 
 @dataclass
@@ -742,6 +881,13 @@ class OTELExporter:
                             GEN_AI_REQUEST_EXTRA_BODY, inputs["extra_body"]
                         )
 
+                input_messages = _get_gen_ai_input_messages(inputs)
+                if input_messages:
+                    span.set_attribute(
+                        GEN_AI_INPUT_MESSAGES,
+                        _orjson.dumps(input_messages).decode("utf-8"),
+                    )
+
                 span.set_attribute(GENAI_PROMPT, op.inputs)
 
             except Exception:
@@ -820,6 +966,13 @@ class OTELExporter:
                             span.set_attribute(
                                 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS, output_token_details
                             )
+
+                output_messages = _get_gen_ai_output_messages(outputs)
+                if output_messages:
+                    span.set_attribute(
+                        GEN_AI_OUTPUT_MESSAGES,
+                        _orjson.dumps(output_messages).decode("utf-8"),
+                    )
 
                 span.set_attribute(GENAI_COMPLETION, op.outputs)
 
