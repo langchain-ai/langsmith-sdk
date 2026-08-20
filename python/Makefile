@@ -1,4 +1,4 @@
-.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast benchmark-codspeed benchmark-pytest test-wheel-imports
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast benchmark-codspeed benchmark-datadog test-wheel-imports
 
 
 OUTPUT ?= out/benchmark.json
@@ -19,18 +19,11 @@ benchmark-fast:
 benchmark-codspeed:
 	uv run --group bench python -m pytest bench/test_bench.py --codspeed
 
-# Same cases again, but under plain pytest-benchmark with a memray peak-memory
-# pass (pytest-benchmem) alongside the timings. Emits to Datadog Test
+# Same cases again, under plain pytest-benchmark. Emits to Datadog Test
 # Optimization when PYTEST_ADDOPTS=--ddtrace is exported by the
 # datadog/test-visibility-github-action step; a plain local run stays offline.
-BENCH_OUTPUT ?= out/benchmark-pytest.json
-BENCH_ARGS ?= --benchmark-memory
-
-benchmark-pytest:
-	mkdir -p out
-	rm -f $(BENCH_OUTPUT)
-	uv run --group bench python -m pytest bench/test_bench.py \
-	 --benchmark-json=$(BENCH_OUTPUT) $(BENCH_ARGS)
+benchmark-datadog:
+	uv run --group bench python -m pytest bench/test_bench.py
 
 PROFILE_NAME ?= output
 

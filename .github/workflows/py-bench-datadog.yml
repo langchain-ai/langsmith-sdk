@@ -59,4 +59,4 @@ jobs:
       # PYTEST_ADDOPTS=--ddtrace comes from the step above; the make target is
       # otherwise identical to a local run.
       - name: Run benchmarks
-        run: make benchmark-pytest
+        run: make benchmark-datadog
