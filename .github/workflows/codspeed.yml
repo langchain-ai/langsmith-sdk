@@ -22,6 +22,8 @@ concurrency:
 jobs:
   benchmark:
     name: "Python Benchmarks (${{ matrix.mode }})"
+    # Same-repo PRs only: forks would pollute the baseline and reach the self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ${{ matrix.runner }}
     # CPU simulation is far slower than a bare run, so the job timeout is what
     # bounds a hung benchmark (see --timeout=0 below).
