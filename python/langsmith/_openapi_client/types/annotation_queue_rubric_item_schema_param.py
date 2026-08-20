@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
-from typing_extensions import Required, TypedDict
+from typing import Dict, Union, Optional
+from typing_extensions import Required, TypeAlias, TypedDict
 
-__all__ = ["AnnotationQueueRubricItemSchemaParam"]
+from .missing_param import MissingParam
+
+__all__ = ["AnnotationQueueRubricItemSchemaParam", "RegexValidator"]
+
+RegexValidator: TypeAlias = Union[str, MissingParam]
 
 
 class AnnotationQueueRubricItemSchemaParam(TypedDict, total=False):
@@ -16,6 +20,8 @@ class AnnotationQueueRubricItemSchemaParam(TypedDict, total=False):
     is_assertion: Optional[bool]
 
     is_required: Optional[bool]
+
+    regex_validator: Optional[RegexValidator]
 
     score_descriptions: Optional[Dict[str, str]]
 

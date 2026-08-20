@@ -6,6 +6,7 @@ from .run import Run as Run
 from .issue import Issue as Issue
 from .trace import Trace as Trace
 from .thread import Thread as Thread
+from .missing import Missing as Missing
 from .run_type import RunType as RunType
 from .data_type import DataType as DataType
 from .thread_stats import ThreadStats as ThreadStats
