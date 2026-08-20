@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest, describe, it, expect } from "@jest/globals";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
@@ -77,6 +77,29 @@ const createMockClient = (overrides: Record<string, any> = {}) =>
 // the HTTP fallback path's request/response shaping.
 const forceHttpFallback = (sandbox: any) =>
   jest.spyOn(sandbox, "_wsAvailable").mockResolvedValue(false);
+
+const readTarEntryNames = (tar: Uint8Array): string[] => {
+  const buffer = Buffer.from(tar);
+  const names: string[] = [];
+  let offset = 0;
+  while (offset + 512 <= buffer.byteLength) {
+    const header = buffer.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
+    const readString = (start: number, length: number) => {
+      const value = header.subarray(start, start + length).toString("utf8");
+      const end = value.indexOf("\0");
+      return end === -1 ? value : value.slice(0, end);
+    };
+    const name = readString(0, 100);
+    const prefix = readString(345, 155);
+    names.push(prefix ? `${prefix}/${name}` : name);
+    const size = Number.parseInt(readString(124, 12).trim() || "0", 8);
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  return names;
+};
 
 describe("sandbox proxy config helpers", () => {
   it("workspaceSecret wraps names and preserves references", () => {
@@ -2189,6 +2212,99 @@ describe("SandboxClient - snapshot operations", () => {
         }),
       );
       expect(fakeSandbox.delete).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(context, { recursive: true, force: true });
+    }
+  });
+
+  it("createSnapshotFromDockerfile should respect .dockerignore", async () => {
+    const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
+    const client = createClientWithMock(jest.fn<typeof fetch>());
+    let contextTar: Uint8Array | undefined;
+    const fakeSandbox = {
+      name: "builder",
+      write: jest
+        .fn<(path: string, content: string | Uint8Array) => Promise<void>>()
+        .mockImplementation(async (_path, content) => {
+          if (content instanceof Uint8Array) {
+            contextTar = content;
+          }
+        }),
+      run: jest
+        .fn<
+          (
+            command: string,
+          ) => Promise<{ stdout: string; stderr: string; exit_code: number }>
+        >()
+        .mockResolvedValue({ stdout: "", stderr: "", exit_code: 0 }),
+      delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
+    jest.spyOn(client, "createSandbox").mockResolvedValue(fakeSandbox as any);
+    jest.spyOn(client, "captureSnapshot").mockResolvedValue({
+      id: "snap-1",
+      name: "snap",
+      status: "ready",
+      fs_capacity_bytes: 4294967296,
+    });
+
+    try {
+      await mkdir(join(context, "docker"));
+      await mkdir(join(context, "ignored-dir"));
+      await mkdir(join(context, "logs"));
+      await mkdir(join(context, "node_modules"));
+      await Promise.all([
+        writeFile(join(context, "docker", "Dockerfile"), "FROM scratch\n"),
+        writeFile(join(context, "included.txt"), "included\n"),
+        writeFile(join(context, "excluded.txt"), "excluded\n"),
+        writeFile(join(context, "root-only.txt"), "excluded\n"),
+        writeFile(join(context, "ignored-dir", "drop.txt"), "excluded\n"),
+        writeFile(join(context, "ignored-dir", "keep.txt"), "included\n"),
+        writeFile(join(context, "logs", "debug.log"), "excluded\n"),
+        writeFile(join(context, "node_modules", "package.js"), "excluded\n"),
+        writeFile(
+          join(context, ".dockerignore"),
+          [
+            "# Ignore generated and local files",
+            "excluded.txt",
+            "/root-only.txt",
+            "node_modules",
+            "**/*.log",
+            "ignored-dir",
+            "!ignored-dir/keep.txt",
+            "docker",
+            ".dockerignore",
+            "",
+          ].join("\n"),
+        ),
+      ]);
+
+      await client.createSnapshotFromDockerfile("snap", "docker/Dockerfile", {
+        context,
+      });
+
+      expect(contextTar).toBeDefined();
+      const names = readTarEntryNames(contextTar as Uint8Array);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          ".dockerignore",
+          "docker/",
+          "docker/Dockerfile",
+          "ignored-dir/keep.txt",
+          "included.txt",
+          "logs/",
+        ]),
+      );
+      expect(names).not.toEqual(
+        expect.arrayContaining([
+          "excluded.txt",
+          "root-only.txt",
+          "ignored-dir/",
+          "ignored-dir/drop.txt",
+          "logs/debug.log",
+          "node_modules/",
+          "node_modules/package.js",
+        ]),
+      );
     } finally {
       await rm(context, { recursive: true, force: true });
     }
