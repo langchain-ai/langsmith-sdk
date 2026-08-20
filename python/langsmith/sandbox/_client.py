@@ -28,6 +28,7 @@ from langsmith.sandbox._helpers import (
     handle_client_http_error,
     handle_sandbox_creation_error,
     merge_headers,
+    raise_if_not_ready,
     validate_service_params,
     validate_ttl,
 )
@@ -633,6 +634,7 @@ class SandboxClient:
         new_name: Optional[str] = None,
         idle_ttl_seconds: Optional[int] = None,
         delete_after_stop_seconds: Optional[int] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Update a sandbox's properties.
@@ -647,6 +649,13 @@ class SandboxClient:
                 before deletion. Must be a multiple of 60. ``0`` disables
                 stop-anchored deletion. ``None`` leaves the existing value
                 unchanged.
+            proxy_config: Replacement proxy configuration, forwarded to the
+                server as-is (same shape as ``create_sandbox``). Rules replace
+                the existing set rather than merging into it, so include every
+                rule the sandbox should keep. Opaque header values carry over
+                from the current config, so rotating one credential does not
+                mean re-supplying secrets that can no longer be read. The
+                sandbox must be ``ready``; start a stopped one first.
 
         Returns:
             Updated Sandbox.
@@ -654,6 +663,8 @@ class SandboxClient:
         Raises:
             ResourceNotFoundError: If sandbox not found.
             ResourceNameConflictError: If new_name is already in use.
+            SandboxNotReadyError: If ``proxy_config`` was given and the sandbox
+                is not ``ready``.
             SandboxClientError: For other errors.
             ValueError: If TTL values are invalid.
         """
@@ -668,6 +679,8 @@ class SandboxClient:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
         if delete_after_stop_seconds is not None:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
+        if proxy_config is not None:
+            payload["proxy_config"] = proxy_config
 
         try:
             response = self._http.patch(
@@ -685,6 +698,8 @@ class SandboxClient:
                     f"Sandbox name '{new_name}' already in use",
                     resource_type="sandbox",
                 ) from e
+            if proxy_config is not None:
+                raise_if_not_ready(e, name)
             handle_client_http_error(e)
             raise  # pragma: no cover
 
