@@ -1,38 +1,41 @@
-"""Transform and export ElevenLabs post-call OpenTelemetry traces.
+"""Export ElevenLabs post-call traces to LangSmith.
 
-ElevenLabs emits one complete OTLP JSON trace for each conversation, while its
-combined MP3 recording arrives in a separate ``post_call_audio`` webhook.  This
-module keeps webhook receipt and correlation in the application and provides a
-stateless bridge that:
+ElevenLabs already emits a complete OTLP JSON trace for each conversation (the
+``post_call_transcription_otel`` webhook). This module forwards that trace
+unchanged and adds only what ElevenLabs does not provide: LangSmith run kinds,
+the conversation messages, the thread id, the combined post-call audio
+attachment, and the ``elevenlabs.*`` span attributes surfaced as run metadata.
 
-* preserves ElevenLabs' trace topology and timing;
-* adds the LangSmith attributes used by the voice-trace UI;
-* attaches the combined MP3 to the conversation root; and
-* forwards the resulting OTLP JSON through the existing LangSmith clients.
+The translation mirrors the streaming voice integrations (Pipecat, LiveKit) —
+same ``langsmith.*`` / ``gen_ai.*`` namespaces, same root-span metadata, same
+vendor-attribute pass-through, same size-capped audio attachment. It differs
+only in operating on OTLP JSON dicts rather than live OTel spans.
 
-The bridge deliberately does not fetch files, retain unmatched webhook state,
-or verify ElevenLabs webhook signatures.  Applications should verify and
-durably correlate both webhook events by ``conversation_id`` before calling it.
+Everything ElevenLabs sends is passed through untouched, so attributes this
+module does not recognize (including ones ElevenLabs adds later) still reach
+LangSmith rather than failing the export.
 """
 
 from __future__ import annotations
 
+import ast
+import asyncio
+import base64
 import json
-import re
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, cast
+import logging
+import string
+from collections.abc import Mapping, Sequence
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import JsonValue
 
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith.utils import LangSmithConflictError
 
 if TYPE_CHECKING:
-    import httpx
-    import requests
-
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client
 
@@ -43,649 +46,607 @@ __all__ = [
     "transform_elevenlabs_trace",
 ]
 
-# Match the existing voice integrations' attachment cap without importing their
-# OpenTelemetry-dependent span processor. This bridge handles serialized OTLP
-# and intentionally works with the base ``langsmith`` installation.
+logger = logging.getLogger(__name__)
+
+# Cap (bytes) on the decoded post-call audio, matching the streaming voice
+# processors: the LangSmith ingester accepts attachments up to ~200MB and base64
+# inflates by ~1.33x, so 150MB decoded encodes to ~200MB. ``None`` disables it.
 DEFAULT_AUDIO_SIZE_LIMIT = 150_000_000
 DEFAULT_MAX_SPANS = 10_000
 
-_TRACE_ID_RE = re.compile(r"^[0-9a-fA-F]{32}$")
-_SPAN_ID_RE = re.compile(r"^[0-9a-fA-F]{16}$")
-_BASE64_RE = re.compile(r"^[A-Za-z0-9+/]*={0,2}$")
-
+_VENDOR_PREFIX = "elevenlabs."
 _CONVERSATION_SPAN = "elevenlabs.conversation"
-_USER_TRANSCRIPT_SPAN = "elevenlabs.recv.user_transcript"
-_AGENT_RESPONSE_SPAN = "elevenlabs.recv.agent_response"
+_TURN_SPAN_PREFIX = "elevenlabs.turn."
 _TOOL_SPAN_PREFIX = "elevenlabs.tool."
+
+# Per-turn token counts, keyed by model: ``elevenlabs.llm_usage.<model>.<field>``.
+# The model name itself contains dots ("gemini-2.5-flash"), so the field is the
+# last dot-separated component and the model is everything before it.
+_LLM_USAGE_PREFIX = "elevenlabs.llm_usage."
+_USAGE_OUTPUT = "output_total"
+_USAGE_DETAILS = {
+    "input_cache_read": "cache_read",
+    "input_cache_write": "cache_creation",
+}
+_USAGE_INPUT_FIELDS = ("input", *_USAGE_DETAILS)
+# Bounds ``literal_eval`` on vendor-supplied text.
+_MAX_USAGE_LITERAL = 2048
+
+# LangSmith reads ``ls_provider`` to attribute cost, so these are its slugs (the
+# ones the other voice integrations and wrappers write), not OTel's gen_ai
+# system names. Matched as substrings against the model, most specific first;
+# an unrecognized model leaves the provider unset rather than guessing.
+_MODEL_PROVIDERS = (
+    ("claude", "anthropic"),
+    ("gemini", "google"),
+    ("gpt", "openai"),
+    ("grok", "xai"),
+    ("mixtral", "mistralai"),
+    ("mistral", "mistralai"),
+    ("deepseek", "deepseek"),
+    ("command-r", "cohere"),
+    ("llama", "meta"),
+    ("qwen", "qwen"),
+)
+# OpenAI's reasoning models carry no vendor-identifying substring.
+_OPENAI_PREFIXES = ("o1", "o3", "o4")
 
 _CONVERSATION_ID_ATTR = "elevenlabs.conversation_id"
 _AGENT_ID_ATTR = "elevenlabs.agent_id"
-_SOURCE_ATTR = "elevenlabs.source"
+_PRODUCING_LLM_ATTR = "elevenlabs.producing_llm"
 _USER_TEXT_ATTR = "elevenlabs.user.text"
 _AGENT_TEXT_ATTR = "elevenlabs.agent.text"
 
-_TOOL_INPUT_SUFFIXES = frozenset({"arguments", "input", "parameters", "request"})
-_TOOL_OUTPUT_SUFFIXES = frozenset({"output", "response", "result"})
+# ElevenLabs documents that tool parameters and results are span attributes but
+# never names the keys, so accept the plausible spellings and take the first hit.
+_TOOL_INPUT_ATTRS = (
+    "elevenlabs.tool.arguments",
+    "elevenlabs.tool.parameters",
+    "elevenlabs.tool.input",
+)
+_TOOL_OUTPUT_ATTRS = (
+    "elevenlabs.tool.result",
+    "elevenlabs.tool.output",
+    "elevenlabs.tool.response",
+)
+
+# OTLP AnyValue members holding a single scalar, in the order they're probed.
+_SCALAR_VALUE_KEYS = (
+    "stringValue",
+    "boolValue",
+    "intValue",
+    "doubleValue",
+    "bytesValue",
+)
+_ATTACHMENT_NAME = "conversation_mp3"
+_BASE64_CHARS = frozenset(string.ascii_letters + string.digits + "+/")
 
 
-class _OtlpEnvelope(BaseModel):
-    """Strictly validate the OTLP request envelope before walking it."""
-
-    model_config = ConfigDict(strict=True, extra="forbid", populate_by_name=True)
-
-    resource_spans: list[dict[str, Any]] = Field(alias="resourceSpans")
+# -- OTLP JSON helpers --------------------------------------------------------
 
 
-class _PostCallAudioData(BaseModel):
-    """The documented data object for ``post_call_audio``."""
-
-    model_config = ConfigDict(strict=True, extra="ignore")
-
-    agent_id: str
-    conversation_id: str
-    full_audio: str = Field(repr=False)
+def _attributes(owner: Any) -> list[dict]:
+    """Return a span/resource's attribute list, or ``[]`` when it has none."""
+    attributes = owner.get("attributes") if isinstance(owner, Mapping) else None
+    return attributes if isinstance(attributes, list) else []
 
 
-class _PostCallAudioEvent(BaseModel):
-    """The documented outer ``post_call_audio`` webhook envelope."""
-
-    model_config = ConfigDict(strict=True, extra="ignore")
-
-    type: Literal["post_call_audio"]
-    data: _PostCallAudioData
-    event_timestamp: Optional[int] = None
-
-
-@dataclass
-class _SpanRef:
-    span: dict[str, Any]
-    resource_attributes: list[dict[str, Any]]
-    order: int
-
-
-def _sanitized_validation_error(message: str, error: ValidationError) -> ValueError:
-    """Return a validation error without echoing sensitive input values."""
-    return ValueError(f"{message} ({error.error_count()} validation errors)")
-
-
-def _validated_otlp_copy(otlp_traces: Mapping[str, Any]) -> dict[str, Any]:
-    if not isinstance(otlp_traces, Mapping):
-        raise TypeError("otlp_traces must be a mapping containing resourceSpans")
-    try:
-        envelope = _OtlpEnvelope.model_validate(dict(otlp_traces))
-    except ValidationError as error:
-        raise _sanitized_validation_error(
-            "Invalid OTLP trace envelope", error
-        ) from None
-    return envelope.model_dump(by_alias=True)
-
-
-def _parse_audio(
-    post_call_audio: Optional[Mapping[str, Any]],
-) -> Optional[_PostCallAudioData]:
-    if post_call_audio is None:
+def _scalar(attribute: Mapping) -> Optional[Any]:
+    """Unwrap an OTLP ``AnyValue``'s scalar member (``None`` if absent)."""
+    value = attribute.get("value")
+    if not isinstance(value, Mapping):
         return None
-    if not isinstance(post_call_audio, Mapping):
-        raise TypeError("post_call_audio must be a parsed webhook or data mapping")
-    try:
-        if "data" in post_call_audio:
-            return _PostCallAudioEvent.model_validate(dict(post_call_audio)).data
-        return _PostCallAudioData.model_validate(dict(post_call_audio))
-    except ValidationError as error:
-        raise _sanitized_validation_error(
-            "Invalid ElevenLabs post_call_audio payload", error
-        ) from None
+    for key in _SCALAR_VALUE_KEYS:
+        if key in value:
+            return value[key]
+    return None
 
 
-def _require_list(value: Any, path: str) -> list[Any]:
-    if not isinstance(value, list):
-        raise ValueError(f"{path} must be a list")
-    return value
+def _get(attributes: Sequence[dict], *keys: str) -> Optional[Any]:
+    """Return the value of the first of ``keys`` present in ``attributes``."""
+    for key in keys:
+        for attribute in attributes:
+            if isinstance(attribute, Mapping) and attribute.get("key") == key:
+                return _scalar(attribute)
+    return None
 
 
-def _require_dict(value: Any, path: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{path} must be an object")
-    return value
-
-
-def _attributes(container: dict[str, Any], path: str) -> list[dict[str, Any]]:
-    raw = container.setdefault("attributes", [])
-    attrs = _require_list(raw, f"{path}.attributes")
-    result: list[dict[str, Any]] = []
-    for index, attribute in enumerate(attrs):
-        result.append(_require_dict(attribute, f"{path}.attributes[{index}]"))
-    return result
-
-
-def _collect_spans(payload: dict[str, Any], max_spans: int) -> list[_SpanRef]:
-    if not isinstance(max_spans, int) or isinstance(max_spans, bool) or max_spans < 1:
-        raise ValueError("max_spans must be a positive integer")
-
-    refs: list[_SpanRef] = []
-    resource_spans = _require_list(payload.get("resourceSpans"), "resourceSpans")
-    for resource_index, resource_span_raw in enumerate(resource_spans):
-        resource_span = _require_dict(
-            resource_span_raw, f"resourceSpans[{resource_index}]"
-        )
-        resource = _require_dict(
-            resource_span.get("resource", {}),
-            f"resourceSpans[{resource_index}].resource",
-        )
-        resource_attrs = _attributes(
-            resource, f"resourceSpans[{resource_index}].resource"
-        )
-        scope_spans = _require_list(
-            resource_span.get("scopeSpans"),
-            f"resourceSpans[{resource_index}].scopeSpans",
-        )
-        for scope_index, scope_span_raw in enumerate(scope_spans):
-            scope_span = _require_dict(
-                scope_span_raw,
-                f"resourceSpans[{resource_index}].scopeSpans[{scope_index}]",
-            )
-            spans = _require_list(
-                scope_span.get("spans"),
-                f"resourceSpans[{resource_index}].scopeSpans[{scope_index}].spans",
-            )
-            for span_index, span_raw in enumerate(spans):
-                if len(refs) >= max_spans:
-                    raise ValueError(f"OTLP trace exceeds the {max_spans} span limit")
-                span = _require_dict(
-                    span_raw,
-                    "resourceSpans"
-                    f"[{resource_index}].scopeSpans[{scope_index}].spans[{span_index}]",
-                )
-                _attributes(span, f"span[{len(refs)}]")
-                refs.append(_SpanRef(span, resource_attrs, len(refs)))
-
-    if not refs:
-        raise ValueError("OTLP trace must contain at least one span")
-    return refs
-
-
-def _decode_any_value(value: Any, path: str) -> Any:
-    value = _require_dict(value, path)
-    if len(value) != 1:
-        raise ValueError(f"{path} must contain exactly one OTLP AnyValue field")
-    kind, raw = next(iter(value.items()))
-    if kind == "stringValue":
-        if not isinstance(raw, str):
-            raise ValueError(f"{path}.stringValue must be a string")
-        return raw
-    if kind == "boolValue":
-        if not isinstance(raw, bool):
-            raise ValueError(f"{path}.boolValue must be a boolean")
-        return raw
-    if kind == "intValue":
-        if isinstance(raw, bool) or not isinstance(raw, (int, str)):
-            raise ValueError(f"{path}.intValue must be an integer or decimal string")
-        if isinstance(raw, str) and not re.fullmatch(r"-?[0-9]+", raw):
-            raise ValueError(f"{path}.intValue must be a decimal string")
-        return int(raw)
-    if kind == "doubleValue":
-        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise ValueError(f"{path}.doubleValue must be numeric")
-        return float(raw)
-    if kind == "bytesValue":
-        if not isinstance(raw, str):
-            raise ValueError(f"{path}.bytesValue must be a base64 string")
-        return raw
-    if kind == "arrayValue":
-        array = _require_dict(raw, f"{path}.arrayValue")
-        values = _require_list(array.get("values", []), f"{path}.arrayValue.values")
-        return [
-            _decode_any_value(item, f"{path}.arrayValue.values[{index}]")
-            for index, item in enumerate(values)
-        ]
-    if kind == "kvlistValue":
-        kvlist = _require_dict(raw, f"{path}.kvlistValue")
-        values = _require_list(kvlist.get("values", []), f"{path}.kvlistValue.values")
-        result: dict[str, Any] = {}
-        for index, item_raw in enumerate(values):
-            item = _require_dict(item_raw, f"{path}.kvlistValue.values[{index}]")
-            key = item.get("key")
-            if not isinstance(key, str):
-                raise ValueError(f"{path}.kvlistValue.values[{index}].key is invalid")
-            result[key] = _decode_any_value(
-                item.get("value"), f"{path}.kvlistValue.values[{index}].value"
-            )
-        return result
-    raise ValueError(f"{path} uses unsupported OTLP AnyValue field {kind!r}")
-
-
-def _attribute_values(attrs: list[dict[str, Any]], key: str, path: str) -> list[Any]:
-    values: list[Any] = []
-    for index, attribute in enumerate(attrs):
-        attribute_key = attribute.get("key")
-        if not isinstance(attribute_key, str):
-            raise ValueError(f"{path}[{index}].key must be a string")
-        if "value" not in attribute:
-            raise ValueError(f"{path}[{index}].value is required")
-        decoded = _decode_any_value(attribute["value"], f"{path}[{index}].value")
-        if attribute_key == key:
-            values.append(decoded)
-    return values
-
-
-def _attributes_dict(attrs: list[dict[str, Any]], path: str) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for index, attribute in enumerate(attrs):
-        key = attribute.get("key")
-        if not isinstance(key, str):
-            raise ValueError(f"{path}[{index}].key must be a string")
-        result[key] = _decode_any_value(
-            attribute.get("value"), f"{path}[{index}].value"
-        )
-    return result
-
-
-def _encode_any_value(value: Any) -> dict[str, Any]:
-    if isinstance(value, str):
-        return {"stringValue": value}
+def _any_value(value: Any) -> dict:
+    """Wrap a Python scalar as an OTLP ``AnyValue`` (JSON-encoding anything else)."""
     if isinstance(value, bool):
         return {"boolValue": value}
     if isinstance(value, int):
         return {"intValue": str(value)}
     if isinstance(value, float):
         return {"doubleValue": value}
-    return {"stringValue": _orjson.dumps(value).decode("utf-8")}
+    if isinstance(value, str):
+        return {"stringValue": value}
+    return {"stringValue": json.dumps(value)}
 
 
-def _set_attribute(attrs: list[dict[str, Any]], key: str, value: Any) -> None:
-    encoded = _encode_any_value(value)
-    for attribute in attrs:
-        if attribute.get("key") == key:
-            attribute["value"] = encoded
+def _set(span: dict, key: str, value: Any) -> None:
+    """Set one attribute on a span, replacing any existing entry for ``key``."""
+    attributes = span.get("attributes")
+    if not isinstance(attributes, list):
+        attributes = []
+        span["attributes"] = attributes
+    attribute = {"key": key, "value": _any_value(value)}
+    for index, existing in enumerate(attributes):
+        if isinstance(existing, Mapping) and existing.get("key") == key:
+            attributes[index] = attribute
             return
-    attrs.append({"key": key, "value": encoded})
+    attributes.append(attribute)
 
 
-def _resolve_identifier(name: str, candidates: list[Any], required: bool) -> str | None:
-    normalized: set[str] = set()
-    for candidate in candidates:
-        if candidate is None:
-            continue
-        if not isinstance(candidate, str) or not candidate:
-            raise ValueError(f"{name} must be a non-empty string")
-        normalized.add(candidate)
-    if len(normalized) > 1:
-        raise ValueError(f"Mismatched {name} values in ElevenLabs payloads")
-    if not normalized:
-        if required:
-            raise ValueError(f"ElevenLabs OTLP trace is missing {name}")
-        return None
-    return next(iter(normalized))
+def _set_metadata(span: dict, key: str, value: Any) -> None:
+    """Set ``langsmith.metadata.<key>``, which LangSmith surfaces as run metadata."""
+    _set(span, f"langsmith.metadata.{key}", value)
 
 
-def _validate_identity(refs: list[_SpanRef]) -> tuple[str, _SpanRef]:
-    trace_ids: set[str] = set()
-    span_ids: set[str] = set()
-    roots: list[_SpanRef] = []
-    for ref in refs:
-        name = ref.span.get("name")
-        if not isinstance(name, str) or not name:
-            raise ValueError("Every OTLP span must have a non-empty name")
-        trace_id = ref.span.get("traceId")
-        span_id = ref.span.get("spanId")
-        parent_span_id = ref.span.get("parentSpanId")
-        if not isinstance(trace_id, str) or not _TRACE_ID_RE.fullmatch(trace_id):
-            raise ValueError("Every OTLP span must have a 32-character hex traceId")
-        if not isinstance(span_id, str) or not _SPAN_ID_RE.fullmatch(span_id):
-            raise ValueError("Every OTLP span must have a 16-character hex spanId")
-        if parent_span_id not in (None, "") and (
-            not isinstance(parent_span_id, str)
-            or not _SPAN_ID_RE.fullmatch(parent_span_id)
-        ):
-            raise ValueError("OTLP parentSpanId must be a 16-character hex value")
-        normalized_span_id = span_id.lower()
-        if normalized_span_id in span_ids:
-            raise ValueError("OTLP trace contains duplicate spanId values")
-        trace_ids.add(trace_id.lower())
-        span_ids.add(normalized_span_id)
-        if name == _CONVERSATION_SPAN:
-            roots.append(ref)
-
-    if len(trace_ids) != 1:
-        raise ValueError("An ElevenLabs conversation must contain exactly one traceId")
-    if len(roots) != 1:
-        raise ValueError(
-            "An ElevenLabs conversation must contain exactly one "
-            "elevenlabs.conversation root span"
-        )
-    if roots[0].span.get("parentSpanId") not in (None, ""):
-        raise ValueError("The elevenlabs.conversation root span cannot have a parent")
-    return next(iter(trace_ids)), roots[0]
+def _messages(role: str, content: Any) -> str:
+    """Encode one message as the ``{"messages": [...]}`` blob LangSmith reads."""
+    return json.dumps({"messages": [{"role": role, "content": content}]})
 
 
-def _identifier_candidates(refs: list[_SpanRef], key: str) -> list[Any]:
-    candidates: list[Any] = []
-    seen_resources: set[int] = set()
-    for ref in refs:
-        resource_id = id(ref.resource_attributes)
-        if resource_id not in seen_resources:
-            seen_resources.add(resource_id)
-            candidates.extend(
-                _attribute_values(ref.resource_attributes, key, "resource.attributes")
-            )
-        span_attrs = cast(list[dict[str, Any]], ref.span["attributes"])
-        candidates.extend(_attribute_values(span_attrs, key, "span.attributes"))
-    return candidates
+def _spans(payload: Mapping, max_spans: int) -> list[dict]:
+    """Every span in the OTLP envelope, in document order."""
+    spans = [
+        span
+        for resource_spans in payload.get("resourceSpans") or []
+        for scope_spans in resource_spans.get("scopeSpans") or []
+        for span in scope_spans.get("spans") or []
+        if isinstance(span, dict)
+    ]
+    if not spans:
+        raise ValueError("ElevenLabs OTLP trace contains no spans")
+    if len(spans) > max_spans:
+        raise ValueError(f"ElevenLabs OTLP trace exceeds the {max_spans} span limit")
+    return spans
 
 
-def _span_start(ref: _SpanRef) -> tuple[int, int]:
-    raw = ref.span.get("startTimeUnixNano")
-    if isinstance(raw, int) and not isinstance(raw, bool):
-        return raw, ref.order
-    if isinstance(raw, str) and raw.isdigit():
-        return int(raw), ref.order
-    return 0, ref.order
+def _scope_version(payload: Mapping) -> Optional[str]:
+    """Read the version ElevenLabs' own tracer stamps on what it produced.
 
-
-def _message_json(messages: list[dict[str, str]]) -> str:
-    return _orjson.dumps({"messages": messages}).decode("utf-8")
-
-
-def _tool_io(attrs: dict[str, Any], suffixes: frozenset[str]) -> Any:
-    matches = {
-        key: value
-        for key, value in attrs.items()
-        if key.startswith("elevenlabs.tool.") and key.rsplit(".", 1)[-1] in suffixes
-    }
-    if len(matches) == 1:
-        return next(iter(matches.values()))
-    return matches or None
-
-
-def _io_json(value: Any) -> str:
-    return value if isinstance(value, str) else _orjson.dumps(value).decode("utf-8")
-
-
-def _validate_audio_base64(value: str, size_limit_bytes: Optional[int]) -> int:
-    if not value or len(value) % 4 != 0 or not _BASE64_RE.fullmatch(value):
-        raise ValueError("post_call_audio.full_audio is not valid padded base64")
-    padding = len(value) - len(value.rstrip("="))
-    decoded_size = (len(value) // 4) * 3 - padding
-    if size_limit_bytes is not None:
-        if (
-            not isinstance(size_limit_bytes, int)
-            or isinstance(size_limit_bytes, bool)
-            or size_limit_bytes < 0
-        ):
-            raise ValueError("audio_size_limit_bytes must be non-negative or None")
-        if decoded_size > size_limit_bytes:
-            raise ValueError(
-                "ElevenLabs post-call audio exceeds the configured decoded-byte limit"
-            )
-    return decoded_size
-
-
-def _topology(refs: list[_SpanRef]) -> list[tuple[str, str, str, str]]:
-    return sorted(
-        (
-            ref.span["traceId"],
-            ref.span["spanId"],
-            ref.span.get("parentSpanId", ""),
-            ref.span["name"],
-        )
-        for ref in refs
-    )
-
-
-def _apply_anonymizer(
-    payload: dict[str, Any],
-    anonymizer: Callable[[dict[str, Any]], dict[str, Any]],
-    *,
-    max_spans: int,
-    conversation_id: str,
-) -> dict[str, Any]:
-    before_refs = _collect_spans(payload, max_spans)
-    before_topology = _topology(before_refs)
-    anonymized = anonymizer(payload)
-    if not isinstance(anonymized, dict):
-        raise ValueError("anonymizer must return an OTLP mapping")
-    after_refs = _collect_spans(anonymized, max_spans)
-    if _topology(after_refs) != before_topology:
-        raise ValueError("anonymizer cannot modify OTLP trace topology or identities")
-    after_conversation_id = _resolve_identifier(
-        "conversation_id",
-        _identifier_candidates(after_refs, _CONVERSATION_ID_ATTR),
-        required=True,
-    )
-    if after_conversation_id != conversation_id:
-        raise ValueError("anonymizer cannot modify the ElevenLabs conversation_id")
-    return anonymized
-
-
-def transform_elevenlabs_trace(
-    otlp_traces: Mapping[str, Any],
-    *,
-    post_call_audio: Optional[Mapping[str, Any]] = None,
-    conversation_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
-    anonymizer: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None,
-    audio_size_limit_bytes: Optional[int] = DEFAULT_AUDIO_SIZE_LIMIT,
-    max_spans: int = DEFAULT_MAX_SPANS,
-) -> dict[str, Any]:
-    """Build one LangSmith-ready OTLP trace from ElevenLabs post-call data.
-
-    Args:
-        otlp_traces: The ``data.otlp_traces`` object from an ElevenLabs
-            ``post_call_transcription_otel`` webhook or conversation GET response.
-        post_call_audio: The parsed ``post_call_audio`` webhook, or its ``data``
-            object. The combined MP3 is attached to the conversation root.
-        conversation_id: Optional trusted conversation ID. If provided, it must
-            match the IDs embedded in the OTLP and audio payloads.
-        agent_id: Optional trusted agent ID. If provided, it must match payloads.
-        metadata: Additional allowlisted metadata to stamp on every span.
-        anonymizer: Optional LangSmith-compatible anonymizer applied before audio
-            attachment. It must preserve trace/span and conversation identities.
-        audio_size_limit_bytes: Maximum decoded MP3 size. ``None`` disables the
-            limit. Oversized audio is rejected, never truncated.
-        max_spans: Maximum number of spans accepted for one conversation.
-
-    Returns:
-        A new OTLP JSON dictionary. The caller's inputs are not mutated.
+    Their instrumentation scope (``elevenlabs.convai``) carries it, which is the
+    honest answer for ``ls_integration_version``: the trace is built server-side,
+    so the locally installed ``elevenlabs`` client — which this integration does
+    not even require — says nothing about what produced it.
     """
-    payload = _validated_otlp_copy(otlp_traces)
-    refs = _collect_spans(payload, max_spans)
-    _trace_id, root = _validate_identity(refs)
-    audio = _parse_audio(post_call_audio)
+    for resource_spans in payload.get("resourceSpans") or []:
+        for scope_spans in resource_spans.get("scopeSpans") or []:
+            scope = scope_spans.get("scope")
+            version = scope.get("version") if isinstance(scope, Mapping) else None
+            if isinstance(version, str) and version:
+                return version
+    return None
 
-    resolved_conversation_id = _resolve_identifier(
-        "conversation_id",
-        [
-            *_identifier_candidates(refs, _CONVERSATION_ID_ATTR),
-            conversation_id,
-            audio.conversation_id if audio else None,
-        ],
-        required=True,
-    )
-    assert resolved_conversation_id is not None
-    resolved_agent_id = _resolve_identifier(
-        "agent_id",
-        [
-            *_identifier_candidates(refs, _AGENT_ID_ATTR),
-            agent_id,
-            audio.agent_id if audio else None,
-        ],
-        required=False,
-    )
-    resolved_source = _resolve_identifier(
-        "source",
-        _identifier_candidates(refs, _SOURCE_ATTR),
-        required=False,
-    )
 
-    safe_metadata: dict[str, Any] = {}
-    for key, value in (metadata or {}).items():
-        if not isinstance(key, str) or not key or key.startswith("langsmith."):
-            raise ValueError(
-                "metadata keys must be non-empty strings outside langsmith.*"
-            )
-        safe_metadata[key] = value
+def _find(payload: Mapping, spans: Sequence[dict], key: str) -> Optional[str]:
+    """Find ``key`` in the resource attributes, then in the spans."""
+    for resource_spans in payload.get("resourceSpans") or []:
+        value = _get(_attributes(resource_spans.get("resource")), key)
+        if isinstance(value, str) and value:
+            return value
+    for span in spans:
+        value = _get(_attributes(span), key)
+        if isinstance(value, str) and value:
+            return value
+    return None
 
-    ordered_refs = sorted(refs, key=_span_start)
-    transcript: list[dict[str, str]] = []
-    history: list[dict[str, str]] = []
-    for ref in refs:
-        attrs = cast(list[dict[str, Any]], ref.span["attributes"])
-        _set_attribute(attrs, "langsmith.metadata.thread_id", resolved_conversation_id)
-        _set_attribute(
-            attrs,
-            "langsmith.metadata.elevenlabs_conversation_id",
-            resolved_conversation_id,
+
+def _resolve(name: str, candidates: Sequence[Optional[str]]) -> Optional[str]:
+    """Return the single id the payloads agree on, or ``None`` when none supplied.
+
+    Disagreement is fatal: it means the caller correlated the audio webhook with
+    a different conversation's trace, and attaching it would corrupt both runs.
+    """
+    values = {candidate for candidate in candidates if candidate}
+    if len(values) > 1:
+        raise ValueError(f"Mismatched {name} values in ElevenLabs payloads")
+    return next(iter(values), None)
+
+
+def _root(spans: Sequence[dict]) -> Optional[dict]:
+    """Find the conversation root: the documented name, else the parentless span."""
+    for span in spans:
+        if span.get("name") == _CONVERSATION_SPAN:
+            return span
+    for span in spans:
+        if not span.get("parentSpanId"):
+            return span
+    return None
+
+
+# -- translation --------------------------------------------------------------
+
+
+def _passthrough(span: dict) -> None:
+    """Surface ``elevenlabs.*`` attributes as ``elevenlabs_*`` run metadata.
+
+    Mirrors the ``lk.*`` pass-through in the LiveKit processor, and keeps the
+    vendor's namespace distinct from LangSmith's own. Never clobbers metadata a
+    branch already set, and skips non-scalars (nested OTLP array/kvlist values
+    still reach LangSmith on the untouched original attribute).
+    """
+    for attribute in list(_attributes(span)):
+        key = attribute.get("key")
+        if not isinstance(key, str) or not key.startswith(_VENDOR_PREFIX):
+            continue
+        value = _scalar(attribute)
+        if value is None:
+            continue
+        name = f"elevenlabs_{key[len(_VENDOR_PREFIX) :]}".replace(".", "_")
+        if _get(_attributes(span), f"langsmith.metadata.{name}") is None:
+            _set_metadata(span, name, value)
+
+
+def _tokens(value: Any) -> Optional[int]:
+    """Read a token count from an ``elevenlabs.llm_usage.*`` attribute.
+
+    ElevenLabs sends these as a Python ``repr`` of a dict rather than JSON —
+    ``"{'tokens': 2172, 'price': 0.0003258}"`` — so a plain ``int()`` or
+    ``json.loads`` will not do. Falls back to ``literal_eval``, which evaluates
+    literals only and never executes code, and accepts a bare number in case
+    the shape changes.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if not isinstance(value, str) or len(value) > _MAX_USAGE_LITERAL:
+        return None
+    try:
+        parsed: Any = json.loads(value)
+    except ValueError:
+        try:
+            parsed = ast.literal_eval(value)
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            return None
+    if isinstance(parsed, Mapping):
+        parsed = parsed.get("tokens")
+    if isinstance(parsed, bool) or not isinstance(parsed, (int, float)):
+        return None
+    return int(parsed)
+
+
+def _usage(span: dict, attributes: Sequence[dict]) -> set[str]:
+    """Translate ``elevenlabs.llm_usage.*`` into LangSmith usage and model fields.
+
+    ElevenLabs reports token counts per model on each agent-response span. This
+    sums them into ``langsmith.usage_metadata`` so LangSmith shows real token
+    counts and cost, and names the model on ``gen_ai.request.model``.
+    """
+    counts: dict[str, int] = {}
+    models: set[str] = set()
+    for attribute in attributes:
+        key = attribute.get("key")
+        if not isinstance(key, str) or not key.startswith(_LLM_USAGE_PREFIX):
+            continue
+        # The model name itself contains dots, so the field is the last component.
+        model, _, field = key[len(_LLM_USAGE_PREFIX) :].rpartition(".")
+        count = _tokens(_scalar(attribute))
+        if not model or count is None:
+            continue
+        models.add(model)
+        counts[field] = counts.get(field, 0) + count
+
+    if not counts:
+        return models
+    # Cache reads are reported alongside ``input``, not inside it (one real turn
+    # had input=692 with cache_read=1585), so the prompt total is their sum —
+    # which also keeps the details a subset of ``input_tokens``.
+    details = {
+        name: counts[field]
+        for field, name in _USAGE_DETAILS.items()
+        if counts.get(field)
+    }
+    input_tokens = sum(counts.get(field, 0) for field in _USAGE_INPUT_FIELDS)
+    output_tokens = counts.get(_USAGE_OUTPUT, 0)
+    usage: dict[str, Any] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+    if details:
+        usage["input_token_details"] = details
+    _set(span, "langsmith.usage_metadata", json.dumps(usage))
+    return models
+
+
+def _provider(model: str) -> Optional[str]:
+    """Resolve a model name to a LangSmith provider slug, if we recognize it."""
+    lowered = model.lower()
+    if lowered.startswith(_OPENAI_PREFIXES):
+        return "openai"
+    for fragment, provider in _MODEL_PROVIDERS:
+        if fragment in lowered:
+            return provider
+    return None
+
+
+def _model(span: dict, attributes: Sequence[dict], usage_models: set[str]) -> None:
+    """Name the model and provider so LangSmith attributes tokens and cost.
+
+    ElevenLabs names the model on the span directly; the ``llm_usage`` keys are
+    the fallback, and only when the turn used exactly one model — otherwise any
+    single choice would be wrong.
+    """
+    named = _get(attributes, _PRODUCING_LLM_ATTR)
+    model = named if isinstance(named, str) and named else None
+    if model is None and len(usage_models) == 1:
+        model = next(iter(usage_models))
+    if not model:
+        return
+
+    _set(span, "gen_ai.request.model", model)
+    _set_metadata(span, "ls_model_name", model)
+    provider = _provider(model)
+    if provider:
+        _set_metadata(span, "ls_provider", provider)
+        # LangSmith maps either gen_ai provider key to ls_provider; writing both
+        # is version-agnostic, as the streaming voice integrations do.
+        _set(span, "gen_ai.provider.name", provider)
+        _set(span, "gen_ai.system", provider)
+
+
+def _translate(span: dict, thread_id: Optional[str]) -> None:
+    """Add the LangSmith run kind, messages, and metadata for one span."""
+    if thread_id:
+        _set_metadata(span, "thread_id", thread_id)
+
+    attributes = _attributes(span)
+    name = span.get("name") or ""
+    user_text = _get(attributes, _USER_TEXT_ATTR)
+    agent_text = _get(attributes, _AGENT_TEXT_ATTR)
+
+    if name == _CONVERSATION_SPAN:
+        _set(span, "langsmith.span.kind", "chain")
+    elif name.startswith(_TURN_SPAN_PREFIX):
+        _set(span, "langsmith.span.kind", "chain")
+        _set_metadata(span, "turn_number", name[len(_TURN_SPAN_PREFIX) :])
+    elif name.startswith(_TOOL_SPAN_PREFIX):
+        _set(span, "langsmith.span.kind", "tool")
+        _set_metadata(span, "tool_name", name[len(_TOOL_SPAN_PREFIX) :])
+        # Tool I/O is raw, not messages — the convention ``set_tool_input`` uses.
+        if (value := _get(attributes, *_TOOL_INPUT_ATTRS)) is not None:
+            _set(span, "gen_ai.prompt", value)
+        if (value := _get(attributes, *_TOOL_OUTPUT_ATTRS)) is not None:
+            _set(span, "gen_ai.completion", value)
+    elif user_text is not None or agent_text is not None:
+        # Keyed off the text attributes rather than the span name so this covers
+        # both the ``recv.*`` post-call spans and the ``event.*`` monitoring ones.
+        _set(span, "langsmith.span.kind", "llm")
+        if user_text is not None:
+            _set(span, "gen_ai.prompt", _messages("user", user_text))
+        if agent_text is not None:
+            _set(span, "gen_ai.completion", _messages("assistant", agent_text))
+
+    _model(span, attributes, _usage(span, attributes))
+    _passthrough(span)
+
+
+# -- post-call audio ----------------------------------------------------------
+
+
+def _audio_parts(
+    audio: Any,
+) -> tuple[Optional[str], int, Optional[str]]:
+    """Normalize ``audio`` to ``(base64, decoded size, conversation id)``.
+
+    Accepts raw MP3 bytes — what you get from ElevenLabs' conversations API —
+    or a ``post_call_audio`` webhook payload, whose ``full_audio`` is already
+    base64 and which also carries the conversation id for a sanity check.
+    """
+    if audio is None:
+        return None, 0, None
+    if isinstance(audio, (bytes, bytearray, memoryview)):
+        raw = bytes(audio)
+        if not raw:
+            return None, 0, None
+        return base64.b64encode(raw).decode("ascii"), len(raw), None
+    if not isinstance(audio, Mapping):
+        raise TypeError("audio must be bytes or a post_call_audio payload")
+
+    data = audio.get("data", audio)
+    if not isinstance(data, Mapping):
+        raise ValueError("post_call_audio payload has no data object")
+    conversation_id = data.get("conversation_id")
+    conversation_id = conversation_id if isinstance(conversation_id, str) else None
+
+    encoded = data.get("full_audio")
+    if not isinstance(encoded, str) or not encoded:
+        logger.warning(
+            "langsmith elevenlabs: post_call_audio has no full_audio string; "
+            "exporting the trace without the recording."
         )
-        _set_attribute(attrs, "langsmith.metadata.ls_integration", "elevenlabs")
-        if resolved_agent_id:
-            _set_attribute(
-                attrs, "langsmith.metadata.elevenlabs_agent_id", resolved_agent_id
-            )
-        if resolved_source:
-            _set_attribute(
-                attrs, "langsmith.metadata.elevenlabs_source", resolved_source
-            )
-        for key, value in safe_metadata.items():
-            _set_attribute(attrs, f"langsmith.metadata.{key}", value)
-
-    for ref in ordered_refs:
-        span = ref.span
-        attrs = cast(list[dict[str, Any]], span["attributes"])
-        decoded = _attributes_dict(attrs, "span.attributes")
-        name = cast(str, span["name"])
-        if name == _USER_TRANSCRIPT_SPAN:
-            text = decoded.get(_USER_TEXT_ATTR)
-            _set_attribute(attrs, "langsmith.span.kind", "llm")
-            if isinstance(text, str) and text.strip():
-                message = {"role": "user", "content": text.strip()}
-                _set_attribute(attrs, "gen_ai.prompt", _message_json([message]))
-                transcript.append(message)
-                history.append(message)
-        elif name == _AGENT_RESPONSE_SPAN:
-            text = decoded.get(_AGENT_TEXT_ATTR)
-            _set_attribute(attrs, "langsmith.span.kind", "llm")
-            if history:
-                _set_attribute(attrs, "gen_ai.prompt", _message_json(history))
-            if isinstance(text, str) and text.strip():
-                message = {"role": "assistant", "content": text.strip()}
-                _set_attribute(attrs, "gen_ai.completion", _message_json([message]))
-                transcript.append(message)
-                history.append(message)
-        elif name.startswith(_TOOL_SPAN_PREFIX):
-            _set_attribute(attrs, "langsmith.span.kind", "tool")
-            tool_input = _tool_io(decoded, _TOOL_INPUT_SUFFIXES)
-            tool_output = _tool_io(decoded, _TOOL_OUTPUT_SUFFIXES)
-            if tool_input is not None:
-                _set_attribute(attrs, "gen_ai.prompt", _io_json(tool_input))
-            if tool_output is not None:
-                _set_attribute(attrs, "gen_ai.completion", _io_json(tool_output))
-
-    root_attrs = cast(list[dict[str, Any]], root.span["attributes"])
-    _set_attribute(root_attrs, "langsmith.span.kind", "chain")
-    _set_attribute(root_attrs, "langsmith.root_span", True)
-    _set_attribute(root_attrs, "langsmith.metadata.ls_modality", "audio")
-    _set_attribute(root_attrs, "langsmith.span.tags", "elevenlabs, voice")
-    if transcript:
-        _set_attribute(root_attrs, "gen_ai.prompt", _message_json(transcript))
-
-    if anonymizer is not None:
-        payload = _apply_anonymizer(
-            payload,
-            anonymizer,
-            max_spans=max_spans,
-            conversation_id=resolved_conversation_id,
+        return None, 0, conversation_id
+    size = _decoded_size(encoded)
+    if size is None:
+        logger.warning(
+            "langsmith elevenlabs: post_call_audio.full_audio is not valid padded "
+            "base64; exporting the trace without the recording."
         )
-        refs = _collect_spans(payload, max_spans)
-        _, root = _validate_identity(refs)
-        root_attrs = cast(list[dict[str, Any]], root.span["attributes"])
-        # The anonymizer may replace arbitrary strings. Reassert structural
-        # LangSmith attributes after validating that the OTLP topology and
-        # ElevenLabs conversation identity are unchanged.
-        for ref in refs:
-            attrs = cast(list[dict[str, Any]], ref.span["attributes"])
-            _set_attribute(
-                attrs, "langsmith.metadata.thread_id", resolved_conversation_id
-            )
-            _set_attribute(
-                attrs,
-                "langsmith.metadata.elevenlabs_conversation_id",
-                resolved_conversation_id,
-            )
-            name = cast(str, ref.span["name"])
-            if name in {_USER_TRANSCRIPT_SPAN, _AGENT_RESPONSE_SPAN}:
-                _set_attribute(attrs, "langsmith.span.kind", "llm")
-            elif name.startswith(_TOOL_SPAN_PREFIX):
-                _set_attribute(attrs, "langsmith.span.kind", "tool")
-        _set_attribute(root_attrs, "langsmith.span.kind", "chain")
-        _set_attribute(root_attrs, "langsmith.root_span", True)
-        _set_attribute(root_attrs, "langsmith.metadata.ls_modality", "audio")
-        _set_attribute(root_attrs, "langsmith.span.tags", "elevenlabs, voice")
+        return None, 0, conversation_id
+    return encoded, size, conversation_id
 
-    if audio is not None:
-        _validate_audio_base64(audio.full_audio, audio_size_limit_bytes)
-        attachment = json.dumps(
+
+def _decoded_size(encoded: str) -> Optional[int]:
+    """Measure padded base64's decoded byte count, or ``None`` when it isn't valid.
+
+    Computed arithmetically — the blob is forwarded base64-encoded, so it is
+    never decoded in-process. Membership testing keeps this linear.
+    """
+    body = encoded.rstrip("=")
+    padding = len(encoded) - len(body)
+    if not encoded or len(encoded) % 4 or padding > 2:
+        return None
+    if not _BASE64_CHARS.issuperset(body):
+        return None
+    return len(encoded) // 4 * 3 - padding
+
+
+def _attach_audio(
+    root: dict, encoded: str, size: int, size_limit_bytes: Optional[int]
+) -> bool:
+    """Attach the combined MP3 to the root span via ``langsmith.attachments``.
+
+    Honors ``size_limit_bytes`` and returns whether the audio was attached.
+    Oversize audio is skipped with a warning rather than raised, so one
+    unusable recording never costs the whole conversation trace.
+    """
+    if size_limit_bytes is not None and size > size_limit_bytes:
+        logger.warning(
+            "langsmith elevenlabs: post-call audio (%d bytes) exceeds "
+            "audio_size_limit_bytes=%d; exporting the trace without the recording.",
+            size,
+            size_limit_bytes,
+        )
+        return False
+    _set(
+        root,
+        "langsmith.attachments",
+        json.dumps(
             [
                 {
-                    "name": "conversation.mp3",
-                    "content": audio.full_audio,
+                    # LangSmith rejects attachment names containing periods.
+                    "name": _ATTACHMENT_NAME,
+                    "content": encoded,
                     "mime_type": "audio/mpeg",
                 }
-            ],
-            separators=(",", ":"),
-        )
-        _set_attribute(root_attrs, "langsmith.attachments", attachment)
+            ]
+        ),
+    )
+    return True
 
+
+# -- public API ---------------------------------------------------------------
+
+
+@warn_beta
+def transform_elevenlabs_trace(
+    otlp_traces: Mapping[str, JsonValue],
+    *,
+    audio: Optional[Union[bytes, Mapping[str, JsonValue]]] = None,
+    conversation_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    audio_size_limit_bytes: Optional[int] = DEFAULT_AUDIO_SIZE_LIMIT,
+    max_spans: int = DEFAULT_MAX_SPANS,
+) -> dict[str, JsonValue]:
+    """Add LangSmith voice fields to one ElevenLabs post-call OTLP trace.
+
+    ``otlp_traces`` is the OTLP envelope itself — ``event["data"]["otlp_traces"]``
+    from a ``post_call_transcription_otel`` webhook, or ``otlp_traces`` from the
+    conversations API. ``audio`` is the conversation recording, either as raw
+    MP3 bytes or as a ``post_call_audio`` webhook payload; omit it to export a
+    trace with no recording.
+
+    ElevenLabs' topology, timing, status, ids, and attributes are preserved, and
+    the caller's payload is never mutated.
+    """
+    payload = deepcopy(dict(otlp_traces))
+    spans = _spans(payload, max_spans)
+    encoded, size, audio_conversation_id = _audio_parts(audio)
+
+    conversation_id = _resolve(
+        "conversation_id",
+        [
+            _find(payload, spans, _CONVERSATION_ID_ATTR),
+            conversation_id,
+            audio_conversation_id,
+        ],
+    )
+    agent_id = _resolve("agent_id", [_find(payload, spans, _AGENT_ID_ATTR), agent_id])
+    if not conversation_id:
+        logger.warning(
+            "langsmith elevenlabs: no conversation_id in the OTLP trace or the "
+            "audio event; the trace will not be grouped into a thread."
+        )
+
+    for span in spans:
+        _translate(span, conversation_id)
+
+    root = _root(spans)
+    if root is None:
+        logger.warning(
+            "langsmith elevenlabs: no %s root span; exporting without "
+            "conversation-level metadata.",
+            _CONVERSATION_SPAN,
+        )
+        return payload
+
+    _set(root, "langsmith.root_span", True)
+    _set_metadata(root, "ls_modality", "audio")
+    _set_metadata(root, "ls_integration", "elevenlabs")
+    _set_metadata(root, "ls_integration_version", _scope_version(payload) or "")
+    # ElevenLabs' own trace id. LangSmith assigns its own run ids at ingest, so
+    # without this there is no way back from a run to the conversation's trace on
+    # their side (their API and monitoring socket share this id).
+    trace_id = root.get("traceId")
+    if isinstance(trace_id, str) and trace_id:
+        _set_metadata(root, "elevenlabs_trace_id", trace_id)
+    if conversation_id:
+        _set_metadata(root, "conversation_id", conversation_id)
+    if agent_id:
+        _set_metadata(root, "agent_id", agent_id)
+    if encoded is not None:
+        _attach_audio(root, encoded, size, audio_size_limit_bytes)
     return payload
 
 
+def _warn_duplicate() -> None:
+    """Note a re-delivery. LangSmith rejects a repeat of a span it already has.
+
+    ElevenLabs retries the transcript webhook, so the same conversation can
+    arrive more than once. The trace is already in LangSmith, so this is a
+    success for the caller rather than an error to handle.
+    """
+    logger.info(
+        "langsmith elevenlabs: this conversation is already in LangSmith; "
+        "treating the duplicate delivery as a no-op."
+    )
+
+
 def _project_name(project_name: Optional[str]) -> str:
-    if project_name is not None and (
-        not isinstance(project_name, str) or not project_name
-    ):
+    if project_name == "":
         raise ValueError("project_name must be a non-empty string")
     return project_name or ls_utils.get_tracer_project() or "default"
 
 
 @warn_beta
 def export_elevenlabs_trace(
-    otlp_traces: Mapping[str, Any],
+    otlp_traces: Mapping[str, JsonValue],
     *,
-    post_call_audio: Optional[Mapping[str, Any]] = None,
+    audio: Optional[Union[bytes, Mapping[str, JsonValue]]] = None,
     conversation_id: Optional[str] = None,
     agent_id: Optional[str] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
-    anonymizer: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None,
     audio_size_limit_bytes: Optional[int] = DEFAULT_AUDIO_SIZE_LIMIT,
     max_spans: int = DEFAULT_MAX_SPANS,
     client: Optional[Client] = None,
     project_name: Optional[str] = None,
-) -> dict[str, Any]:
+) -> dict[str, JsonValue]:
     """Transform and synchronously export one ElevenLabs conversation trace."""
     from langsmith.client import Client
 
     payload = transform_elevenlabs_trace(
         otlp_traces,
-        post_call_audio=post_call_audio,
+        audio=audio,
         conversation_id=conversation_id,
         agent_id=agent_id,
-        metadata=metadata,
-        anonymizer=anonymizer,
         audio_size_limit_bytes=audio_size_limit_bytes,
         max_spans=max_spans,
     )
-    body = _orjson.dumps(payload)
     owns_client = client is None
     resolved_client = client or Client()
     try:
-        response: requests.Response = resolved_client.request_with_retries(
+        resolved_client.request_with_retries(
             "POST",
             "otel/v1/traces",
             stop_after_attempt=3,
-            data=body,
+            data=_orjson.dumps(payload),
             headers={"Langsmith-Project": _project_name(project_name)},
         )
-        del response
+    except LangSmithConflictError:
+        _warn_duplicate()
     finally:
         if owns_client:
             resolved_client.close()
@@ -694,43 +655,44 @@ def export_elevenlabs_trace(
 
 @warn_beta
 async def aexport_elevenlabs_trace(
-    otlp_traces: Mapping[str, Any],
+    otlp_traces: Mapping[str, JsonValue],
     *,
-    post_call_audio: Optional[Mapping[str, Any]] = None,
+    audio: Optional[Union[bytes, Mapping[str, JsonValue]]] = None,
     conversation_id: Optional[str] = None,
     agent_id: Optional[str] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
-    anonymizer: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None,
     audio_size_limit_bytes: Optional[int] = DEFAULT_AUDIO_SIZE_LIMIT,
     max_spans: int = DEFAULT_MAX_SPANS,
     client: Optional[AsyncClient] = None,
     project_name: Optional[str] = None,
-) -> dict[str, Any]:
+) -> dict[str, JsonValue]:
     """Transform and asynchronously export one ElevenLabs conversation trace."""
     from langsmith.async_client import AsyncClient
 
-    payload = transform_elevenlabs_trace(
-        otlp_traces,
-        post_call_audio=post_call_audio,
-        conversation_id=conversation_id,
-        agent_id=agent_id,
-        metadata=metadata,
-        anonymizer=anonymizer,
-        audio_size_limit_bytes=audio_size_limit_bytes,
-        max_spans=max_spans,
+    # Off the event loop: a post-call payload can carry a multi-megabyte audio
+    # blob, and both the transform and the JSON encode are CPU-bound.
+    payload = await asyncio.to_thread(
+        lambda: transform_elevenlabs_trace(
+            otlp_traces,
+            audio=audio,
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            audio_size_limit_bytes=audio_size_limit_bytes,
+            max_spans=max_spans,
+        )
     )
-    body = _orjson.dumps(payload)
+    body = await asyncio.to_thread(_orjson.dumps, payload)
     owns_client = client is None
     resolved_client = client or AsyncClient()
     try:
-        response: httpx.Response = await resolved_client._arequest_with_retries(
+        await resolved_client._arequest_with_retries(
             "POST",
             "otel/v1/traces",
             stop_after_attempt=3,
             content=body,
             headers={"Langsmith-Project": _project_name(project_name)},
         )
-        del response
+    except LangSmithConflictError:
+        _warn_duplicate()
     finally:
         if owns_client:
             await resolved_client.aclose()
