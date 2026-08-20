@@ -173,6 +173,7 @@ async function makeDockerContextTar(
 
   const contextRoot = path.resolve(contextPath);
   const chunks: Buffer[] = [];
+
   let dockerIgnore = "";
   let dockerIgnoreRel: string | undefined;
   for (const candidate of [`${dockerfileRel}.dockerignore`, ".dockerignore"]) {
@@ -189,13 +190,7 @@ async function makeDockerContextTar(
       }
     }
   }
-  let ignore = DockerIgnoreMatcher.parse("");
-  try {
-    ignore = DockerIgnoreMatcher.parse(dockerIgnore);
-  } catch {
-    // Match Docker's fail-open behavior: an unusable ignore file must not
-    // remove files from the uploaded build context.
-  }
+  const ignore = DockerIgnoreMatcher.parse(dockerIgnore);
 
   async function addEntry(absPath: string): Promise<void> {
     const rel = path.relative(contextRoot, absPath);

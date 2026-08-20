@@ -4,7 +4,7 @@ import { DockerIgnoreMatcher } from "../sandbox/dockerignore.js";
 // Observable compatibility cases from moby/patternmatcher at
 // 5a6d8429a19bb6948a372ff19e86fe83599a04b7. Compile-type and generated-regexp
 // assertions are implementation details of the Go matcher and do not apply to
-// this implementation, which delegates matching to path.matchesGlob.
+// this implementation, which matches parsed glob tokens directly.
 const mobyMatchCases: [pattern: string, path: string, ignored: boolean][] = [
   ["**", "file", true],
   ["**", "file/", true],
@@ -147,7 +147,7 @@ describe("DockerIgnoreMatcher", () => {
 
   it("supports Docker wildcards", () => {
     const matcher = DockerIgnoreMatcher.parse(
-      ["**/*.tmp", "logs/**/debug-?.[0-9].log", "assets/icon[!0-3].png"].join(
+      ["**/*.tmp", "logs/**/debug-?.[0-9].log", "assets/icon[^0-3].png"].join(
         "\n",
       ),
     );
@@ -162,17 +162,13 @@ describe("DockerIgnoreMatcher", () => {
     expect(DockerIgnoreMatcher.parse("*.go").isIgnored("FILE.GO")).toBe(false);
   });
 
-  it("uses native matchesGlob syntax", () => {
-    const matcher = DockerIgnoreMatcher.parse(
-      "*.{js,ts}\n@(foo|bar)\n*\n!@(foo|bar)/keep.txt",
-    );
+  it("treats non-Docker glob extensions literally", () => {
+    const matcher = DockerIgnoreMatcher.parse("*.{js,ts}\n@(foo|bar)");
 
-    expect(matcher.isIgnored("file.js")).toBe(true);
-    expect(matcher.isIgnored("file.ts")).toBe(true);
-    expect(matcher.isIgnored("foo")).toBe(true);
-    expect(matcher.isIgnored("bar")).toBe(true);
-    expect(matcher.isIgnored("foo/keep.txt")).toBe(false);
-    expect(matcher.couldIncludeDescendant("foo")).toBe(true);
+    expect(matcher.isIgnored("file.js")).toBe(false);
+    expect(matcher.isIgnored("file.ts")).toBe(false);
+    expect(matcher.isIgnored("file.{js,ts}")).toBe(true);
+    expect(matcher.isIgnored("@(foo|bar)")).toBe(true);
   });
 
   it("matches dotfiles", () => {

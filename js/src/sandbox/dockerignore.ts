@@ -1,203 +1,211 @@
-import { posix as path } from "node:path";
+type CharacterRange = [start: number, end: number];
+
+type GlobToken =
+  | { type: "literal"; value: string }
+  | { type: "star" }
+  | { type: "globstar" }
+  | { type: "globstarSegments" }
+  | { type: "any" }
+  | { type: "class"; negated: boolean; ranges: CharacterRange[] };
 
 type DockerIgnoreRule = {
   exclusion: boolean;
   pattern: string;
+  tokens: GlobToken[];
   staticPrefix: string;
   hasSlash: boolean;
   hasGlob: boolean;
 };
 
-function normalizePattern(pattern: string): string {
-  let normalized = path.normalize(pattern);
-  while (normalized.startsWith("/")) {
-    normalized = normalized.slice(1);
-  }
-  while (normalized.endsWith("/")) {
-    normalized = normalized.slice(0, -1);
-  }
-  return normalized;
-}
-
 function firstGlobIndex(pattern: string): number {
   for (let i = 0; i < pattern.length; i += 1) {
     if (pattern[i] === "\\") {
       i += 1;
-    } else if (
-      pattern[i] === "*" ||
-      pattern[i] === "?" ||
-      pattern[i] === "[" ||
-      pattern[i] === "{" ||
-      ((pattern[i] === "@" || pattern[i] === "+" || pattern[i] === "!") &&
-        pattern[i + 1] === "(")
-    ) {
+    } else if (pattern[i] === "*" || pattern[i] === "?" || pattern[i] === "[") {
       return i;
     }
   }
   return -1;
 }
 
-function validatePattern(pattern: string): void {
-  for (let i = 0; i < pattern.length; i += 1) {
-    if (pattern[i] === "\\") {
-      if (i + 1 === pattern.length) {
-        throw new Error(`invalid trailing escape in pattern ${pattern}`);
-      }
-      i += 1;
-      continue;
+class DockerGlobParser {
+  private readonly characters: string[];
+
+  private cursor = 0;
+
+  constructor(private readonly pattern: string) {
+    this.characters = Array.from(pattern);
+  }
+
+  parse(): GlobToken[] {
+    const tokens: GlobToken[] = [];
+    while (!this.atEnd()) {
+      tokens.push(this.parseToken());
     }
-    if (pattern[i] !== "[") {
-      continue;
+    return tokens;
+  }
+
+  private parseToken(): GlobToken {
+    const character = this.consume();
+    if (character === "\\") {
+      return this.parseEscapedLiteral();
+    }
+    if (character === "*") {
+      return this.parseStar();
+    }
+    if (character === "?") {
+      return { type: "any" };
+    }
+    if (character === "[") {
+      return this.parseCharacterClass();
+    }
+    return { type: "literal", value: character };
+  }
+
+  private parseEscapedLiteral(): GlobToken {
+    if (this.atEnd()) {
+      throw new Error(`invalid trailing escape in pattern ${this.pattern}`);
+    }
+    return { type: "literal", value: this.consume() };
+  }
+
+  private parseStar(): GlobToken {
+    if (this.peek() !== "*") {
+      return { type: "star" };
+    }
+    this.consume();
+    if (this.peek() === "/") {
+      this.consume();
+      return { type: "globstarSegments" };
+    }
+    return { type: "globstar" };
+  }
+
+  private parseCharacterClass(): GlobToken {
+    const negated = this.peek() === "^";
+    if (negated) {
+      this.consume();
     }
 
-    i += 1;
-    if (pattern[i] === "^") {
-      i += 1;
+    const ranges: CharacterRange[] = [];
+    while (!this.atEnd() && this.peek() !== "]") {
+      ranges.push(this.parseCharacterRange());
     }
-    let members = 0;
-    while (i < pattern.length && pattern[i] !== "]") {
-      if (pattern[i] === "-") {
-        throw new Error(`invalid character class in pattern ${pattern}`);
+    if (ranges.length === 0 || this.atEnd()) {
+      this.invalidCharacterClass();
+    }
+    this.consume();
+    return { type: "class", negated, ranges };
+  }
+
+  private parseCharacterRange(): CharacterRange {
+    if (this.peek() === "-") {
+      this.invalidCharacterClass();
+    }
+    const start = this.parseClassCharacter();
+    if (this.peek() !== "-") {
+      return [start, start];
+    }
+
+    this.consume();
+    if (this.atEnd() || this.peek() === "]" || this.peek() === "-") {
+      this.invalidCharacterClass();
+    }
+    const end = this.parseClassCharacter();
+    if (end < start) {
+      this.invalidCharacterClass();
+    }
+    return [start, end];
+  }
+
+  private parseClassCharacter(): number {
+    if (this.peek() === "\\") {
+      this.consume();
+      if (this.atEnd()) {
+        this.invalidCharacterClass();
       }
-      let rangeStart = pattern.codePointAt(i) ?? 0;
-      if (pattern[i] === "\\") {
-        i += 1;
-        if (i === pattern.length) {
-          throw new Error(`invalid character class in pattern ${pattern}`);
+    }
+    return this.consume().codePointAt(0) ?? 0;
+  }
+
+  private peek(): string | undefined {
+    return this.characters[this.cursor];
+  }
+
+  private consume(): string {
+    return this.characters[this.cursor++];
+  }
+
+  private atEnd(): boolean {
+    return this.cursor >= this.characters.length;
+  }
+
+  private invalidCharacterClass(): never {
+    throw new Error(`invalid character class in pattern ${this.pattern}`);
+  }
+}
+
+function matchesDockerGlob(value: string, tokens: GlobToken[]): boolean {
+  const characters = Array.from(value);
+  const memo = new Map<string, boolean>();
+
+  const match = (tokenIndex: number, characterIndex: number): boolean => {
+    const key = `${tokenIndex}:${characterIndex}`;
+    const cached = memo.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const token = tokens[tokenIndex];
+    let matched: boolean;
+    if (token === undefined) {
+      matched = characterIndex === characters.length;
+    } else if (token.type === "literal") {
+      matched =
+        characters[characterIndex] === token.value &&
+        match(tokenIndex + 1, characterIndex + 1);
+    } else if (token.type === "any") {
+      matched =
+        characters[characterIndex] !== undefined &&
+        characters[characterIndex] !== "/" &&
+        match(tokenIndex + 1, characterIndex + 1);
+    } else if (token.type === "star") {
+      matched =
+        match(tokenIndex + 1, characterIndex) ||
+        (characters[characterIndex] !== undefined &&
+          characters[characterIndex] !== "/" &&
+          match(tokenIndex, characterIndex + 1));
+    } else if (token.type === "globstar") {
+      matched =
+        match(tokenIndex + 1, characterIndex) ||
+        (characterIndex < characters.length &&
+          match(tokenIndex, characterIndex + 1));
+    } else if (token.type === "globstarSegments") {
+      matched = match(tokenIndex + 1, characterIndex);
+      for (let i = characterIndex; !matched && i < characters.length; i += 1) {
+        if (characters[i] === "/") {
+          matched = match(tokenIndex + 1, i + 1);
         }
-        rangeStart = pattern.codePointAt(i) ?? 0;
       }
-      members += 1;
-      i += 1;
-      if (pattern[i] === "-") {
-        i += 1;
-        if (i === pattern.length || pattern[i] === "]" || pattern[i] === "-") {
-          throw new Error(`invalid character class in pattern ${pattern}`);
-        }
-        if (pattern[i] === "\\") {
-          i += 1;
-          if (i === pattern.length) {
-            throw new Error(`invalid character class in pattern ${pattern}`);
-          }
-        }
-        const rangeEnd = pattern.codePointAt(i) ?? 0;
-        if (rangeEnd < rangeStart) {
-          throw new Error(`invalid character class in pattern ${pattern}`);
-        }
-        i += 1;
-      }
+    } else {
+      const codePoint = characters[characterIndex]?.codePointAt(0);
+      const inClass =
+        codePoint !== undefined &&
+        token.ranges.some(
+          ([start, end]) => codePoint >= start && codePoint <= end,
+        );
+      matched =
+        codePoint !== undefined &&
+        characters[characterIndex] !== "/" &&
+        (token.negated ? !inClass : inClass) &&
+        match(tokenIndex + 1, characterIndex + 1);
     }
-    if (members === 0 || i === pattern.length) {
-      throw new Error(`invalid character class in pattern ${pattern}`);
-    }
-  }
-}
 
-function prepareNativeGlob(
-  value: string,
-  pattern: string,
-): { value: string; pattern: string } {
-  // Adapt Go-style literal escapes and mid-segment globstars before handing
-  // matching to the native implementation.
-  const escaped = new Map<string, string>();
-  let nativePattern = "";
-  for (let i = 0; i < pattern.length; i += 1) {
-    if (pattern[i] === "\\") {
-      const literal = pattern[(i += 1)];
-      let replacement = escaped.get(literal);
-      if (replacement === undefined) {
-        replacement = String.fromCodePoint(0xe000 + escaped.size);
-        escaped.set(literal, replacement);
-      }
-      nativePattern += replacement;
-      continue;
-    }
-    if (
-      pattern[i] === "*" &&
-      pattern[i + 1] === "*" &&
-      pattern[i + 2] === "/" &&
-      i > 0 &&
-      pattern[i - 1] !== "/"
-    ) {
-      nativePattern += "*/**/";
-      i += 2;
-      continue;
-    }
-    nativePattern += pattern[i];
-  }
-  let nativeValue = value;
-  for (const [literal, replacement] of escaped) {
-    nativeValue = nativeValue.split(literal).join(replacement);
-  }
-  return { value: nativeValue, pattern: nativePattern };
-}
+    memo.set(key, matched);
+    return matched;
+  };
 
-function expandCaseFoldedRanges(pattern: string): string[] {
-  // On case-insensitive hosts, matchesGlob case-folds magic patterns. Split a
-  // lower-case-to-Unicode range before masking ASCII case below.
-  for (let i = 0; i + 4 < pattern.length; i += 1) {
-    const start = pattern.charCodeAt(i + 1);
-    const end = pattern.charCodeAt(i + 3);
-    if (
-      pattern[i] === "[" &&
-      pattern[i + 2] === "-" &&
-      pattern[i + 4] === "]" &&
-      start >= 0x61 &&
-      start <= 0x7a &&
-      end > 0x7a
-    ) {
-      const variants: string[] = [];
-      const prefix = pattern.slice(0, i);
-      const suffix = pattern.slice(i + 5);
-      for (let codePoint = start; codePoint <= 0x7a; codePoint += 1) {
-        variants.push(`${prefix}${String.fromCodePoint(codePoint)}${suffix}`);
-      }
-      variants.push(`${prefix}[{-${pattern[i + 3]}]${suffix}`);
-      return variants;
-    }
-  }
-  return [pattern];
-}
-
-function makeAsciiCaseSensitive(value: string): string {
-  // Docker matching is case-sensitive even when the host filesystem is not.
-  // Separate private-use ranges keep native wildcard matching case-sensitive.
-  return Array.from(value, (character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (codePoint >= 0x61 && codePoint <= 0x7a) {
-      return String.fromCodePoint(0xe100 + codePoint - 0x61);
-    }
-    if (codePoint >= 0x41 && codePoint <= 0x5a) {
-      return String.fromCodePoint(0xe200 + codePoint - 0x41);
-    }
-    return character;
-  }).join("");
-}
-
-function makeDotfilesVisible(value: string, pattern: boolean): string {
-  // matchesGlob hides dotfiles from wildcards. Prefix each path segment so
-  // Docker patterns such as `**/*` still include them.
-  return value
-    .split("/")
-    .map((part) => (pattern && part === "**" ? part : `_${part}`))
-    .join("/");
-}
-
-function matchesDockerGlob(value: string, pattern: string): boolean {
-  if (typeof path.matchesGlob !== "function") {
-    throw new Error(".dockerignore requires Node.js path.matchesGlob support");
-  }
-  const native = prepareNativeGlob(value, pattern);
-  const nativeValue = makeDotfilesVisible(
-    makeAsciiCaseSensitive(native.value),
-    false,
-  );
-  return expandCaseFoldedRanges(native.pattern).some((nativePattern) =>
-    path.matchesGlob(
-      nativeValue,
-      makeDotfilesVisible(makeAsciiCaseSensitive(nativePattern), true),
-    ),
-  );
+  return match(0, 0);
 }
 
 function ruleMatches(rule: DockerIgnoreRule, path: string): boolean {
@@ -206,7 +214,7 @@ function ruleMatches(rule: DockerIgnoreRule, path: string): boolean {
     const value = rule.hasSlash
       ? candidate
       : candidate.slice(candidate.lastIndexOf("/") + 1);
-    if (matchesDockerGlob(value, rule.pattern)) {
+    if (matchesDockerGlob(value, rule.tokens)) {
       return true;
     }
     const separator = candidate.lastIndexOf("/");
@@ -239,11 +247,28 @@ export class DockerIgnoreMatcher {
           throw new Error("invalid empty exclusion pattern");
         }
       }
-      pattern = normalizePattern(pattern);
+
+      const absolute = pattern.startsWith("/");
+      const segments: string[] = [];
+      for (const segment of pattern.split("/")) {
+        if (!segment || segment === ".") {
+          continue;
+        }
+        if (segment === "..") {
+          if (segments.length > 0 && segments.at(-1) !== "..") {
+            segments.pop();
+          } else if (!absolute) {
+            segments.push(segment);
+          }
+        } else {
+          segments.push(segment);
+        }
+      }
+      pattern = segments.join("/");
       if (!pattern || pattern === ".") {
         continue;
       }
-      validatePattern(pattern);
+      const tokens = new DockerGlobParser(pattern).parse();
       const globIndex = firstGlobIndex(pattern);
       const hasGlob = globIndex !== -1;
       const prefixBeforeGlob = hasGlob ? pattern.slice(0, globIndex) : pattern;
@@ -251,17 +276,13 @@ export class DockerIgnoreMatcher {
       rules.push({
         exclusion,
         pattern,
+        tokens,
         staticPrefix: hasGlob
           ? prefixBeforeGlob.slice(0, Math.max(0, prefixEnd))
           : pattern,
         hasSlash: pattern.includes("/"),
         hasGlob,
       });
-    }
-    if (rules.length > 0 && typeof path.matchesGlob !== "function") {
-      throw new Error(
-        ".dockerignore requires Node.js path.matchesGlob support",
-      );
     }
     return new DockerIgnoreMatcher(rules);
   }
