@@ -210,9 +210,10 @@ class BoxesResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SandboxResponse:
-        """Update a sandbox's display name.
-
-        The name must be unique within the tenant.
+        """
+        Update a sandbox's display name, retention, resources, tags, or proxy
+        configuration. The name must be unique within the tenant. Proxy configuration
+        sent to a sandbox that is not running is stored and applied when it next starts.
 
         Args:
           mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
@@ -804,9 +805,10 @@ class AsyncBoxesResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SandboxResponse:
-        """Update a sandbox's display name.
-
-        The name must be unique within the tenant.
+        """
+        Update a sandbox's display name, retention, resources, tags, or proxy
+        configuration. The name must be unique within the tenant. Proxy configuration
+        sent to a sandbox that is not running is stored and applied when it next starts.
 
         Args:
           mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the

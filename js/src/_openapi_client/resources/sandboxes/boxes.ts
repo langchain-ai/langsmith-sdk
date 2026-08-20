@@ -27,7 +27,9 @@ export class Boxes extends APIResource {
   }
 
   /**
-   * Update a sandbox's display name. The name must be unique within the tenant.
+   * Update a sandbox's display name, retention, resources, tags, or proxy
+   * configuration. The name must be unique within the tenant. Proxy configuration
+   * sent to a sandbox that is not running is stored and applied when it next starts.
    */
   update(
     name: string,
