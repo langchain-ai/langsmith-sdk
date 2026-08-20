@@ -40,6 +40,7 @@ import {
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
+import { DockerIgnoreMatcher } from "./dockerignore.js";
 
 /**
  * Sleep that can be interrupted by an AbortSignal.
@@ -169,28 +170,34 @@ async function makeDockerContextTar(
 ): Promise<Uint8Array> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
-  const { DockerIgnoreMatcher } = await import("./dockerignore.js");
 
   const contextRoot = path.resolve(contextPath);
   const chunks: Buffer[] = [];
 
-  let dockerIgnore = "";
-  let dockerIgnoreRel: string | undefined;
-  for (const candidate of [`${dockerfileRel}.dockerignore`, ".dockerignore"]) {
-    try {
-      dockerIgnore = await fs.readFile(
-        path.join(contextRoot, candidate),
-        "utf8",
-      );
-      dockerIgnoreRel = candidate;
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
+  const dockerIgnore = await (async () => {
+    for (const rel of [`${dockerfileRel}.dockerignore`, ".dockerignore"]) {
+      try {
+        const file = await fs.readFile(path.join(contextRoot, rel), "utf8");
+        return { rel, file };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw error;
+        }
       }
     }
-  }
-  const ignore = DockerIgnoreMatcher.parse(dockerIgnore);
+
+    return { file: "", rel: undefined };
+  })();
+
+  const ignore = (() => {
+    try {
+      return DockerIgnoreMatcher.parse(dockerIgnore.file);
+    } catch {
+      // Match Docker's fail-open behavior: an unusable ignore file must not
+      // remove files from the uploaded build context.
+      return DockerIgnoreMatcher.parse("");
+    }
+  })();
 
   async function addEntry(absPath: string): Promise<void> {
     const rel = path.relative(contextRoot, absPath);
@@ -202,7 +209,7 @@ async function makeDockerContextTar(
 
     const ignored =
       !(
-        tarPath === dockerIgnoreRel ||
+        tarPath === dockerIgnore.rel ||
         tarPath === dockerfileRel ||
         (stat.isDirectory() && dockerfileRel.startsWith(`${tarPath}/`))
       ) && ignore.isIgnored(tarPath);
