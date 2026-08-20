@@ -834,11 +834,7 @@ export type RunTypeEnum = 'tool' | 'chain' | 'llm' | 'retriever' | 'embedding' |
  * Enum for run data source types.
  */
 export type RunsFilterDataSourceTypeEnum =
-  | 'current'
-  | 'historical'
-  | 'lite'
-  | 'root_lite'
-  | 'runs_feedbacks_rmt_wide';
+  'current' | 'historical' | 'lite' | 'root_lite' | 'runs_feedbacks_rmt_wide';
 
 export interface RunGetURLResponse {
   url?: string;
