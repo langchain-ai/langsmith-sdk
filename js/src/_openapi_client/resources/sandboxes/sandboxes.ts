@@ -28,12 +28,15 @@ import {
   SnapshotRetrieveByNameResponse,
   Snapshots,
 } from './snapshots.js';
+import { ItemsCursorGetPagination } from '../../core/pagination.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
   registries: RegistriesAPI.Registries = new RegistriesAPI.Registries(this._client);
   snapshots: SnapshotsAPI.Snapshots = new SnapshotsAPI.Snapshots(this._client);
 }
+
+export type SnapshotResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SnapshotResponse>;
 
 export interface DownloadURLResponse {
   token: string;
@@ -610,8 +613,26 @@ export interface ServiceURLResponse {
 }
 
 export interface SnapshotListResponse {
+  /**
+   * This page of snapshots.
+   */
+  items?: Array<SnapshotResponse>;
+
+  /**
+   * Cursor for the next page, or null on the last page. A non-null value is the only
+   * signal that more pages exist. Treat it as opaque.
+   */
+  next_cursor?: string;
+
+  /**
+   * Deprecated: use next_cursor. Offset to request for the next page, or 0 when no
+   * pages remain.
+   */
   offset?: number;
 
+  /**
+   * Deprecated: use items. Duplicates items.
+   */
   snapshots?: Array<SnapshotResponse>;
 }
 

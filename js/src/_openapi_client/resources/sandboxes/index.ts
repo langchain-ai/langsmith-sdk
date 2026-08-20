@@ -27,6 +27,7 @@ export {
   type ServiceURLResponse,
   type SnapshotListResponse,
   type SnapshotResponse,
+  type SnapshotResponsesItemsCursorGetPagination,
 } from './sandboxes.js';
 export {
   Snapshots,

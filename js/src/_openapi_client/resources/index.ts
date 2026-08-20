@@ -96,6 +96,7 @@ export {
   type ServiceURLResponse,
   type SnapshotListResponse,
   type SnapshotResponse,
+  type SnapshotResponsesItemsCursorGetPagination,
 } from './sandboxes/sandboxes.js';
 export {
   Threads,
