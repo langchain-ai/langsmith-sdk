@@ -174,25 +174,27 @@ async function makeDockerContextTar(
   const contextRoot = path.resolve(contextPath);
   const chunks: Buffer[] = [];
   let dockerIgnore = "";
-  try {
-    dockerIgnore = await fs.readFile(
-      path.join(contextRoot, ".dockerignore"),
-      "utf8",
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
+  let dockerIgnoreRel: string | undefined;
+  for (const candidate of [`${dockerfileRel}.dockerignore`, ".dockerignore"]) {
+    try {
+      dockerIgnore = await fs.readFile(
+        path.join(contextRoot, candidate),
+        "utf8",
+      );
+      dockerIgnoreRel = candidate;
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
     }
   }
-  let ignore: ReturnType<(typeof DockerIgnoreMatcher)["parse"]>;
+  let ignore = DockerIgnoreMatcher.parse("");
   try {
     ignore = DockerIgnoreMatcher.parse(dockerIgnore);
-  } catch (error) {
-    throw new Error(
-      `Invalid .dockerignore: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
+  } catch {
+    // Match Docker's fail-open behavior: an unusable ignore file must not
+    // remove files from the uploaded build context.
   }
 
   async function addEntry(absPath: string): Promise<void> {
@@ -205,7 +207,7 @@ async function makeDockerContextTar(
 
     const ignored =
       !(
-        tarPath === ".dockerignore" ||
+        tarPath === dockerIgnoreRel ||
         tarPath === dockerfileRel ||
         (stat.isDirectory() && dockerfileRel.startsWith(`${tarPath}/`))
       ) && ignore.isIgnored(tarPath);

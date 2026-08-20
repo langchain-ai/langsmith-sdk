@@ -2217,7 +2217,7 @@ describe("SandboxClient - snapshot operations", () => {
     }
   });
 
-  it("createSnapshotFromDockerfile should respect .dockerignore", async () => {
+  it("createSnapshotFromDockerfile should respect a valid .dockerignore", async () => {
     const context = await mkdtemp(join(tmpdir(), "langsmith-docker-context-"));
     const client = createClientWithMock(jest.fn<typeof fetch>());
     let contextTar: Uint8Array | undefined;
@@ -2305,6 +2305,41 @@ describe("SandboxClient - snapshot operations", () => {
           "node_modules/package.js",
         ]),
       );
+
+      await writeFile(join(context, ".dockerignore"), "invalid[");
+      await client.createSnapshotFromDockerfile("snap", "docker/Dockerfile", {
+        context,
+      });
+
+      const fallbackNames = readTarEntryNames(contextTar as Uint8Array);
+      expect(fallbackNames).toEqual(
+        expect.arrayContaining([
+          "excluded.txt",
+          "ignored-dir/drop.txt",
+          "logs/debug.log",
+          "node_modules/package.js",
+        ]),
+      );
+
+      await Promise.all([
+        writeFile(join(context, ".dockerignore"), "excluded.txt\n"),
+        writeFile(
+          join(context, "docker", "Dockerfile.dockerignore"),
+          "included.txt\ndocker/Dockerfile.dockerignore\n",
+        ),
+      ]);
+      await client.createSnapshotFromDockerfile("snap", "docker/Dockerfile", {
+        context,
+      });
+
+      const dockerfileIgnoreNames = readTarEntryNames(contextTar as Uint8Array);
+      expect(dockerfileIgnoreNames).toEqual(
+        expect.arrayContaining([
+          "excluded.txt",
+          "docker/Dockerfile.dockerignore",
+        ]),
+      );
+      expect(dockerfileIgnoreNames).not.toContain("included.txt");
     } finally {
       await rm(context, { recursive: true, force: true });
     }
