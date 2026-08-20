@@ -163,6 +163,58 @@ def test_set_io_attributes_converts_tool_call_history_to_gen_ai_schema():
     ]
 
 
+def test_set_io_attributes_converts_provider_style_tool_calls():
+    """Provider-style tool arguments are decoded into structured GenAI parts."""
+    exporter = object.__new__(OTELExporter)
+    span = MagicMock()
+    inputs = {
+        "messages": [
+            [
+                {
+                    "lc": 1,
+                    "type": "constructor",
+                    "id": ["langchain", "schema", "messages", "AIMessage"],
+                    "kwargs": {
+                        "content": "",
+                        "type": "ai",
+                        "additional_kwargs": {
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "calculator",
+                                        "arguments": '{"expression":"2 + 2"}',
+                                    },
+                                }
+                            ]
+                        },
+                    },
+                }
+            ]
+        ]
+    }
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=json.dumps(inputs), outputs=None)
+
+    exporter._set_io_attributes(span, op)
+
+    assert json.loads(
+        _attribute_value(span, "gen_ai.input.messages")  # type: ignore[arg-type]
+    ) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "id": "call_1",
+                    "name": "calculator",
+                    "arguments": {"expression": "2 + 2"},
+                }
+            ],
+        }
+    ]
+
+
 def test_set_io_attributes_converts_tool_call_generation_to_gen_ai_schema():
     """A tool-only model generation is retained with a normalized finish reason."""
     exporter = object.__new__(OTELExporter)

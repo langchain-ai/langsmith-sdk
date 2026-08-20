@@ -213,6 +213,14 @@ def _tool_call_parts(data: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(function, dict):
             name = function.get("name")
             arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    parsed_arguments = _orjson.loads(arguments)
+                except _orjson.JSONDecodeError:
+                    pass
+                else:
+                    if isinstance(parsed_arguments, dict):
+                        arguments = parsed_arguments
         else:
             name = tool_call.get("name")
             arguments = tool_call.get("args", tool_call.get("arguments"))
