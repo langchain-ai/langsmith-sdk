@@ -1,16 +1,26 @@
 name: py-bench-datadog
 
 on:
+  # The setup files are listed too, so a change to the target, the bench
+  # dependencies or this workflow is exercised by the PR that makes it.
   pull_request:
     paths:
       - "python/langsmith/**"
       - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/py-bench-datadog.yml"
   push:
     branches:
       - main
     paths:
       - "python/langsmith/**"
       - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/py-bench-datadog.yml"
   workflow_dispatch:
 
 permissions:
