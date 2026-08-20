@@ -173,22 +173,76 @@ def _normalize_message_role(message_type: Optional[str], data: dict) -> Optional
     return _GEN_AI_ROLE_ALIASES.get(role)
 
 
-def _text_parts(content: Any) -> list[dict[str, str]]:
+def _text_parts(content: Any) -> list[dict[str, Any]]:
     """Convert LangChain text content to OTel GenAI text parts."""
     if isinstance(content, str):
-        return [{"type": "text", "content": content}]
+        return [{"type": "text", "content": content}] if content else []
     if not isinstance(content, list):
         return []
 
     parts = []
     for block in content:
-        if isinstance(block, str):
+        if isinstance(block, str) and block:
             parts.append({"type": "text", "content": block})
         elif isinstance(block, dict) and block.get("type") == "text":
             text = block.get("text", block.get("content"))
-            if isinstance(text, str):
+            if isinstance(text, str) and text:
                 parts.append({"type": "text", "content": text})
     return parts
+
+
+def _tool_call_parts(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert normalized or provider-style tool calls to OTel GenAI parts."""
+    tool_calls = data.get("tool_calls")
+    if not isinstance(tool_calls, list):
+        additional_kwargs = data.get("additional_kwargs")
+        tool_calls = (
+            additional_kwargs.get("tool_calls")
+            if isinstance(additional_kwargs, dict)
+            else None
+        )
+    if not isinstance(tool_calls, list):
+        return []
+
+    parts = []
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, dict):
+            continue
+
+        function = tool_call.get("function")
+        if isinstance(function, dict):
+            name = function.get("name")
+            arguments = function.get("arguments")
+        else:
+            name = tool_call.get("name")
+            arguments = tool_call.get("args", tool_call.get("arguments"))
+
+        if not isinstance(name, str) or not name:
+            continue
+
+        part: dict[str, Any] = {"type": "tool_call", "name": name}
+        tool_call_id = tool_call.get("id")
+        if tool_call_id is not None:
+            part["id"] = str(tool_call_id)
+        if arguments is not None:
+            part["arguments"] = arguments
+        parts.append(part)
+    return parts
+
+
+def _tool_call_response_parts(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert a LangChain tool message to an OTel GenAI response part."""
+    if "content" not in data:
+        return []
+
+    part: dict[str, Any] = {
+        "type": "tool_call_response",
+        "response": data["content"],
+    }
+    tool_call_id = data.get("tool_call_id")
+    if tool_call_id is not None:
+        part["id"] = str(tool_call_id)
+    return [part]
 
 
 def _convert_message_to_gen_ai(
@@ -197,7 +251,12 @@ def _convert_message_to_gen_ai(
     """Convert a serialized LangChain/chat message to the OTel GenAI schema."""
     message_type, data = _message_type_and_data(message)
     role = _normalize_message_role(message_type, data) or default_role
-    parts = _text_parts(data.get("content"))
+    if role == "tool":
+        parts = _tool_call_response_parts(data)
+    else:
+        parts = _text_parts(data.get("content"))
+        if role == "assistant":
+            parts.extend(_tool_call_parts(data))
     if not role or not parts:
         return None
     return {"role": role, "parts": parts}
@@ -232,7 +291,17 @@ def _get_generation_finish_reason(generation: dict[str, Any], raw_message: Any) 
         for key in ("finish_reason", "stop_reason"):
             finish_reason = candidate.get(key)
             if finish_reason is not None:
-                return str(finish_reason)
+                value = str(finish_reason)
+                return {
+                    "function_call": "tool_call",
+                    "max_tokens": "length",
+                    "tool_calls": "tool_call",
+                }.get(value, value)
+
+    if isinstance(raw_message, dict):
+        _, message_data = _message_type_and_data(raw_message)
+        if _tool_call_parts(message_data):
+            return "tool_call"
     return "unknown"
 
 

@@ -95,6 +95,128 @@ def test_set_io_attributes_converts_langchain_generations_to_gen_ai_schema():
     assert _attribute_value(span, "gen_ai.completion") == json.dumps(outputs)
 
 
+def test_set_io_attributes_converts_tool_call_history_to_gen_ai_schema():
+    """Tool requests and responses are represented as typed GenAI parts."""
+    exporter = object.__new__(OTELExporter)
+    span = MagicMock()
+    inputs = {
+        "messages": [
+            [
+                {
+                    "lc": 1,
+                    "type": "constructor",
+                    "id": ["langchain", "schema", "messages", "AIMessage"],
+                    "kwargs": {
+                        "content": "",
+                        "type": "ai",
+                        "tool_calls": [
+                            {
+                                "name": "calculator",
+                                "args": {"expression": "2 + 2"},
+                                "id": "call_1",
+                                "type": "tool_call",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "lc": 1,
+                    "type": "constructor",
+                    "id": ["langchain", "schema", "messages", "ToolMessage"],
+                    "kwargs": {
+                        "content": "4",
+                        "type": "tool",
+                        "tool_call_id": "call_1",
+                    },
+                },
+            ]
+        ]
+    }
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=json.dumps(inputs), outputs=None)
+
+    exporter._set_io_attributes(span, op)
+
+    assert json.loads(
+        _attribute_value(span, "gen_ai.input.messages")  # type: ignore[arg-type]
+    ) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "id": "call_1",
+                    "name": "calculator",
+                    "arguments": {"expression": "2 + 2"},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "parts": [
+                {
+                    "type": "tool_call_response",
+                    "id": "call_1",
+                    "response": "4",
+                }
+            ],
+        },
+    ]
+
+
+def test_set_io_attributes_converts_tool_call_generation_to_gen_ai_schema():
+    """A tool-only model generation is retained with a normalized finish reason."""
+    exporter = object.__new__(OTELExporter)
+    span = MagicMock()
+    outputs = {
+        "generations": [
+            [
+                {
+                    "text": "",
+                    "type": "ChatGeneration",
+                    "generation_info": {"finish_reason": "tool_calls"},
+                    "message": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "schema", "messages", "AIMessage"],
+                        "kwargs": {
+                            "content": "",
+                            "type": "ai",
+                            "tool_calls": [
+                                {
+                                    "name": "calculator",
+                                    "args": {"expression": "2 + 2"},
+                                    "id": "call_1",
+                                    "type": "tool_call",
+                                }
+                            ],
+                        },
+                    },
+                }
+            ]
+        ]
+    }
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=None, outputs=json.dumps(outputs))
+
+    exporter._set_io_attributes(span, op)
+
+    assert json.loads(
+        _attribute_value(span, "gen_ai.output.messages")  # type: ignore[arg-type]
+    ) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "id": "call_1",
+                    "name": "calculator",
+                    "arguments": {"expression": "2 + 2"},
+                }
+            ],
+            "finish_reason": "tool_call",
+        }
+    ]
+
+
 def test_cleanup_stale_spans():
     """Test cleanup of stale spans based on TTL."""
     with patch(
