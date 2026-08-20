@@ -1621,17 +1621,29 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * The auth options and caller headers to build the generated client with.
+   * The options to build the generated client with: its auth, and the headers
+   * it should send on every request.
    *
    * The generated client applies `defaultHeaders` *after* its own auth headers,
    * so the ones this SDK sets are already dropped from `_callerHeaders` to keep
    * the precedence of `_mergedHeaders`, where required headers win.
    */
-  private get _openAPIAuth(): {
+  private get _openAPIClientOptions(): {
     apiKey: string | undefined;
     defaultHeaders: Record<string, string | null> | undefined;
   } {
     const headers: Record<string, string | null> = { ...this._callerHeaders };
+
+    // Without this the generated client falls back to its own
+    // `Langsmith/JS <generated version>`, so the same client would identify
+    // itself two different ways depending on which path a call takes. A
+    // caller-supplied one still wins, matched case-insensitively so the header
+    // is not sent twice.
+    if (
+      !Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")
+    ) {
+      headers["User-Agent"] = `langsmith-js/${__version__}`;
+    }
 
     // A caller may authenticate by supplying `x-api-key` themselves. The
     // generated client rejects that as a header (its `validateHeaders` requires
@@ -1691,19 +1703,21 @@ export class Client implements LangSmithTracingClientInterface {
    * its token is refreshed.
    */
   private get openAPIClient(): OpenAPILangsmith {
-    const auth = this._openAPIAuth;
-    const signature = JSON.stringify([auth.apiKey, auth.defaultHeaders]);
+    const options = this._openAPIClientOptions;
+    const signature = JSON.stringify([options.apiKey, options.defaultHeaders]);
     if (
       this._openAPIClient === undefined ||
       this._openAPIClientSignature !== signature
     ) {
       this._openAPIClientSignature = signature;
-      this._openAPIClient = this._newOpenAPIClient(auth);
+      this._openAPIClient = this._newOpenAPIClient(options);
     }
     return this._openAPIClient;
   }
 
-  private _newOpenAPIClient(auth = this._openAPIAuth): OpenAPILangsmith {
+  private _newOpenAPIClient(
+    options = this._openAPIClientOptions,
+  ): OpenAPILangsmith {
     const {
       method: _method,
       body: _body,
@@ -1712,13 +1726,13 @@ export class Client implements LangSmithTracingClientInterface {
     } = this.fetchOptions;
 
     return new OpenAPILangsmith({
-      apiKey: auth.apiKey,
+      apiKey: options.apiKey,
       tenantID: this.workspaceId,
       baseURL: this._getOpenAPIBaseUrl(),
       timeout: this.timeout_ms,
       fetch: this._fetch,
       fetchOptions: openAPIFetchOptions,
-      defaultHeaders: auth.defaultHeaders,
+      defaultHeaders: options.defaultHeaders,
     });
   }
 
