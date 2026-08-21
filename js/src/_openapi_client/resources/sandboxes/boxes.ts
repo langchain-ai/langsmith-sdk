@@ -3,7 +3,13 @@
 
 import { APIResource } from '../../core/resource.js';
 import * as SandboxesAPI from './sandboxes.js';
+import { SandboxResponsesItemsCursorGetPagination } from './sandboxes.js';
 import { APIPromise } from '../../core/api-promise.js';
+import {
+  ItemsCursorGetPagination,
+  type ItemsCursorGetPaginationParams,
+  PagePromise,
+} from '../../core/pagination.js';
 import { buildHeaders } from '../../internal/headers.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
@@ -41,13 +47,20 @@ export class Boxes extends APIResource {
 
   /**
    * List sandboxes for the authenticated tenant, with optional filtering, sorting,
-   * and pagination.
+   * and pagination. Page with page_size and cursor: replay the response's
+   * next_cursor until it comes back null, which is the only signal that no pages
+   * remain. Cursors are opaque and only valid on this endpoint; do not parse or
+   * construct one.
    */
   list(
     query: BoxListParams | null | undefined = {},
     options?: RequestOptions,
-  ): APIPromise<SandboxesAPI.SandboxListResponse> {
-    return this._client.get('/api/v2/sandboxes/boxes', { query, ...options });
+  ): PagePromise<SandboxResponsesItemsCursorGetPagination, SandboxesAPI.SandboxResponse> {
+    return this._client.getAPIList(
+      '/api/v2/sandboxes/boxes',
+      ItemsCursorGetPagination<SandboxesAPI.SandboxResponse>,
+      { query, ...options },
+    );
   }
 
   /**
@@ -851,7 +864,7 @@ export namespace BoxUpdateParams {
   }
 }
 
-export interface BoxListParams {
+export interface BoxListParams extends ItemsCursorGetPaginationParams {
   /**
    * Filter by creator identity. Only 'me' is supported.
    */
@@ -864,7 +877,7 @@ export interface BoxListParams {
   label?: Array<string>;
 
   /**
-   * Maximum number of results
+   * Deprecated: use page_size. Maximum number of results
    */
   limit?: number;
 
@@ -874,19 +887,25 @@ export interface BoxListParams {
   name_contains?: string;
 
   /**
-   * Pagination offset
+   * Deprecated: use cursor. Pagination offset
    */
   offset?: number;
 
   /**
-   * Sort column (name, status, created_at)
+   * Sort column (name, status, created_at, stopped_at, idle_ttl_seconds,
+   * delete_after_stop_seconds)
    */
   sort_by?: string;
 
   /**
-   * Sort direction (asc, desc)
+   * Deprecated: use sort_order. Sort direction (asc, desc)
    */
   sort_direction?: string;
+
+  /**
+   * Sort direction (asc, desc)
+   */
+  sort_order?: string;
 
   /**
    * Filter by status (provisioning, ready, failed, stopped, deleting)
@@ -960,3 +979,5 @@ export declare namespace Boxes {
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
   };
 }
+
+export { type SandboxResponsesItemsCursorGetPagination };

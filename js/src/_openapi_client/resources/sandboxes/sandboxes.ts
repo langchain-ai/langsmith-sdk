@@ -36,6 +36,8 @@ export class Sandboxes extends APIResource {
   snapshots: SnapshotsAPI.Snapshots = new SnapshotsAPI.Snapshots(this._client);
 }
 
+export type SandboxResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SandboxResponse>;
+
 export type SnapshotResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SnapshotResponse>;
 
 export interface DownloadURLResponse {
@@ -50,8 +52,26 @@ export interface DownloadURLResponse {
 }
 
 export interface SandboxListResponse {
+  /**
+   * This page of sandboxes.
+   */
+  items?: Array<SandboxResponse>;
+
+  /**
+   * Cursor for the next page, or null on the last page. A non-null value is the only
+   * signal that more pages exist. Treat it as opaque.
+   */
+  next_cursor?: string;
+
+  /**
+   * Deprecated: use next_cursor. Offset to request for the next page, or 0 when no
+   * pages remain.
+   */
   offset?: number;
 
+  /**
+   * Deprecated: use items. Duplicates items.
+   */
   sandboxes?: Array<SandboxResponse>;
 }
 
