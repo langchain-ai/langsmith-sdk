@@ -40,6 +40,7 @@ import {
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
+import { DockerIgnoreMatcher } from "./dockerignore.js";
 
 /**
  * Sleep that can be interrupted by an AbortSignal.
@@ -163,11 +164,40 @@ function makeTarHeader(args: {
   return header;
 }
 
-async function makeDockerContextTar(contextPath: string): Promise<Uint8Array> {
+async function makeDockerContextTar(
+  contextPath: string,
+  dockerfileRel: string,
+): Promise<Uint8Array> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
+
   const contextRoot = path.resolve(contextPath);
   const chunks: Buffer[] = [];
+
+  const dockerIgnore = await (async () => {
+    for (const rel of [`${dockerfileRel}.dockerignore`, ".dockerignore"]) {
+      try {
+        const file = await fs.readFile(path.join(contextRoot, rel), "utf8");
+        return { rel, file };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+
+    return { file: "", rel: undefined };
+  })();
+
+  const ignore = (() => {
+    try {
+      return DockerIgnoreMatcher.parse(dockerIgnore.file);
+    } catch {
+      // Match Docker's fail-open behavior: an unusable ignore file must not
+      // remove files from the uploaded build context.
+      return DockerIgnoreMatcher.parse("");
+    }
+  })();
 
   async function addEntry(absPath: string): Promise<void> {
     const rel = path.relative(contextRoot, absPath);
@@ -176,22 +206,36 @@ async function makeDockerContextTar(contextPath: string): Promise<Uint8Array> {
     }
     const tarPath = rel.split(path.sep).join("/");
     const stat = await fs.lstat(absPath);
+
+    const ignored =
+      !(
+        tarPath === dockerIgnore.rel ||
+        tarPath === dockerfileRel ||
+        (stat.isDirectory() && dockerfileRel.startsWith(`${tarPath}/`))
+      ) && ignore.isIgnored(tarPath);
+
     if (stat.isDirectory()) {
-      chunks.push(
-        makeTarHeader({
-          name: tarPath.endsWith("/") ? tarPath : `${tarPath}/`,
-          mode: stat.mode & 0o777,
-          size: 0,
-          type: "directory",
-          mtimeMs: stat.mtimeMs,
-        }),
-      );
+      if (!ignored) {
+        chunks.push(
+          makeTarHeader({
+            name: tarPath.endsWith("/") ? tarPath : `${tarPath}/`,
+            mode: stat.mode & 0o777,
+            size: 0,
+            type: "directory",
+            mtimeMs: stat.mtimeMs,
+          }),
+        );
+      }
+
+      // Skip traversal if the directory is ignored and cannot contain any included descendants.
+      if (ignored && !ignore.couldIncludeDescendant(tarPath)) return;
       const entries = await fs.readdir(absPath);
       for (const entry of entries.sort()) {
         await addEntry(path.join(absPath, entry));
       }
       return;
     }
+    if (ignored) return;
     if (stat.isSymbolicLink()) {
       chunks.push(
         makeTarHeader({
@@ -1071,7 +1115,7 @@ export class SandboxClient {
     try {
       await builder.write(
         remoteTar,
-        await makeDockerContextTar(contextPath),
+        await makeDockerContextTar(contextPath, dockerfileRel),
         timeout,
       );
       await builder.run(
