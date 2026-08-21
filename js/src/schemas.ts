@@ -263,6 +263,8 @@ export interface RunUpdate {
 export interface ExampleCreate {
   id?: string;
   inputs: KVMap;
+  reference_outputs?: KVMap;
+  /** @deprecated Use reference_outputs instead. */
   outputs?: KVMap;
   metadata?: KVMap;
   split?: string | string[];
