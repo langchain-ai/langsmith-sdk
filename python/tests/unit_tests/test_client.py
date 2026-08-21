@@ -1963,7 +1963,15 @@ def test_omit_traced_runtime_info() -> None:
 
 
 @pytest.mark.flaky(retries=3)
-def test_client_gc_after_autoscale() -> None:
+def test_client_gc_after_autoscale(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The 50_000 runs below do not fit the default 10_000-slot tracing queue:
+    # `_put_tracing_queue` uses `put_nowait` and silently drops on `Full`, so
+    # whatever the sender threads cannot keep up with never reaches a POST. That
+    # makes the request-count bounds asserted at the end a measure of how loaded
+    # the machine is rather than of batching, and they fail whenever this test
+    # is co-scheduled with a heavy one. Size the queue to the run count so
+    # nothing is dropped; a slow machine now only makes `join()` slower.
+    monkeypatch.setattr("langsmith.client._TRACING_QUEUE_MAX_SIZE", 100_000)
     session = mock.MagicMock(spec=requests.Session)
     client = Client(
         api_url="http://localhost:1984",
