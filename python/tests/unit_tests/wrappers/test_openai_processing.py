@@ -1,12 +1,16 @@
 """Unit tests for OpenAI wrapper processing functions."""
 
+import logging
 from types import SimpleNamespace
 
 import pytest
 
 from langsmith import run_helpers
+from langsmith._internal._serde import dumps_json
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 from langsmith.wrappers._openai import (
     _infer_invocation_params,
+    _process_inputs,
     _traceable_kwargs_with_ls_agent_type,
 )
 
@@ -187,3 +191,200 @@ def test_nested_none_opt_out_overrides_propagated_tag():
     )
     assert "ls_agent_type" in result["child_metadata"]
     assert result["child_metadata"]["ls_agent_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# credential masking
+# ---------------------------------------------------------------------------
+
+FAKE_TOKEN = "fake-token-for-tests-only"
+
+
+def _mcp_tools(**extra) -> list:
+    return [
+        {
+            "type": "mcp",
+            "server_label": "example",
+            "server_url": "https://mcp.example.com/sse",
+            "authorization": FAKE_TOKEN,
+            "headers": {"Authorization": f"Bearer {FAKE_TOKEN}"},
+            **extra,
+        }
+    ]
+
+
+class TestRedactHostedMCPTools:
+    """Responses API `tools` may carry a bearer credential and auth headers."""
+
+    def test_process_inputs_masks_authorization_and_headers(self) -> None:
+        tool = _process_inputs({"model": "gpt-5", "tools": _mcp_tools()})["tools"][0]
+
+        assert tool["authorization"] == SECRET_PLACEHOLDER
+        assert tool["headers"] == SECRET_PLACEHOLDER
+        assert tool["type"] == "mcp"
+        assert tool["server_label"] == "example"
+        assert tool["server_url"] == "https://mcp.example.com/sse"
+
+    def test_infer_invocation_params_never_carries_the_token(self) -> None:
+        """Guards against building invocation params from the raw kwargs."""
+        params = _infer_invocation_params(
+            "chat", "openai", {}, True, {"model": "gpt-5", "tools": _mcp_tools()}
+        )
+
+        assert FAKE_TOKEN not in str(params)
+
+    def test_does_not_mutate_the_callers_tools(self) -> None:
+        """The same objects are sent to OpenAI, so they keep the real token."""
+        tools = _mcp_tools()
+        kwargs = {"model": "gpt-5", "tools": tools}
+
+        _process_inputs(kwargs)
+        _infer_invocation_params("chat", "openai", {}, True, kwargs)
+
+        assert tools[0]["authorization"] == FAKE_TOKEN
+        assert tools[0]["headers"] == {"Authorization": f"Bearer {FAKE_TOKEN}"}
+
+    def test_masks_fields_that_are_not_explicitly_allowed(self) -> None:
+        """A credential field added to the API later is masked by default."""
+        tool = _process_inputs({"tools": _mcp_tools(future_secret="s3cret")})["tools"][
+            0
+        ]
+
+        assert tool["future_secret"] == SECRET_PLACEHOLDER
+
+    def test_function_tools_keep_their_schema(self) -> None:
+        tools = [
+            {
+                "type": "function",
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                },
+            }
+        ]
+
+        assert _process_inputs({"tools": tools})["tools"] == tools
+
+    @pytest.mark.parametrize(
+        ("tools", "expected"),
+        [
+            ("not-a-list", "not-a-list"),
+            ([None], [None]),
+            ([["nested"]], [["nested"]]),
+            ([], []),
+            ((), []),  # tuples are normalized to lists
+        ],
+    )
+    def test_tolerates_unexpected_shapes(self, tools, expected) -> None:
+        assert _process_inputs({"tools": tools})["tools"] == expected
+
+    def test_masks_pydantic_mcp_tool_objects(self) -> None:
+        """A caller may hand back an `Mcp` object taken from a prior response.
+
+        The tracer serializes Pydantic models, so an unmasked object reaches
+        `run.inputs` with the credential intact.
+        """
+        tool_types = pytest.importorskip("openai.types.responses.tool")
+
+        tool = tool_types.Mcp(
+            type="mcp",
+            server_label="example",
+            server_url="https://mcp.example.com/sse",
+            authorization=FAKE_TOKEN,
+            headers={"Authorization": f"Bearer {FAKE_TOKEN}"},
+        )
+
+        result = _process_inputs({"model": "gpt-5", "tools": [tool]})
+
+        assert FAKE_TOKEN not in dumps_json(result).decode()
+        redacted = result["tools"][0]
+        assert redacted["authorization"] == SECRET_PLACEHOLDER
+        assert redacted["headers"] == SECRET_PLACEHOLDER
+        assert redacted["server_url"] == "https://mcp.example.com/sse"
+        # The caller's object still goes to the API and keeps its real values.
+        assert tool.authorization == FAKE_TOKEN
+
+    def test_leaves_pydantic_function_tools_untouched(self) -> None:
+        """Only `mcp` entries are rewritten; a function tool keeps its schema."""
+        tool_types = pytest.importorskip("openai.types.responses.tool")
+
+        tool = tool_types.FunctionTool(
+            type="function",
+            name="lookup",
+            parameters={"type": "object", "properties": {"q": {"type": "string"}}},
+            strict=True,
+        )
+
+        result = _process_inputs({"model": "gpt-5", "tools": [tool]})
+
+        assert result["tools"][0] is tool
+
+
+class TestRedactTransportOverrides:
+    """`extra_*` are credentials by construction; only key names survive."""
+
+    @pytest.mark.parametrize("key", ["extra_headers", "extra_body", "extra_query"])
+    def test_masks_values_but_keeps_key_names(self, key) -> None:
+        result = _process_inputs({key: {"Authorization": f"Bearer {FAKE_TOKEN}"}})
+
+        assert result[key] == {"Authorization": SECRET_PLACEHOLDER}
+
+    def test_does_not_mutate_the_callers_headers(self) -> None:
+        headers = {"Authorization": f"Bearer {FAKE_TOKEN}"}
+        kwargs = {"model": "gpt-5", "extra_headers": headers}
+
+        _process_inputs(kwargs)
+
+        assert headers["Authorization"] == f"Bearer {FAKE_TOKEN}"
+        assert kwargs["extra_headers"] is headers
+
+    def test_unset_overrides_are_left_alone(self) -> None:
+        assert _process_inputs({"model": "gpt-5"}) == {"model": "gpt-5"}
+
+
+class TestUnreadableValuesAreDropped:
+    """A value we cannot read must not reach the trace.
+
+    The serializer falls back to ``repr()``, which renders every field value,
+    so passing an unreadable model through leaks whatever it holds.
+    """
+
+    @staticmethod
+    def _broken_mcp_tool():
+        tool_types = pytest.importorskip("openai.types.responses.tool")
+
+        class BrokenMcp(tool_types.Mcp):
+            def model_dump(self, *args, **kwargs):
+                raise RuntimeError("serializer blew up")
+
+        return BrokenMcp(
+            type="mcp",
+            server_label="example",
+            server_url="https://mcp.example.com/sse",
+            authorization=FAKE_TOKEN,
+            headers={"Authorization": f"Bearer {FAKE_TOKEN}"},
+        )
+
+    def test_tool_whose_model_dump_raises_is_dropped(self, caplog) -> None:
+        with caplog.at_level(logging.WARNING, logger="langsmith._internal._redaction"):
+            result = _process_inputs(
+                {"model": "gpt-5", "tools": [self._broken_mcp_tool()]}
+            )
+
+        assert FAKE_TOKEN not in dumps_json(result).decode()
+        assert result["tools"][0] == SECRET_PLACEHOLDER
+        assert "BrokenMcp" in caplog.text
+
+    def test_ordinary_values_are_not_logged(self, caplog) -> None:
+        """The warning must stay rare, or it is noise nobody reads."""
+        with caplog.at_level(logging.WARNING, logger="langsmith._internal._redaction"):
+            _process_inputs(
+                {
+                    "model": "gpt-5",
+                    "tools": [{"type": "function", "name": "lookup"}, "junk", None],
+                    "extra_headers": {"Authorization": FAKE_TOKEN},
+                }
+            )
+
+        assert caplog.text == ""

@@ -18,11 +18,13 @@ from typing_extensions import TypedDict
 from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith._internal._ls_agent_type import apply_default_ls_agent_type
+from langsmith._internal._redaction import as_mapping, mask, redact_outside
 
 # ``_create_usage_metadata`` lives in a non-deprecated internal module so
 # integrations can reuse it without importing the ``wrappers`` package (whose
 # ``__init__`` warns at import time). Re-exported here for backwards compat.
 from langsmith._internal._usage import _create_usage_metadata
+from langsmith.anonymizer import SECRET_PLACEHOLDER
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
@@ -69,9 +71,64 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
+# Keys of `openai.types.responses.tool_param.Mcp` that are safe to trace.
+_MCP_TOOL_SAFE_KEYS: frozenset[str] = frozenset(
+    {
+        "type",
+        "server_label",
+        "server_description",
+        "server_url",
+        "connector_id",
+        "tunnel_id",
+        "require_approval",
+        "allowed_tools",
+        "allowed_callers",
+        "defer_loading",
+    }
+)
+
+# Per-request transport overrides: credentials by construction.
+_TRANSPORT_SECRET_KEYS = ("extra_headers", "extra_body", "extra_query")
+
+
+def _is_model(value: Any) -> bool:
+    """Whether ``value`` claims to be a Pydantic model."""
+    return callable(getattr(value, "model_dump", None))
+
+
+def _redact_tools(tools: Any) -> Any:
+    """Mask hosted MCP entries; function tools carry the caller's schema."""
+    if not isinstance(tools, (list, tuple)):
+        return tools
+
+    redacted: list[Any] = []
+    for tool in tools:
+        mapping = as_mapping(tool)
+        if mapping is None:
+            # An unreadable model would reach the trace as a repr of its fields.
+            redacted.append(SECRET_PLACEHOLDER if _is_model(tool) else tool)
+        elif mapping.get("type") == "mcp":
+            redacted.append(redact_outside(mapping, _MCP_TOOL_SAFE_KEYS))
+        else:
+            redacted.append(tool)
+    return redacted
+
+
+def _redact_secrets(d: dict) -> dict:
+    """Mask credential-bearing request params. Returns a new dict."""
+    redacted = dict(d)
+    if "tools" in redacted:
+        redacted["tools"] = _redact_tools(redacted["tools"])
+    for key in _TRANSPORT_SECRET_KEYS:
+        if redacted.get(key) is not None:
+            redacted[key] = mask(redacted[key])
+    return redacted
+
+
 def _process_inputs(d: dict) -> dict:
-    """Strip `NotGiven` values and serialize `text_format` to JSON schema."""
+    """Strip `NotGiven` values, mask credentials, serialize `text_format`."""
     d = _strip_not_given(d)
+    d = _redact_secrets(d)
 
     # Convert text_format (Pydantic model) to JSON schema if present
     if "text_format" in d:
