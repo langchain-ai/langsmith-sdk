@@ -289,10 +289,13 @@ def dumps_json(obj: Any) -> bytes:
             default=_serialize_json_with_normalized_keys,
             ensure_ascii=True,
         ).encode("utf-8")
-        try:
-            result = _orjson.dumps(
+        if _SURROGATE_RE.search(result):
+            # orjson.loads serves only to detect lone surrogates here (it
+            # rejects them, triggering the elision below). On success the
+            # stdlib bytes are kept as-is: re-dumping the parsed value through
+            # orjson would silently convert integers >= 2**64 to floats.
+            try:
                 _orjson.loads(result.decode("utf-8", errors="surrogateescape"))
-            )
-        except _orjson.JSONDecodeError:
-            result = _elide_surrogates(result)
+            except _orjson.JSONDecodeError:
+                result = _elide_surrogates(result)
         return result
