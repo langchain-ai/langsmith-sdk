@@ -13,6 +13,9 @@ class SnapshotListParams(TypedDict, total=False):
     created_by: str
     """Filter by creator identity. Only 'me' is supported."""
 
+    cursor: str
+    """Opaque pagination cursor from a prior response's next_cursor"""
+
     label: SequenceNotStr[str]
     """Filter by label.
 
@@ -21,18 +24,24 @@ class SnapshotListParams(TypedDict, total=False):
     """
 
     limit: int
-    """Maximum number of results"""
+    """Deprecated: use page_size. Maximum number of results"""
 
     name_contains: str
     """Filter by name substring"""
 
     offset: int
-    """Pagination offset"""
+    """Deprecated: use cursor. Pagination offset"""
+
+    page_size: int
+    """Number of results per page"""
 
     sort_by: str
     """Sort column (name, status, created_at)"""
 
     sort_direction: str
+    """Deprecated: use sort_order. Sort direction (asc, desc)"""
+
+    sort_order: str
     """Sort direction (asc, desc)"""
 
     status: str
