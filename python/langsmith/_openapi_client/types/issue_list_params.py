@@ -12,7 +12,7 @@ class IssueListParams(TypedDict, total=False):
     """Page size (positive integer; defaults to 50, capped at 500)"""
 
     offset: int
-    """Page offset (non-negative integer)"""
+    """Page offset (non-negative integer; at most 100000)"""
 
     session_id: str
     """Filter by session ID (UUID)"""

@@ -103,7 +103,7 @@ class IssuesResource(SyncAPIResource):
         Args:
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
-          offset: Page offset (non-negative integer)
+          offset: Page offset (non-negative integer; at most 100000)
 
           session_id: Filter by session ID (UUID)
 
@@ -237,7 +237,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         Args:
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
-          offset: Page offset (non-negative integer)
+          offset: Page offset (non-negative integer; at most 100000)
 
           session_id: Filter by session ID (UUID)
 
