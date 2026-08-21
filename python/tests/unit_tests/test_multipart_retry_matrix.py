@@ -45,13 +45,13 @@ class _Endpoint:
 
 
 @pytest.fixture
-def endpoint():
+def endpoint(socket_enabled):
     ep = _Endpoint()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
-@pytest.fixture
-def endpoint(socket_enabled):
+
+        def do_POST(self):  # noqa: N802
             # Drain the body first, otherwise the client sees a reset rather
             # than the status code we are trying to exercise.
             length = int(self.headers.get("Content-Length") or 0)
