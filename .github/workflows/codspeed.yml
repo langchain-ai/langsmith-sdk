@@ -1,16 +1,26 @@
 name: CodSpeed
 
 on:
-  # Runs on main record the baseline that PR runs are compared against.
+  # Runs on main record the baseline that PR runs are compared against, so the
+  # setup files are listed too: a dependency bump that shifts performance has to
+  # refresh the baseline, or the shift gets attributed to a later unrelated PR.
   push:
     branches: [main]
     paths:
       - "python/langsmith/**"
       - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/codspeed.yml"
   pull_request:
     paths:
       - "python/langsmith/**"
       - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/codspeed.yml"
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
@@ -22,6 +32,8 @@ concurrency:
 jobs:
   benchmark:
     name: "Python Benchmarks (${{ matrix.mode }})"
+    # Same-repo PRs only: forks would pollute the baseline and reach the self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ${{ matrix.runner }}
     # CPU simulation is far slower than a bare run, so the job timeout is what
     # bounds a hung benchmark (see --timeout=0 below).
