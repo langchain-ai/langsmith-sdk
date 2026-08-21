@@ -2391,6 +2391,33 @@ def test_serialize_json(caplog) -> None:
     expected = {"foo": "foo", "bar": 1}
 
 
+def test__dumps_json_plain_container_cycles() -> None:
+    """A cycle built from plain ``dict``/``list``/``deque`` must not raise. It is
+    collapsed to a string like an object cycle, and a subtree shared by two keys
+    (not a cycle) must still be serialized in full rather than mistaken for one.
+    """
+    import collections
+
+    d: dict = {}
+    d["self"] = d
+    assert isinstance(_orjson.loads(_dumps_json({"cyclic": d}))["cyclic"]["self"], str)
+
+    lst: list = []
+    lst.append(lst)
+    assert isinstance(_orjson.loads(_dumps_json({"cyclic": lst}))["cyclic"][0], str)
+
+    dq: collections.deque = collections.deque()
+    dq.append(dq)
+    _orjson.loads(_dumps_json({"cyclic": dq}))  # must not raise
+
+    # a subtree shared by two keys is not a cycle and must be kept intact
+    shared = {"x": 1}
+    assert _orjson.loads(_dumps_json({"a": shared, "b": shared})) == {
+        "a": {"x": 1},
+        "b": {"x": 1},
+    }
+
+
 def test__dumps_json():
     chars = "".join(chr(cp) for cp in range(0, sys.maxunicode + 1))
     trans_table = str.maketrans("", "", "")
