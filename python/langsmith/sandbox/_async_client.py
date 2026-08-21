@@ -9,10 +9,9 @@ import uuid
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-import httpx
-
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import AsyncLangsmith
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,

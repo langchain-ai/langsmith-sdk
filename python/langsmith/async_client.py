@@ -20,13 +20,13 @@ from typing import (
     cast,
 )
 
-import httpx
-
+import langsmith
 import langsmith._openapi_client as _langsmith_api_module
 from langsmith._internal._beta_decorator import deprecated as _deprecated
 from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
+from langsmith._openapi_client._httpx import httpx
 from langsmith.client import _get_openapi_base_url
 
 if TYPE_CHECKING:
@@ -109,6 +109,7 @@ class AsyncClient:
         headers = {**self._custom_headers}
         # Required headers that should not be overridden
         headers["Content-Type"] = "application/json"
+        headers["User-Agent"] = f"langsmith-py/{langsmith.__version__}-{httpx.__name__}"
         if self._api_key:
             headers[ls_client.X_API_KEY] = self._api_key
         elif self._profile_auth_headers:
