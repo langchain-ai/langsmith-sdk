@@ -278,6 +278,32 @@ os.environ["LANGSMITH_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 
 > **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
 
+> [!IMPORTANT]
+> The SDK reads the endpoint and workspace when each client is created. It does not
+> load `.env` files itself, and defaults to the US endpoint when no endpoint is set.
+> Load your `.env` file before creating the client, or pass `api_url` directly.
+> For a fail-loud region and workspace guard, also set `LANGSMITH_WORKSPACE_ID` or
+> pass `workspace_id`; a request to an endpoint that cannot serve that workspace
+> will fail instead of selecting another accessible workspace.
+
+You can verify the resolved endpoint and workspace before reading data:
+
+```python
+from langsmith import Client
+
+expected_workspace_id = "<YOUR-WORKSPACE-ID>"
+client = Client(
+    api_url="https://eu.api.smith.langchain.com",
+    workspace_id=expected_workspace_id,
+)
+workspace = client.get_current_workspace()
+if workspace.id != expected_workspace_id:
+    raise RuntimeError(
+        f"LangSmith workspace mismatch: expected {expected_workspace_id}, "
+        f"connected to {workspace.id} via {client.api_url}"
+    )
+```
+
 2. **Run an Agent, Chain, or Language Model in LangChain**
 
 If the environment variables are correctly set, your application will automatically connect to the LangSmith platform.
