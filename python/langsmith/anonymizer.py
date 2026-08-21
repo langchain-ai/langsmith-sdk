@@ -349,6 +349,15 @@ def create_secret_anonymizer(
     Pass the result to ``Client(anonymizer=...)`` to redact detected secrets
     from run inputs, outputs, and metadata client-side, before upload.
 
+    Strings that are wholly base64 (image/PDF/binary blobs) or ``data:`` URIs
+    are skipped before the rules run — scanning a multi-MB blob with every rule
+    is wasted CPU and risks matching random base64 substrings (corrupting it).
+    The base64 check uses the STANDARD alphabet (A-Za-z0-9+/) only, NOT
+    base64url, so ``-``/``_``-bearing provider keys (sk-ant-, lsv2_, ghp_,
+    glpat-) and dotted JWTs still scan. Consequence: a standalone pure-base64
+    value (e.g. a bare AWS key) isn't redacted, but the same key in context
+    (``AWS_ACCESS_KEY_ID=...``) is.
+
     Args:
         extra_rules: Additional rules appended after the defaults.
         max_depth: Max recursion depth (default 24; higher than
@@ -363,4 +372,27 @@ def create_secret_anonymizer(
     rules = list(DEFAULT_SECRET_RULES)
     if extra_rules:
         rules = rules + list(extra_rules)
-    return create_anonymizer(rules, max_depth=max_depth)
+    compiled = [
+        (
+            rule["pattern"]
+            if isinstance(rule["pattern"], re.Pattern)
+            else re.compile(rule["pattern"]),
+            rule["replace"] if isinstance(rule.get("replace"), str) else "[redacted]",
+        )
+        for rule in rules
+    ]
+    data_uri = re.compile(r"^\s*data:", re.IGNORECASE)
+    # Standard base64 alphabet only (not base64url) so `-`/`_` provider keys and
+    # dotted JWTs still scan; only wholly-base64 values are skipped.
+    base64_re = re.compile(r"[A-Za-z0-9+/\r\n]+={0,2}")
+
+    def redact_string(value: str, _path: list[Union[str, int]]) -> str:
+        # Skip base64 blobs: a data: URI, or any wholly-base64 string.
+        if data_uri.match(value[:16]) or base64_re.fullmatch(value):
+            return value
+        out = value
+        for pattern, replace in compiled:
+            out = pattern.sub(replace, out)
+        return out
+
+    return create_anonymizer(redact_string, max_depth=max_depth)

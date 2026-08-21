@@ -383,15 +383,15 @@ def test_secret_anonymizer_in_traceable():
         api_key="123",
     )
 
-    aws_key = "AKIA" + "IOSFODNN7EXAMPLE"
     anthropic_key = "sk-ant-api03-" + "A" * 30
 
     @traceable(client=mock_client)
-    def my_func(api_key: str) -> dict:
+    def my_func(command: str) -> dict:
         return {"note": f"leaked {anthropic_key} here"}
 
     with tracing_context(enabled=True):
-        my_func(aws_key)
+        # In-context secret (assignment) so the string isn't wholly base64.
+        my_func("export ANTHROPIC_API_KEY=" + anthropic_key)
 
     posts = [
         json.loads(call[2]["data"])
@@ -400,6 +400,20 @@ def test_secret_anonymizer_in_traceable():
     ]
     assert len(posts) == 1
     blob = json.dumps(posts[0])
-    assert aws_key not in blob
-    assert anthropic_key not in blob
+    assert anthropic_key not in blob  # redacted in both input and output
     assert SECRET_PLACEHOLDER in blob
+
+
+def test_secret_anonymizer_skips_any_base64_string():
+    # Deliberate: a wholly-base64 value is treated as a blob and skipped, so a
+    # standalone pure-base64 secret (e.g. a bare AWS key) is NOT redacted.
+    redact = create_secret_anonymizer()
+    assert redact("AKIAIOSFODNN7EXAMPLE") == "AKIAIOSFODNN7EXAMPLE"
+    png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ" + "A" * 40
+    assert redact(png) == png
+    blob = "data:image/png;base64,AKIAIOSFODNN7EXAMPLE" + "A" * 60
+    assert redact(blob) == blob
+    # The same key in context isn't wholly base64 → still redacted.
+    out = redact("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE")
+    assert SECRET_PLACEHOLDER in out
+    assert "AKIAIOSFODNN7EXAMPLE" not in out
