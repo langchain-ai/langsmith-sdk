@@ -265,6 +265,24 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
         handle_client_http_error(error)
 
 
+def raise_if_not_ready(error: httpx.HTTPStatusError, name: str) -> None:
+    """Raise ``SandboxNotReadyError`` when the API rejected a proxy-config update.
+
+    A proxy config can only be written to a ``ready`` sandbox, and that status
+    check is the sole source of ``InvalidRequest`` on the update endpoint for the
+    fields this client sends — a typed error lets callers start the sandbox and
+    retry instead of matching on status codes.
+    """
+    if error.response.status_code != 400:
+        return
+    data = parse_error_response(error)
+    if data.get("error_type") != "InvalidRequest":
+        return
+    raise SandboxNotReadyError(
+        data["message"] or f"Sandbox '{name}' is not ready"
+    ) from error
+
+
 def handle_client_http_error(error: httpx.HTTPStatusError) -> None:
     """Handle HTTP errors and raise appropriate exceptions (for client operations)."""
     data = parse_error_response(error)
