@@ -6,7 +6,13 @@ from typing_extensions import Literal
 
 from .._models import BaseModel
 
-__all__ = ["Issue", "LinearSync"]
+__all__ = ["Issue", "LinearContext", "LinearSync"]
+
+
+class LinearContext(BaseModel):
+    github_pr_urls: Optional[List[str]] = None
+
+    workflow_state: Optional[str] = None
 
 
 class LinearSync(BaseModel):
@@ -57,6 +63,8 @@ class Issue(BaseModel):
     fix_verification: Optional[object] = None
 
     last_seen_at: Optional[str] = None
+
+    linear_context: Optional[LinearContext] = None
 
     linear_sync: Optional[LinearSync] = None
 

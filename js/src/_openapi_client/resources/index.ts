@@ -37,7 +37,13 @@ export {
   type SortByDatasetColumn,
 } from './datasets/datasets.js';
 export { Info, type InfoListResponse } from './info.js';
-export { Issues, type Issue, type IssueListParams, type IssuesOffsetPaginationIssues } from './issues.js';
+export {
+  Issues,
+  type Issue,
+  type IssueRetrieveParams,
+  type IssueListParams,
+  type IssuesOffsetPaginationIssues,
+} from './issues.js';
 export {
   OnlineEvaluators,
   type BulkDeleteEvaluatorFailedItem,

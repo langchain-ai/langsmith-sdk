@@ -41,7 +41,13 @@ import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
 import { Info, InfoListResponse } from './resources/info.js';
-import { Issue, IssueListParams, Issues, IssuesOffsetPaginationIssues } from './resources/issues.js';
+import {
+  Issue,
+  IssueListParams,
+  IssueRetrieveParams,
+  Issues,
+  IssuesOffsetPaginationIssues,
+} from './resources/issues.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -1119,6 +1125,7 @@ export declare namespace Langsmith {
     Issues as Issues,
     type Issue as Issue,
     type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueRetrieveParams as IssueRetrieveParams,
     type IssueListParams as IssueListParams,
   };
 

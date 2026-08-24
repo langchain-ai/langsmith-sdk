@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import List, Iterable
 from typing_extensions import Literal
 
-from ..types import issue_list_params
+from ..types import issue_list_params, issue_retrieve_params
 from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
-from .._utils import path_template, maybe_transform
+from .._utils import path_template, maybe_transform, async_maybe_transform
 from .._compat import cached_property
 from .._resource import SyncAPIResource, AsyncAPIResource
 from .._response import (
@@ -44,6 +44,7 @@ class IssuesResource(SyncAPIResource):
         self,
         id: str,
         *,
+        include_linear_context: bool | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -57,6 +58,9 @@ class IssuesResource(SyncAPIResource):
         Returns one issue for the authenticated tenant.
 
         Args:
+          include_linear_context: Include current Linear workflow state and validated linked GitHub pull request
+              URLs
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -70,7 +74,13 @@ class IssuesResource(SyncAPIResource):
         return self._get(
             path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {"include_linear_context": include_linear_context}, issue_retrieve_params.IssueRetrieveParams
+                ),
             ),
             cast_to=Issue,
         )
@@ -191,6 +201,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         self,
         id: str,
         *,
+        include_linear_context: bool | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -204,6 +215,9 @@ class AsyncIssuesResource(AsyncAPIResource):
         Returns one issue for the authenticated tenant.
 
         Args:
+          include_linear_context: Include current Linear workflow state and validated linked GitHub pull request
+              URLs
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -217,7 +231,13 @@ class AsyncIssuesResource(AsyncAPIResource):
         return await self._get(
             path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=await async_maybe_transform(
+                    {"include_linear_context": include_linear_context}, issue_retrieve_params.IssueRetrieveParams
+                ),
             ),
             cast_to=Issue,
         )
