@@ -28,8 +28,7 @@ permissions:
 
 jobs:
   benchmark:
-    # Fork PRs can't read DD_API_KEY, so the Datadog step would fail. Same-repo
-    # PRs and main pushes report normally.
+    # Fork PRs would only burn a runner: PR runs report nothing (see below).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     defaults:
@@ -52,11 +51,17 @@ jobs:
       # benchmarks run under — a CPython minor mismatch fails to import
       # ddtrace's native extension.
       - name: Put the project venv on PATH for the Datadog installer
+        if: github.event_name != 'pull_request'
         run: echo "$GITHUB_WORKSPACE/python/.venv/bin" >> "$GITHUB_PATH"
 
       # Must be the step right before the benchmarks: earlier steps (checkout,
       # uv sync) would wipe out what it installs.
+      #
+      # Skipped on pull_request: this action exports DD_API_KEY into the job
+      # environment, and everything after it is PR-controlled code. Datadog
+      # therefore records main-branch history only.
       - name: Configure Datadog Test Optimization
+        if: github.event_name != 'pull_request'
         uses: datadog/test-visibility-github-action@d6d648d87563e713b3d396bb3bfebb5e3cc93707 # v3.0.0
         with:
           languages: python
