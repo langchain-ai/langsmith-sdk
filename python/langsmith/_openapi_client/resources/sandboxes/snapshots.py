@@ -46,6 +46,7 @@ class SnapshotsResource(SyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        description: str | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
         tag: str | Omit = omit,
@@ -60,6 +61,9 @@ class SnapshotsResource(SyncAPIResource):
         Create a snapshot from a Docker image (async build).
 
         Args:
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           labels: Labels seed the snapshot's labels, overriding any label of the same key derived
               from the Docker image.
 
@@ -80,6 +84,7 @@ class SnapshotsResource(SyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "description": description,
                     "labels": labels,
                     "registry_id": registry_id,
                     "tag": tag,
@@ -309,6 +314,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        description: str | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
         tag: str | Omit = omit,
@@ -323,6 +329,9 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         Create a snapshot from a Docker image (async build).
 
         Args:
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           labels: Labels seed the snapshot's labels, overriding any label of the same key derived
               from the Docker image.
 
@@ -343,6 +352,7 @@ class AsyncSnapshotsResource(AsyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "description": description,
                     "labels": labels,
                     "registry_id": registry_id,
                     "tag": tag,

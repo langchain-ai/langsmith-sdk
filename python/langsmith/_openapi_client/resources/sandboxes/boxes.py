@@ -382,6 +382,7 @@ class BoxesResource(SyncAPIResource):
         *,
         body_name: str,
         checkpoint: str | Omit = omit,
+        description: str | Omit = omit,
         docker_image: str | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
@@ -400,6 +401,9 @@ class BoxesResource(SyncAPIResource):
 
         Args:
           checkpoint: if omitted, creates a fresh checkpoint from the running VM
+
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
 
           docker_image: sandbox-local Docker image to export
 
@@ -430,6 +434,7 @@ class BoxesResource(SyncAPIResource):
                 {
                     "body_name": body_name,
                     "checkpoint": checkpoint,
+                    "description": description,
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
@@ -994,6 +999,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         *,
         body_name: str,
         checkpoint: str | Omit = omit,
+        description: str | Omit = omit,
         docker_image: str | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
@@ -1012,6 +1018,9 @@ class AsyncBoxesResource(AsyncAPIResource):
 
         Args:
           checkpoint: if omitted, creates a fresh checkpoint from the running VM
+
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
 
           docker_image: sandbox-local Docker image to export
 
@@ -1042,6 +1051,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                 {
                     "body_name": body_name,
                     "checkpoint": checkpoint,
+                    "description": description,
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,

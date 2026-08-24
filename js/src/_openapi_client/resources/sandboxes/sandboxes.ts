@@ -494,6 +494,12 @@ export namespace SandboxResponse {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -534,6 +540,12 @@ export namespace SandboxResponse {
       name: string;
 
       aws?: Rule.Aws;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -662,6 +674,12 @@ export interface SnapshotResponse {
   created_at?: string;
 
   created_by?: string;
+
+  /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary.
+   */
+  description?: string;
 
   docker_image?: string;
 

@@ -91,6 +91,12 @@ export interface SnapshotCreateParams {
   name: string;
 
   /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary. At most 1024 characters.
+   */
+  description?: string;
+
+  /**
    * Labels seed the snapshot's labels, overriding any label of the same key derived
    * from the Docker image.
    */
