@@ -355,6 +355,8 @@ class RunTree(ls_schemas.RunBase):
     )
     replicas: Optional[Sequence[WriteReplica]] = Field(
         default=None,
+        # Routing config, not run data: keep it out of the serialized run.
+        exclude=True,
         description="Projects to replicate this run to with optional updates.",
     )
 
