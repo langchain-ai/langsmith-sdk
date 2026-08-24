@@ -114,6 +114,7 @@ from langsmith._internal._operations import (
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
 )
+from langsmith._internal._sampling import is_sampled_by_id
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
@@ -793,28 +794,6 @@ def _get_tracing_sampling_rate(
             f" Got: {sampling_rate}"
         )
     return sampling_rate
-
-
-_SAMPLING_HASH_MODULUS = 1_000_000
-_FNV_64_OFFSET_BASIS = 14_695_981_039_346_656_037
-_FNV_64_PRIME = 1_099_511_628_211
-_FNV_64_MASK = (1 << 64) - 1
-
-
-def _is_sampled_by_id(identifier: Any, sampling_rate: float | None) -> bool:
-    if sampling_rate is None or sampling_rate >= 1:
-        return True
-    if sampling_rate <= 0:
-        return False
-    if identifier is None:
-        return True
-    value = str(identifier).lower()
-    hash_value = _FNV_64_OFFSET_BASIS
-    for byte in value.encode("utf-8"):
-        hash_value ^= byte
-        hash_value = (hash_value * _FNV_64_PRIME) & _FNV_64_MASK
-    threshold = int(sampling_rate * _SAMPLING_HASH_MODULUS)
-    return hash_value % _SAMPLING_HASH_MODULUS < threshold
 
 
 def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
@@ -2505,17 +2484,12 @@ class Client:
                 metadata.update(self._hide_run_metadata(added))
 
     def _should_sample(self, identifier: Any = None) -> bool:
-        return _is_sampled_by_id(identifier, self.tracing_sample_rate)
+        return is_sampled_by_id(identifier, self.tracing_sample_rate)
 
     def _filter_for_sampling(
         self,
         runs: Iterable[Union[dict, ls_schemas.Run, ls_schemas.RunLikeDict]],
-        *,
-        patch: bool = False,
     ) -> list:
-        if self.tracing_sample_rate is None:
-            return list(runs)
-
         def _val(run: Any, key: str, default: Any = _UNSET) -> Any:
             try:
                 return run[key]
@@ -2524,7 +2498,11 @@ class Client:
                     return getattr(run, key)
                 return getattr(run, key, default)
 
-        return [run for run in runs if self._should_sample(_val(run, "id", None))]
+        return [
+            run
+            for run in runs
+            if self._should_sample(_val(run, "trace_id", None) or _val(run, "id", None))
+        ]
 
     @property
     def tracing_mode(self) -> TracingMode:
@@ -3164,7 +3142,7 @@ class Client:
             return
         # filter out runs that are not sampled
         create = self._filter_for_sampling(create or EMPTY_SEQ)
-        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        update = self._filter_for_sampling(update or EMPTY_SEQ)
         if not create and not update:
             return
         # transform and convert to dicts
@@ -3433,7 +3411,7 @@ class Client:
             return
         # filter out runs that are not sampled
         create = self._filter_for_sampling(create or EMPTY_SEQ)
-        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        update = self._filter_for_sampling(update or EMPTY_SEQ)
         if not create and not update:
             return
         # transform and convert to dicts
@@ -3802,7 +3780,7 @@ class Client:
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
         )
-        if not self._filter_for_sampling([data], patch=True):
+        if not self._filter_for_sampling([data]):
             return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()

@@ -2920,22 +2920,24 @@ def test_run_sampling_is_consistent_for_create_and_update():
     assert client._filter_for_sampling([sampled_create, filtered_create]) == [
         sampled_create
     ]
-    assert client._filter_for_sampling(
-        [sampled_update, filtered_update], patch=True
-    ) == [sampled_update]
+    assert client._filter_for_sampling([sampled_update, filtered_update]) == [
+        sampled_update
+    ]
     assert client._should_sample(SAMPLED_RUN_ID)
     assert not client._should_sample(FILTERED_RUN_ID)
 
 
-def test_sampling_uses_run_id_not_trace_id():
+def test_sampling_follows_trace_id_not_run_id():
     client = Client(api_key="test-api-key", tracing_sampling_rate=0.5)
 
-    sampled_child = _sampling_run(SAMPLED_RUN_ID, trace_id=FILTERED_RUN_ID)
-    filtered_child = _sampling_run(FILTERED_RUN_ID, trace_id=SAMPLED_RUN_ID)
+    # Child's own id would be filtered, but its trace is sampled -> kept.
+    child_in_sampled_trace = _sampling_run(FILTERED_RUN_ID, trace_id=SAMPLED_RUN_ID)
+    # Child's own id would be sampled, but its trace is filtered -> dropped.
+    child_in_filtered_trace = _sampling_run(SAMPLED_RUN_ID, trace_id=FILTERED_RUN_ID)
 
-    assert client._filter_for_sampling([sampled_child, filtered_child]) == [
-        sampled_child
-    ]
+    assert client._filter_for_sampling(
+        [child_in_sampled_trace, child_in_filtered_trace]
+    ) == [child_in_sampled_trace]
 
 
 def test_feedback_sampling_follows_run_id():

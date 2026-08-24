@@ -1262,27 +1262,29 @@ describe("Client", () => {
         (client as any)._filterForSampling([sampledCreate, filteredCreate]),
       ).toEqual([sampledCreate]);
       expect(
-        (client as any)._filterForSampling(
-          [sampledUpdate, filteredUpdate],
-          true,
-        ),
+        (client as any)._filterForSampling([sampledUpdate, filteredUpdate]),
       ).toEqual([sampledUpdate]);
       expect((client as any)._shouldSample(sampledRunId)).toBe(true);
       expect((client as any)._shouldSample(filteredRunId)).toBe(false);
     });
 
-    it("should use run ID rather than trace ID", () => {
+    it("should follow trace ID rather than run ID", () => {
       const client = new Client({
         apiKey: "test-api-key",
         tracingSamplingRate: 0.5,
       });
 
-      const sampledChild = run(sampledRunId, filteredRunId);
-      const filteredChild = run(filteredRunId, sampledRunId);
+      // Child's own id would be filtered, but its trace is sampled -> kept.
+      const childInSampledTrace = run(filteredRunId, sampledRunId);
+      // Child's own id would be sampled, but its trace is filtered -> dropped.
+      const childInFilteredTrace = run(sampledRunId, filteredRunId);
 
       expect(
-        (client as any)._filterForSampling([sampledChild, filteredChild]),
-      ).toEqual([sampledChild]);
+        (client as any)._filterForSampling([
+          childInSampledTrace,
+          childInFilteredTrace,
+        ]),
+      ).toEqual([childInSampledTrace]);
     });
   });
 

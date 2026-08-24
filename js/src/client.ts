@@ -85,6 +85,7 @@ import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
+import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
@@ -721,33 +722,6 @@ const getTracingSamplingRate = (configRate?: number) => {
     );
   }
   return samplingRate;
-};
-
-const SAMPLING_HASH_MODULUS = 1_000_000n;
-const FNV_64_OFFSET_BASIS = 14_695_981_039_346_656_037n;
-const FNV_64_PRIME = 1_099_511_628_211n;
-const FNV_64_MASK = (1n << 64n) - 1n;
-
-const isSampledById = (identifier?: string | null, samplingRate?: number) => {
-  if (samplingRate === undefined || samplingRate >= 1) {
-    return true;
-  }
-  if (samplingRate <= 0) {
-    return false;
-  }
-  if (identifier === undefined || identifier === null) {
-    return true;
-  }
-  let hashValue = FNV_64_OFFSET_BASIS;
-  const value = identifier.toLowerCase();
-  for (let i = 0; i < value.length; i += 1) {
-    hashValue ^= BigInt(value.charCodeAt(i));
-    hashValue = (hashValue * FNV_64_PRIME) & FNV_64_MASK;
-  }
-  const threshold = BigInt(
-    Math.floor(samplingRate * Number(SAMPLING_HASH_MODULUS)),
-  );
-  return hashValue % SAMPLING_HASH_MODULUS < threshold;
 };
 
 // utility functions
@@ -2038,16 +2012,8 @@ export class Client implements LangSmithTracingClientInterface {
     return isSampledById(identifier, this.tracingSampleRate);
   }
 
-  private _filterForSampling(
-    runs: CreateRunParams[] | UpdateRunParams[],
-    patch = false,
-  ) {
-    void patch;
-    if (this.tracingSampleRate === undefined) {
-      return runs;
-    }
-
-    return runs.filter((run) => this._shouldSample(run.id));
+  private _filterForSampling(runs: CreateRunParams[] | UpdateRunParams[]) {
+    return runs.filter((run) => this._shouldSample(run.trace_id ?? run.id));
   }
 
   private async _getBatchSizeLimitBytes(): Promise<number> {
@@ -3113,7 +3079,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
-    if (!this._filterForSampling([data], true).length) {
+    if (!this._filterForSampling([data]).length) {
       return;
     }
     if (
