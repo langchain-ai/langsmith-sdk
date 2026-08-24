@@ -124,6 +124,11 @@ export namespace Issue {
 
 export interface IssueListParams extends OffsetPaginationIssuesParams {
   /**
+   * Filter by Engine activity (repeatable; OR semantics)
+   */
+  activity?: Array<'fixing' | 'watching' | 'recurred'>;
+
+  /**
    * Filter by session ID (UUID)
    */
   session_id?: string;
@@ -139,14 +144,25 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
   severity?: 0 | 1 | 2 | 3;
 
   /**
+   * Filter by exact severity (repeatable; OR semantics)
+   */
+  severity_exact?: Array<0 | 1 | 2 | 3>;
+
+  /**
    * Sort field
    */
-  sort_by?: 'created_at' | 'updated_at' | 'severity';
+  sort_by?:
+    'default' | 'created_at' | 'updated_at' | 'last_seen' | 'last_updated' | 'trace_count' | 'severity';
 
   /**
    * Filter by status
    */
   status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
+
+  /**
+   * Group results by issue lifecycle status before applying sort_by
+   */
+  status_first?: boolean;
 
   /**
    * Filter by tag (exact match)

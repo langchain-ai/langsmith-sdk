@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import List, Iterable
 from typing_extensions import Literal
 
 from ..types import issue_list_params
@@ -77,13 +78,17 @@ class IssuesResource(SyncAPIResource):
     def list(
         self,
         *,
+        activity: List[Literal["fixing", "watching", "recurred"]] | Omit = omit,
         limit: int | Omit = omit,
         offset: int | Omit = omit,
         session_id: str | Omit = omit,
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
-        sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
+        severity_exact: Iterable[Literal[0, 1, 2, 3]] | Omit = omit,
+        sort_by: Literal["default", "created_at", "updated_at", "last_seen", "last_updated", "trace_count", "severity"]
+        | Omit = omit,
         status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
+        status_first: bool | Omit = omit,
         tag: str | Omit = omit,
         trace_id: str | Omit = omit,
         updated_at: str | Omit = omit,
@@ -101,6 +106,8 @@ class IssuesResource(SyncAPIResource):
         status, severity, tag, linked trace, or last modified time.
 
         Args:
+          activity: Filter by Engine activity (repeatable; OR semantics)
+
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
           offset: Page offset (non-negative integer; at most 100000)
@@ -111,9 +118,13 @@ class IssuesResource(SyncAPIResource):
 
           severity: Filter by severity
 
+          severity_exact: Filter by exact severity (repeatable; OR semantics)
+
           sort_by: Sort field
 
           status: Filter by status
+
+          status_first: Group results by issue lifecycle status before applying sort_by
 
           tag: Filter by tag (exact match)
 
@@ -139,13 +150,16 @@ class IssuesResource(SyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "activity": activity,
                         "limit": limit,
                         "offset": offset,
                         "session_id": session_id,
                         "session_name": session_name,
                         "severity": severity,
+                        "severity_exact": severity_exact,
                         "sort_by": sort_by,
                         "status": status,
+                        "status_first": status_first,
                         "tag": tag,
                         "trace_id": trace_id,
                         "updated_at": updated_at,
@@ -211,13 +225,17 @@ class AsyncIssuesResource(AsyncAPIResource):
     def list(
         self,
         *,
+        activity: List[Literal["fixing", "watching", "recurred"]] | Omit = omit,
         limit: int | Omit = omit,
         offset: int | Omit = omit,
         session_id: str | Omit = omit,
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
-        sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
+        severity_exact: Iterable[Literal[0, 1, 2, 3]] | Omit = omit,
+        sort_by: Literal["default", "created_at", "updated_at", "last_seen", "last_updated", "trace_count", "severity"]
+        | Omit = omit,
         status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
+        status_first: bool | Omit = omit,
         tag: str | Omit = omit,
         trace_id: str | Omit = omit,
         updated_at: str | Omit = omit,
@@ -235,6 +253,8 @@ class AsyncIssuesResource(AsyncAPIResource):
         status, severity, tag, linked trace, or last modified time.
 
         Args:
+          activity: Filter by Engine activity (repeatable; OR semantics)
+
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
           offset: Page offset (non-negative integer; at most 100000)
@@ -245,9 +265,13 @@ class AsyncIssuesResource(AsyncAPIResource):
 
           severity: Filter by severity
 
+          severity_exact: Filter by exact severity (repeatable; OR semantics)
+
           sort_by: Sort field
 
           status: Filter by status
+
+          status_first: Group results by issue lifecycle status before applying sort_by
 
           tag: Filter by tag (exact match)
 
@@ -273,13 +297,16 @@ class AsyncIssuesResource(AsyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "activity": activity,
                         "limit": limit,
                         "offset": offset,
                         "session_id": session_id,
                         "session_name": session_name,
                         "severity": severity,
+                        "severity_exact": severity_exact,
                         "sort_by": sort_by,
                         "status": status,
+                        "status_first": status_first,
                         "tag": tag,
                         "trace_id": trace_id,
                         "updated_at": updated_at,
