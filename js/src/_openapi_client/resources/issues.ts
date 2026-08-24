@@ -67,6 +67,8 @@ export interface Issue {
 
   last_seen_at?: string;
 
+  linear_sync?: Issue.LinearSync;
+
   name?: string;
 
   proposed_context_fixes?: Array<unknown>;
@@ -98,6 +100,26 @@ export interface Issue {
   updated_at?: string;
 
   watching_since?: string;
+}
+
+export namespace Issue {
+  export interface LinearSync {
+    identifier?: string;
+
+    issue_id?: string;
+
+    last_attempted_at?: string;
+
+    last_error?: string;
+
+    last_synced_at?: string;
+
+    linear_issue_id?: string;
+
+    state?: 'pending' | 'synced' | 'failed' | 'auth_required' | 'paused';
+
+    url?: string;
+  }
 }
 
 export interface IssueListParams extends OffsetPaginationIssuesParams {
