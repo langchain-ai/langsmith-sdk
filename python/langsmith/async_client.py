@@ -650,7 +650,7 @@ class AsyncClient:
         .. admonition:: Deprecated
 
             Use :meth:`langsmith.AsyncClient.runs.retrieve` instead.
-            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs#runs-retrieve for the migration guide.
             Will be removed after Jan 31, 2027.
 
         Args:
@@ -715,7 +715,7 @@ class AsyncClient:
         .. admonition:: Deprecated
 
             Use :meth:`langsmith.AsyncClient.runs.query` instead.
-            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs#runs-query for the migration guide.
             Will be removed after Jan 31, 2027.
 
         Args:
@@ -871,7 +871,7 @@ class AsyncClient:
         .. admonition:: Deprecated
 
             Use :meth:`langsmith.AsyncClient.runs.share.create` instead.
-            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide.
             Will be removed after Jan 31, 2027.
 
         Args:
@@ -918,7 +918,7 @@ class AsyncClient:
         .. admonition:: Deprecated
 
             Use :meth:`langsmith.AsyncClient.runs.retrieve` with ``selects=["SHARE_URL"]`` instead.
-            See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.
+            See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide.
             Will be removed after Jan 31, 2027.
 
         Args:
@@ -1159,7 +1159,7 @@ class AsyncClient:
             error: Whether the feedback represents an error.
             session_id: The project ID of the run. Required for run-level feedback;
                 omitting it is deprecated. See
-                https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+                https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#feedback-create
             start_time: The start time of the run. Better performance if provided.
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
@@ -1580,7 +1580,7 @@ class AsyncClient:
           without a scan, and is required for workspaces served by SmithDB.
         - `run_ids`: a plain list of run IDs. This path is deprecated and will
           be removed after Jan 31, 2027; prefer `runs`.
-          See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
+          See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#annotation-queues-add-runs.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -1604,7 +1604,7 @@ class AsyncClient:
             warnings.warn(
                 "The run_ids parameter of add_runs_to_annotation_queue() is deprecated and will be removed after Jan 31, 2027. "
                 "Use the runs parameter with RunKey objects instead. "
-                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+                "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#annotation-queues-add-runs for the migration guide.",
                 DeprecationWarning,
                 stacklevel=2,
             )

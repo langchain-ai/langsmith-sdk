@@ -1,4 +1,4 @@
-.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast test-wheel-imports
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast benchmark-codspeed test-wheel-imports
 
 
 OUTPUT ?= out/benchmark.json
@@ -12,6 +12,12 @@ benchmark-fast:
 	mkdir -p out
 	rm -f $(OUTPUT)
 	uv run python -m bench -o $(OUTPUT) --fast
+
+# Same cases as `benchmark`, run under pytest-benchmark's `benchmark` fixture so
+# pytest-codspeed (a drop-in for that fixture) can pick them up. `--codspeed` is
+# a no-op locally without the CodSpeed runner but keeps the CLI identical to CI.
+benchmark-codspeed:
+	uv run --group bench python -m pytest bench/test_bench.py --codspeed
 
 PROFILE_NAME ?= output
 

@@ -1,0 +1,76 @@
+name: CodSpeed
+
+on:
+  # Runs on main record the baseline that PR runs are compared against.
+  push:
+    branches: [main]
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+  pull_request:
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+  # `workflow_dispatch` allows CodSpeed to trigger backtest
+  # performance analysis in order to generate initial data.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: "Python Benchmarks (${{ matrix.mode }})"
+    runs-on: ${{ matrix.runner }}
+    # CPU simulation is far slower than a bare run, so the job timeout is what
+    # bounds a hung benchmark (see --timeout=0 below).
+    timeout-minutes: 30
+    strategy:
+      # One job per instrument, so a failure in one cannot stop the others.
+      # `mode: simulation,memory` in a single job ran them sequentially: when the
+      # runner hung installing Valgrind for simulation, memory never ran at all.
+      fail-fast: false
+      matrix:
+        include:
+          # Models the CPU rather than timing it, so shared runners are fine.
+          - mode: simulation
+            runner: ubuntu-latest
+          # Heap allocations; also instrument-based, so shared runners are fine.
+          - mode: memory
+            runner: ubuntu-latest
+          # Real elapsed time, including syscalls, I/O and thread parallelism,
+          # which matters for the create_*_run_trees cases (they drive tracing
+          # threads). Needs CodSpeed's bare-metal ARM64 runners to be low-noise;
+          # they are registered into the org's `oss-runners` group, which
+          # langsmith-sdk has access to.
+          - mode: walltime
+            runner: codspeed-macro
+    permissions:
+      contents: read # required for actions/checkout
+      id-token: write # required for OIDC authentication with CodSpeed
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No cache-suffix needed for the ARM64 runner: setup-uv already embeds the
+      # arch in its cache key, so x86 and ARM64 entries cannot collide.
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.11
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --group bench
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@4296e51e7041e24dadb86d1d6e8b9320d223dbe8 # v5.0.3
+        with:
+          mode: ${{ matrix.mode }}
+          working-directory: python
+          # --timeout=0 drops the repo-wide 120s pytest-timeout, which is sized
+          # for unit tests and kills benchmarks under instrumentation.
+          run: uv run pytest bench/test_bench.py --codspeed --timeout=0

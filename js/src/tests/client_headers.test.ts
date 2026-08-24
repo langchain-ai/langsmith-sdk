@@ -11,6 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Client } from "../client.js";
+import { __version__ } from "../index.js";
 
 describe("caller-supplied headers", () => {
   const mockJsonResponse = () =>
@@ -105,6 +106,64 @@ describe("caller-supplied headers", () => {
       "11111111-1111-1111-1111-111111111111",
     );
   });
+
+  it("sends the SDK User-Agent on the generated OpenAPI client", async () => {
+    const mockFetch = mockJsonResponse();
+    const client = new Client({
+      apiKey: "test-api-key",
+      fetchImplementation: mockFetch as any,
+    });
+
+    await (client as any).openAPIClient.info.list();
+
+    // Not the generated client's own `Langsmith/JS <generated version>`, which
+    // is pinned to a placeholder version and identifies the wrong package.
+    expect(requestHeaders(mockFetch).get("user-agent")).toBe(
+      `langsmith-js/${__version__}`,
+    );
+  });
+
+  it("sends the same User-Agent on handwritten and generated calls", async () => {
+    const generatedFetch = mockJsonResponse();
+    const client = new Client({
+      apiKey: "test-api-key",
+      fetchImplementation: generatedFetch as any,
+    });
+
+    await (client as any).openAPIClient.info.list();
+
+    const handwrittenFetch = mockJsonResponse();
+    (client as any).fetchImplementation = handwrittenFetch;
+    await client.readProject({
+      projectId: "22222222-2222-2222-2222-222222222222",
+    });
+
+    expect(requestHeaders(generatedFetch).get("user-agent")).toBe(
+      requestHeaders(handwrittenFetch).get("user-agent"),
+    );
+  });
+
+  it.each([
+    ["config.headers", { headers: { "User-Agent": "my-app/1.0" } }],
+    [
+      "fetchOptions.headers",
+      { fetchOptions: { headers: { "user-agent": "my-app/1.0" } } },
+    ],
+  ])(
+    "lets %s override the User-Agent on the generated client",
+    async (_name, config) => {
+      const mockFetch = mockJsonResponse();
+      const client = new Client({
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch as any,
+        ...config,
+      });
+
+      await (client as any).openAPIClient.info.list();
+
+      expect(requestHeaders(mockFetch).get("user-agent")).toBe("my-app/1.0");
+    },
+  );
 
   it("rebuilds the generated client when headers are set after construction", async () => {
     const mockFetch = mockJsonResponse();
