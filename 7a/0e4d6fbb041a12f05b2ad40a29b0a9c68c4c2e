@@ -1,0 +1,25 @@
+js/src/traceable.ts
+  s_7bc7bd68a2946c::t_363bd45cdeec6c 274-276
+  s_7bc7bd68a2946c::t_a2db94539ae0a8 277-283,285-294,311
+  s_7bc7bd68a2946c::t_6bc566f63f5791 284
+  s_7bc7bd68a2946c::t_61c5847b10474b 312
+js/src/tests/traceable.test.ts
+  s_7bc7bd68a2946c::t_b9223a0302e07d 1890
+  s_7bc7bd68a2946c::t_7b488678b0809e 1896
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7a0e4d6fbb041a12f05b2ad40a29b0a9c68c4c2e",
+  "prompts": {},
+  "sessions": {
+    "s_7bc7bd68a2946c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b2e25b0-7569-4b6d-b1fe-8e27e45caed7",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
