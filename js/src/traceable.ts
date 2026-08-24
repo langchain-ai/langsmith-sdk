@@ -20,8 +20,11 @@ import {
   getCurrentRunTree,
 } from "./singletons/traceable.js";
 import {
+  _INPUTS_PROCESSING_FAILED,
   _LC_CHILD_RUN_END_PROMISES_KEY,
   _LC_CONTEXT_VARIABLES_KEY,
+  _OUTPUTS_PROCESSING_FAILED,
+  _PROCESSING_FAILED_KEY,
 } from "./singletons/constants.js";
 import type {
   TraceableFunction,
@@ -141,29 +144,19 @@ const handleRunInputs = <Args extends unknown[]>(
   processInputs: (
     inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
-  runTree: RunTree,
 ): KVMap | Promise<KVMap> => {
-  // Fail closed: if the redactor throws or rejects, drop the run rather than
-  // upload raw inputs (mirrors the client-level anonymizer).
-  const drop = (e: unknown) => {
-    console.warn(
-      `processInputs failed for run "${runTree.name}" (${runTree.id}); ` +
-        `dropping run to avoid uploading unredacted inputs:`,
-      e,
-    );
-    runTree.dropped = true;
-    return inputs;
+  // Fail closed: trace the run, but with a marker instead of raw inputs.
+  const dropped = (e: unknown) => {
+    console.warn("Error occurred during processInputs. Dropping inputs:", e);
+    return { [_PROCESSING_FAILED_KEY]: _INPUTS_PROCESSING_FAILED };
   };
   try {
     const processed = processInputs(inputs);
-    if (isThenable(processed)) {
-      // Make postRun await inputs so a rejection is seen and drops the run.
-      runTree._awaitInputsOnPost = true;
-      return Promise.resolve(processed).catch(drop);
-    }
-    return processed;
+    return isThenable(processed)
+      ? Promise.resolve(processed).catch(dropped)
+      : processed;
   } catch (e) {
-    return drop(e);
+    return dropped(e);
   }
 };
 
@@ -268,24 +261,16 @@ async function handleRunOutputs<Return>(params: {
       ? Promise.all(runTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
       : Promise.resolve();
 
-  // Fail closed: the output redactor failed, so end with empty outputs
-  const endOutputsWithheld = async (e: unknown) => {
-    console.error(
-      "Error occurred during processOutputs. Withholding outputs:",
-      e,
-    );
+  // Fail closed, as for inputs: end with a marker rather than the raw value.
+  const endOutputsDropped = async (e: unknown) => {
+    console.error("Error occurred during processOutputs. Dropping outputs:", e);
     try {
       await childRunEndPromises;
-      await runTree?.end({});
+      await runTree?.end({
+        [_PROCESSING_FAILED_KEY]: _OUTPUTS_PROCESSING_FAILED,
+      });
     } catch (endErr) {
       console.error("Error occurred during runTree?.end.", endErr);
-    }
-  };
-  const finalize = async () => {
-    try {
-      await handleEnd({ runTree, postRunPromise, on_end, deferredInputs });
-    } catch (e) {
-      console.error("Error occurred during handleEnd.", e);
     }
   };
 
@@ -300,13 +285,24 @@ async function handleRunOutputs<Return>(params: {
           await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
-        .catch(endOutputsWithheld)
-        .finally(finalize);
+        .catch(endOutputsDropped)
+        .finally(async () => {
+          try {
+            await handleEnd({
+              runTree,
+              postRunPromise,
+              on_end,
+              deferredInputs,
+            });
+          } catch (e) {
+            console.error("Error occurred during handleEnd.", e);
+          }
+        });
       return;
     }
   } catch (e) {
-    void endOutputsWithheld(e).then(finalize);
-    return;
+    console.error("Error occurred during processOutputs. Dropping outputs:", e);
+    outputs = { [_PROCESSING_FAILED_KEY]: _OUTPUTS_PROCESSING_FAILED };
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
@@ -370,8 +366,12 @@ const getTracingRunTree = <Args extends unknown[]>(
       | undefined,
   );
   runTree.attachments = attached;
-  // handleRunInputs sets _awaitInputsOnPost itself for promise-returning redactors.
-  const processedInputs = handleRunInputs<Args>(args, processInputs, runTree);
+  const processedInputs = handleRunInputs<Args>(args, processInputs);
+  // Off the value, not the fn shape: non-async redactors return promises too.
+  // Client.prepareRunCreateOrUpdateInputs also flattens it; don't rely on that.
+  if (isThenable(processedInputs)) {
+    runTree._awaitInputsOnPost = true;
+  }
   runTree.inputs = processedInputs;
 
   const invocationParams = getInvocationParams?.(...inputs);

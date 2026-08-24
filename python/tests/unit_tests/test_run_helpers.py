@@ -33,6 +33,8 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
+    _INPUTS_PROCESSING_FAILED,
+    _OUTPUTS_PROCESSING_FAILED,
     _attachment_args_cache,
     _cached_attachment_args,
     _get_inputs,
@@ -443,13 +445,12 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
             assert body_2["patch"][0]["outputs"]["output"] == expected
 
 
-def test_process_inputs_failure_drops_run(mock_client: Client) -> None:
-    """A failing ``process_inputs`` drops the run: nothing is POSTed, and the
-    wrapped function still returns normally."""
+def test_process_inputs_failure_drops_inputs(mock_client: Client) -> None:
+    """A failing ``process_inputs`` uploads a marker, never the raw inputs."""
     secret = "super-secret-value"
 
     def failing_redactor(inputs: dict) -> dict:
-        raise ValueError("redactor boom")
+        raise ValueError(f"redactor boom on {inputs}")  # echoes the secret
 
     with tracing_context(enabled=True):
 
@@ -462,19 +463,24 @@ def test_process_inputs_failure_drops_run(mock_client: Client) -> None:
     # The user's function is unaffected by the tracing failure.
     assert result == "Welcome, user1"
 
-    # Fail closed: no run (and therefore no cleartext) reaches LangSmith.
-    assert _get_calls(mock_client, minimum=0) == [], (
-        "run must be dropped, not posted, when process_inputs fails"
-    )
+    datas = _get_data(_get_calls(mock_client))
+    payloads = [p for _, p in datas]
+    assert payloads, "the run must still be traced"
+    # Fail closed: no cleartext reaches LangSmith, not even via the error text.
+    assert secret not in json.dumps(payloads, default=str)
+    # ...and the gap is explicit rather than silent.
+    assert any(
+        p.get("inputs", {}).get("ls_error") == _INPUTS_PROCESSING_FAILED
+        for p in payloads
+    ), f"expected the inputs marker, got {[p.get('inputs') for p in payloads]}"
 
 
-def test_process_outputs_failure_withholds_outputs(mock_client: Client) -> None:
-    """A failing ``process_outputs`` withholds outputs (the run was already
-    created with inputs, so it can't be fully dropped)."""
+def test_process_outputs_failure_drops_outputs(mock_client: Client) -> None:
+    """A failing ``process_outputs`` uploads a marker, never the raw outputs."""
     secret = "token=super-secret-value"
 
     def failing_redactor(outputs: Any) -> dict:
-        raise ValueError("redactor boom")
+        raise ValueError(f"redactor boom on {outputs}")  # echoes the secret
 
     with tracing_context(enabled=True):
 
@@ -486,16 +492,16 @@ def test_process_outputs_failure_withholds_outputs(mock_client: Client) -> None:
 
     assert result == secret
 
-    datas = _get_data(_get_calls(mock_client, minimum=0))
-    # No posted payload may carry the raw (unredacted) outputs...
-    assert all(not payload.get("outputs") for _, payload in datas), (
-        "outputs must be withheld when process_outputs fails"
-    )
-    # ...but the run is still ended/patched (parity with the JS SDK), not left
-    # dangling.
-    assert any(payload.get("end_time") for _, payload in datas), (
-        "run must still be ended when process_outputs fails"
-    )
+    datas = _get_data(_get_calls(mock_client))
+    payloads = [p for _, p in datas]
+    assert secret not in json.dumps(payloads, default=str)
+    assert any(
+        p.get("outputs", {}).get("ls_error") == _OUTPUTS_PROCESSING_FAILED
+        for p in payloads
+    ), f"expected the outputs marker, got {[p.get('outputs') for p in payloads]}"
+    # Still ended, and not errored: that status is for the traced fn failing.
+    assert any(p.get("end_time") for p in payloads), "run must still be ended"
+    assert all(not p.get("error") for p in payloads), "run must not be errored"
 
 
 @patch("langsmith.run_trees.Client", autospec=True)

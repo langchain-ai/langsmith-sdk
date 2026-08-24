@@ -3,7 +3,11 @@
 import { jest, expect, test, describe, it } from "@jest/globals";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
-import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
+import {
+  _INPUTS_PROCESSING_FAILED,
+  _LC_CONTEXT_VARIABLES_KEY,
+  _OUTPUTS_PROCESSING_FAILED,
+} from "../singletons/constants.js";
 import {
   ROOT,
   traceable,
@@ -22,6 +26,8 @@ import {
   getCurrentRunTree,
 } from "../singletons/traceable.js";
 import { KVMap } from "../schemas.js";
+
+const SECRET = "super-secret-value";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -1774,11 +1780,19 @@ test("traceable with processInputs throwing error does not affect invocation", a
   expect(processInputs).toHaveBeenCalledWith({ username: "user1" });
   expect(result).toBe("Hello, user1");
 
-  // Fail closed: a throwing processInputs drops the run rather than uploading
-  // the raw inputs. Invocation is unaffected.
+  // Fail closed: a marker replaces the raw inputs; the run still traces.
   expect(
-    (await getAssumedTreeFromCalls(callSpy.mock.calls, client)).nodes,
-  ).toEqual([]);
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: { ls_error: _INPUTS_PROCESSING_FAILED },
+        outputs: { outputs: "Hello, user1" },
+      },
+    },
+  });
 });
 
 test("traceable with processOutputs throwing error does not affect invocation", async () => {
@@ -1806,21 +1820,27 @@ test("traceable with processOutputs throwing error does not affect invocation", 
   });
   expect(result).toBe("Original Output for test");
 
-  // Fail closed: a throwing processOutputs withholds outputs rather than
-  // uploading the raw value. Inputs (created at start) still post; outputs do not.
-  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  expect(tree.data["func:0"]?.inputs).toEqual({ input: "test" });
-  expect(tree.data["func:0"]?.outputs ?? {}).not.toMatchObject({
-    outputs: "Original Output for test",
+  // Fail closed: a marker replaces the raw outputs; inputs still post.
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+  ).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: { input: "test" },
+        outputs: { ls_error: _OUTPUTS_PROCESSING_FAILED },
+      },
+    },
   });
 });
 
-test("SECURITY: traceable processInputs failure drops the run (fail closed)", async () => {
+test("SECURITY: traceable processInputs failure drops the inputs (fail closed)", async () => {
   const { client, callSpy } = mockClient();
 
-  // A redactor meant to strip the password, but it throws.
-  const processInputs = jest.fn((_inputs: Readonly<KVMap>) => {
-    throw new Error("redactor boom");
+  // Meant to strip the password, but throws -- the error echoes the inputs.
+  const processInputs = jest.fn((inputs: Readonly<KVMap>) => {
+    throw new Error(`redactor boom on ${JSON.stringify(inputs)}`);
   });
 
   const login = traceable(
@@ -1832,25 +1852,28 @@ test("SECURITY: traceable processInputs failure drops the run (fail closed)", as
 
   const result = await login({
     username: "user1",
-    password: "super-secret-value",
+    password: SECRET,
   });
 
   // The user's function is unaffected by the tracing failure.
   expect(result).toBe("Welcome, user1");
 
-  // Fail closed: because the redactor threw, the run is dropped -- nothing
-  // (and so no cleartext) is uploaded.
-  expect(
-    (await getAssumedTreeFromCalls(callSpy.mock.calls, client)).nodes,
-  ).toEqual([]);
+  // Fail closed: no cleartext is uploaded, not even via the error text...
+  expect(JSON.stringify(callSpy.mock.calls)).not.toContain(SECRET);
+  // ...and the gap is explicit rather than silent.
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(tree.nodes).toEqual(["login:0"]);
+  expect(tree.data["login:0"].inputs).toEqual({
+    ls_error: _INPUTS_PROCESSING_FAILED,
+  });
 });
 
-test("SECURITY: traceable async processInputs rejection drops the run (fail closed)", async () => {
+test("SECURITY: traceable async processInputs rejection drops the inputs (fail closed)", async () => {
   const { client, callSpy } = mockClient();
 
   // Async redactor that rejects -- the sync try/catch never saw this path.
-  const processInputs = jest.fn(async (_inputs: Readonly<KVMap>) => {
-    throw new Error("async redactor boom");
+  const processInputs = jest.fn(async (inputs: Readonly<KVMap>) => {
+    throw new Error(`async redactor boom on ${JSON.stringify(inputs)}`);
   });
 
   const login = traceable(
@@ -1860,40 +1883,42 @@ test("SECURITY: traceable async processInputs rejection drops the run (fail clos
     { client, tracingEnabled: true, processInputs },
   );
 
-  const result = await login({
-    username: "user1",
-    password: "super-secret-value",
-  });
+  const result = await login({ username: "user1", password: SECRET });
 
   expect(result).toBe("Welcome, user1");
-  expect(
-    (await getAssumedTreeFromCalls(callSpy.mock.calls, client)).nodes,
-  ).toEqual([]);
+  expect(JSON.stringify(callSpy.mock.calls)).not.toContain(SECRET);
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(tree.nodes).toEqual(["login:0"]);
+  expect(tree.data["login:0"].inputs).toEqual({
+    ls_error: _INPUTS_PROCESSING_FAILED,
+  });
 });
 
-test("SECURITY: traceable processOutputs failure withholds outputs (fail closed)", async () => {
+test("SECURITY: traceable processOutputs failure drops the outputs (fail closed)", async () => {
   const { client, callSpy } = mockClient();
 
-  const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
-    throw new Error("redactor boom");
+  const processOutputs = jest.fn((outputs: Readonly<KVMap>) => {
+    throw new Error(`redactor boom on ${JSON.stringify(outputs)}`);
   });
 
   const login = traceable(
     async function login(_input: string) {
-      return "token=super-secret-value";
+      return SECRET;
     },
     { client, tracingEnabled: true, processOutputs },
   );
 
   const result = await login("user1");
 
-  // Run already created; only outputs are withheld to avoid eternal pending
-  expect(result).toBe("token=super-secret-value");
+  expect(result).toBe(SECRET);
+  expect(JSON.stringify(callSpy.mock.calls)).not.toContain(SECRET);
   const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-  expect(tree.data["login:0"]?.outputs ?? {}).not.toMatchObject({
-    outputs: "token=super-secret-value",
+  expect(tree.nodes).toEqual(["login:0"]);
+  expect(tree.data["login:0"].outputs).toEqual({
+    ls_error: _OUTPUTS_PROCESSING_FAILED,
   });
-  expect(tree.data["login:0"]?.error).toBeFalsy();
+  // Not errored: that status is for the traced fn failing, not post-processing.
+  expect(tree.data["login:0"].error).toBeFalsy();
 });
 
 test("traceable async generator with processOutputs", async () => {

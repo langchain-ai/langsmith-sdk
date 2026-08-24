@@ -58,6 +58,14 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
 LOGGER = logging.getLogger(__name__)
+# Replaces a payload whose redactor raised. Static text: an exception can echo it.
+_PROCESSING_FAILED_KEY = "ls_error"
+_INPUTS_PROCESSING_FAILED = (
+    "process_inputs failed; inputs were dropped to avoid logging unprocessed data"
+)
+_OUTPUTS_PROCESSING_FAILED = (
+    "process_outputs failed; outputs were dropped to avoid logging unprocessed data"
+)
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "parent_ref": _context._PARENT_RUN_TREE_REF,
     "project_name": _context._PROJECT_NAME,
@@ -1653,21 +1661,15 @@ def _setup_run(
         except BaseException as e:
             LOGGER.error(f"Failed to infer invocation params for {name_}: {e}")
     process_inputs = container_input.get("process_inputs")
-    drop_run = False
     if process_inputs:
         try:
             inputs = process_inputs(inputs)
         except BaseException as e:
-            # Fail closed: drop the run rather than upload raw inputs (mirrors
-            # the client-level anonymizer). We can't bubble here -- the user's
-            # function hasn't run -- so mark it dropped; post()/patch() no-op.
+            # Fail closed: trace the run, but with a marker instead of raw inputs.
             LOGGER.warning(
-                "process_inputs failed for %s; dropping run to avoid "
-                "uploading unredacted inputs: %s",
-                name_,
-                e,
+                "process_inputs failed for %s; dropping inputs: %s", name_, e
             )
-            drop_run = True
+            inputs = {_PROCESSING_FAILED_KEY: _INPUTS_PROCESSING_FAILED}
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     context.run(_context._TAGS.set, tags_)
     tags_ += tags or []
@@ -1702,9 +1704,6 @@ def _setup_run(
         if id_ is not None:
             run_tree_kwargs["id"] = ls_client._ensure_uuid(id_)
         new_run = run_trees.RunTree(**cast(Any, run_tree_kwargs))
-    # Drop the run: post() and the teardown patch() both no-op (the flag also
-    # suppresses the patch, avoiding an orphan update for a never-created run).
-    new_run._dropped = drop_run
     # Post run if enabled=True (force) or if tracing is enabled globally
     if enabled is True or utils.tracing_is_enabled() is True:
         try:
@@ -1747,15 +1746,13 @@ def _handle_container_end(
         try:
             outputs = outputs_processor(outputs)
         except BaseException as e:
-            # Fail closed: withhold the outputs but still end/patch the run
-            # (matches the JS SDK; otherwise the run is left un-ended).
-            run = container.get("new_run")
+            # Fail closed, as for inputs. Outside the try so the run still ends.
             LOGGER.warning(
-                "process_outputs failed for run %s; withholding outputs: %s",
-                getattr(run, "name", None),
+                "process_outputs failed for run %s; dropping outputs: %s",
+                getattr(container.get("new_run"), "name", None),
                 e,
             )
-            outputs = {}
+            outputs = {_PROCESSING_FAILED_KEY: _OUTPUTS_PROCESSING_FAILED}
     try:
         _container_end(container, outputs=outputs, error=error)
     except BaseException as e:

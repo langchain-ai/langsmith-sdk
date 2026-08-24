@@ -359,9 +359,6 @@ class RunTree(ls_schemas.RunBase):
     )
 
     _cached_url: Optional[str] = PrivateAttr(default=None)
-    _dropped: bool = PrivateAttr(default=False)
-    """When True, post()/patch() are no-ops. Set when a ``process_inputs``
-    redactor fails, so the run is dropped rather than uploaded unredacted."""
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -802,8 +799,6 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-        if self._dropped:
-            return
         if self.replicas:
             for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
@@ -855,8 +850,6 @@ class RunTree(ls_schemas.RunBase):
                 (itself defaulting to `True`). Pass an explicit `True` or `False`
                 to override the environment for this call.
         """
-        if self._dropped:
-            return
         if exclude_inputs is None:
             exclude_inputs = _exclude_inputs_on_patch()
         if not self.end_time:
