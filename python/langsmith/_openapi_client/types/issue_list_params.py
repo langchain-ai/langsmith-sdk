@@ -12,7 +12,7 @@ class IssueListParams(TypedDict, total=False):
     """Page size (positive integer; defaults to 50, capped at 500)"""
 
     offset: int
-    """Page offset (non-negative integer)"""
+    """Page offset (non-negative integer; at most 100000)"""
 
     session_id: str
     """Filter by session ID (UUID)"""
@@ -31,6 +31,9 @@ class IssueListParams(TypedDict, total=False):
 
     tag: str
     """Filter by tag (exact match)"""
+
+    trace_id: str
+    """Return only issues with a linked run in this trace"""
 
     updated_at: str
     """Return only issues updated at or after this RFC3339 timestamp"""

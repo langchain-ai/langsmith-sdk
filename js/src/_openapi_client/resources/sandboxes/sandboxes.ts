@@ -6,6 +6,7 @@ import * as BoxesAPI from './boxes.js';
 import {
   BoxCreateParams,
   BoxCreateSnapshotParams,
+  BoxGenerateDownloadURLParams,
   BoxGenerateServiceURLParams,
   BoxListParams,
   BoxUpdateParams,
@@ -27,6 +28,7 @@ import {
   SnapshotRetrieveByNameResponse,
   Snapshots,
 } from './snapshots.js';
+import { ItemsCursorGetPagination } from '../../core/pagination.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
@@ -34,9 +36,42 @@ export class Sandboxes extends APIResource {
   snapshots: SnapshotsAPI.Snapshots = new SnapshotsAPI.Snapshots(this._client);
 }
 
+export type SandboxResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SandboxResponse>;
+
+export type SnapshotResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SnapshotResponse>;
+
+export interface DownloadURLResponse {
+  token: string;
+
+  download_url: string;
+
+  /**
+   * ExpiresAt is null for a link that never expires.
+   */
+  expires_at?: string | null;
+}
+
 export interface SandboxListResponse {
+  /**
+   * This page of sandboxes.
+   */
+  items?: Array<SandboxResponse>;
+
+  /**
+   * Cursor for the next page, or null on the last page. A non-null value is the only
+   * signal that more pages exist. Treat it as opaque.
+   */
+  next_cursor?: string;
+
+  /**
+   * Deprecated: use next_cursor. Offset to request for the next page, or 0 when no
+   * pages remain.
+   */
   offset?: number;
 
+  /**
+   * Deprecated: use items. Duplicates items.
+   */
   sandboxes?: Array<SandboxResponse>;
 }
 
@@ -598,8 +633,26 @@ export interface ServiceURLResponse {
 }
 
 export interface SnapshotListResponse {
+  /**
+   * This page of snapshots.
+   */
+  items?: Array<SnapshotResponse>;
+
+  /**
+   * Cursor for the next page, or null on the last page. A non-null value is the only
+   * signal that more pages exist. Treat it as opaque.
+   */
+  next_cursor?: string;
+
+  /**
+   * Deprecated: use next_cursor. Offset to request for the next page, or 0 when no
+   * pages remain.
+   */
   offset?: number;
 
+  /**
+   * Deprecated: use items. Duplicates items.
+   */
   snapshots?: Array<SnapshotResponse>;
 }
 
@@ -652,6 +705,7 @@ Sandboxes.Snapshots = Snapshots;
 
 export declare namespace Sandboxes {
   export {
+    type DownloadURLResponse as DownloadURLResponse,
     type SandboxListResponse as SandboxListResponse,
     type SandboxResponse as SandboxResponse,
     type SandboxStatusResponse as SandboxStatusResponse,
@@ -666,6 +720,7 @@ export declare namespace Sandboxes {
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
   };
 

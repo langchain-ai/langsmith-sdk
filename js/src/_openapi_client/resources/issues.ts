@@ -21,7 +21,7 @@ export class Issues extends APIResource {
    * **Beta:** This endpoint is in active development and may change without notice.
    *
    * Returns issues for the authenticated tenant, optionally filtered by session,
-   * status, severity, tag, or last modified time.
+   * status, severity, tag, linked trace, or last modified time.
    */
   list(
     query: IssueListParams | null | undefined = {},
@@ -67,6 +67,8 @@ export interface Issue {
 
   last_seen_at?: string;
 
+  linear_sync?: Issue.LinearSync;
+
   name?: string;
 
   proposed_context_fixes?: Array<unknown>;
@@ -100,6 +102,26 @@ export interface Issue {
   watching_since?: string;
 }
 
+export namespace Issue {
+  export interface LinearSync {
+    identifier?: string;
+
+    issue_id?: string;
+
+    last_attempted_at?: string;
+
+    last_error?: string;
+
+    last_synced_at?: string;
+
+    linear_issue_id?: string;
+
+    state?: 'pending' | 'synced' | 'failed' | 'auth_required' | 'paused';
+
+    url?: string;
+  }
+}
+
 export interface IssueListParams extends OffsetPaginationIssuesParams {
   /**
    * Filter by session ID (UUID)
@@ -130,6 +152,11 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
    * Filter by tag (exact match)
    */
   tag?: string;
+
+  /**
+   * Return only issues with a linked run in this trace
+   */
+  trace_id?: string;
 
   /**
    * Return only issues updated at or after this RFC3339 timestamp

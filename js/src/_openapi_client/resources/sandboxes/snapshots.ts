@@ -3,7 +3,13 @@
 
 import { APIResource } from '../../core/resource.js';
 import * as SandboxesAPI from './sandboxes.js';
+import { SnapshotResponsesItemsCursorGetPagination } from './sandboxes.js';
 import { APIPromise } from '../../core/api-promise.js';
+import {
+  ItemsCursorGetPagination,
+  type ItemsCursorGetPaginationParams,
+  PagePromise,
+} from '../../core/pagination.js';
 import { buildHeaders } from '../../internal/headers.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
@@ -27,13 +33,20 @@ export class Snapshots extends APIResource {
 
   /**
    * List sandbox snapshots for the authenticated tenant, with optional filtering,
-   * sorting, and pagination.
+   * sorting, and pagination. Page with page_size and cursor: replay the response's
+   * next_cursor until it comes back null, which is the only signal that no pages
+   * remain. Cursors are opaque and only valid on this endpoint; do not parse or
+   * construct one.
    */
   list(
     query: SnapshotListParams | null | undefined = {},
     options?: RequestOptions,
-  ): APIPromise<SandboxesAPI.SnapshotListResponse> {
-    return this._client.get('/api/v2/sandboxes/snapshots', { query, ...options });
+  ): PagePromise<SnapshotResponsesItemsCursorGetPagination, SandboxesAPI.SnapshotResponse> {
+    return this._client.getAPIList(
+      '/api/v2/sandboxes/snapshots',
+      ItemsCursorGetPagination<SandboxesAPI.SnapshotResponse>,
+      { query, ...options },
+    );
   }
 
   /**
@@ -91,7 +104,7 @@ export interface SnapshotCreateParams {
   tag?: string;
 }
 
-export interface SnapshotListParams {
+export interface SnapshotListParams extends ItemsCursorGetPaginationParams {
   /**
    * Filter by creator identity. Only 'me' is supported.
    */
@@ -104,7 +117,7 @@ export interface SnapshotListParams {
   label?: Array<string>;
 
   /**
-   * Maximum number of results
+   * Deprecated: use page_size. Maximum number of results
    */
   limit?: number;
 
@@ -114,7 +127,7 @@ export interface SnapshotListParams {
   name_contains?: string;
 
   /**
-   * Pagination offset
+   * Deprecated: use cursor. Pagination offset
    */
   offset?: number;
 
@@ -124,9 +137,14 @@ export interface SnapshotListParams {
   sort_by?: string;
 
   /**
-   * Sort direction (asc, desc)
+   * Deprecated: use sort_order. Sort direction (asc, desc)
    */
   sort_direction?: string;
+
+  /**
+   * Sort direction (asc, desc)
+   */
+  sort_order?: string;
 
   /**
    * Filter by status (building, ready, failed, deleting)
@@ -141,3 +159,5 @@ export declare namespace Snapshots {
     type SnapshotListParams as SnapshotListParams,
   };
 }
+
+export { type SnapshotResponsesItemsCursorGetPagination };

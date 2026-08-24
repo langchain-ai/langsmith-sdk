@@ -85,6 +85,7 @@ class IssuesResource(SyncAPIResource):
         sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
         status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
         tag: str | Omit = omit,
+        trace_id: str | Omit = omit,
         updated_at: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -97,12 +98,12 @@ class IssuesResource(SyncAPIResource):
         **Beta:** This endpoint is in active development and may change without notice.
 
         Returns issues for the authenticated tenant, optionally filtered by session,
-        status, severity, tag, or last modified time.
+        status, severity, tag, linked trace, or last modified time.
 
         Args:
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
-          offset: Page offset (non-negative integer)
+          offset: Page offset (non-negative integer; at most 100000)
 
           session_id: Filter by session ID (UUID)
 
@@ -115,6 +116,8 @@ class IssuesResource(SyncAPIResource):
           status: Filter by status
 
           tag: Filter by tag (exact match)
+
+          trace_id: Return only issues with a linked run in this trace
 
           updated_at: Return only issues updated at or after this RFC3339 timestamp
 
@@ -144,6 +147,7 @@ class IssuesResource(SyncAPIResource):
                         "sort_by": sort_by,
                         "status": status,
                         "tag": tag,
+                        "trace_id": trace_id,
                         "updated_at": updated_at,
                     },
                     issue_list_params.IssueListParams,
@@ -215,6 +219,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
         status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
         tag: str | Omit = omit,
+        trace_id: str | Omit = omit,
         updated_at: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -227,12 +232,12 @@ class AsyncIssuesResource(AsyncAPIResource):
         **Beta:** This endpoint is in active development and may change without notice.
 
         Returns issues for the authenticated tenant, optionally filtered by session,
-        status, severity, tag, or last modified time.
+        status, severity, tag, linked trace, or last modified time.
 
         Args:
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
-          offset: Page offset (non-negative integer)
+          offset: Page offset (non-negative integer; at most 100000)
 
           session_id: Filter by session ID (UUID)
 
@@ -245,6 +250,8 @@ class AsyncIssuesResource(AsyncAPIResource):
           status: Filter by status
 
           tag: Filter by tag (exact match)
+
+          trace_id: Return only issues with a linked run in this trace
 
           updated_at: Return only issues updated at or after this RFC3339 timestamp
 
@@ -274,6 +281,7 @@ class AsyncIssuesResource(AsyncAPIResource):
                         "sort_by": sort_by,
                         "status": status,
                         "tag": tag,
+                        "trace_id": trace_id,
                         "updated_at": updated_at,
                     },
                     issue_list_params.IssueListParams,
