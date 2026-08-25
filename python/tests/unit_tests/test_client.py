@@ -6599,6 +6599,72 @@ def test_run_ops_buffer_preserves_service_auth_overrides():
 
 
 @mock.patch("langsmith.client.requests.Session")
+def test_list_runs_strip_binary(mock_session_cls: mock.Mock) -> None:
+    """strip_binary=True replaces large base64 content with a placeholder."""
+    big_b64 = "QUJD" * 10_000  # 40k chars of valid base64
+    run = {
+        "id": str(uuid.uuid4()),
+        "name": "run",
+        "run_type": "llm",
+        "start_time": "2026-01-01T00:00:00Z",
+        "inputs": {"messages": [{"content": [{"type": "image", "data": big_b64}]}]},
+        "outputs": {"text": "small"},
+        "extra": {"note": big_b64},
+    }
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+    mock_session.request.return_value.json.return_value = {"runs": [dict(run)]}
+
+    client = Client()
+    runs = list(client.list_runs(project_id=uuid.uuid4(), strip_binary=True))
+
+    stripped_input = runs[0].inputs["messages"][0]["content"][0]["data"]
+    assert stripped_input == {
+        "type": "binary_reference",
+        "size_bytes": len(big_b64),
+    }
+    assert runs[0].outputs == {"text": "small"}
+    # Only inputs/outputs are stripped.
+    assert runs[0].extra["note"] == big_b64
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_runs_strip_binary_default_keeps_content(
+    mock_session_cls: mock.Mock,
+) -> None:
+    """Without strip_binary, binary content is returned untouched."""
+    big_b64 = "QUJD" * 10_000
+    run = {
+        "id": str(uuid.uuid4()),
+        "name": "run",
+        "run_type": "llm",
+        "start_time": "2026-01-01T00:00:00Z",
+        "inputs": {"data": big_b64},
+        "outputs": {},
+    }
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+    mock_session.request.return_value.json.return_value = {"runs": [dict(run)]}
+
+    client = Client()
+    runs = list(client.list_runs(project_id=uuid.uuid4()))
+
+    assert runs[0].inputs["data"] == big_b64
+
+
+def test_is_likely_base64() -> None:
+    """The base64 heuristic rejects long non-base64 text and short payloads."""
+    from langsmith.client import _is_likely_base64
+
+    assert _is_likely_base64("QUJD" * 10_000)
+    assert _is_likely_base64("data:image/png;base64," + "QUJD" * 10_000)
+    # Long but not base64 (contains spaces/punctuation).
+    assert not _is_likely_base64("hello world, this is plain text. " * 500)
+    # Valid base64 but under the size threshold.
+    assert not _is_likely_base64("QUJDREVG")
+
+
+@mock.patch("langsmith.client.requests.Session")
 def test_list_runs_child_run_ids_deprecation_warning(
     mock_session_cls: mock.Mock,
 ) -> None:

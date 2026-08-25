@@ -4353,6 +4353,7 @@ class Client:
         run_ids: Optional[Sequence[ID_TYPE]] = None,
         select: Optional[Sequence[str]] = None,
         limit: Optional[int] = None,
+        strip_binary: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -4389,6 +4390,11 @@ class Client:
             run_ids: The IDs of the runs to filter by.
             select: The fields to select.
             limit: The maximum number of runs to return.
+            strip_binary: If True, replace large base64-encoded binary content
+                (images, audio, video) in ``inputs`` and ``outputs`` with a small
+                placeholder reference before yielding the run. This happens
+                client-side, so it reduces memory and disk usage but not network
+                transfer. Defaults to False.
             **kwargs: Additional keyword arguments.
 
         Yields:
@@ -4413,6 +4419,12 @@ class Client:
             correct_runs = client.list_runs(project_name="<your_project>", error=False)
 
             # List runs and only return their inputs/outputs (to speed up the query)
+
+            # List runs while stripping large inline binary content from
+            # inputs/outputs (e.g. base64 images) to save memory
+            text_only_runs = client.list_runs(
+                project_name="<your_project>", strip_binary=True
+            )
             input_output_runs = client.list_runs(
                 project_name="<your_project>", select=["inputs", "outputs"]
             )
@@ -4528,6 +4540,10 @@ class Client:
             attachments = _convert_stored_attachments_to_attachments_dict(
                 run, attachments_key="s3_urls", api_url=self.api_url
             )
+            if strip_binary:
+                for field in ("inputs", "outputs"):
+                    if isinstance(run.get(field), dict):
+                        run[field] = _strip_binary_content(run[field])
             yield ls_schemas.Run(
                 attachments=attachments, **run, _host_url=self._host_url
             )
@@ -11714,6 +11730,39 @@ def _convert_stored_attachments_to_attachments_dict(
                 }
             )
     return attachments_dict
+
+
+_BASE64_MIN_LENGTH = 10_000
+_BASE64_CHARSET = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+)
+_BASE64_DATA_URI_PREFIX = ";base64,"
+
+
+def _is_likely_base64(value: str, min_length: int = _BASE64_MIN_LENGTH) -> bool:
+    """Heuristically detect large base64-encoded payloads (e.g. inline media)."""
+    if len(value) < min_length:
+        return False
+    # Tolerate data URIs like "data:image/png;base64,<payload>".
+    if value.startswith("data:"):
+        payload = value.partition(_BASE64_DATA_URI_PREFIX)[2]
+    else:
+        payload = value
+    return len(payload) >= min_length and not set(payload) - _BASE64_CHARSET
+
+
+def _strip_binary_content(obj: Any) -> Any:
+    """Recursively replace large base64 strings with lightweight references."""
+    if isinstance(obj, dict):
+        return {k: _strip_binary_content(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_binary_content(item) for item in obj]
+    if isinstance(obj, str) and _is_likely_base64(obj):
+        return {
+            "type": "binary_reference",
+            "size_bytes": len(obj),
+        }
+    return obj
 
 
 def _close_files(files: list[io.BufferedReader]) -> None:

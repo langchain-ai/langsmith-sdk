@@ -708,6 +708,7 @@ class AsyncClient:
         run_ids: Optional[Sequence[ls_client.ID_TYPE]] = None,
         select: Optional[Sequence[str]] = None,
         limit: Optional[int] = None,
+        strip_binary: bool = False,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -744,6 +745,11 @@ class AsyncClient:
             run_ids: The IDs of the runs to filter by.
             select: The fields to select.
             limit: The maximum number of runs to return.
+            strip_binary: If True, replace large base64-encoded binary content
+                (images, audio, video) in ``inputs`` and ``outputs`` with a small
+                placeholder reference before yielding the run. This happens
+                client-side, so it reduces memory and disk usage but not network
+                transfer. Defaults to False.
             **kwargs: Additional keyword arguments.
 
         Yields:
@@ -852,6 +858,10 @@ class AsyncClient:
         body = {k: v for k, v in body_query.items() if v is not None}
         ix = 0
         async for run in self._aget_cursor_paginated_list("/runs/query", body=body):
+            if strip_binary:
+                for field in ("inputs", "outputs"):
+                    if isinstance(run.get(field), dict):
+                        run[field] = ls_client._strip_binary_content(run[field])
             yield ls_schemas.Run(**run)
             ix += 1
             if limit is not None and ix >= limit:
