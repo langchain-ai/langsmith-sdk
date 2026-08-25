@@ -19,6 +19,7 @@ import {
 } from "../utils/env.js";
 import { parseHubIdentifier } from "../utils/prompts.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
+import { isSampledById } from "../utils/sampling.js";
 
 describe("Client", () => {
   describe("resource tags on create", () => {
@@ -152,27 +153,27 @@ describe("Client", () => {
       // mockFetch to count feedback requests alone.
       const sessionId = "550e8400-e29b-41d4-a716-446655440001";
       const sampledFeedback = await client.createFeedback(
-        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000015",
         "Foo",
         { score: 1, sessionId },
       );
       const filteredFeedback = await client.createFeedback(
-        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000004",
         "Foo",
         { score: 0, sessionId },
       );
 
       expect(sampledFeedback.run_id).toBe(
-        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000015",
       );
       expect(filteredFeedback.run_id).toBe(
-        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000004",
       );
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [, init] = mockFetch.mock.calls[0];
       expect(JSON.parse(init?.body as string)).toEqual(
         expect.objectContaining({
-          run_id: "00000000-0000-0000-0000-000000000001",
+          run_id: "00000000-0000-0000-0000-000000000015",
         }),
       );
     });
@@ -1229,9 +1230,61 @@ describe("Client", () => {
     });
   });
 
+  describe("cross-SDK sampling agreement", () => {
+    // Golden decisions at rate 0.5. The Python SDK asserts this exact table in
+    // python/tests/unit_tests/test_client.py: both must agree, or a trace
+    // sampled in by one SDK is dropped by the other. Regenerate both sides
+    // together, never one.
+    const decisionsAtHalf: [string, boolean][] = [
+      ["00000000-0000-0000-0000-000000000001", false],
+      ["00000000-0000-0000-0000-000000000004", false],
+      ["00000000-0000-0000-0000-000000000015", true],
+      ["0198f8a0-1234-7000-8000-000000000042", false],
+      ["b3d2c1a0-5f6e-7d8c-9b0a-1e2f3d4c5b6a", false],
+      ["abc", true],
+      ["", false],
+      ["trace-1", true],
+      ["trace-2", false],
+      // Non-ASCII pins the UTF-8 encoding: a UTF-16 implementation diverges.
+      ["\u00fcn\u00efc\u00f8d\u00e9-trace", false],
+      ["\u65e5\u672c\u8a9e", false],
+      // Case folding happens before hashing.
+      ["MiXeD-CaSe-ID", true],
+    ];
+
+    it.each(decisionsAtHalf)(
+      "matches the Python SDK for %p",
+      (identifier, expected) => {
+        expect(isSampledById(identifier, 0.5)).toBe(expected);
+      },
+    );
+
+    it("skips hashing at the rate bounds", () => {
+      for (const identifier of ["anything", "", null, undefined]) {
+        expect(isSampledById(identifier, undefined)).toBe(true);
+        expect(isSampledById(identifier, 1)).toBe(true);
+        expect(isSampledById(identifier, 0)).toBe(false);
+      }
+    });
+
+    it("honours the rate across many ids", () => {
+      const ids = Array.from(
+        { length: 20_000 },
+        (_, i) => `0198f8a0-1234-7000-8000-${String(i).padStart(12, "0")}`,
+      );
+      for (const rate of [0.1, 0.25, 0.75]) {
+        const kept =
+          ids.filter((id) => isSampledById(id, rate)).length / ids.length;
+        expect(Math.abs(kept - rate)).toBeLessThan(0.02);
+      }
+    });
+  });
+
   describe("_filterForSampling run ID logic", () => {
-    const sampledRunId = "00000000-0000-0000-0000-000000000001";
-    const filteredRunId = "00000000-0000-0000-0000-000000000002";
+    // Buckets under XXH3-128 % 1_000_000: 10679 and 982794, so these stay on
+    // opposite sides of the threshold for any rate between 0.02 and 0.98.
+    const sampledRunId = "00000000-0000-0000-0000-000000000015";
+    const filteredRunId = "00000000-0000-0000-0000-000000000004";
 
     const run = (id: string, traceId = id) => ({
       id,

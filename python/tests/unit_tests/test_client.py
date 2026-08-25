@@ -53,6 +53,7 @@ from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
 from langsmith._internal._multipart import MultipartPartsAndContext
+from langsmith._internal._sampling import is_sampled_by_id
 from langsmith._internal._serde import _serialize_json
 from langsmith.anonymizer import SECRET_PLACEHOLDER, create_secret_anonymizer
 from langsmith.client import (
@@ -2860,8 +2861,10 @@ def test_batch_ingest_run_splits_large_batches(
         assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
 
 
-SAMPLED_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-FILTERED_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
+# Buckets under XXH3-128 % 1_000_000: 10679 and 982794, so these stay on
+# opposite sides of the threshold for any rate between 0.02 and 0.98.
+SAMPLED_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000015")
+FILTERED_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000004")
 
 
 def _sampling_run(run_id: uuid.UUID, trace_id: Optional[uuid.UUID] = None) -> dict:
@@ -2907,6 +2910,47 @@ def test_sampling_and_batching():
         data = data.decode("utf-8")
     batch_data = parse_request_data(data)
     assert [post["id"] for post in batch_data.get("post", [])] == [str(SAMPLED_RUN_ID)]
+
+
+# Golden decisions at rate 0.5. The JS SDK asserts this exact table in
+# js/src/tests/client.test.ts: both must agree, or a trace sampled in by one
+# SDK is dropped by the other. Regenerate both sides together, never one.
+CROSS_SDK_SAMPLING_AT_HALF = [
+    ("00000000-0000-0000-0000-000000000001", False),
+    ("00000000-0000-0000-0000-000000000004", False),
+    ("00000000-0000-0000-0000-000000000015", True),
+    ("0198f8a0-1234-7000-8000-000000000042", False),
+    ("b3d2c1a0-5f6e-7d8c-9b0a-1e2f3d4c5b6a", False),
+    ("abc", True),
+    ("", False),
+    ("trace-1", True),
+    ("trace-2", False),
+    # Non-ASCII pins the UTF-8 encoding: a UTF-16 implementation diverges here.
+    ("\u00fcn\u00efc\u00f8d\u00e9-trace", False),
+    ("\u65e5\u672c\u8a9e", False),
+    # Case folding happens before hashing.
+    ("MiXeD-CaSe-ID", True),
+]
+
+
+@pytest.mark.parametrize(("identifier", "expected"), CROSS_SDK_SAMPLING_AT_HALF)
+def test_sampling_matches_js_sdk(identifier: str, expected: bool):
+    assert is_sampled_by_id(identifier, 0.5) is expected
+
+
+def test_sampling_rate_bounds_skip_hashing():
+    # None/>=1 keep everything, <=0 drops everything, whatever the identifier.
+    for identifier in ("anything", "", None):
+        assert is_sampled_by_id(identifier, None) is True
+        assert is_sampled_by_id(identifier, 1.0) is True
+        assert is_sampled_by_id(identifier, 0.0) is False
+
+
+def test_sampling_rate_is_roughly_honoured():
+    ids = [str(uuid.uuid4()) for _ in range(20_000)]
+    for rate in (0.1, 0.25, 0.75):
+        kept = sum(is_sampled_by_id(i, rate) for i in ids) / len(ids)
+        assert abs(kept - rate) < 0.02, f"rate {rate} kept {kept}"
 
 
 def test_run_sampling_is_consistent_for_create_and_update():

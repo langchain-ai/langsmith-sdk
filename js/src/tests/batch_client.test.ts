@@ -1192,10 +1192,13 @@ describe.each(ENDPOINT_TYPES)(
       });
       const projectName = "__test_batch";
 
+      // Two of these are sampled in at rate 0.5 and two are filtered out
+      // (XXH3-128 buckets: 10679, 87881, 769129, 982794), so the batch below
+      // exercises both paths. Keep the mix if these are ever changed.
       const sampledIds = [
+        "00000000-0000-0000-0000-000000000015",
+        "00000000-0000-0000-0000-000000000009",
         "00000000-0000-0000-0000-000000000001",
-        "00000000-0000-0000-0000-000000000002",
-        "00000000-0000-0000-0000-000000000003",
         "00000000-0000-0000-0000-000000000004",
       ];
       const childIds = [
@@ -1289,7 +1292,8 @@ describe.each(ENDPOINT_TYPES)(
 
       const expectedPosts = childRunParams
         .map((childRunParam, i) => {
-          if (isSampled(childRunParam.id)) {
+          // Sampling keys on trace_id, so a child follows its root's decision.
+          if (isSampled(runParams[i].id)) {
             return expect.objectContaining({
               id: childRunParam.id,
               run_type: "llm",
