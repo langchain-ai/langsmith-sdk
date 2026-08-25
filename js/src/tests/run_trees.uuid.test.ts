@@ -112,15 +112,14 @@ test("nonCryptographicUuid7Deterministic timestamp handling", async () => {
   const derivedV7 = nonCryptographicUuid7Deterministic(originalV7, "key");
   expect(uuidV7Ms(derivedV7)).toBe(uuidV7Ms(originalV7));
 
-  // UUID4 input: gets fresh timestamp
-  const beforeMs = Date.now();
-  const derivedV4 = nonCryptographicUuid7Deterministic(uuidv4(), "key");
+  // UUID4 input: no timestamp to preserve, so the field is hash-derived. Still
+  // a valid v7, and independent of when it was derived.
+  const originalV4 = uuidv4();
+  const derivedV4 = nonCryptographicUuid7Deterministic(originalV4, "key");
   await new Promise((resolve) => setTimeout(resolve, 10));
-  const afterMs = Date.now();
 
   expect(getUuidVersion(derivedV4)).toBe(7);
-  expect(uuidV7Ms(derivedV4)).toBeGreaterThanOrEqual(beforeMs);
-  expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
+  expect(nonCryptographicUuid7Deterministic(originalV4, "key")).toBe(derivedV4);
 });
 
 test("computeRunIdForSecondaryReplica returns the replica run ID", () => {
@@ -211,4 +210,87 @@ test("nonCryptographicUuid7Deterministic is fast", async () => {
   // Check uniqueness - different input UUIDs should produce different outputs
   const uniqueOutputs = new Set(finalUuids); // First 1000 should all be unique
   expect(uniqueOutputs.size).toBe(100000);
+});
+
+// --- R15: the derivation must be a pure function of (originalId, key) ---------
+// `_remapForProject` derives the same ancestor id from several runs -- a two-run
+// tree derives the root's id five times -- and post and patch each remap again.
+// Any ambient input, such as a clock read, splits the replica's trace.
+
+// Shared with the Python suite. Cross-SDK agreement keeps a distributed trace
+// spanning both implementations on one replica tree.
+const SHARED_V7_IN = "01a01f0e-4d4a-7613-b4ad-093ffa24b800";
+const SHARED_V7_OUT = "01a01f0e-4d4a-7f23-96d3-556172206e49";
+const SHARED_NON_V7_IN = "00000000-0000-4000-8000-000000000000";
+const SHARED_NON_V7_OUT = "a9457421-4152-7a3c-9bd5-db046e6cb943";
+
+test("nonCryptographicUuid7Deterministic is stable for a non-UUIDv7 original", async () => {
+  const original = uuidv4();
+  const first = nonCryptographicUuid7Deterministic(original, "proj");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(nonCryptographicUuid7Deterministic(original, "proj")).toBe(first);
+});
+
+test("nonCryptographicUuid7Deterministic matches the shared cross-SDK vectors", () => {
+  expect(nonCryptographicUuid7Deterministic(SHARED_V7_IN, "some-project")).toBe(
+    SHARED_V7_OUT,
+  );
+  expect(
+    nonCryptographicUuid7Deterministic(SHARED_NON_V7_IN, "some-project"),
+  ).toBe(SHARED_NON_V7_OUT);
+});
+
+test("a non-UUIDv7 run reaches its replica under one id for post and patch", async () => {
+  const { client } = mockClient();
+  const createSpy = jest.spyOn(client, "createRun");
+  const updateSpy = jest.spyOn(client, "updateRun");
+
+  const rt = new RunTree({
+    name: "r",
+    run_type: "chain",
+    id: uuidv4(), // legacy, non-UUIDv7
+    client,
+    project_name: "primary",
+    tracingEnabled: true,
+    replicas: [{ projectName: "secondary-project" }],
+  });
+  await rt.postRun();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await rt.end({ ok: true });
+  await rt.patchRun();
+  await client.awaitPendingTraceBatches();
+
+  const postedId = createSpy.mock.calls[0][0].id;
+  const patchedId = updateSpy.mock.calls[0][0];
+  expect(postedId).toBe(patchedId);
+});
+
+test("an ancestor's replica id is the same wherever it is derived", async () => {
+  // _remapForProject derives an ancestor's id from the ancestor itself and again
+  // from every descendant's trace_id, parent_run_id and dotted_order segments.
+  // All of them must agree or the replica's tree splits.
+  const { client } = mockClient();
+  const createSpy = jest.spyOn(client, "createRun");
+
+  const parent = new RunTree({
+    name: "parent",
+    run_type: "chain",
+    id: uuidv4(), // legacy, non-UUIDv7
+    client,
+    project_name: "primary",
+    tracingEnabled: true,
+    replicas: [{ projectName: "secondary-project" }],
+  });
+  await parent.postRun();
+  // Different millisecond: a clock-derived timestamp would diverge here.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const child = parent.createChild({ name: "child", run_type: "chain" });
+  await child.postRun();
+  await client.awaitPendingTraceBatches();
+
+  const parentPost = createSpy.mock.calls[0][0];
+  const childPost = createSpy.mock.calls[1][0];
+  expect(childPost.trace_id).toBe(parentPost.id);
+  expect(childPost.parent_run_id).toBe(parentPost.id);
+  expect(childPost.dotted_order!.split(".")[0].slice(-36)).toBe(parentPost.id);
 });
