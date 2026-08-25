@@ -177,6 +177,13 @@ test("nonCryptographicUuid7Deterministic produces expected values", () => {
       key: "test",
       expected: "01900000-0000-7132-8131-f80e352488a3",
     },
+    {
+      // Non-UUIDv7 original: no timestamp to preserve, so all 122 derived bits
+      // come from the hash. The other cases only cover the v7 branch.
+      input: "00000000-0000-4000-8000-000000000000",
+      key: "some-project",
+      expected: "a9457421-4152-7a3c-9bd5-db046e6cb943",
+    },
   ];
 
   for (const { input, key, expected } of testCases) {
@@ -212,33 +219,8 @@ test("nonCryptographicUuid7Deterministic is fast", async () => {
   expect(uniqueOutputs.size).toBe(100000);
 });
 
-// --- R15: the derivation must be a pure function of (originalId, key) ---------
-// `_remapForProject` derives the same ancestor id from several runs -- a two-run
-// tree derives the root's id five times -- and post and patch each remap again.
-// Any ambient input, such as a clock read, splits the replica's trace.
-
-// Shared with the Python suite. Cross-SDK agreement keeps a distributed trace
-// spanning both implementations on one replica tree.
-const SHARED_V7_IN = "01a01f0e-4d4a-7613-b4ad-093ffa24b800";
-const SHARED_V7_OUT = "01a01f0e-4d4a-7f23-96d3-556172206e49";
-const SHARED_NON_V7_IN = "00000000-0000-4000-8000-000000000000";
-const SHARED_NON_V7_OUT = "a9457421-4152-7a3c-9bd5-db046e6cb943";
-
-test("nonCryptographicUuid7Deterministic is stable for a non-UUIDv7 original", async () => {
-  const original = uuidv4();
-  const first = nonCryptographicUuid7Deterministic(original, "proj");
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  expect(nonCryptographicUuid7Deterministic(original, "proj")).toBe(first);
-});
-
-test("nonCryptographicUuid7Deterministic matches the shared cross-SDK vectors", () => {
-  expect(nonCryptographicUuid7Deterministic(SHARED_V7_IN, "some-project")).toBe(
-    SHARED_V7_OUT,
-  );
-  expect(
-    nonCryptographicUuid7Deterministic(SHARED_NON_V7_IN, "some-project"),
-  ).toBe(SHARED_NON_V7_OUT);
-});
+// the derivation must be a pure function of (originalId, key) -- see the
+// JSDoc on nonCryptographicUuid7Deterministic.
 
 test("a non-UUIDv7 run reaches its replica under one id for post and patch", async () => {
   const { client } = mockClient();

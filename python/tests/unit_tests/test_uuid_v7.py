@@ -149,6 +149,13 @@ def test_uuid7_deterministic_produces_expected_values() -> None:
             "key": "test",
             "expected": UUID("01900000-0000-7132-8131-f80e352488a3"),
         },
+        {
+            # Non-UUIDv7 original: no timestamp to preserve, so all 122 derived
+            # bits come from the hash. The other cases only cover the v7 branch.
+            "input": UUID("00000000-0000-4000-8000-000000000000"),
+            "key": "some-project",
+            "expected": UUID("a9457421-4152-7a3c-9bd5-db046e6cb943"),
+        },
     ]
 
     for test_case in test_cases:

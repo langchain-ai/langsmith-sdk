@@ -19,15 +19,6 @@ from langsmith.run_trees import TIMESTAMP_LENGTH, RunTree, WriteReplica
 
 SECONDARY = "secondary-project"
 
-# Shared with the JS suite (js/src/tests/run_trees.uuid.test.ts). The v7 pair also
-# pins that branch byte-identical to the pre-change implementation; both pin
-# cross-SDK agreement, which keeps a trace spanning both SDKs on one replica tree.
-SHARED_V7_IN = uuid.UUID("01a01f0e-4d4a-7613-b4ad-093ffa24b800")
-SHARED_V7_OUT = uuid.UUID("01a01f0e-4d4a-7f23-96d3-556172206e49")
-SHARED_NON_V7_IN = uuid.UUID("00000000-0000-4000-8000-000000000000")
-SHARED_NON_V7_OUT = uuid.UUID("a9457421-4152-7a3c-9bd5-db046e6cb943")
-
-
 def _client():
     client = Client(
         api_url="https://main.example.com",
@@ -99,19 +90,6 @@ def test_non_v7_original_yields_conforming_uuid7():
     derived = uuid7_deterministic(uuid.uuid4(), "proj")
     assert derived.version == 7
     assert derived.variant == uuid.RFC_4122
-
-
-def test_matches_the_shared_cross_sdk_vectors():
-    """Pins the v7 branch byte-identical, and agreement with the JS SDK."""
-    assert uuid7_deterministic(SHARED_V7_IN, "some-project") == SHARED_V7_OUT
-    assert uuid7_deterministic(SHARED_NON_V7_IN, "some-project") == SHARED_NON_V7_OUT
-
-
-def test_derivation_is_stable_across_calls():
-    original = uuid.uuid4()
-    first = uuid7_deterministic(original, "proj")
-    time.sleep(0.01)
-    assert uuid7_deterministic(original, "proj") == first
 
 
 def test_derivation_still_varies_with_both_inputs():
