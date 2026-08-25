@@ -1,0 +1,39 @@
+python/tests/unit_tests/test_uuid_v7.py
+  s_9ad5e82eb23414::t_c5be338f75552e 184-189,198-201,204
+python/tests/unit_tests/test_replica_run_ids.py
+  s_73887f456157df::t_e1bf69df732323 2-3,8-16,19-21,29-30,32-39,42,46-50,52-57,59-65,67-68,85,90,96-97
+  s_9ad5e82eb23414::t_584fb603b0c251 88
+  s_9ad5e82eb23414::t_2b88b96ddc2c96 22-28,104-107
+  s_9ad5e82eb23414::t_203f7782981442 1,4-7,31,40-41,45,58,66,69-84,86,89,94,98-101,108-110,112-121
+  s_9ad5e82eb23414::t_d19d5d6eacfa5d 17-18,43-44,51,87,91-93,95
+  s_73887f456157df::t_26991802bbb472 102-103,111
+python/tests/unit_tests/test_replica_compression.py
+  s_73887f456157df::t_d74070e26af0c3 1-548
+python/langsmith/_internal/_uuid.py
+  s_9ad5e82eb23414::t_3a9d97f891f50e 90,134
+  s_9ad5e82eb23414::t_d19d5d6eacfa5d 91-93,95-97,131-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "d79ae59a8dbbabbd9a53b1386eb6dd00bbb921ea",
+  "prompts": {},
+  "sessions": {
+    "s_73887f456157df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7bc5641-04a3-4891-8196-698a39626070",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    },
+    "s_9ad5e82eb23414": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fef8e316-c17e-404e-94bb-5301e96209e7",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
