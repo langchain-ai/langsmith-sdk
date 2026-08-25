@@ -19,6 +19,7 @@ from langsmith.run_trees import TIMESTAMP_LENGTH, RunTree, WriteReplica
 
 SECONDARY = "secondary-project"
 
+
 def _client():
     client = Client(
         api_url="https://main.example.com",
