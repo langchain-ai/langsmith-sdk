@@ -1,0 +1,42 @@
+python/tests/unit_tests/test_client.py
+  s_0bb4cd45437e72::t_381f0f03f902b6 3020,3025
+  s_0bb4cd45437e72::t_041efea23b2a63 3010-3016,3018-3019,3021-3024,3026-3035
+  s_0bb4cd45437e72::t_39ab46a512ac5a 3017
+  s_0bb4cd45437e72::t_b31ed2d055e965 3036-3065
+  s_0bb4cd45437e72::t_6882b6a613101b 3066-3091
+python/langsmith/client.py
+  s_0bb4cd45437e72::t_3d7550b53d5f7f 2505-2506,3708-3709,8060
+  s_0bb4cd45437e72::t_b024f01dd71714 8366-8367
+  s_0bb4cd45437e72::t_0ee9e3321fe884 2501-2504,2507-2512
+  s_0bb4cd45437e72::t_2011867fdcbaba 8061-8065
+  s_0bb4cd45437e72::t_cabc7073bf3364 3710
+js/src/evaluation/evaluate_comparative.ts
+  s_0bb4cd45437e72::t_7acfc12d34a0b5 370-371
+js/src/tests/client.test.ts
+  s_0bb4cd45437e72::t_985ced923d273d 181-218
+  s_0bb4cd45437e72::t_6469f7c1a1b813 219-260
+  s_0bb4cd45437e72::t_3036374662bc43 1313-1352
+js/src/client.ts
+  s_0bb4cd45437e72::t_29cafc8a8a3c52 567,2019-2026,5845
+  s_0bb4cd45437e72::t_1cadcaad9a6169 568,5487,5524,5537-5538
+  s_0bb4cd45437e72::t_7acfc12d34a0b5 5846
+  s_0bb4cd45437e72::t_b454c50b5cdbb6 486
+js/src/schemas.ts
+  s_0bb4cd45437e72::t_1cadcaad9a6169 373-374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "547325aec128bef7e1931294427e2b3bfc29b310",
+  "prompts": {},
+  "sessions": {
+    "s_0bb4cd45437e72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a78d183d-a657-437b-a086-3a1dfde3d877",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
