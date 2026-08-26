@@ -2,17 +2,23 @@
 
 Rewrites LiveKit's ``lk.*`` span data into the ``gen_ai.*`` / ``langsmith.*``
 namespaces LangSmith ingests; non-LiveKit spans on the same provider pass
-through untouched. The call recording is attached to the root span, either from
-a local file (``audio_path_provider``, dev) or via :meth:`expect_recording` /
-:meth:`complete_recording` (LiveKit Egress, production). Shared export /
-``thread_id`` / message plumbing lives in :class:`BaseLangSmithSpanProcessor`.
+through untouched.
+
+The root span is held open until the call recording arrives, then released with
+the recording attached and its time origin stamped on it. A recording is
+delivered one of two ways: :meth:`attach_session_report` (LiveKit's in-process
+recorder, via ``ctx.make_session_report()`` in an ``on_session_end`` callback) or
+:meth:`complete_recording` (LiveKit Egress, or any capture of your own). Shared
+export / ``thread_id`` / message plumbing lives in
+:class:`BaseLangSmithSpanProcessor`.
 """
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections.abc import MutableMapping
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from cachetools import TTLCache
 from opentelemetry.sdk.trace import SpanProcessor
@@ -30,6 +36,7 @@ from langsmith._internal.voice.base_span_processor import (
 
 from ._helpers import (
     build_message_from_event,
+    build_messages_from_chat_history,
     extract_llm_usage,
     extract_model_from_lk_metrics,
     extract_provider_from_lk_metrics,
@@ -42,6 +49,11 @@ from ._helpers import (
 # Lifetime / cap for per-conversation state; bounds memory for calls that never end.
 DEFAULT_STATE_TTL_SECONDS = 3600.0
 DEFAULT_STATE_MAXSIZE = 100_000
+
+# How long a root span waits for its recording before being exported without
+# one. Bounds the hold so a crashed job — or an ``on_session_end`` that never
+# runs — yields a trace with no audio rather than no trace at all.
+DEFAULT_RECORDING_TIMEOUT_SECONDS = 30.0
 
 # LiveKit span names. Inference calls are ``llm``-kind; framework wrappers ``chain``.
 _STT_SPAN = "user_turn"  # audio → transcript (inference)
@@ -65,6 +77,8 @@ _LLM_EVENT_ROLES = {
 }
 _LLM_CHOICE_EVENT = "gen_ai.choice"
 
+logger = logging.getLogger(__name__)
+
 
 class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     """Enriches LiveKit Agents' OTel spans with LangSmith-compatible attributes."""
@@ -76,18 +90,22 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         api_key: Optional[str] = None,
         project: Optional[str] = None,
         endpoint: Optional[str] = None,
-        audio_path_provider: Optional[Callable[[], Optional[Path]]] = None,
         audio_mime_type: str = "audio/ogg",
+        await_recording: bool = True,
+        recording_timeout_seconds: float = DEFAULT_RECORDING_TIMEOUT_SECONDS,
         state_ttl_seconds: float = DEFAULT_STATE_TTL_SECONDS,
         **kwargs: Any,
     ) -> None:
         """Create the processor.
 
         Args:
-            audio_path_provider: returns a local recording path to embed on the
-                root (dev only); for production use :meth:`expect_recording` /
-                :meth:`complete_recording`.
             audio_mime_type: default MIME type for embedded recordings.
+            await_recording: hold each root span until a recording is delivered
+                by :meth:`attach_session_report` or :meth:`complete_recording`.
+                Pass ``False`` when tracing a session with no audio, so its
+                traces export immediately instead of waiting out the timeout.
+            recording_timeout_seconds: how long that hold lasts before the root
+                is exported without audio.
             state_ttl_seconds: lifetime for per-conversation state.
         """
         super().__init__(
@@ -97,8 +115,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             endpoint=endpoint,
             **kwargs,
         )
-        self.audio_path_provider = audio_path_provider
         self._audio_mime_type = audio_mime_type
+        self._await_recording = await_recording
+        self._recording_timeout_seconds = recording_timeout_seconds
+        # Guards release: the timeout fires on a timer thread, while spans end
+        # on the framework's asyncio loop, so both can reach _maybe_release.
+        self._release_lock = threading.RLock()
 
         def _cache() -> Any:
             return TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
@@ -121,11 +143,26 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             _cache()
         )
         self._pending_user_transcripts: MutableMapping[str, list[str]] = _cache()
+        # thread id -> recording start (epoch seconds), the audio's time origin.
+        self._recording_started_at_by_thread: MutableMapping[str, float] = _cache()
+        # thread id -> transcript built from a session report's chat history.
+        self._chat_transcript_by_thread: MutableMapping[str, list[dict]] = _cache()
+        # thread id -> why the recording did or didn't attach.
+        self._audio_status_by_thread: MutableMapping[str, str] = _cache()
+        # trace_id -> the timer that force-releases a root that waited too long.
+        self._release_timers: dict[int, threading.Timer] = {}
 
     def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
-        """Also index thread→trace (so ``complete_recording`` can find the trace)."""
+        """Index thread→trace, and start awaiting this conversation's recording.
+
+        Marking the thread here is what removes the old per-conversation
+        ``expect_recording`` call: every traced conversation awaits a recording
+        from the moment its first span starts.
+        """
         super()._remember_thread_id(trace_id, thread_id)
         self._trace_by_thread[thread_id] = trace_id
+        if self._await_recording and thread_id not in self._audio_status_by_thread:
+            self._threads_awaiting_recording[thread_id] = True
 
     # -- realtime session instrumentation ------------------------------------
 
@@ -133,10 +170,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """Subscribe this processor to a LiveKit ``AgentSession``'s events.
 
         A realtime (speech-to-speech) model's user transcript arrives via the
-        ``user_input_transcribed`` session event — never on a span — so the
-        processor can't see it from spans alone, and the trace ends up with only
-        the agent's turns. Call this once after creating the session to wire the
-        transcript in::
+        ``user_input_transcribed`` session event — never on a span — so without
+        this the ``user_speaking`` spans render bare. Call it once after
+        creating the session to wire the transcript in::
 
             processor = configure_livekit(...)
             session = AgentSession(llm=...)
@@ -147,6 +183,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         that has no transcript yet (we have no id to match a transcript to its
         exact span). No-op for the cascade pipeline, where the transcript already
         rides the STT ``user_turn`` span.
+
+        This is about the *spans*. The root's transcript comes from the session
+        report's chat history when one is supplied
+        (:meth:`attach_session_report`), which already includes the realtime
+        user's turns — so without a report, this is also the only way those
+        turns reach the root.
 
         Args:
             session: the LiveKit ``AgentSession`` to subscribe to.
@@ -160,15 +202,91 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                     str(thread_id), getattr(ev, "transcript", "") or ""
                 )
 
-    # -- production recording (egress) ---------------------------------------
+    # -- recording delivery ---------------------------------------------------
 
-    def expect_recording(self, thread_id: str) -> None:
-        """Hold the root span open until :meth:`complete_recording` supplies the audio.
+    def attach_session_report(
+        self,
+        report: Any,
+        thread_id: str,
+    ) -> None:
+        """Attach a LiveKit ``SessionReport`` and release the held root.
 
-        Call at conversation start (with egress); always pair with a
-        ``complete_recording`` call. ``thread_id`` must match ``set_thread_id``.
+        Call once per conversation from an ``on_session_end`` callback, where
+        the recorder has closed and the report is complete::
+
+            processor = configure_livekit()
+
+
+            async def on_session_end(ctx: JobContext) -> None:
+                processor.attach_session_report(
+                    ctx.make_session_report(), thread_id=ctx.room.name
+                )
+
+
+            server = AgentServer()
+
+
+            @server.rtc_session(on_session_end=on_session_end)
+            async def entrypoint(ctx: JobContext) -> None: ...
+
+        Reads the recording's time origin (so the trace audio player lines up
+        with the waterfall), embeds the recording itself, and rolls the report's
+        chat history up as the root's transcript.
+
+        A report always carries the chat history, but only carries a recording
+        when LiveKit's own recorder made one. If it has no recording, the root
+        stays held for a :meth:`complete_recording` call — so recording with
+        egress means calling *both*: this for the transcript, then
+        ``complete_recording`` with the audio, which releases the trace with
+        both. Pass ``await_recording=False`` to :func:`configure_livekit` when
+        the conversation has no audio at all.
+
+        Args:
+            report: LiveKit's ``SessionReport`` (duck-typed — the module never
+                imports it, so it stays importable without ``livekit-agents``).
+            thread_id: the conversation id, matching :func:`set_thread_id`.
         """
-        self._threads_awaiting_recording[str(thread_id)] = True
+        thread = str(thread_id)
+
+        started_at = getattr(report, "audio_recording_started_at", None)
+        audio_path = getattr(report, "audio_recording_path", None)
+        history = getattr(report, "chat_history", None)
+
+        status = "none"
+        data = None
+        if audio_path is not None:
+            # Read the file before taking the lock — it is the slow part, and it
+            # touches none of the shared state.
+            data, status = self._read_audio_file(audio_path)
+        messages = build_messages_from_chat_history(history) if history else []
+
+        # Everything this delivery contributes lands as one atomic unit, so a
+        # concurrent delivery can never release a root halfway through it.
+        with self._release_lock:
+            if isinstance(started_at, (int, float)):
+                self._recording_started_at_by_thread[thread] = float(started_at)
+            if data:
+                self._pending_audio_by_thread[thread] = {
+                    "name": getattr(audio_path, "name", "recording.ogg"),
+                    "data": data,
+                    "mime_type": self._audio_mime_type,
+                }
+            if messages:
+                self._chat_transcript_by_thread[thread] = messages
+            return self._finish_report(thread, status, audio_path)
+
+    def _finish_report(self, thread: str, status: str, audio_path: Any) -> None:
+        """Release for a session report, unless its audio is coming separately."""
+        if audio_path is None and self._await_recording:
+            # The report carried no recording, so LiveKit's own recorder was not
+            # the capture: the audio is arriving separately, from an egress
+            # upload handed to ``complete_recording``. Keep the root held for it
+            # — everything above is already stored, so that later call releases
+            # a trace with both the recording and this transcript. The timeout
+            # still bounds the wait, and ``await_recording=False`` says up front
+            # that no audio is coming.
+            return
+        self._finish_recording(thread, status)
 
     def complete_recording(
         self,
@@ -177,23 +295,48 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         *,
         name: str = "recording.ogg",
         mime_type: Optional[str] = None,
+        started_at: Optional[float] = None,
     ) -> None:
-        """Attach an egress recording and release the held root.
+        """Attach a recording supplied as bytes and release the held root.
 
-        ``data`` is the recording bytes (embedded as an attachment), or ``None``
-        to release without audio. ``thread_id`` must match :meth:`expect_recording`.
-        Safe to call before or after the session ends.
+        For LiveKit Egress, or any capture of your own. ``data`` is the
+        recording bytes, or ``None`` to release without audio. ``thread_id``
+        must match :func:`set_thread_id`. Safe to call before or after the
+        session ends.
+
+        ``started_at`` is when the recording's first sample was captured (epoch
+        seconds). Without it the trace audio player has to assume the recording
+        starts when the trace does, which it generally does not.
         """
-        if data:
-            self._pending_audio_by_thread[str(thread_id)] = {
-                "name": name,
-                "data": bytes(data),
-                "mime_type": mime_type or self._audio_mime_type,
-            }
-        self._threads_awaiting_recording.pop(str(thread_id), None)
-        trace_id = self._trace_by_thread.get(str(thread_id))
-        if trace_id is not None:
-            self._maybe_release(trace_id)
+        thread = str(thread_id)
+        with self._release_lock:
+            if isinstance(started_at, (int, float)):
+                self._recording_started_at_by_thread[thread] = float(started_at)
+            status = "none"
+            if data:
+                self._pending_audio_by_thread[thread] = {
+                    "name": name,
+                    "data": bytes(data),
+                    "mime_type": mime_type or self._audio_mime_type,
+                }
+                status = "attached"
+            self._finish_recording(thread, status)
+
+    def _finish_recording(self, thread: str, status: str) -> None:
+        """Stop awaiting this thread's recording and release its root."""
+        self._audio_status_by_thread[thread] = status
+        self._threads_awaiting_recording.pop(thread, None)
+        trace_id = self._trace_by_thread.get(thread)
+        if trace_id is None:
+            logger.warning(
+                "langsmith voice: nothing to attach a recording to for thread "
+                "%s — its trace was already exported, or this thread id never "
+                "matched one. Deliver the recording before the trace is "
+                "released, and check the id matches set_thread_id().",
+                thread,
+            )
+            return
+        self._maybe_release(trace_id)
 
     # -- dispatch -------------------------------------------------------------
 
@@ -404,6 +547,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             tspan.attributes["lk.user_transcript"] = transcript
             msg = build_user_message(transcript)
             tspan.set_messages(prompt=[msg])
+            # Also feed the span-derived rollup. That rollup is only read when
+            # no session report was supplied (see ``_render_conversation``), so
+            # this line does nothing on the report path and is the realtime
+            # user's only route into the root transcript on the egress path.
             self._append_transcript(
                 tspan.span.context.trace_id, msg, tspan.span.start_time
             )
@@ -449,34 +596,116 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """Export the deferred root once the session ended and audio is ready.
 
         Requires the root seen, the session ended, and no awaited recording.
-        ``force`` skips the last two gates — the last-resort path at
-        :meth:`shutdown` for a root that never completed.
+        While a recording is still awaited this arms the timeout that releases
+        the root without one. ``force`` skips both gates — the last-resort path
+        at :meth:`shutdown` for a root that never completed.
         """
-        tspan = self._deferred_root_by_trace.get(trace_id)
-        if tspan is None:
-            return
-        thread = self._thread_id_by_trace.get(trace_id)
-        if not force:
-            if trace_id not in self._ended_session_traces:
+        with self._release_lock:
+            tspan = self._deferred_root_by_trace.get(trace_id)
+            if tspan is None:
                 return
-            if thread is not None and thread in self._threads_awaiting_recording:
-                return  # still waiting for complete_recording()
+            thread = self._thread_id_by_trace.get(trace_id)
+            if not force:
+                if trace_id not in self._ended_session_traces:
+                    return
+                if thread is not None and thread in self._threads_awaiting_recording:
+                    self._schedule_release_timeout(trace_id)
+                    return  # still waiting for a recording
 
-        self._deferred_root_by_trace.pop(trace_id, None)
-        self._render_conversation(tspan)
-        self._attach_audio_recording(tspan)
+            self._cancel_release_timer(trace_id)
+            self._deferred_root_by_trace.pop(trace_id, None)
+            self._render_conversation(tspan, thread)
+            if thread is not None:
+                self._attach_pending_audio(tspan, thread)
+                self._stamp_recording_origin(tspan, thread)
+            self._export(tspan)
+            self._cleanup_trace(trace_id)
+
+    def _schedule_release_timeout(self, trace_id: int) -> None:
+        """Arm the one-shot timer that releases a root whose audio never came."""
+        if trace_id in self._release_timers or self._recording_timeout_seconds <= 0:
+            return
+        timer = threading.Timer(
+            self._recording_timeout_seconds, self._on_recording_timeout, (trace_id,)
+        )
+        timer.daemon = True
+        self._release_timers[trace_id] = timer
+        timer.start()
+
+    def _on_recording_timeout(self, trace_id: int) -> None:
+        """Give up waiting for a recording and export the root without one."""
+        with self._release_lock:
+            self._release_timers.pop(trace_id, None)
+            thread = self._thread_id_by_trace.get(trace_id)
+            if thread is not None:
+                if thread not in self._threads_awaiting_recording:
+                    return  # a recording landed just as the timer fired
+                logger.warning(
+                    "langsmith voice: no recording for thread %s after %.1fs; "
+                    "exporting the trace without audio. Call "
+                    "attach_session_report() or complete_recording() at session "
+                    "end, or pass await_recording=False if this session has no "
+                    "audio.",
+                    thread,
+                    self._recording_timeout_seconds,
+                )
+                self._audio_status_by_thread[thread] = "timeout"
+                self._threads_awaiting_recording.pop(thread, None)
+            self._maybe_release(trace_id)
+
+    def _cancel_release_timer(self, trace_id: int) -> None:
+        """Cancel a pending timeout (the recording arrived, or we're shutting down)."""
+        timer = self._release_timers.pop(trace_id, None)
+        if timer is not None:
+            timer.cancel()
+
+    def _stamp_recording_origin(self, tspan: TranslatedSpan, thread: str) -> None:
+        """Stamp where the recording sits on the trace's timeline, and why.
+
+        LiveKit's recorder starts inside ``session.start()`` — after room
+        connect and agent setup — so the recording's first sample is seconds
+        later than the root span's start. Without the offset the trace audio
+        player has to assume they coincide, and playback runs ahead of the
+        waterfall by that gap.
+        """
+        status = self._audio_status_by_thread.get(thread)
+        if status:
+            tspan.set_metadata("ls_audio_attach_status", status)
+        started_at = self._recording_started_at_by_thread.get(thread)
+        root_start_ns = tspan.span.start_time
+        if started_at is None or root_start_ns is None:
+            return
+        # Both values come from ``time.time()`` in the agent process and the
+        # root's start_time is from that same process and clock, so the
+        # difference holds even under wall-clock skew. Never turn this into a
+        # cross-host comparison.
+        root_start_s = root_start_ns / 1e9
+        tspan.set_metadata("ls_audio_recording_started_at", started_at)
+        tspan.set_metadata(
+            "ls_audio_recording_start_offset_ms",
+            round((started_at - root_start_s) * 1000),
+        )
+
+    def _render_conversation(
+        self, tspan: TranslatedSpan, thread: Optional[str] = None
+    ) -> bool:
+        """Set the conversation transcript as the root's input.
+
+        Prefers a session report's chat history — it is ordered by the messages'
+        own timestamps and carries the tool calls — and falls back to the
+        transcript assembled from spans when no report was supplied.
+        """
         if thread is not None:
-            self._attach_pending_audio(tspan, thread)
-        self._export(tspan)
-        self._cleanup_trace(trace_id)
-
-    def _render_conversation(self, tspan: TranslatedSpan) -> bool:
-        """Set the whole transcript (ordered by span start_time) as the root's input."""
+            messages = self._chat_transcript_by_thread.get(thread)
+            if messages:
+                tspan.set_messages(prompt=messages)
+                return True
         entries = self._transcript_by_trace.get(tspan.span.context.trace_id, [])
         if not entries:
             return False
-        messages = [msg for _, msg in sorted(entries, key=lambda e: e[0])]
-        tspan.set_messages(prompt=messages)
+        tspan.set_messages(
+            prompt=[msg for _, msg in sorted(entries, key=lambda e: e[0])]
+        )
         return True
 
     def _cleanup_trace(self, trace_id: int) -> None:
@@ -485,10 +714,14 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._transcript_by_trace.pop(trace_id, None)
         self._forget_thread_id(trace_id)
         self._ended_session_traces.pop(trace_id, None)
+        self._cancel_release_timer(trace_id)
         if thread is not None:
             self._trace_by_thread.pop(thread, None)
             self._threads_awaiting_recording.pop(thread, None)
             self._pending_audio_by_thread.pop(thread, None)
+            self._recording_started_at_by_thread.pop(thread, None)
+            self._chat_transcript_by_thread.pop(thread, None)
+            self._audio_status_by_thread.pop(thread, None)
             self._flush_user_speaking(thread)
 
     def shutdown(self) -> None:
@@ -497,6 +730,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         ``force_flush`` deliberately does not — a still-held root there is
         legitimately in progress, not a buffered export waiting to drain.
         """
+        for trace_id in list(self._release_timers):
+            self._cancel_release_timer(trace_id)
         for trace_id in list(self._deferred_root_by_trace):
             self._maybe_release(trace_id, force=True)
         for thread in list(self._deferred_user_speaking.keys()):
@@ -509,26 +744,45 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     # -- audio attachment -----------------------------------------------------
 
-    def _attach_audio_recording(self, tspan: TranslatedSpan) -> None:
-        """Embed audio from the local ``audio_path_provider`` file (dev)."""
-        if self.audio_path_provider is None:
-            return
-        audio_path = self.audio_path_provider()
-        if audio_path is None or not audio_path.exists():
-            return
+    def _read_audio_file(self, path: Any) -> tuple[Optional[bytes], str]:
+        """Read a recording from disk, size-checked *before* it is loaded.
+
+        Returns ``(bytes, "attached")`` or ``(None, reason)``. The size is
+        checked with ``stat()`` first so an oversize recording is never read
+        into memory. Callers inline the returned bytes — the path itself must
+        never reach the LangSmith client, which rejects filesystem-referencing
+        attachments unless ``dangerously_allow_filesystem=True``
+        (see ``_reject_filesystem_attachments`` / GHSA-f4xh-w4cj-qxq8).
+        """
         try:
-            audio_bytes = audio_path.read_bytes()
-        except Exception:  # pragma: no cover
-            return
-        self._attach_audio(
-            tspan,
-            name=audio_path.name,
-            data=audio_bytes,
-            mime_type=self._audio_mime_type,
-        )
+            size = path.stat().st_size
+        except Exception:
+            logger.warning("langsmith voice: no readable recording at %s.", path)
+            return None, "unreadable"
+        if (
+            self.audio_size_limit_bytes is not None
+            and size > self.audio_size_limit_bytes
+        ):
+            logger.warning(
+                "langsmith voice: recording at %s is %d bytes, over the "
+                "%d-byte limit; skipping the attachment.",
+                path,
+                size,
+                self.audio_size_limit_bytes,
+            )
+            return None, "too_large"
+        try:
+            return path.read_bytes(), "attached"
+        except Exception:
+            logger.warning(
+                "langsmith voice: failed reading the recording at %s.",
+                path,
+                exc_info=True,
+            )
+            return None, "unreadable"
 
     def _attach_pending_audio(self, tspan: TranslatedSpan, thread: str) -> None:
-        """Embed a recording supplied via :meth:`complete_recording` (egress)."""
+        """Embed the recording delivered for this conversation, if any."""
         pending = self._pending_audio_by_thread.pop(thread, None)
         if not pending or not pending.get("data"):
             return

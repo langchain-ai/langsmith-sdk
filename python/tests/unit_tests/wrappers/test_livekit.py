@@ -7,7 +7,12 @@ mocked and no framework install is needed.
 
 import base64
 import json
+import threading
+import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 from langsmith._internal.voice import set_thread_id
 from langsmith.integrations.livekit._helpers import (
@@ -476,56 +481,529 @@ class TestForceFlush:
         )
 
 
-class TestEgressRecording:
-    """expect_recording / complete_recording hold the root for late egress audio."""
+class _FakeChatHistory:
+    """Stands in for LiveKit's ``ChatContext``; only ``to_dict`` is read.
+
+    The keyword list mirrors a real ``ChatContext.to_dict`` — deliberately
+    *without* ``strip_markup``, which only exists on newer livekit-agents than
+    the floor. Passing an unsupported keyword must not cost us the transcript.
+    """
+
+    def __init__(self, items):
+        self._items = items
+
+    def to_dict(
+        self,
+        *,
+        exclude_image=True,
+        exclude_audio=True,
+        exclude_timestamp=True,
+        exclude_function_call=False,
+        exclude_metrics=False,
+        exclude_config_update=False,
+    ):
+        # The processor must ask for timestamps and keep function calls — the
+        # transcript is ordered by created_at and shows the tool calls.
+        assert exclude_timestamp is False
+        assert exclude_function_call is False
+        return {"items": self._items}
+
+
+class _NewerChatHistory(_FakeChatHistory):
+    """A newer ``ChatContext`` that also accepts ``strip_markup``."""
+
+    def __init__(self, items):
+        super().__init__(items)
+        self.strip_markup_seen = None
+
+    def to_dict(
+        self,
+        *,
+        exclude_image=True,
+        exclude_audio=True,
+        exclude_timestamp=True,
+        exclude_function_call=False,
+        exclude_metrics=False,
+        exclude_config_update=False,
+        strip_markup=False,
+    ):
+        self.strip_markup_seen = strip_markup
+        return super().to_dict(
+            exclude_image=exclude_image,
+            exclude_audio=exclude_audio,
+            exclude_timestamp=exclude_timestamp,
+            exclude_function_call=exclude_function_call,
+            exclude_metrics=exclude_metrics,
+            exclude_config_update=exclude_config_update,
+        )
+
+
+def _report(*, path=None, started_at=None, items=None):
+    """A duck-typed LiveKit ``SessionReport``."""
+    return SimpleNamespace(
+        audio_recording_path=path,
+        audio_recording_started_at=started_at,
+        chat_history=_FakeChatHistory(items or []),
+    )
+
+
+# One second in nanoseconds — root start times are OTel ns, origins are epoch s.
+_NS = 1_000_000_000
+_ROOT_START_NS = 1_700_000_000 * _NS
+
+
+class _RecordingHarness:
+    """Drives one conversation through the processor: start, spans, session end."""
 
     def teardown_method(self):
         set_thread_id(None)
 
-    def _start_conversation(self, proc, tid):
+    def _start_conversation(self, proc, tid=0xABC, start_time=_ROOT_START_NS):
         # The root's thread id comes from set_thread_id (captured at on_start),
         # exactly as in production; clearing it after simulates the detached end.
         set_thread_id("call-1")
-        proc.on_start(_make_span("job_entrypoint", parent=None, trace_id=tid))
-        set_thread_id(None)
-        proc.on_end(_make_span("job_entrypoint", parent=None, trace_id=tid))
-
-    def test_expect_holds_until_complete_with_audio(self):
-        proc = _processor()
-        tid = 0xABC
-        proc.expect_recording("call-1")
-        self._start_conversation(proc, tid)
-        proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
-        # Session ended but recording still awaited → root NOT exported.
-        assert not any(
-            c.args[0]._attributes.get("langsmith.root_span")
-            for c in proc.downstream.on_end.call_args_list
+        proc.on_start(
+            _make_span(
+                "job_entrypoint", parent=None, trace_id=tid, start_time=start_time
+            )
         )
+        set_thread_id(None)
+        proc.on_end(
+            _make_span(
+                "job_entrypoint", parent=None, trace_id=tid, start_time=start_time
+            )
+        )
+
+    def _end_session(self, proc, tid=0xABC):
+        proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
+
+    def _root(self, proc):
+        return next(
+            (
+                c.args[0]
+                for c in proc.downstream.on_end.call_args_list
+                if c.args[0]._attributes.get("langsmith.root_span")
+            ),
+            None,
+        )
+
+
+class TestEgressRecording(_RecordingHarness):
+    """complete_recording holds the root for a late egress recording."""
+
+    def test_holds_until_complete_with_audio(self):
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        # Session ended but recording still awaited → root NOT exported.
+        assert self._root(proc) is None
 
         proc.complete_recording("call-1", b"OggS-bytes", name="call.ogg")
 
-        root = next(
-            c.args[0]
-            for c in proc.downstream.on_end.call_args_list
-            if c.args[0]._attributes.get("langsmith.root_span")
-        )
+        root = self._root(proc)
         payload = json.loads(root._attributes["langsmith.attachments"])
         assert base64.b64decode(payload[0]["content"]) == b"OggS-bytes"
+        assert (
+            root._attributes["langsmith.metadata.ls_audio_attach_status"] == "attached"
+        )
 
     def test_complete_with_none_releases_without_audio(self):
         proc = _processor()
-        tid = 0xABC
-        proc.expect_recording("call-1")
-        self._start_conversation(proc, tid)
-        proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
+        self._start_conversation(proc)
+        self._end_session(proc)
         proc.complete_recording("call-1", None)
 
-        root = next(
-            c.args[0]
-            for c in proc.downstream.on_end.call_args_list
-            if c.args[0]._attributes.get("langsmith.root_span")
-        )
+        root = self._root(proc)
         assert "langsmith.attachments" not in root._attributes
+        assert root._attributes["langsmith.metadata.ls_audio_attach_status"] == "none"
+
+    def test_started_at_stamps_the_offset(self):
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        # Egress began 4.25s after the trace did.
+        proc.complete_recording(
+            "call-1", b"x", started_at=(_ROOT_START_NS / 1e9) + 4.25
+        )
+
+        md = self._root(proc)._attributes
+        assert md["langsmith.metadata.ls_audio_recording_start_offset_ms"] == 4250
+
+
+class TestSessionReport(_RecordingHarness):
+    """attach_session_report delivers audio, origin, and transcript in one call."""
+
+    def test_attaches_audio_and_offset(self, tmp_path):
+        audio = tmp_path / "audio.ogg"
+        audio.write_bytes(b"OggS-session")
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        assert self._root(proc) is None
+
+        proc.attach_session_report(
+            _report(path=audio, started_at=(_ROOT_START_NS / 1e9) + 2.8),
+            thread_id="call-1",
+        )
+
+        root = self._root(proc)
+        md = root._attributes
+        payload = json.loads(md["langsmith.attachments"])
+        assert base64.b64decode(payload[0]["content"]) == b"OggS-session"
+        assert payload[0]["name"] == "audio.ogg"
+        assert md["langsmith.metadata.ls_audio_recording_start_offset_ms"] == 2800
+        assert md["langsmith.metadata.ls_audio_recording_started_at"] == pytest.approx(
+            (_ROOT_START_NS / 1e9) + 2.8
+        )
+        assert md["langsmith.metadata.ls_audio_attach_status"] == "attached"
+
+    def test_offset_can_be_negative(self, tmp_path):
+        audio = tmp_path / "audio.ogg"
+        audio.write_bytes(b"x")
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        # A recording that predates the trace must not be clamped to zero.
+        proc.attach_session_report(
+            _report(path=audio, started_at=(_ROOT_START_NS / 1e9) - 1.5),
+            thread_id="call-1",
+        )
+
+        offset = self._root(proc)._attributes[
+            "langsmith.metadata.ls_audio_recording_start_offset_ms"
+        ]
+        assert offset == -1500
+
+    def test_absent_origin_stamps_neither_key(self, tmp_path):
+        audio = tmp_path / "audio.ogg"
+        audio.write_bytes(b"x")
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(
+            _report(path=audio, started_at=None), thread_id="call-1"
+        )
+
+        md = self._root(proc)._attributes
+        assert "langsmith.metadata.ls_audio_recording_started_at" not in md
+        assert "langsmith.metadata.ls_audio_recording_start_offset_ms" not in md
+        # The audio still attaches; only the alignment is unknown.
+        assert "langsmith.attachments" in md
+
+    def test_oversize_recording_is_never_read(self, tmp_path):
+        audio = tmp_path / "audio.ogg"
+        audio.write_bytes(b"x" * 500)
+        proc = _processor(audio_size_limit_bytes=100)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(_report(path=audio), thread_id="call-1")
+
+        md = self._root(proc)._attributes
+        assert "langsmith.attachments" not in md
+        assert md["langsmith.metadata.ls_audio_attach_status"] == "too_large"
+
+    def test_missing_file_reports_unreadable(self, tmp_path):
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(
+            _report(path=tmp_path / "gone.ogg"), thread_id="call-1"
+        )
+
+        md = self._root(proc)._attributes
+        assert "langsmith.attachments" not in md
+        assert md["langsmith.metadata.ls_audio_attach_status"] == "unreadable"
+
+
+class TestConcurrentDelivery(_RecordingHarness):
+    """Two deliveries racing must still export exactly one complete trace."""
+
+    def test_report_and_recording_arriving_together(self, tmp_path):
+        for attempt in range(40):
+            proc = _processor(recording_timeout_seconds=5.0)
+            self._start_conversation(proc, tid=0xABC + attempt)
+            self._end_session(proc, tid=0xABC + attempt)
+
+            report = _report(
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["Hello"],
+                        "created_at": 1.0,
+                    }
+                ]
+            )
+            start = threading.Barrier(2)
+
+            def deliver_report():
+                start.wait()
+                proc.attach_session_report(report, thread_id="call-1")
+
+            def deliver_audio():
+                start.wait()
+                proc.complete_recording("call-1", b"OggS-egress", started_at=1.0)
+
+            threads = [
+                threading.Thread(target=deliver_report),
+                threading.Thread(target=deliver_audio),
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+
+            roots = [
+                c.args[0]
+                for c in proc.downstream.on_end.call_args_list
+                if c.args[0]._attributes.get("langsmith.root_span")
+            ]
+            # Exactly one root, and it always carries the audio — whichever
+            # delivery lands second is the one that releases.
+            assert len(roots) == 1, f"attempt {attempt}: {len(roots)} roots"
+            assert "langsmith.attachments" in roots[0]._attributes, attempt
+
+    def test_two_audioless_reports_still_release_on_timeout(self):
+        """Both take the early return, so only the timeout can release."""
+        proc = _processor(recording_timeout_seconds=0.05)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+        proc.attach_session_report(_report(), thread_id="call-1")
+        assert self._root(proc) is None
+
+        deadline = time.monotonic() + 2.0
+        while self._root(proc) is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert self._root(proc) is not None
+
+
+class TestRecordingTimeout(_RecordingHarness):
+    """A recording that never arrives yields a trace without audio, not no trace."""
+
+    def test_timeout_releases_the_root(self):
+        proc = _processor(recording_timeout_seconds=0.05)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        assert self._root(proc) is None
+
+        deadline = time.monotonic() + 2.0
+        while self._root(proc) is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        root = self._root(proc)
+        assert root is not None
+        assert "langsmith.attachments" not in root._attributes
+        assert (
+            root._attributes["langsmith.metadata.ls_audio_attach_status"] == "timeout"
+        )
+
+    def test_await_disabled_releases_immediately(self):
+        proc = _processor(await_recording=False)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        # Nothing to wait for — the trace exports as soon as the session ends.
+        assert self._root(proc) is not None
+
+
+class TestChatHistoryTranscript(_RecordingHarness):
+    """The root transcript comes from the report's chat history when present."""
+
+    def _messages(self, root):
+        return json.loads(root._attributes["gen_ai.prompt"])["messages"]
+
+    def _audio(self, tmp_path):
+        """A recording on the report, so it releases the root on arrival."""
+        f = tmp_path / "audio.ogg"
+        f.write_bytes(b"OggS")
+        return f
+
+    def test_orders_by_created_at_and_drops_instructions(self, tmp_path):
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(
+            _report(
+                path=self._audio(tmp_path),
+                items=[
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": ["Hi there"],
+                        "created_at": 20.0,
+                    },
+                    {
+                        "type": "message",
+                        "role": "system",
+                        "content": ["You are a bot"],
+                        "created_at": 0.0,
+                    },
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["Hello"],
+                        "created_at": 10.0,
+                    },
+                ],
+            ),
+            thread_id="call-1",
+        )
+
+        messages = self._messages(self._root(proc))
+        assert messages == [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there"},
+        ]
+
+    def test_keeps_function_calls_and_outputs(self, tmp_path):
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(
+            _report(
+                path=self._audio(tmp_path),
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["Weather in Paris?"],
+                        "created_at": 1.0,
+                    },
+                    {
+                        "type": "function_call",
+                        "call_id": "c1",
+                        "name": "get_weather",
+                        "arguments": '{"city": "Paris"}',
+                        "created_at": 2.0,
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "c1",
+                        "name": "get_weather",
+                        "output": "18C",
+                        "is_error": False,
+                        "created_at": 3.0,
+                    },
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": ["It's 18 degrees."],
+                        "created_at": 4.0,
+                    },
+                ],
+            ),
+            thread_id="call-1",
+        )
+
+        messages = self._messages(self._root(proc))
+        assert [m["role"] for m in messages] == [
+            "user",
+            "assistant",
+            "tool",
+            "assistant",
+        ]
+        call = messages[1]["tool_calls"][0]
+        assert call["id"] == "c1"
+        assert call["function"]["name"] == "get_weather"
+        assert json.loads(call["function"]["arguments"]) == {"city": "Paris"}
+        assert messages[2] == {
+            "role": "tool",
+            "content": "18C",
+            "tool_call_id": "c1",
+            "name": "get_weather",
+        }
+
+    def test_uses_strip_markup_only_where_supported(self, tmp_path):
+        """Newer livekit-agents gets strip_markup; the floor version must not."""
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+        history = _NewerChatHistory(
+            [{"type": "message", "role": "user", "content": ["Hi"], "created_at": 1.0}]
+        )
+        report = SimpleNamespace(
+            audio_recording_path=self._audio(tmp_path),
+            audio_recording_started_at=None,
+            chat_history=history,
+        )
+        proc.attach_session_report(report, thread_id="call-1")
+
+        assert history.strip_markup_seen is True
+        assert self._messages(self._root(proc)) == [{"role": "user", "content": "Hi"}]
+
+    def test_report_without_audio_waits_for_egress(self):
+        """A report with no recording is the egress case: hold for the audio."""
+        proc = _processor()
+        self._start_conversation(proc)
+        self._end_session(proc)
+
+        # Transcript arrives first, from the report. No recording on it, so the
+        # root must NOT export yet — the egress audio is still coming.
+        proc.attach_session_report(
+            _report(
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["Hello"],
+                        "created_at": 1.0,
+                    }
+                ]
+            ),
+            thread_id="call-1",
+        )
+        assert self._root(proc) is None
+
+        proc.complete_recording(
+            "call-1", b"OggS-egress", started_at=(_ROOT_START_NS / 1e9) + 3.0
+        )
+
+        # One trace carrying BOTH the egress audio and the report's transcript.
+        root = self._root(proc)
+        md = root._attributes
+        payload = json.loads(md["langsmith.attachments"])
+        assert base64.b64decode(payload[0]["content"]) == b"OggS-egress"
+        assert md["langsmith.metadata.ls_audio_recording_start_offset_ms"] == 3000
+        assert self._messages(root) == [{"role": "user", "content": "Hello"}]
+
+    def test_report_without_audio_releases_when_not_awaiting(self):
+        """With await_recording=False there is no audio coming; do not stall."""
+        proc = _processor(await_recording=False)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(
+            _report(
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["Hello"],
+                        "created_at": 1.0,
+                    }
+                ]
+            ),
+            thread_id="call-1",
+        )
+        # Already exported at session end; the transcript still lands on it.
+        assert self._root(proc) is not None
+
+    def test_egress_path_falls_back_to_span_rollup(self):
+        proc = _processor()
+        self._start_conversation(proc)
+        proc.on_end(
+            _make_span(
+                "agent_turn",
+                {"lk.user_input": "Hello", "lk.response.text": "Hi there"},
+                trace_id=0xABC,
+                span_id=0x2,
+            )
+        )
+        self._end_session(proc)
+        # No report — the transcript still comes from the conversation's spans.
+        proc.complete_recording("call-1", b"x")
+
+        messages = self._messages(self._root(proc))
+        assert [m["content"] for m in messages] == ["Hello", "Hi there"]
 
 
 class TestStateTTL:

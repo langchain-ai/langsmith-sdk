@@ -7,10 +7,14 @@ span detection, and the tiny chat-message builders the handlers reuse.
 
 from __future__ import annotations
 
+import inspect
 import json
+import logging
 from typing import Any, Optional
 
 from langsmith._internal.voice._helpers import try_parse_json_object
+
+logger = logging.getLogger(__name__)
 
 # The instrumentation scope LiveKit's tracer is created under
 # (``get_tracer("livekit-agents")``). Every span LiveKit emits carries it, so it
@@ -220,3 +224,103 @@ def build_message_from_event(role: str, event: Any) -> dict:
     if tool_calls:
         msg["tool_calls"] = tool_calls
     return msg
+
+
+# ``system``/``developer`` items carry the agent's instructions, not conversation.
+_TRANSCRIPT_SKIP_ROLES = {"system", "developer"}
+
+
+def _content_to_text(content: Any) -> str:
+    """Flatten a ``ChatMessage.content`` list to text, dropping non-text parts."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, (list, tuple)):
+        return ""
+    return "\n".join(part for part in content if isinstance(part, str))
+
+
+def build_messages_from_chat_history(chat_history: Any) -> list[dict]:
+    """Convert a LiveKit ``ChatContext`` into LangSmith chat messages.
+
+    Keeps the conversation in ``created_at`` order — turns plus tool calls and
+    their outputs — and drops the instructions and items with no message form.
+    Returns ``[]`` for anything it can't read, so a malformed history degrades to
+    the span-derived transcript rather than failing the export.
+    """
+    # ``to_dict`` has gained keywords over time (``strip_markup`` is newer than
+    # our floor), so pass only the ones this version actually accepts rather
+    # than risking a TypeError that would cost us the whole transcript.
+    wanted = {
+        "exclude_timestamp": False,  # we need created_at; the default drops it
+        "exclude_function_call": False,  # tool calls belong in the transcript
+        "exclude_metrics": True,
+        "exclude_config_update": True,
+        "strip_markup": True,
+    }
+    try:
+        accepted = inspect.signature(chat_history.to_dict).parameters
+        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in accepted.values()):
+            kwargs = dict(wanted)  # **kwargs absorbs whatever it doesn't name
+        else:
+            kwargs = {k: v for k, v in wanted.items() if k in accepted}
+    except (TypeError, ValueError):  # pragma: no cover - exotic to_dict
+        kwargs = {}
+
+    try:
+        payload = chat_history.to_dict(**kwargs)
+    except Exception:
+        logger.warning(
+            "langsmith voice: could not read the session report's chat history; "
+            "falling back to the transcript built from spans.",
+            exc_info=True,
+        )
+        return []
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        logger.warning(
+            "langsmith voice: session report chat history had no 'items'; "
+            "falling back to the transcript built from spans."
+        )
+        return []
+
+    ordered = sorted(items, key=lambda i: i.get("created_at") or 0.0)
+    messages: list[dict] = []
+    for item in ordered:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("type")
+        if kind == "message":
+            role = item.get("role")
+            if role in _TRANSCRIPT_SKIP_ROLES:
+                continue
+            text = _content_to_text(item.get("content"))
+            if text:
+                messages.append({"role": str(role or "user"), "content": text})
+        elif kind == "function_call":
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": str(item.get("call_id") or ""),
+                            "type": "function",
+                            "function": {
+                                "name": str(item.get("name") or ""),
+                                "arguments": str(item.get("arguments") or ""),
+                            },
+                        }
+                    ],
+                }
+            )
+        elif kind == "function_call_output":
+            messages.append(
+                build_tool_message(
+                    str(item.get("output") or ""),
+                    tool_call_id=item.get("call_id"),
+                    name=item.get("name"),
+                )
+            )
+        # agent_handoff has no message equivalent; config updates are excluded.
+    return messages

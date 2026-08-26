@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal.voice import set_thread_id
 
-from .processor import LiveKitLangSmithSpanProcessor
+from .processor import (
+    DEFAULT_RECORDING_TIMEOUT_SECONDS,
+    LiveKitLangSmithSpanProcessor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +25,11 @@ __all__ = [
 @warn_beta
 def configure_livekit(
     *,
-    audio_path_provider: Optional[Callable[[], Optional[Path]]] = None,
     api_key: Optional[str] = None,
     project: Optional[str] = None,
     endpoint: Optional[str] = None,
+    await_recording: bool = True,
+    recording_timeout_seconds: float = DEFAULT_RECORDING_TIMEOUT_SECONDS,
     **kwargs: Any,
 ) -> Optional[LiveKitLangSmithSpanProcessor]:
     """Enable LangSmith tracing for a LiveKit Agents worker.
@@ -53,13 +56,36 @@ def configure_livekit(
     processor: the user transcript arrives as a session event rather than on a
     span, so without it the trace shows only the agent's turns.
 
+    Each conversation's root span is held open until its recording arrives, so
+    the recording can be attached and its time origin stamped on the trace.
+    Deliver it from an ``on_session_end`` callback::
+
+        processor = configure_livekit()
+
+
+        async def on_session_end(ctx: JobContext) -> None:
+            processor.attach_session_report(
+                ctx.make_session_report(), thread_id=ctx.room.name
+            )
+
+
+        server = AgentServer()
+
+
+        @server.rtc_session(on_session_end=on_session_end)
+        async def entrypoint(ctx: JobContext) -> None: ...
+
+    With LiveKit Egress (or your own capture), call
+    :meth:`LiveKitLangSmithSpanProcessor.complete_recording` with the bytes and
+    the recording's ``started_at`` instead.
+
     Args:
-        audio_path_provider: zero-arg callable returning a local recording path
-            whose bytes are embedded in the root span (console/dev only). For
-            production, attach a LiveKit Egress recording via the returned
-            processor's ``expect_recording`` / ``complete_recording`` methods.
         api_key / project / endpoint: LangSmith exporter config; default to the
             standard ``LANGSMITH_*`` resolution.
+        await_recording: hold each root span until a recording is delivered.
+            Pass ``False`` when tracing a session with no audio.
+        recording_timeout_seconds: how long that hold lasts before the trace is
+            exported without audio.
 
     Returns:
         The processor, or ``None`` if LiveKit / OpenTelemetry aren't installed.
@@ -74,10 +100,11 @@ def configure_livekit(
         return None
 
     processor = LiveKitLangSmithSpanProcessor(
-        audio_path_provider=audio_path_provider,
         api_key=api_key,
         project=project,
         endpoint=endpoint,
+        await_recording=await_recording,
+        recording_timeout_seconds=recording_timeout_seconds,
         **kwargs,
     )
     provider = TracerProvider()
