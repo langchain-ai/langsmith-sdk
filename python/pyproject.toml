@@ -178,8 +178,9 @@ dev = [
     "pytest-timeout>=2.3.1",
 ]
 
-# Benchmarking dependencies (`make benchmark-codspeed`). Kept out of `dev` so
-# it's only installed by the bench workflow / when explicitly requested.
+# Benchmarking dependencies (`make benchmark-codspeed`, `make benchmark-datadog`).
+# Kept out of `dev` so it's only installed by the bench workflows / when
+# explicitly requested.
 bench = [
     "pytest-benchmark>=5.1.0",
     "pytest-codspeed>=4.3.0",  # 4.3.0+ adds the memory instrument

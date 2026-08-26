@@ -1,0 +1,77 @@
+name: py-bench-datadog
+
+on:
+  # The setup files are listed too, so a change to the target, the bench
+  # dependencies or this workflow is exercised by the PR that makes it.
+  pull_request:
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/py-bench-datadog.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/py-bench-datadog.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    # Fork PRs would only burn a runner: PR runs report nothing (see below).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.11
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --group bench
+
+      # The Datadog installer runs `python -m venv` and injects the resulting
+      # ddtrace via PYTHONPATH, so `python` must be the same interpreter the
+      # benchmarks run under — a CPython minor mismatch fails to import
+      # ddtrace's native extension.
+      - name: Put the project venv on PATH for the Datadog installer
+        if: github.event_name != 'pull_request'
+        run: echo "$GITHUB_WORKSPACE/python/.venv/bin" >> "$GITHUB_PATH"
+
+      # Must be the step right before the benchmarks: earlier steps (checkout,
+      # uv sync) would wipe out what it installs.
+      #
+      # Skipped on pull_request: this action exports DD_API_KEY into the job
+      # environment, and everything after it is PR-controlled code. Datadog
+      # therefore records main-branch history only.
+      - name: Configure Datadog Test Optimization
+        if: github.event_name != 'pull_request'
+        uses: datadog/test-visibility-github-action@d6d648d87563e713b3d396bb3bfebb5e3cc93707 # v3.0.0
+        with:
+          languages: python
+          api_key: ${{ secrets.DD_API_KEY }}
+          # Our org is on us5, not US1. Leaving this at the action's
+          # `datadoghq.com` default makes every upload 403.
+          site: us5.datadoghq.com
+          service: langsmith-sdk-python
+
+      # PYTEST_ADDOPTS=--ddtrace comes from the step above; the make target is
+      # otherwise identical to a local run.
+      - name: Run benchmarks
+        run: make benchmark-datadog
