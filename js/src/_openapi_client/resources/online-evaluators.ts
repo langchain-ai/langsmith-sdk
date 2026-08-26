@@ -121,10 +121,14 @@ export interface BulkDeleteEvaluatorsResponse {
 export interface CreateOnlineCodeEvaluatorRequest {
   code?: string;
 
+  dependencies?: string;
+
   /**
    * Default: "python"
    */
   language?: string;
+
+  workspace_secrets_keys?: Array<string>;
 }
 
 export interface CreateOnlineEvaluatorRequest {
@@ -165,12 +169,20 @@ export interface GetOnlineEvaluatorSpendResponse {
 export interface OnlineCodeEvaluator {
   code?: string;
 
+  dependencies?: string;
+
+  evaluator_build_error?: string;
+
+  evaluator_build_status?: 'ENQUEUED' | 'BUILDING' | 'READY' | 'FAILED';
+
   evaluator_id?: string;
 
   /**
    * Default: "python"
    */
   language?: string;
+
+  workspace_secrets_keys?: Array<string>;
 }
 
 export interface OnlineEvaluator {
