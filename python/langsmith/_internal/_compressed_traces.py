@@ -49,12 +49,23 @@ class CompressedTraces:
         self.lock = threading.Lock()
         self.uncompressed_size: int = 0
         self._context: list[str] = []
+        # Frame's destinations. Sent verbatim to each, so all ops in one frame
+        # must match. Set once, kept across resets.
+        self.destinations: Optional[frozenset] = None
 
         self.compressor_writer = ZstdCompressor(
             level=compression_level, threads=compression_threads
         ).stream_writer(self.buffer, closefd=False)
 
+    def accepts(self, destinations: frozenset) -> bool:
+        """Report whether an op for `destinations` may join this frame.
+
+        Hold self.lock; commit and write in the same hold.
+        """
+        return self.destinations in (None, destinations)
+
     def reset(self) -> None:
+        # destinations survives: a new frame inherits it, so ownership is decided once.
         self.buffer = io.BytesIO()
         self.trace_count = 0
         self.uncompressed_size = 0

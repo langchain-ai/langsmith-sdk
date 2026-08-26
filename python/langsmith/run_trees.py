@@ -11,7 +11,7 @@ import threading
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, NamedTuple, Optional, Union, cast
+from typing import Any, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, PrivateAttr, model_validator
@@ -22,7 +22,14 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
-from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.client import (
+    ID_TYPE,
+    RUN_TYPE_T,
+    Client,
+    ReplicaAuth,
+    _dumps_json,
+    _ensure_uuid,
+)
 from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
@@ -1418,15 +1425,6 @@ def _create_current_dotted_order(
     st = start_time or datetime.now(timezone.utc)
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
-
-
-class ReplicaAuth(NamedTuple):
-    api_url: str | None
-    api_key: str | None
-    service_key: str | None
-    tenant_id: str | None
-    authorization: str | None
-    cookie: str | None
 
 
 def _extract_replica_auth(
