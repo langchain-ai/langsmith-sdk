@@ -483,6 +483,7 @@ interface feedback_source {
 interface FeedbackCreate {
   id: string;
   run_id: string | null;
+  trace_id?: string;
   key: string;
   score?: ScoreType;
   value?: ValueType;
@@ -563,6 +564,8 @@ export type CreateFeedbackOptions = {
   feedbackConfig?: FeedbackConfig;
   sourceRunId?: string;
   feedbackId?: string;
+  /** The trace the run belongs to. Omit for a root run. */
+  traceId?: string;
   comparativeExperimentId?: string;
   /**
    * The run's start time, ISO string or epoch ms. Better performance if provided.
@@ -2013,7 +2016,14 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private _filterForSampling(runs: CreateRunParams[] | UpdateRunParams[]) {
-    return runs.filter((run) => this._shouldSample(run.trace_id ?? run.id));
+    // updateRun() may omit trace_id; dotted order's first segment is the root.
+    return runs.filter((run) =>
+      this._shouldSample(
+        run.trace_id ??
+          run.dotted_order?.split(".", 1)[0].split("Z")[1] ??
+          run.id,
+      ),
+    );
   }
 
   private async _getBatchSizeLimitBytes(): Promise<number> {
@@ -5474,6 +5484,7 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackId,
       feedbackConfig,
       projectId,
+      traceId,
       comparativeExperimentId,
       sessionId,
       startTime,
@@ -5510,6 +5521,7 @@ export class Client implements LangSmithTracingClientInterface {
     const feedback: FeedbackCreate = {
       id: feedbackId ?? uuid.v7(),
       run_id: runId,
+      trace_id: traceId,
       key,
       score: _formatFeedbackScore(score),
       value,
@@ -5522,7 +5534,8 @@ export class Client implements LangSmithTracingClientInterface {
       start_time: startTime,
       extend_trace_retention: extendTraceRetention,
     };
-    if (runId !== null && !this._shouldSample(runId)) {
+    const samplingId = traceId ?? runId;
+    if (samplingId !== null && !this._shouldSample(samplingId)) {
       return feedback as Feedback;
     }
     const body = JSON.stringify(feedback);
@@ -5829,6 +5842,8 @@ export class Client implements LangSmithTracingClientInterface {
           feedbackSourceType: "model",
           sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
+          // A targetRunId may name a run in another trace.
+          traceId: runId_ === run?.id ? run?.trace_id : undefined,
         }),
       );
     }

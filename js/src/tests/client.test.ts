@@ -178,6 +178,86 @@ describe("Client", () => {
       );
     });
 
+    it("passes the run's trace ID through evaluation feedback", async () => {
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+      });
+      const createFeedback = jest
+        .spyOn(client, "createFeedback")
+        .mockResolvedValue({} as any);
+      const run = {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        trace_id: "550e8400-e29b-41d4-a716-4466554400ff",
+      } as any;
+
+      // Scoring the run itself: its trace is known, so it is forwarded.
+      await client.logEvaluationFeedback({ key: "quality", score: 1 }, run);
+      expect(createFeedback).toHaveBeenLastCalledWith(
+        run.id,
+        "quality",
+        expect.objectContaining({ traceId: run.trace_id }),
+      );
+
+      // targetRunId names a different run, whose trace we cannot know from
+      // `run`. Sampling must fall back to the run id rather than guess.
+      await client.logEvaluationFeedback(
+        {
+          key: "quality",
+          score: 1,
+          targetRunId: "550e8400-e29b-41d4-a716-446655440099",
+        },
+        run,
+      );
+      expect(createFeedback).toHaveBeenLastCalledWith(
+        "550e8400-e29b-41d4-a716-446655440099",
+        "quality",
+        expect.objectContaining({ traceId: undefined }),
+      );
+    });
+
+    it("samples feedback by trace ID, not run ID", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+        tracingSamplingRate: 0.5,
+      });
+      const sessionId = "550e8400-e29b-41d4-a716-446655440001";
+      // A child run whose own id would be filtered out on its own.
+      const childId = "00000000-0000-0000-0000-000000000004";
+
+      // Sampled-in trace: the child's feedback goes out with it.
+      await client.createFeedback(childId, "Foo", {
+        score: 1,
+        sessionId,
+        traceId: "00000000-0000-0000-0000-000000000015",
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual(
+        expect.objectContaining({
+          run_id: childId,
+          trace_id: "00000000-0000-0000-0000-000000000015",
+        }),
+      );
+
+      // Filtered-out trace: nothing further is sent.
+      await client.createFeedback(childId, "Foo", {
+        score: 0,
+        sessionId,
+        traceId: "00000000-0000-0000-0000-000000000004",
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
     const infoClient = (smithdbOnly: boolean) => {
       const instance_flags = smithdbOnly
         ? { ch_query_enabled: false, sdb_query_enabled: true }
@@ -1227,6 +1307,46 @@ describe("Client", () => {
           description: undefined,
         },
       );
+    });
+  });
+
+  describe("update sampling", () => {
+    // A child whose own id would be filtered out if hashed on its own.
+    const childId = "00000000-0000-0000-0000-000000000004";
+    const sampledRoot = "00000000-0000-0000-0000-000000000015";
+    const filteredRoot = "00000000-0000-0000-0000-000000000004";
+    const dotted = (root: string) =>
+      `20240101T000000000000Z${root}.20240101T000000000001Z${childId}`;
+
+    const updateWith = (dottedOrder: string) => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        tracingSamplingRate: 0.5,
+      });
+      const filtered = (client as any)._filterForSampling([
+        { id: childId, dotted_order: dottedOrder, outputs: { a: 1 } },
+      ]);
+      return filtered.length;
+    };
+
+    it("recovers the trace from dotted_order when trace_id is absent", () => {
+      // Root sampled in -> the child's patch goes out with it.
+      expect(updateWith(dotted(sampledRoot))).toBe(1);
+      // Root filtered out -> no orphan patch.
+      expect(updateWith(dotted(filteredRoot))).toBe(0);
+    });
+
+    it("still falls back to the run id with neither trace_id nor dotted order", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        tracingSamplingRate: 0.5,
+      });
+      expect(
+        (client as any)._filterForSampling([{ id: sampledRoot }]),
+      ).toHaveLength(1);
+      expect(
+        (client as any)._filterForSampling([{ id: filteredRoot }]),
+      ).toHaveLength(0);
     });
   });
 

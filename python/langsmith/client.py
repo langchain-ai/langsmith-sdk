@@ -2498,11 +2498,18 @@ class Client:
                     return getattr(run, key)
                 return getattr(run, key, default)
 
-        return [
-            run
-            for run in runs
-            if self._should_sample(_val(run, "trace_id", None) or _val(run, "id", None))
-        ]
+        def _sampling_key(run: Any) -> Any:
+            trace_id = _val(run, "trace_id", None)
+            if trace_id is not None:
+                return trace_id
+            # update_run() may omit trace_id; dotted order's first segment
+            # is the root.
+            dotted_order = _val(run, "dotted_order", None)
+            if dotted_order and "Z" in dotted_order:
+                return dotted_order.split(".", 1)[0].split("Z", 1)[1]
+            return _val(run, "id", None)
+
+        return [run for run in runs if self._should_sample(_sampling_key(run))]
 
     @property
     def tracing_mode(self) -> TracingMode:
@@ -3697,6 +3704,9 @@ class Client:
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
+
+        Sampling keys on the run's trace: pass `trace_id` or `dotted_order` when
+        updating a child run, or its own ID is hashed and may disagree.
 
         Args:
             run_id (Union[UUID, str]): The ID of the run to update.
@@ -8047,7 +8057,12 @@ class Client:
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id if run is None else None,
                 extra=res.extra,
-                trace_id=getattr(run, "trace_id", None) if run else None,
+                # A target_run_id may name a run in another trace.
+                trace_id=(
+                    getattr(run, "trace_id", None)
+                    if run is not None and run_id_ == run.id
+                    else None
+                ),
                 session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
@@ -8348,7 +8363,8 @@ class Client:
                 extend_trace_retention=extend_trace_retention,
             )
 
-            if feedback.run_id is not None and not self._should_sample(feedback.run_id):
+            sampling_id = feedback.trace_id or feedback.run_id
+            if sampling_id is not None and not self._should_sample(sampling_id):
                 return ls_schemas.Feedback(**feedback.model_dump())
 
             use_multipart = not self._multipart_disabled and (

@@ -3007,6 +3007,88 @@ def test_feedback_sampling_follows_run_id():
         mock_request.assert_not_called()
 
 
+def test_evaluation_feedback_forwards_trace_id_only_for_its_own_run():
+    client = Client(api_key="test-api-key")
+    run = ls_schemas.Run(
+        id=uuid.uuid4(),
+        trace_id=uuid.uuid4(),
+        name="target",
+        run_type="chain",
+        start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with patch.object(Client, "create_feedback") as mock_create:
+        # Scoring the run itself: its trace is known, so it is forwarded.
+        client._log_evaluation_feedback({"key": "quality", "score": 1}, run=run)
+        assert mock_create.call_args.kwargs["trace_id"] == run.trace_id
+
+    with patch.object(Client, "create_feedback") as mock_create:
+        # target_run_id names a different run, whose trace we cannot know from
+        # `run`. Sampling must fall back to the run id rather than guess.
+        other_id = uuid.uuid4()
+        client._log_evaluation_feedback(
+            {"key": "quality", "score": 1, "target_run_id": other_id}, run=run
+        )
+        assert mock_create.call_args.kwargs["run_id"] == other_id
+        assert mock_create.call_args.kwargs["trace_id"] is None
+
+
+def test_update_sampling_recovers_trace_from_dotted_order():
+    client = Client(api_key="test-api-key", tracing_sampling_rate=0.5)
+    client._info = ls_schemas.LangSmithInfo()
+    # A child whose own id would be filtered out if hashed on its own.
+    child_id = FILTERED_RUN_ID
+
+    def _dotted(root: uuid.UUID) -> str:
+        return f"20240101T000000000000Z{root}.20240101T000000000001Z{child_id}"
+
+    # Root sampled in -> the child's patch goes out with it.
+    with patch.object(Client, "request_with_retries") as mock_request:
+        client.update_run(
+            child_id,
+            trace_id=None,
+            dotted_order=_dotted(SAMPLED_RUN_ID),
+            outputs={"a": 1},
+        )
+        mock_request.assert_called_once()
+
+    # Root filtered out -> no orphan patch.
+    with patch.object(Client, "request_with_retries") as mock_request:
+        client.update_run(
+            child_id,
+            trace_id=None,
+            dotted_order=_dotted(FILTERED_RUN_ID),
+            outputs={"a": 1},
+        )
+        mock_request.assert_not_called()
+
+
+def test_feedback_sampling_follows_trace_id_not_run_id():
+    client = Client(api_key="test-api-key", tracing_sampling_rate=0.5)
+    client._info = ls_schemas.LangSmithInfo()
+    child_id = uuid.uuid4()
+
+    # The child's own id is irrelevant: its trace was sampled in.
+    with patch.object(Client, "request_with_retries") as mock_request:
+        client.create_feedback(
+            run_id=child_id,
+            trace_id=SAMPLED_RUN_ID,
+            key="correctness",
+            score=1,
+        )
+        mock_request.assert_called_once()
+
+    # Same child, filtered trace -> nothing sent.
+    with patch.object(Client, "request_with_retries") as mock_request:
+        client.create_feedback(
+            run_id=child_id,
+            trace_id=FILTERED_RUN_ID,
+            key="correctness",
+            score=0,
+        )
+        mock_request.assert_not_called()
+
+
 @pytest.mark.parametrize("method", ["batch_ingest_runs", "multipart_ingest"])
 def test_sampling_before_transform_in_batch_and_multipart(method: str):
     """Verify that _run_transform is only called for runs that survive sampling."""
