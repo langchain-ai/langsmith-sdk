@@ -659,3 +659,66 @@ def test_replicas_on_different_clients_are_not_grouped():
             ]
         )
     assert len(count) == 2
+
+
+# --- the non-batch path (no compression, no queue) -----------------------------
+
+
+def _non_batch_client():
+    client = Client(
+        api_url="https://own",
+        api_key="own-key",
+        session=MagicMock(),
+        auto_batch_tracing=False,
+    )
+    assert client.tracing_queue is None and client.compressed_traces is None
+    return client
+
+
+def test_non_batch_writes_reach_the_replica_destination():
+    client = _non_batch_client()
+    sent: list = []
+    with patch.object(
+        Client,
+        "request_with_retries",
+        lambda _s, _m, url, **kw: sent.append(
+            (url, kw["request_kwargs"]["headers"].get("x-api-key"))
+        ),
+    ):
+        run = RunTree(
+            name="r",
+            run_type="chain",
+            inputs={"a": 1},
+            ls_client=client,
+            project_name="proj",
+            replicas=[_replica("https://b", "kb")],
+        )
+        run.post()
+        run.end(outputs={"b": 2})
+        run.patch()
+    assert [key for _, key in sent] == ["kb", "kb"]
+    assert all(url.startswith("https://b/") for url, _ in sent), sent
+
+
+def test_non_batch_writes_reach_every_destination_of_a_group():
+    client = _non_batch_client()
+    sent: list = []
+    with patch.object(
+        Client,
+        "request_with_retries",
+        lambda _s, _m, url, **kw: sent.append(
+            (url, kw["request_kwargs"]["headers"].get("x-api-key"))
+        ),
+    ):
+        RunTree(
+            name="r",
+            run_type="chain",
+            inputs={"a": 1},
+            ls_client=client,
+            project_name="proj",
+            replicas=[_replica("https://a", "ka"), _replica("https://b", "kb")],
+        ).post()
+    assert sorted(sent) == [
+        ("https://a/runs", "ka"),
+        ("https://b/runs", "kb"),
+    ]

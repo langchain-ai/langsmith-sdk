@@ -2781,21 +2781,21 @@ class Client:
         cookie: Optional[str] = None,
         _replica_auths: Optional[Sequence[ReplicaAuth]] = None,
     ) -> None:
+        auths = _replica_auths or [
+            ReplicaAuth(
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
+        ]
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            auths = _replica_auths or [
-                ReplicaAuth(
-                    api_url=api_url,
-                    api_key=api_key,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
-            ]
             destinations = (
                 self._resolve_destinations(*auths)
                 if self.compressed_traces is not None
@@ -2838,25 +2838,11 @@ class Client:
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run_non_batch(
-                    run_create,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
+                for auth in auths:
+                    self._create_run_non_batch(run_create, **auth._asdict())
         else:
-            self._create_run_non_batch(
-                run_create,
-                api_key=api_key,
-                api_url=api_url,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
+            for auth in auths:
+                self._create_run_non_batch(run_create, **auth._asdict())
 
     def _create_run_non_batch(
         self,
@@ -3967,6 +3953,16 @@ class Client:
         cookie: Optional[str] = None,
         _replica_auths: Optional[Sequence[ReplicaAuth]] = None,
     ):
+        auths = _replica_auths or [
+            ReplicaAuth(
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
+        ]
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
@@ -3977,16 +3973,6 @@ class Client:
             self._pyo3_client.update_run(run_update)
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=run_update)
-            auths = _replica_auths or [
-                ReplicaAuth(
-                    api_url=api_url,
-                    api_key=api_key,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
-            ]
             destinations = (
                 self._resolve_destinations(*auths)
                 if self.compressed_traces is not None
@@ -4023,15 +4009,8 @@ class Client:
                 )
                 self._enqueue_op(run_update["dotted_order"], serialized_op, auths)
         else:
-            self._update_run_non_batch(
-                run_update,
-                api_key=api_key,
-                api_url=api_url,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
+            for auth in auths:
+                self._update_run_non_batch(run_update, **auth._asdict())
 
     def _update_run_non_batch(
         self,
