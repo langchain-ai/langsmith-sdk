@@ -34,7 +34,11 @@ jobs:
     name: "Python Benchmarks (${{ matrix.mode }})"
     # Same-repo PRs only: forks would pollute the baseline and reach the self-hosted runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-    runs-on: ${{ matrix.runner }}
+    # CodSpeed's bare-metal ARM64 runners, in the org's `oss-runners` group.
+    # Every instrument runs here: GitHub swaps the CPU model between hosted
+    # runs (Intel Xeon to AMD EPYC), which moves simulated cache behaviour and
+    # so the cycle counts, and shows up as phantom regressions.
+    runs-on: codspeed-macro
     # CPU simulation is far slower than a bare run, so the job timeout is what
     # bounds a hung benchmark (see --timeout=0 below).
     timeout-minutes: 30
@@ -44,20 +48,10 @@ jobs:
       # runner hung installing Valgrind for simulation, memory never ran at all.
       fail-fast: false
       matrix:
-        include:
-          # Models the CPU rather than timing it, so shared runners are fine.
-          - mode: simulation
-            runner: ubuntu-latest
-          # Heap allocations; also instrument-based, so shared runners are fine.
-          - mode: memory
-            runner: ubuntu-latest
-          # Real elapsed time, including syscalls, I/O and thread parallelism,
-          # which matters for the create_*_run_trees cases (they drive tracing
-          # threads). Needs CodSpeed's bare-metal ARM64 runners to be low-noise;
-          # they are registered into the org's `oss-runners` group, which
-          # langsmith-sdk has access to.
-          - mode: walltime
-            runner: codspeed-macro
+        # simulation models the CPU, memory tracks heap allocations, and
+        # walltime measures real elapsed time - the last of which matters for
+        # the create_*_run_trees cases, since they drive tracing threads.
+        mode: [simulation, memory, walltime]
     permissions:
       contents: read # required for actions/checkout
       id-token: write # required for OIDC authentication with CodSpeed
@@ -67,12 +61,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # No cache-suffix needed for the ARM64 runner: setup-uv already embeds the
-      # arch in its cache key, so x86 and ARM64 entries cannot collide.
+      # 3.12 is the floor for flame graphs: pytest-codspeed reads CPython's
+      # PY_HAVE_PERF_TRAMPOLINE, which does not exist before then, and without
+      # it the run logs "callgraph: not supported" and the profiling pane is
+      # empty. No cache-suffix needed - setup-uv embeds the arch in its key.
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: 3.11
+          python-version: "3.12"
           enable-cache: true
 
       - name: Install dependencies
