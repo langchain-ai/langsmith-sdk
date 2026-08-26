@@ -10,6 +10,7 @@ from langsmith.sandbox import (
     ResourceStatus,
     ServiceURL,
     Snapshot,
+    SnapshotName,
 )
 
 
@@ -83,6 +84,54 @@ _SAMPLE_SERVICE_URL_DATA = {
     "token": "jwt-token-value",
     "expires_at": "2026-04-01T12:10:00Z",
 }
+
+
+class TestSnapshotTags:
+    """Tags are the mutable pointers published under a snapshot's name."""
+
+    def test_from_dict_reads_tags(self):
+        snapshot = Snapshot.from_dict(
+            {
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 1,
+                "tags": ["latest", "v2"],
+            }
+        )
+        assert snapshot.tags == ["latest", "v2"]
+
+    def test_a_missing_tags_key_means_dangling(self):
+        """The server omits the key entirely rather than sending an empty list."""
+        snapshot = Snapshot.from_dict(
+            {
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 1,
+            }
+        )
+        assert snapshot.tags == []
+
+    def test_snapshot_name_lists_each_tags_target(self):
+        result = SnapshotName.from_dict(
+            {
+                "name": "my-env",
+                "tags": [
+                    {"tag": "latest", "snapshot_id": "snap-2"},
+                    {"tag": "v1", "snapshot_id": "snap-1"},
+                ],
+            }
+        )
+        assert result.name == "my-env"
+        assert [(tag.tag, tag.snapshot_id) for tag in result.tags] == [
+            ("latest", "snap-2"),
+            ("v1", "snap-1"),
+        ]
+
+    def test_snapshot_name_without_tags(self):
+        """A name that exists but carries no tags is a real, empty result."""
+        assert SnapshotName.from_dict({"name": "my-env"}).tags == []
 
 
 class TestServiceURL:
