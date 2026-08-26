@@ -51,7 +51,17 @@ jobs:
         # simulation models the CPU, memory tracks heap allocations, and
         # walltime measures real elapsed time - the last of which matters for
         # the create_*_run_trees cases, since they drive tracing threads.
-        mode: [simulation, memory, walltime]
+        include:
+          # PROBE, revert once attributed: on 3.12 this leg completed zero of 9
+          # benchmarks in 27 minutes and hit the job timeout (run 33004187688),
+          # where the same cases took 6m12s on x86. 3.11 has no perf trampoline,
+          # so callgraph is off here, isolating it from the runner change.
+          - mode: simulation
+            python: "3.11"
+          - mode: memory
+            python: "3.12"
+          - mode: walltime
+            python: "3.12"
     permissions:
       contents: read # required for actions/checkout
       id-token: write # required for OIDC authentication with CodSpeed
@@ -68,7 +78,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           enable-cache: true
 
       - name: Install dependencies
