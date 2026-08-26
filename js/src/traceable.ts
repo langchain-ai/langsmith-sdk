@@ -20,12 +20,12 @@ import {
   getCurrentRunTree,
 } from "./singletons/traceable.js";
 import {
-  _INPUTS_PROCESSING_FAILED,
   _LC_CHILD_RUN_END_PROMISES_KEY,
   _LC_CONTEXT_VARIABLES_KEY,
-  _OUTPUTS_PROCESSING_FAILED,
   _PROCESSING_FAILED_KEY,
+  _processingFailed,
 } from "./singletons/constants.js";
+import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import type {
   TraceableFunction,
   ContextPlaceholder,
@@ -52,6 +52,19 @@ import {
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>(),
 );
+
+/**
+ * Whether a failed redactor should fall back to tracing the raw payload.
+ *
+ * Set `LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS` to restore the pre-fail-closed
+ * behavior in an emergency. It uploads data no redactor processed, so it is off
+ * by default and the caller logs a warning naming it whenever it takes effect.
+ * Read only on failure, so it stays off the hot path.
+ */
+function allowUnprocessedPayloads(): boolean {
+  const value = getLangSmithEnvironmentVariable("ALLOW_UNPROCESSED_PAYLOADS");
+  return value?.toLowerCase() === "true" || value === "1";
+}
 
 /**
  * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
@@ -147,8 +160,16 @@ const handleRunInputs = <Args extends unknown[]>(
 ): KVMap | Promise<KVMap> => {
   // Fail closed: trace the run, but with a marker instead of raw inputs.
   const dropped = (e: unknown) => {
+    if (allowUnprocessedPayloads()) {
+      console.warn(
+        "Error occurred during processInputs. Tracing unprocessed inputs " +
+          "because LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is set:",
+        e,
+      );
+      return inputs;
+    }
     console.warn("Error occurred during processInputs. Dropping inputs:", e);
-    return { [_PROCESSING_FAILED_KEY]: _INPUTS_PROCESSING_FAILED };
+    return { [_PROCESSING_FAILED_KEY]: _processingFailed("inputs", e) };
   };
   try {
     const processed = processInputs(inputs);
@@ -252,6 +273,8 @@ async function handleRunOutputs<Return>(params: {
   } else {
     outputs = { outputs: rawOutputs };
   }
+  // `outputs` is overwritten by the redactor call below; keep the raw value.
+  const unprocessed: KVMap = outputs;
 
   const childRunEndPromises =
     !skipChildPromiseDelay &&
@@ -261,14 +284,24 @@ async function handleRunOutputs<Return>(params: {
       ? Promise.all(runTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
       : Promise.resolve();
 
-  // Fail closed, as for inputs: end with a marker rather than the raw value.
-  const endOutputsDropped = async (e: unknown) => {
+  // Fail closed, as for inputs: a marker rather than the raw value.
+  const droppedOutputs = (e: unknown): KVMap => {
+    if (allowUnprocessedPayloads()) {
+      console.error(
+        "Error occurred during processOutputs. Tracing unprocessed outputs " +
+          "because LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is set:",
+        e,
+      );
+      return unprocessed;
+    }
     console.error("Error occurred during processOutputs. Dropping outputs:", e);
+    return { [_PROCESSING_FAILED_KEY]: _processingFailed("outputs", e) };
+  };
+  const endOutputsDropped = async (e: unknown) => {
+    const finalOutputs = droppedOutputs(e);
     try {
       await childRunEndPromises;
-      await runTree?.end({
-        [_PROCESSING_FAILED_KEY]: _OUTPUTS_PROCESSING_FAILED,
-      });
+      await runTree?.end(finalOutputs);
     } catch (endErr) {
       console.error("Error occurred during runTree?.end.", endErr);
     }
@@ -301,8 +334,7 @@ async function handleRunOutputs<Return>(params: {
       return;
     }
   } catch (e) {
-    console.error("Error occurred during processOutputs. Dropping outputs:", e);
-    outputs = { [_PROCESSING_FAILED_KEY]: _OUTPUTS_PROCESSING_FAILED };
+    outputs = droppedOutputs(e);
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises

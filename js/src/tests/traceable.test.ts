@@ -4,9 +4,8 @@ import { jest, expect, test, describe, it } from "@jest/globals";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import {
-  _INPUTS_PROCESSING_FAILED,
   _LC_CONTEXT_VARIABLES_KEY,
-  _OUTPUTS_PROCESSING_FAILED,
+  _processingFailed,
 } from "../singletons/constants.js";
 import {
   ROOT,
@@ -1788,7 +1787,7 @@ test("traceable with processInputs throwing error does not affect invocation", a
     edges: [],
     data: {
       "func:0": {
-        inputs: { ls_error: _INPUTS_PROCESSING_FAILED },
+        inputs: { ls_error: _processingFailed("inputs", new Error()) },
         outputs: { outputs: "Hello, user1" },
       },
     },
@@ -1829,7 +1828,7 @@ test("traceable with processOutputs throwing error does not affect invocation", 
     data: {
       "func:0": {
         inputs: { input: "test" },
-        outputs: { ls_error: _OUTPUTS_PROCESSING_FAILED },
+        outputs: { ls_error: _processingFailed("outputs", new Error()) },
       },
     },
   });
@@ -1859,12 +1858,13 @@ test("SECURITY: traceable processInputs failure drops the inputs (fail closed)",
   expect(result).toBe("Welcome, user1");
 
   // Fail closed: no cleartext is uploaded, not even via the error text...
-  expect(JSON.stringify(callSpy.mock.calls)).not.toContain(SECRET);
   // ...and the gap is explicit rather than silent.
   const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  // The mock body is a byte array, so assert against the decoded tree.
+  expect(JSON.stringify(tree)).not.toContain(SECRET);
   expect(tree.nodes).toEqual(["login:0"]);
   expect(tree.data["login:0"].inputs).toEqual({
-    ls_error: _INPUTS_PROCESSING_FAILED,
+    ls_error: _processingFailed("inputs", new Error()),
   });
 });
 
@@ -1886,11 +1886,12 @@ test("SECURITY: traceable async processInputs rejection drops the inputs (fail c
   const result = await login({ username: "user1", password: SECRET });
 
   expect(result).toBe("Welcome, user1");
-  expect(JSON.stringify(callSpy.mock.calls)).not.toContain(SECRET);
   const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  // The mock body is a byte array, so assert against the decoded tree.
+  expect(JSON.stringify(tree)).not.toContain(SECRET);
   expect(tree.nodes).toEqual(["login:0"]);
   expect(tree.data["login:0"].inputs).toEqual({
-    ls_error: _INPUTS_PROCESSING_FAILED,
+    ls_error: _processingFailed("inputs", new Error()),
   });
 });
 
@@ -1911,14 +1912,65 @@ test("SECURITY: traceable processOutputs failure drops the outputs (fail closed)
   const result = await login("user1");
 
   expect(result).toBe(SECRET);
-  expect(JSON.stringify(callSpy.mock.calls)).not.toContain(SECRET);
   const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  // The mock body is a byte array, so assert against the decoded tree.
+  expect(JSON.stringify(tree)).not.toContain(SECRET);
   expect(tree.nodes).toEqual(["login:0"]);
   expect(tree.data["login:0"].outputs).toEqual({
-    ls_error: _OUTPUTS_PROCESSING_FAILED,
+    ls_error: _processingFailed("outputs", new Error()),
   });
   // Not errored: that status is for the traced fn failing, not post-processing.
   expect(tree.data["login:0"].error).toBeFalsy();
+});
+
+test("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw inputs", async () => {
+  const { client, callSpy } = mockClient();
+  process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS = "true";
+  try {
+    const processInputs = jest.fn((_inputs: Readonly<KVMap>) => {
+      throw new Error("redactor boom");
+    });
+    const login = traceable(
+      async function login(input: { username: string; password: string }) {
+        return `Welcome, ${input.username}`;
+      },
+      { client, tracingEnabled: true, processInputs },
+    );
+
+    expect(await login({ username: "user1", password: SECRET })).toBe(
+      "Welcome, user1",
+    );
+    // Escape hatch: the raw payload is traced, no marker.
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(tree.data["login:0"].inputs).toEqual({
+      username: "user1",
+      password: SECRET,
+    });
+  } finally {
+    delete process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS;
+  }
+});
+
+test("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw outputs", async () => {
+  const { client, callSpy } = mockClient();
+  process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS = "true";
+  try {
+    const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
+      throw new Error("redactor boom");
+    });
+    const login = traceable(
+      async function login(_input: string) {
+        return SECRET;
+      },
+      { client, tracingEnabled: true, processOutputs },
+    );
+
+    expect(await login("user1")).toBe(SECRET);
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(tree.data["login:0"].outputs).toEqual({ outputs: SECRET });
+  } finally {
+    delete process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS;
+  }
 });
 
 test("traceable async generator with processOutputs", async () => {
