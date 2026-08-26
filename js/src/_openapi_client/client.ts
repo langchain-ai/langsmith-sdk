@@ -78,17 +78,6 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
-  Thread,
-  ThreadListTracesParams,
-  ThreadQueryParams,
-  ThreadStats,
-  ThreadStatsParams,
-  ThreadTrace,
-  ThreadTracesItemsCursorGetPagination,
-  Threads,
-  ThreadsItemsCursorPostPagination,
-} from './resources/threads.js';
-import {
   Trace,
   TraceAggregates,
   TraceListRunsParams,
@@ -162,6 +151,17 @@ import {
   SnapshotListResponse,
   SnapshotResponse,
 } from './resources/sandboxes/sandboxes.js';
+import {
+  Thread,
+  ThreadListTracesParams,
+  ThreadQueryParams,
+  ThreadStats,
+  ThreadStatsParams,
+  ThreadTrace,
+  ThreadTracesItemsCursorGetPagination,
+  Threads,
+  ThreadsItemsCursorPostPagination,
+} from './resources/threads/threads.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';

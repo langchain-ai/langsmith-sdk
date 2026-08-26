@@ -6,33 +6,45 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-from ..types import thread_query_params, thread_stats_params, thread_list_traces_params
-from .._httpx import httpx
-from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
-from .._utils import path_template, maybe_transform, async_maybe_transform
-from .._compat import cached_property
-from .._resource import SyncAPIResource, AsyncAPIResource
-from .._response import (
+from .share import (
+    ShareResource,
+    AsyncShareResource,
+    ShareResourceWithRawResponse,
+    AsyncShareResourceWithRawResponse,
+    ShareResourceWithStreamingResponse,
+    AsyncShareResourceWithStreamingResponse,
+)
+from ...types import thread_query_params, thread_stats_params, thread_list_traces_params
+from ..._httpx import httpx
+from ..._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
+from ..._utils import path_template, maybe_transform, async_maybe_transform
+from ..._compat import cached_property
+from ..._resource import SyncAPIResource, AsyncAPIResource
+from ..._response import (
     to_raw_response_wrapper,
     to_streamed_response_wrapper,
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
-from ..pagination import (
+from ...pagination import (
     SyncItemsCursorGetPagination,
     AsyncItemsCursorGetPagination,
     SyncItemsCursorPostPagination,
     AsyncItemsCursorPostPagination,
 )
-from .._base_client import AsyncPaginator, make_request_options
-from ..types.thread import Thread
-from ..types.thread_stats import ThreadStats
-from ..types.thread_trace import ThreadTrace
+from ..._base_client import AsyncPaginator, make_request_options
+from ...types.thread import Thread
+from ...types.thread_stats import ThreadStats
+from ...types.thread_trace import ThreadTrace
 
 __all__ = ["ThreadsResource", "AsyncThreadsResource"]
 
 
 class ThreadsResource(SyncAPIResource):
+    @cached_property
+    def share(self) -> ShareResource:
+        return ShareResource(self._client)
+
     @cached_property
     def with_raw_response(self) -> ThreadsResourceWithRawResponse:
         """
@@ -333,6 +345,10 @@ class ThreadsResource(SyncAPIResource):
 
 
 class AsyncThreadsResource(AsyncAPIResource):
+    @cached_property
+    def share(self) -> AsyncShareResource:
+        return AsyncShareResource(self._client)
+
     @cached_property
     def with_raw_response(self) -> AsyncThreadsResourceWithRawResponse:
         """
@@ -646,6 +662,10 @@ class ThreadsResourceWithRawResponse:
             threads.stats,
         )
 
+    @cached_property
+    def share(self) -> ShareResourceWithRawResponse:
+        return ShareResourceWithRawResponse(self._threads.share)
+
 
 class AsyncThreadsResourceWithRawResponse:
     def __init__(self, threads: AsyncThreadsResource) -> None:
@@ -660,6 +680,10 @@ class AsyncThreadsResourceWithRawResponse:
         self.stats = async_to_raw_response_wrapper(
             threads.stats,
         )
+
+    @cached_property
+    def share(self) -> AsyncShareResourceWithRawResponse:
+        return AsyncShareResourceWithRawResponse(self._threads.share)
 
 
 class ThreadsResourceWithStreamingResponse:
@@ -676,6 +700,10 @@ class ThreadsResourceWithStreamingResponse:
             threads.stats,
         )
 
+    @cached_property
+    def share(self) -> ShareResourceWithStreamingResponse:
+        return ShareResourceWithStreamingResponse(self._threads.share)
+
 
 class AsyncThreadsResourceWithStreamingResponse:
     def __init__(self, threads: AsyncThreadsResource) -> None:
@@ -690,3 +718,7 @@ class AsyncThreadsResourceWithStreamingResponse:
         self.stats = async_to_streamed_response_wrapper(
             threads.stats,
         )
+
+    @cached_property
+    def share(self) -> AsyncShareResourceWithStreamingResponse:
+        return AsyncShareResourceWithStreamingResponse(self._threads.share)

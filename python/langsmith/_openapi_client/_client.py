@@ -50,9 +50,9 @@ if TYPE_CHECKING:
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.issues import IssuesResource, AsyncIssuesResource
     from .resources.traces import TracesResource, AsyncTracesResource
-    from .resources.threads import ThreadsResource, AsyncThreadsResource
     from .resources.runs.runs import RunsResource, AsyncRunsResource
     from .resources.public.public import PublicResource, AsyncPublicResource
+    from .resources.threads.threads import ThreadsResource, AsyncThreadsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
     from .resources.sandboxes.sandboxes import SandboxesResource, AsyncSandboxesResource

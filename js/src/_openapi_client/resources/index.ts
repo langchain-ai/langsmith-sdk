@@ -115,7 +115,7 @@ export {
   type ThreadStatsParams,
   type ThreadTracesItemsCursorGetPagination,
   type ThreadsItemsCursorPostPagination,
-} from './threads.js';
+} from './threads/threads.js';
 export {
   Traces,
   type Trace,
