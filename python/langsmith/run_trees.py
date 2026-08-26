@@ -806,32 +806,54 @@ class RunTree(ls_schemas.RunBase):
             dup.update(updates)
         return dup
 
+    def _replica_groups(
+        self,
+    ) -> list[tuple[Client, str, Optional[dict], Optional[bool], list[WriteReplica]]]:
+        """Group replicas that would serialize to the same bytes.
+
+        Credentials do not affect the bytes, so one group can span destinations.
+        """
+        groups: list[
+            tuple[Client, str, Optional[dict], Optional[bool], list[WriteReplica]]
+        ] = []
+        for replica in self.replicas or ():
+            key = (
+                replica.get("client") or self.client,
+                replica.get("project_name") or self.session_name,
+                replica.get("updates"),
+                replica.get("primary"),
+            )
+            # ponytail: O(n^2) over a handful of replicas, and `updates` compares by
+            # value without needing a hashable freeze. Use a key if that changes.
+            for group in groups:
+                if group[:4] == key:
+                    group[4].append(replica)
+                    break
+            else:
+                groups.append((*key, [replica]))
+        return groups
+
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
         if self.replicas:
-            for replica in self.replicas:
-                project_name = replica.get("project_name") or self.session_name
-                updates = replica.get("updates")
-                run_dict = self._remap_for_project(
-                    project_name, updates, primary=replica.get("primary")
-                )
-                api_url, api_key, service_key, tenant_id, authorization, cookie = (
-                    _extract_replica_auth(replica)
-                )
-                replica_client = replica.get("client") or self.client
+            for (
+                replica_client,
+                project_name,
+                updates,
+                primary,
+                members,
+            ) in self._replica_groups():
                 if not hasattr(replica_client, "create_run"):
                     raise TypeError(
                         f"WriteReplica 'client' must be a langsmith.Client, "
                         f"got {type(replica_client).__name__}"
                     )
+                run_dict = self._remap_for_project(
+                    project_name, updates, primary=primary
+                )
                 replica_client.create_run(
                     **run_dict,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
+                    _replica_auths=[_extract_replica_auth(r) for r in members],
                 )
         else:
             kwargs = self._get_dicts_safe()
@@ -886,21 +908,21 @@ class RunTree(ls_schemas.RunBase):
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
         if self.replicas:
-            for replica in self.replicas:
-                project_name = replica.get("project_name") or self.session_name
-                updates = replica.get("updates")
-                run_dict = self._remap_for_project(
-                    project_name, updates, primary=replica.get("primary")
-                )
-                api_url, api_key, service_key, tenant_id, authorization, cookie = (
-                    _extract_replica_auth(replica)
-                )
-                replica_client = replica.get("client") or self.client
+            for (
+                replica_client,
+                project_name,
+                updates,
+                primary,
+                members,
+            ) in self._replica_groups():
                 if not hasattr(replica_client, "update_run"):
                     raise TypeError(
                         f"WriteReplica 'client' must be a langsmith.Client, "
                         f"got {type(replica_client).__name__}"
                     )
+                run_dict = self._remap_for_project(
+                    project_name, updates, primary=primary
+                )
                 replica_client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
@@ -919,12 +941,7 @@ class RunTree(ls_schemas.RunBase):
                     tags=run_dict.get("tags"),
                     extra=run_dict.get("extra"),
                     attachments=attachments,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
+                    _replica_auths=[_extract_replica_auth(r) for r in members],
                 )
         else:
             self.client.update_run(

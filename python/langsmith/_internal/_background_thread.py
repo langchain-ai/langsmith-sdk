@@ -242,7 +242,7 @@ def _tracing_thread_drain_compressed_buffer(
 
 def _process_buffered_run_ops_batch(
     client: Client,
-    batch_to_process: list[tuple[str, dict, dict[str, Optional[str]]]],
+    batch_to_process: list[tuple[str, dict, dict[str, Any]]],
 ) -> None:
     """Process a batch of run operations asynchronously."""
     try:

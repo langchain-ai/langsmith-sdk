@@ -6,6 +6,7 @@ credential resolution behind it, and that nothing crosses between destinations.
 """
 
 import threading
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,7 +15,16 @@ import zstandard
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _background_thread as bt
 from langsmith._internal._compressed_traces import CompressedTraces
-from langsmith.client import Client, ReplicaAuth, _apply_auth_overrides
+from langsmith._internal._operations import (
+    SerializedFeedbackOperation,
+    SerializedRunOperation,
+)
+from langsmith.client import (
+    Client,
+    ReplicaAuth,
+    _apply_auth_overrides,
+    _duplicate_op,
+)
 from langsmith.run_trees import RunTree
 
 _INFO = ls_schemas.LangSmithInfo(
@@ -163,7 +173,9 @@ def test_nothing_crosses_between_destinations():
 
 def test_post_and_patch_for_one_destination_take_the_same_transport():
     with Harness() as h:
-        run = h.post([_replica("https://b", "kb"), _replica("https://d", "kd")])
+        run = h.post(
+            [_replica("https://b", "kb", "p1"), _replica("https://d", "kd", "p2")]
+        )
         run.end(outputs={"b": 2})
         run.patch()
         assert h.client.compressed_traces.trace_count == 2  # B's post and patch
@@ -182,12 +194,13 @@ def test_a_fixed_replica_list_keeps_a_stable_outcome():
     claims every new frame and the other consistently uses the queue. A run's post
     and patch therefore stay on one transport.
     """
+    pair = [_replica("https://b", "kb", "p1"), _replica("https://d", "kd", "p2")]
     with Harness() as h:
-        h.post([_replica("https://b", "kb"), _replica("https://d", "kd")])
+        h.post(pair)
         h.flush()
         assert len(h.queued) == 1
         for _ in range(3):
-            h.post([_replica("https://b", "kb"), _replica("https://d", "kd")])
+            h.post(pair)
             h.flush()
     assert {u for u, _, _ in h.sent} == {"https://b/runs/multipart"}
     assert [i.api_url for i in h.queued] == ["https://d"] * 4
@@ -367,12 +380,20 @@ def test_service_key_replica_sends_no_api_key():
 
 
 def test_two_keys_for_one_host_stay_distinct_destinations():
-    """§13.2: identical payloads, different tenants -- the merge would be invisible."""
+    """Identical payloads, different tenants: one frame, one send per key.
+
+    Destinations come from resolved auth, so the two keys are never merged into
+    one destination. A merge would be invisible here -- the payloads do match.
+    """
     with Harness() as h:
         h.post([_replica("https://same", "key-1"), _replica("https://same", "key-2")])
+        assert h.client.compressed_traces.trace_count == 1
         h.flush()
-    assert h.routes == [("https://same/runs/multipart", "key-1")]
-    assert [(i.api_url, i.api_key) for i in h.queued] == [("https://same", "key-2")]
+    assert h.routes == [
+        ("https://same/runs/multipart", "key-1"),
+        ("https://same/runs/multipart", "key-2"),
+    ]
+    assert not h.queued
 
 
 # --- non-regression ----------------------------------------------------------
@@ -488,3 +509,153 @@ def test_admission_under_concurrency_never_mixes_destinations():
         assert urls == {"https://b"}, urls
         body = zstandard.ZstdDecompressor().decompressobj().decompress(raw)
         assert b"theirs" not in body
+
+
+# --- payload grouping (step 2) ------------------------------------------------
+
+
+class _CountSerializations:
+    """Count serialize_run_dict calls inside the block."""
+
+    def __enter__(self):
+        from langsmith import client as client_module
+
+        self.calls: list = []
+        original = client_module.serialize_run_dict
+
+        def spy(*args, **kwargs):
+            self.calls.append(1)
+            return original(*args, **kwargs)
+
+        self._patch = patch.object(client_module, "serialize_run_dict", spy)
+        self._patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._patch.stop()
+
+    def __len__(self):
+        return len(self.calls)
+
+
+def test_identical_replicas_are_serialized_once():
+    with Harness() as h, _CountSerializations() as count:
+        h.post([_replica("https://a", "ka"), _replica("https://b", "kb")])
+    assert len(count) == 1
+
+
+def test_one_frame_reaches_every_destination_with_its_own_key():
+    with Harness() as h:
+        h.post([_replica("https://a", "ka"), _replica("https://b", "kb")])
+        assert h.client.compressed_traces.trace_count == 1
+        h.flush()
+    assert h.routes == [
+        ("https://a/runs/multipart", "ka"),
+        ("https://b/runs/multipart", "kb"),
+    ]
+    assert h.sent[0][2] == h.sent[1][2] and h.sent[0][2]
+    assert not h.queued
+
+
+def test_grouped_ops_share_bytes_but_are_distinct_objects():
+    with Harness() as h:
+        h.post([_replica("https://x", "kx")])  # takes the frame
+        h.post([_replica("https://a", "ka"), _replica("https://b", "kb")])
+    assert len(h.queued) == 2
+    first, second = (item.item for item in h.queued)
+    assert first is not second
+    assert first._none is second._none
+    assert first.inputs is second.inputs
+
+
+def test_duplicating_an_op_shares_bytes_but_not_the_attachments_dict():
+    op = SerializedRunOperation(
+        "post",
+        uuid.uuid4(),
+        uuid.uuid4(),
+        b"none-blob",
+        inputs=b"in-blob",
+        attachments={"a": ("text/plain", b"x")},
+    )
+    duplicate = _duplicate_op(op)
+
+    assert duplicate is not op
+    assert duplicate._none is op._none
+    assert duplicate.inputs is op.inputs
+    assert duplicate.attachments is not op.attachments
+    assert duplicate.attachments == op.attachments
+
+    # combine_serialized_queue_operations does exactly this, per auth group.
+    duplicate.attachments.update({"b": ("text/plain", b"y")})
+    assert "b" not in op.attachments
+
+
+def test_duplicating_an_op_without_attachments_is_safe():
+    op = SerializedFeedbackOperation(uuid.uuid4(), uuid.uuid4(), b"f")
+    duplicate = _duplicate_op(op)
+    assert duplicate is not op
+    assert duplicate.feedback is op.feedback
+
+
+def test_a_rejected_group_reaches_every_destination_by_queue():
+    with Harness() as h:
+        h.post([_replica("https://x", "kx")])
+        h.post([_replica("https://a", "ka"), _replica("https://b", "kb")])
+    assert [(i.api_url, i.api_key) for i in h.queued] == [
+        ("https://a", "ka"),
+        ("https://b", "kb"),
+    ]
+
+
+# One test per field of the grouping key: each must NOT group.
+
+
+def test_replicas_with_different_projects_are_not_grouped():
+    with Harness() as h, _CountSerializations() as count:
+        h.post([_replica("https://a", "ka", "p1"), _replica("https://b", "kb", "p2")])
+    assert len(count) == 2
+
+
+def test_replicas_with_different_updates_are_not_grouped():
+    with Harness() as h, _CountSerializations() as count:
+        h.post(
+            [
+                {
+                    "api_url": "https://a",
+                    "auth": {"api_key": "ka"},
+                    "updates": {"tags": ["x"]},
+                },
+                {"api_url": "https://b", "auth": {"api_key": "kb"}},
+            ]
+        )
+    assert len(count) == 2
+
+
+def test_primary_false_is_not_the_same_as_primary_absent():
+    with Harness() as h, _CountSerializations() as count:
+        h.post(
+            [
+                {"api_url": "https://a", "auth": {"api_key": "ka"}, "primary": False},
+                {"api_url": "https://b", "auth": {"api_key": "kb"}},
+            ]
+        )
+    assert len(count) == 2
+
+
+def test_replicas_on_different_clients_are_not_grouped():
+    with Harness() as h, _CountSerializations() as count:
+        other = Client(
+            api_url="https://own",
+            api_key="own-key",
+            session=MagicMock(),
+            auto_batch_tracing=False,
+            info=_INFO,
+        )
+        other.tracing_queue = MagicMock()  # so it serializes instead of POSTing
+        h.post(
+            [
+                {"api_url": "https://a", "auth": {"api_key": "ka"}},
+                {"api_url": "https://b", "auth": {"api_key": "kb"}, "client": other},
+            ]
+        )
+    assert len(count) == 2
