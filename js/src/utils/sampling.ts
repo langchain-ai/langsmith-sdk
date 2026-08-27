@@ -26,7 +26,7 @@ export const isSampledById = (
   if (samplingRate <= 0) {
     return false;
   }
-  if (identifier === undefined || identifier === null) {
+  if (identifier == null) {
     return true;
   }
   // XXH3-128 over the UTF-8 bytes, matching the Python SDK's `xxhash.xxh3_128`.

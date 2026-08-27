@@ -5535,7 +5535,7 @@ export class Client implements LangSmithTracingClientInterface {
       extend_trace_retention: extendTraceRetention,
     };
     const samplingId = traceId ?? runId;
-    if (samplingId !== null && !this._shouldSample(samplingId)) {
+    if (samplingId != null && !this._shouldSample(samplingId)) {
       return feedback as Feedback;
     }
     const body = JSON.stringify(feedback);
@@ -5842,7 +5842,8 @@ export class Client implements LangSmithTracingClientInterface {
           feedbackSourceType: "model",
           sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
-          // A targetRunId may name a run in another trace.
+          // If an evaluator result targets a different run, we can't
+          // guarantee to know its trace ID.
           traceId: runId_ === run?.id ? run?.trace_id : undefined,
         }),
       );

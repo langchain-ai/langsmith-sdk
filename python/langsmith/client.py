@@ -8057,7 +8057,8 @@ class Client:
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id if run is None else None,
                 extra=res.extra,
-                # A target_run_id may name a run in another trace.
+                # If an evaluator result targets a different run, we can't
+                # guarantee to know its trace_id.
                 trace_id=(
                     getattr(run, "trace_id", None)
                     if run is not None and run_id_ == run.id
