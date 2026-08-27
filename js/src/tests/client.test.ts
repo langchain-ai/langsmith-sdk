@@ -19,6 +19,7 @@ import {
 } from "../utils/env.js";
 import { parseHubIdentifier } from "../utils/prompts.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
+import { ExampleCreate } from "../schemas.js";
 
 describe("Client", () => {
   describe("resource tags on create", () => {
@@ -67,6 +68,119 @@ describe("Client", () => {
       expect(JSON.parse(init?.body as string).tag_value_ids).toEqual(
         tagValueIds,
       );
+    });
+  });
+
+  describe("example reference outputs", () => {
+    it.each(["reference_outputs", "outputs"] as const)(
+      "serializes %s to the existing multipart outputs part",
+      async (field) => {
+        const exampleId = uuid();
+        const referenceOutputs = { answer: 42 };
+        let formData: FormData | undefined;
+        const mockFetch = jest
+          .fn<typeof fetch>()
+          .mockImplementation(async (input, init) => {
+            const url = String(input);
+            if (url.endsWith("/info")) {
+              return new Response(
+                JSON.stringify({
+                  instance_flags: {
+                    dataset_examples_multipart_enabled: true,
+                  },
+                }),
+                { status: 200 },
+              );
+            }
+            formData = init?.body as FormData;
+            return new Response(
+              JSON.stringify({ count: 1, example_ids: [exampleId] }),
+              { status: 200 },
+            );
+          });
+        const client = new Client({
+          apiUrl: "http://localhost:1984",
+          apiKey: "test-api-key",
+          fetchImplementation: mockFetch,
+        });
+        const datasetId = uuid();
+        const example = {
+          id: exampleId,
+          dataset_id: datasetId,
+          inputs: { question: "meaning" },
+          [field]: referenceOutputs,
+        } as ExampleCreate;
+
+        await client.uploadExamplesMultipart(datasetId, [example]);
+
+        const part = formData?.get(`${exampleId}.outputs`) as Blob;
+        expect(await part.text()).toBe(JSON.stringify(referenceOutputs));
+        expect(formData?.has(`${exampleId}.reference_outputs`)).toBe(false);
+      },
+    );
+
+    it("rejects reference_outputs and outputs together", async () => {
+      const mockFetch = jest.fn<typeof fetch>();
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+      });
+
+      await expect(
+        client.uploadExamplesMultipart(uuid(), [
+          {
+            inputs: { question: "meaning" },
+            reference_outputs: { answer: 42 },
+            outputs: { answer: 43 },
+          },
+        ]),
+      ).rejects.toThrow("Cannot specify both reference_outputs and outputs");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each(["referenceOutputs", "outputs"] as const)(
+      "normalizes createExamples %s to reference_outputs",
+      async (field) => {
+        const client = new Client({
+          apiUrl: "http://localhost:1984",
+          apiKey: "test-api-key",
+        });
+        const upload = jest
+          .spyOn(client as any, "_uploadExamplesMultipart")
+          .mockResolvedValue({ count: 0, example_ids: [] });
+        const referenceOutputs = [{ answer: 42 }];
+
+        await client.createExamples({
+          inputs: [{ question: "meaning" }],
+          datasetId: uuid(),
+          [field]: referenceOutputs,
+        });
+
+        const uploadedExamples = upload.mock.calls[0][1] as ExampleCreate[];
+        expect(uploadedExamples[0]).toEqual(
+          expect.objectContaining({
+            reference_outputs: referenceOutputs[0],
+          }),
+        );
+        expect(uploadedExamples[0].outputs).toBeUndefined();
+      },
+    );
+
+    it("rejects createExamples referenceOutputs and outputs together", async () => {
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+      });
+
+      await expect(
+        client.createExamples({
+          inputs: [{ question: "meaning" }],
+          datasetId: uuid(),
+          referenceOutputs: [{ answer: 42 }],
+          outputs: [{ answer: 43 }],
+        }),
+      ).rejects.toThrow("Cannot specify both referenceOutputs and outputs");
     });
   });
 

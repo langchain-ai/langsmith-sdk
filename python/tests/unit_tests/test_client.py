@@ -1200,7 +1200,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
         dataset_id=dataset_id,
         created_at=created_at,
         inputs={"input": "test input"},
-        outputs={"output": "test output"},
+        reference_outputs={"output": "test output"},
         metadata={"meta": "data"},
         split="train",
         attachments={
@@ -1270,6 +1270,132 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
             value = json.loads(part.value)
             assert value == expected_parts[name]
             assert part.headers["Content-Type"] == "application/json"
+
+
+def test_example_create_reference_outputs_aliases() -> None:
+    reference_outputs = {"answer": 42}
+
+    canonical = ls_schemas.ExampleCreate(reference_outputs=reference_outputs)
+    assert (
+        canonical.model_dump(exclude_none=True)["reference_outputs"]
+        == reference_outputs
+    )
+    assert "outputs" not in canonical.model_dump(exclude_none=True)
+
+    legacy = ls_schemas.ExampleCreate(outputs=reference_outputs)
+    assert legacy.reference_outputs is None
+    assert legacy.outputs == reference_outputs
+    assert legacy.model_dump(exclude_none=True)["outputs"] == reference_outputs
+
+    with pytest.raises(ValueError, match="both 'reference_outputs' and 'outputs'"):
+        ls_schemas.ExampleCreate(
+            reference_outputs=reference_outputs,
+            outputs=reference_outputs,
+        )
+
+
+@pytest.mark.parametrize("argument_name", ["reference_outputs", "outputs"])
+@mock.patch("langsmith.client.requests.Session")
+def test_create_example_legacy_json_reference_outputs(
+    mock_session_cls: mock.Mock, argument_name: str
+) -> None:
+    example_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    reference_outputs = {"answer": 42}
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "id": str(example_id),
+        "dataset_id": str(dataset_id),
+        "inputs": {"question": "meaning"},
+        "outputs": reference_outputs,
+    }
+    mock_session = MagicMock()
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={},
+        auto_batch_tracing=False,
+    )
+
+    client.create_example(
+        inputs={"question": "meaning"},
+        dataset_id=dataset_id,
+        **{argument_name: reference_outputs},
+    )
+
+    request = next(
+        call for call in mock_session.request.call_args_list if call.args[0] == "POST"
+    )
+    payload = json.loads(request.kwargs["data"])
+    assert payload[argument_name] == reference_outputs
+    other_name = (
+        "outputs" if argument_name == "reference_outputs" else "reference_outputs"
+    )
+    assert other_name not in payload
+
+
+@pytest.mark.parametrize("argument_name", ["reference_outputs", "outputs"])
+def test_create_examples_reference_outputs_alias(argument_name: str) -> None:
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={},
+        auto_batch_tracing=False,
+    )
+    reference_outputs = [{"answer": 42}]
+
+    with mock.patch.object(
+        Client,
+        "_upload_examples_batches_parallel",
+        return_value=ls_schemas.UpsertExamplesResponse(
+            example_ids=[], count=1, as_of=None
+        ),
+    ) as upload:
+        client.create_examples(
+            dataset_id=uuid.uuid4(),
+            inputs=[{"question": "meaning"}],
+            **{argument_name: reference_outputs},
+        )
+
+    example = upload.call_args.args[0][0][0]
+    assert getattr(example, argument_name) == reference_outputs[0]
+    other_name = (
+        "outputs" if argument_name == "reference_outputs" else "reference_outputs"
+    )
+    assert getattr(example, other_name) is None
+    assert example.model_dump(exclude_none=True)[argument_name] == reference_outputs[0]
+
+
+def test_create_examples_rejects_reference_outputs_conflict() -> None:
+    client = Client(api_url="http://localhost:1984", api_key="123", info={})
+
+    with pytest.raises(ValueError, match="both 'reference_outputs' and 'outputs'"):
+        client.create_examples(
+            dataset_id=uuid.uuid4(),
+            inputs=[{"question": "meaning"}],
+            reference_outputs=[{"answer": 42}],
+            outputs=[{"answer": 43}],
+        )
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_create_example_rejects_reference_outputs_conflict(
+    mock_session_cls: mock.Mock,
+) -> None:
+    client = Client(api_url="http://localhost:1984", api_key="123", info={})
+
+    with pytest.raises(ValueError, match="both 'reference_outputs' and 'outputs'"):
+        client.create_example(
+            inputs={"question": "meaning"},
+            dataset_id=uuid.uuid4(),
+            reference_outputs={"answer": 42},
+            outputs={"answer": 43},
+        )
+
+    mock_session_cls.return_value.request.assert_not_called()
 
 
 @mock.patch("langsmith.client.requests.Session")

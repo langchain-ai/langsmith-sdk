@@ -106,7 +106,10 @@ class ExampleCreate(BaseModel):
     id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     inputs: Optional[dict[str, Any]] = Field(default=None)
-    outputs: Optional[dict[str, Any]] = Field(default=None)
+    reference_outputs: Optional[dict[str, Any]] = Field(default=None)
+    outputs: Optional[dict[str, Any]] = Field(
+        default=None, description="Deprecated: use reference_outputs instead."
+    )
     metadata: Optional[dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, list[str]]] = None
     attachments: Optional[dict[str, _AttachmentLike]] = None
@@ -116,6 +119,8 @@ class ExampleCreate(BaseModel):
 
     def __init__(self, **data):
         """Initialize from dict."""
+        if "reference_outputs" in data and "outputs" in data:
+            raise ValueError("Cannot specify both 'reference_outputs' and 'outputs'.")
         super().__init__(**data)
 
 

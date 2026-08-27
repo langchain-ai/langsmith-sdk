@@ -690,7 +690,7 @@ class _LangSmithTestSuite:
                 example = self.client.create_example(
                     example_id=example_id,
                     inputs=inputs,
-                    outputs=outputs,
+                    reference_outputs=outputs,
                     dataset_id=self.id,
                     metadata=metadata,
                     split=split,
