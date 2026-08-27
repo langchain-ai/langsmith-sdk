@@ -244,7 +244,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def complete_recording(
         self,
         thread_id: str,
-        recording: Optional[bytes],
+        data: Optional[bytes],
         *,
         name: str = "recording.ogg",
         mime_type: Optional[str] = None,
@@ -252,25 +252,26 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     ) -> None:
         """Attach completed egress audio, or ``None`` for a terminal failure.
 
-        ``name`` defaults to ``recording.ogg`` and ``mime_type`` defaults to the
-        processor's configured audio MIME type. ``started_at`` is the epoch time
-        of the recording's first sample and enables waterfall alignment.
+        ``data`` contains the completed recording bytes. ``name`` defaults to
+        ``recording.ogg`` and ``mime_type`` defaults to the processor's configured
+        audio MIME type. ``started_at`` is the epoch time of the recording's first
+        sample and enables waterfall alignment.
         """
         if self._recording_mode != "egress":
             raise RuntimeError("complete_recording() requires recording_mode='egress'")
 
         pending_audio = None
         status: Optional[str] = "none"
-        if recording:
+        if data:
             if (
                 self.audio_size_limit_bytes is not None
-                and len(recording) > self.audio_size_limit_bytes
+                and len(data) > self.audio_size_limit_bytes
             ):
                 status = "too_large"
             else:
                 pending_audio = _PendingAudio(
                     name=name,
-                    data=bytes(recording),
+                    data=bytes(data),
                     mime_type=mime_type or self._audio_mime_type,
                 )
                 status = None

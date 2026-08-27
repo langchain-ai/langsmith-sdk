@@ -603,7 +603,7 @@ class TestEgressRecording(_RecordingHarness):
         proc.attach_session_report(_report(), thread_id="call-1")
         assert self._root(proc) is None
 
-        proc.complete_recording("call-1", b"OggS-bytes", name="call.ogg")
+        proc.complete_recording("call-1", data=b"OggS-bytes", name="call.ogg")
 
         root = self._root(proc)
         payload = json.loads(root._attributes["langsmith.attachments"])
