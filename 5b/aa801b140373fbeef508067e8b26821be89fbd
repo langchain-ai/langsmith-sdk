@@ -1,0 +1,24 @@
+js/src/tests/traceable.test.ts
+  s_631a1ee18eeee4::t_78becb729d60b3 7,9,1791,1832,1868,1895,1921
+  s_631a1ee18eeee4::t_dc611661a329ab 1929,1952,1959,1976
+js/src/singletons/constants.ts
+  s_631a1ee18eeee4::t_78becb729d60b3 11-12,15-16
+js/src/traceable.ts
+  s_631a1ee18eeee4::t_78becb729d60b3 25-26,173,299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "5baa801b140373fbeef508067e8b26821be89fbd",
+  "prompts": {},
+  "sessions": {
+    "s_631a1ee18eeee4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9f20730-c042-4905-8825-6073da9fbbf4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
