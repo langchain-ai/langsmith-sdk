@@ -52,12 +52,14 @@ jobs:
         # walltime measures real elapsed time - the last of which matters for
         # the create_*_run_trees cases, since they drive tracing threads.
         include:
-          # PROBE, revert once attributed: on 3.12 this leg completed zero of 9
-          # benchmarks in 27 minutes and hit the job timeout (run 33004187688),
-          # where the same cases took 6m12s on x86. 3.11 has no perf trampoline,
-          # so callgraph is off here, isolating it from the runner change.
+          # PROBE, revert once attributed. This leg completes zero of 9
+          # benchmarks in 27 minutes on ARM and hits the job timeout, on 3.12
+          # with callgraph (run 33004187688) and on 3.11 without it (run
+          # 33008357502) alike - so callgraph is not the cost, ARM Valgrind is.
+          # The same cases take 6m12s on x86. Trying 3.13 in case the
+          # interpreter build behaves differently under simulation.
           - mode: simulation
-            python: "3.11"
+            python: "3.13"
           - mode: memory
             python: "3.12"
           - mode: walltime
