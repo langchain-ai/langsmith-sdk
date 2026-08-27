@@ -165,7 +165,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _refresh_state_locked(self, state: _ConversationState) -> None:
         self._state_by_trace[state.trace_id] = state
 
-    def _bind_thread_locked(
+    def _associate_thread_with_state_locked(
         self, state: _ConversationState, thread_id: Optional[str]
     ) -> None:
         if thread_id is None:
@@ -405,7 +405,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_kind("chain")
         with self._state_lock:
             state = self._get_or_create_state_locked(trace_id)
-            self._bind_thread_locked(state, self._thread_id_by_trace.get(trace_id))
+            self._associate_thread_with_state_locked(
+                state, self._thread_id_by_trace.get(trace_id)
+            )
             state.session_ended = True
             held = state.deferred_user_speaking
             state.deferred_user_speaking = []
@@ -531,7 +533,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         with self._state_lock:
             state = self._get_or_create_state_locked(tspan.span.context.trace_id)
-            self._bind_thread_locked(state, thread)
+            self._associate_thread_with_state_locked(state, thread)
             has_transcript = bool(state.pending_user_transcripts)
             transcript = state.pending_user_transcripts.pop(0) if has_transcript else ""
             if not has_transcript:
@@ -606,10 +608,19 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             "ls_integration_version", (get_package_version("livekit-agents") or "")
         )
         thread = tspan.attributes.get("langsmith.metadata.thread_id")
+        if thread is None and self._recording_mode != "none":
+            logger.warning(
+                "langsmith voice: trace %x has no thread id; its session report "
+                "and recording cannot be attached. Call set_thread_id() before "
+                "the conversation starts, or configure recording_mode='none'.",
+                trace_id,
+            )
         with self._state_lock:
             state = self._get_or_create_state_locked(trace_id)
             state.root = tspan
-            self._bind_thread_locked(state, str(thread) if thread is not None else None)
+            self._associate_thread_with_state_locked(
+                state, str(thread) if thread is not None else None
+            )
             self._refresh_state_locked(state)
         self._export_conversation_if_ready(trace_id)
 

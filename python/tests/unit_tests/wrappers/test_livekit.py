@@ -16,6 +16,7 @@ import pytest
 
 from langsmith._internal.voice import set_thread_id
 from langsmith.integrations.livekit._helpers import (
+    build_assistant_tool_call_message,
     build_message_from_event,
     normalize_provider,
 )
@@ -118,6 +119,16 @@ class TestDispatchDisposition:
         set_thread_id(None)
 
         assert proc._trace_by_thread["call-1"] == 0xABC
+
+    def test_recorded_root_without_thread_warns_once(self, caplog):
+        proc = _processor()
+        proc.on_end(_make_span("job_entrypoint", parent=None))
+        proc.on_end(_make_span("agent_session", span_id=0x2))
+
+        warnings = [
+            message for message in caplog.messages if "has no thread id" in message
+        ]
+        assert len(warnings) == 1
 
 
 class TestDeferredRootRelease:
@@ -1095,6 +1106,22 @@ class TestMessageFromEvent:
         event = MagicMock()
         event.attributes = attributes
         return event
+
+    def test_build_assistant_tool_call_message(self):
+        assert build_assistant_tool_call_message("call_1", "lookup", '{"q": "x"}') == {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "arguments": '{"q": "x"}',
+                    },
+                }
+            ],
+        }
 
     def test_tool_calls_forwarded_unchanged(self):
         call = {

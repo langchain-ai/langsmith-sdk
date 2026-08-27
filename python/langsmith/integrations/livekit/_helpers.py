@@ -196,6 +196,21 @@ def build_tool_message(
     return msg
 
 
+def build_assistant_tool_call_message(call_id: str, name: str, arguments: str) -> dict:
+    """Build an assistant message containing one tool call."""
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": arguments},
+            }
+        ],
+    }
+
+
 def build_message_from_event(role: str, event: Any) -> dict:
     """Build a chat message dict from a LiveKit ``gen_ai.*`` span event.
 
@@ -253,20 +268,9 @@ def build_messages_from_chat_history(chat_history: Any) -> list[dict]:
                 messages.append({"role": role, "content": text})
         elif kind == "function_call":
             messages.append(
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": item["call_id"],
-                            "type": "function",
-                            "function": {
-                                "name": item["name"],
-                                "arguments": item["arguments"],
-                            },
-                        }
-                    ],
-                }
+                build_assistant_tool_call_message(
+                    item["call_id"], item["name"], item["arguments"]
+                )
             )
         elif kind == "function_call_output":
             messages.append(
