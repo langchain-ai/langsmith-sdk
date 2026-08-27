@@ -58,9 +58,8 @@ def configure_livekit(
     processor: the user transcript arrives as a session event rather than on a
     span, so without it the trace shows only the agent's turns.
 
-    In ``session_report`` mode, each conversation's root span is held until its
-    complete report arrives, so the transcript, recording, and time origin are
-    attached atomically. Deliver it from an ``on_session_end`` callback::
+    Each conversation's root span is held until its session report arrives.
+    Deliver it from an ``on_session_end`` callback::
 
         processor = configure_livekit()
 
@@ -79,17 +78,27 @@ def configure_livekit(
             set_thread_id(ctx.room.name)
             ...
 
-    With LiveKit Egress (or your own capture), configure ``recording_mode="egress"``
-    and pass the completed bytes to that same ``attach_session_report`` call.
-    Use ``recording_mode="none"`` for sessions that should export immediately at
-    session end without a report.
+    In ``session_report`` mode the report's recording is attached with its chat
+    history. With LiveKit Egress (or your own capture), configure
+    ``recording_mode="egress"`` and deliver the audio independently when it is
+    available::
+
+        processor.complete_recording(
+            thread_id,
+            audio_bytes,
+            started_at=egress_started_at,
+        )
+
+    The report and recording may arrive in either order. The root is released
+    after both, or after ``recording_timeout_seconds``. Use
+    ``recording_mode="none"`` to attach report data without audio.
 
     Args:
         api_key / project / endpoint: LangSmith exporter config; default to the
             standard ``LANGSMITH_*`` resolution.
         recording_mode: ``"session_report"``, ``"egress"``, or ``"none"``.
-        recording_timeout_seconds: how long that hold lasts before the trace is
-            exported without audio.
+        recording_timeout_seconds: how long the root waits for required session
+            data before it is exported with whatever is available.
 
     Returns:
         The processor, or ``None`` if LiveKit / OpenTelemetry aren't installed.

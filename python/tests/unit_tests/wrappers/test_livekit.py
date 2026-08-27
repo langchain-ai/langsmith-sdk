@@ -66,6 +66,13 @@ def _processor(**kwargs):
     return LiveKitLangSmithSpanProcessor(downstream_processor=MagicMock(), **kwargs)
 
 
+def _start_span(proc, span, thread_id):
+    set_thread_id(thread_id)
+    proc.on_start(span)
+    set_thread_id(None)
+    return span
+
+
 class TestDispatchDisposition:
     """``_dispatch`` decides whether the base exports each span."""
 
@@ -181,10 +188,9 @@ class TestRealtimeUserTranscript:
     def teardown_method(self):
         set_thread_id(None)
 
-    def _speaking(self, *, thread="call-1", trace_id=0xABC, span_id=0x2):
+    def _speaking(self, *, trace_id=0xABC, span_id=0x2):
         return _make_span(
             "user_speaking",
-            {"langsmith.metadata.thread_id": thread},
             trace_id=trace_id,
             span_id=span_id,
         )
@@ -199,7 +205,7 @@ class TestRealtimeUserTranscript:
     def test_transcript_after_span_stamps_and_exports(self):
         # Span ends empty first (held), then the transcript arrives.
         proc = _processor()
-        proc.on_end(self._speaking())
+        proc.on_end(_start_span(proc, self._speaking(), "call-1"))
         # Held — nothing exported yet.
         assert self._exported(proc, "user_speaking") == []
 
@@ -228,7 +234,7 @@ class TestRealtimeUserTranscript:
         proc._record_user_transcript("call-1", "hello there")
         assert self._exported(proc, "user_speaking") == []
 
-        proc.on_end(self._speaking())
+        proc.on_end(_start_span(proc, self._speaking(), "call-1"))
 
         exported = self._exported(proc, "user_speaking")
         assert len(exported) == 1
@@ -238,8 +244,8 @@ class TestRealtimeUserTranscript:
     def test_fifo_pairing_within_conversation(self):
         # Two utterances, two transcripts — paired in order.
         proc = _processor()
-        proc.on_end(self._speaking(span_id=0x2))
-        proc.on_end(self._speaking(span_id=0x3))
+        proc.on_end(_start_span(proc, self._speaking(span_id=0x2), "call-1"))
+        proc.on_end(_start_span(proc, self._speaking(span_id=0x3), "call-1"))
         proc._record_user_transcript("call-1", "first")
         proc._record_user_transcript("call-1", "second")
 
@@ -262,7 +268,7 @@ class TestRealtimeUserTranscript:
         # A final-but-empty transcript still pairs (keeping FIFO aligned) but
         # renders no fabricated I/O.
         proc = _processor()
-        proc.on_end(self._speaking())
+        proc.on_end(_start_span(proc, self._speaking(), "call-1"))
         proc._record_user_transcript("call-1", "")
 
         exported = self._exported(proc, "user_speaking")
@@ -281,7 +287,7 @@ class TestRealtimeUserTranscript:
         proc.on_start(_make_span("job_entrypoint", parent=None, trace_id=tid))
         set_thread_id(None)
         proc.on_end(_make_span("job_entrypoint", parent=None, trace_id=tid))
-        proc.on_end(self._speaking(trace_id=tid))
+        proc.on_end(_start_span(proc, self._speaking(trace_id=tid), "call-1"))
         assert self._exported(proc, "user_speaking") == []  # held
 
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
@@ -291,7 +297,7 @@ class TestRealtimeUserTranscript:
 
     def test_shutdown_flushes_untranscribed_span(self):
         proc = _processor(recording_mode="none")
-        proc.on_end(self._speaking())
+        proc.on_end(_start_span(proc, self._speaking(), "call-1"))
         proc.shutdown()
         assert len(self._exported(proc, "user_speaking")) == 1
 
@@ -315,18 +321,20 @@ class TestRealtimeRootRollup:
         proc = _processor(recording_mode="none")
         tid = 0xABC
         proc.on_end(
-            _make_span(
-                "job_entrypoint",
-                {"langsmith.metadata.thread_id": "call-1"},
-                parent=None,
-                trace_id=tid,
+            _start_span(
+                proc,
+                _make_span(
+                    "job_entrypoint",
+                    parent=None,
+                    trace_id=tid,
+                ),
+                "call-1",
             )
         )
         # User speaks (early span), then the reply turn lands and is recorded...
         proc.on_end(
             _make_span(
                 "user_speaking",
-                {"langsmith.metadata.thread_id": "call-1"},
                 trace_id=tid,
                 span_id=0x2,
                 start_time=10,
@@ -344,6 +352,7 @@ class TestRealtimeRootRollup:
         # ...only *then* does the transcript arrive (out of order).
         proc._record_user_transcript("call-1", "weather?")
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x4))
+        proc.attach_session_report(_report(), thread_id="call-1")
 
         root = self._root(proc)
         prompt = json.loads(root._attributes["gen_ai.prompt"])["messages"]
@@ -356,11 +365,14 @@ class TestRealtimeRootRollup:
         proc = _processor(recording_mode="none")
         tid = 0xABC
         proc.on_end(
-            _make_span(
-                "job_entrypoint",
-                {"langsmith.metadata.thread_id": "call-1"},
-                parent=None,
-                trace_id=tid,
+            _start_span(
+                proc,
+                _make_span(
+                    "job_entrypoint",
+                    parent=None,
+                    trace_id=tid,
+                ),
+                "call-1",
             )
         )
         proc.on_end(
@@ -375,7 +387,6 @@ class TestRealtimeRootRollup:
         proc.on_end(
             _make_span(
                 "user_speaking",
-                {"langsmith.metadata.thread_id": "call-1"},
                 trace_id=tid,
                 span_id=0x3,
                 start_time=10,
@@ -392,6 +403,7 @@ class TestRealtimeRootRollup:
         )
         proc._record_user_transcript("call-1", "weather?")
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x5))
+        proc.attach_session_report(_report(), thread_id="call-1")
 
         root = self._root(proc)
         contents = [
@@ -429,13 +441,8 @@ class TestInstrumentSession:
         session = self._FakeSession()
         proc.instrument_session(session, "call-1")
 
-        proc.on_end(
-            _make_span(
-                "user_speaking",
-                {"langsmith.metadata.thread_id": "call-1"},
-                span_id=0x2,
-            )
-        )
+        span = _make_span("user_speaking", span_id=0x2)
+        proc.on_end(_start_span(proc, span, "call-1"))
         session.handlers["user_input_transcribed"](
             self._event(is_final=True, transcript="hello there")
         )
@@ -587,34 +594,58 @@ class _RecordingHarness:
 
 
 class TestEgressRecording(_RecordingHarness):
-    """An egress report delivers transcript and external audio atomically."""
+    """Egress report data and external audio may arrive in either order."""
 
-    def test_holds_until_complete_with_audio(self):
-        proc = _processor(recording_mode="egress")
-        self._start_conversation(proc)
-        self._end_session(proc)
-        # Session ended but recording still awaited → root NOT exported.
-        assert self._root(proc) is None
-
-        proc.attach_session_report(
-            _report(),
-            thread_id="call-1",
-            recording=b"OggS-bytes",
-            recording_name="call.ogg",
-        )
-
-        root = self._root(proc)
-        payload = json.loads(root._attributes["langsmith.attachments"])
-        assert base64.b64decode(payload[0]["content"]) == b"OggS-bytes"
-        assert (
-            root._attributes["langsmith.metadata.ls_audio_attach_status"] == "attached"
-        )
-
-    def test_complete_with_none_releases_without_audio(self):
+    def test_report_then_recording(self):
         proc = _processor(recording_mode="egress")
         self._start_conversation(proc)
         self._end_session(proc)
         proc.attach_session_report(_report(), thread_id="call-1")
+        assert self._root(proc) is None
+
+        proc.complete_recording("call-1", b"OggS-bytes", name="call.ogg")
+
+        root = self._root(proc)
+        payload = json.loads(root._attributes["langsmith.attachments"])
+        assert base64.b64decode(payload[0]["content"]) == b"OggS-bytes"
+        assert payload[0]["name"] == "call.ogg"
+        assert payload[0]["mime_type"] == "audio/ogg"
+        assert (
+            root._attributes["langsmith.metadata.ls_audio_attach_status"] == "attached"
+        )
+
+    def test_recording_then_report(self):
+        proc = _processor(recording_mode="egress")
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.complete_recording("call-1", b"OggS-bytes")
+        assert self._root(proc) is None
+
+        proc.attach_session_report(_report(), thread_id="call-1")
+
+        assert "langsmith.attachments" in self._root(proc)._attributes
+
+    def test_report_audio_is_ignored(self, tmp_path):
+        report_audio = tmp_path / "report.ogg"
+        report_audio.write_bytes(b"wrong audio")
+        proc = _processor(recording_mode="egress")
+        self._start_conversation(proc)
+        self._end_session(proc)
+
+        proc.attach_session_report(_report(path=report_audio), thread_id="call-1")
+        proc.complete_recording("call-1", b"egress audio")
+
+        payload = json.loads(self._root(proc)._attributes["langsmith.attachments"])
+        assert base64.b64decode(payload[0]["content"]) == b"egress audio"
+
+    def test_terminal_recording_failure_releases_without_audio(self):
+        proc = _processor(recording_mode="egress")
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+        assert self._root(proc) is None
+
+        proc.complete_recording("call-1", None)
 
         root = self._root(proc)
         assert "langsmith.attachments" not in root._attributes
@@ -624,16 +655,30 @@ class TestEgressRecording(_RecordingHarness):
         proc = _processor(recording_mode="egress")
         self._start_conversation(proc)
         self._end_session(proc)
-        # Egress began 4.25s after the trace did.
-        proc.attach_session_report(
-            _report(),
-            thread_id="call-1",
-            recording=b"x",
-            recording_started_at=(_ROOT_START_NS / 1e9) + 4.25,
+        proc.attach_session_report(_report(), thread_id="call-1")
+        proc.complete_recording(
+            "call-1",
+            b"x",
+            started_at=(_ROOT_START_NS / 1e9) + 4.25,
         )
 
         md = self._root(proc)._attributes
         assert md["langsmith.metadata.ls_audio_recording_start_offset_ms"] == 4250
+
+    def test_complete_recording_requires_egress_mode(self):
+        proc = _processor()
+        with pytest.raises(RuntimeError, match="recording_mode='egress'"):
+            proc.complete_recording("call-1", b"x")
+
+    def test_oversize_recording_is_not_buffered(self):
+        proc = _processor(recording_mode="egress", audio_size_limit_bytes=3)
+        self._start_conversation(proc)
+        proc.complete_recording("call-1", b"large")
+
+        state = proc._get_state_by_thread("call-1")
+        assert state.recording_received is True
+        assert state.pending_audio is None
+        assert state.audio_status == "too_large"
 
 
 class TestSessionReport(_RecordingHarness):
@@ -733,10 +778,10 @@ class TestSessionReport(_RecordingHarness):
         assert md["langsmith.metadata.ls_audio_attach_status"] == "none"
 
 
-class TestAtomicDelivery(_RecordingHarness):
-    """One terminal delivery always exports one complete trace."""
+class TestEgressDeliveryRace(_RecordingHarness):
+    """The report/recording race exports exactly one complete root."""
 
-    def test_duplicate_deliveries_export_once(self):
+    def test_concurrent_report_and_recording_export_once(self):
         for attempt in range(40):
             proc = _processor(recording_mode="egress", recording_timeout_seconds=5.0)
             self._start_conversation(proc, tid=0xABC + attempt)
@@ -754,18 +799,17 @@ class TestAtomicDelivery(_RecordingHarness):
             )
             start = threading.Barrier(2)
 
-            def deliver():
+            def deliver_report():
                 start.wait()
-                proc.attach_session_report(
-                    report,
-                    thread_id="call-1",
-                    recording=b"OggS-egress",
-                    recording_started_at=1.0,
-                )
+                proc.attach_session_report(report, thread_id="call-1")
+
+            def deliver_recording():
+                start.wait()
+                proc.complete_recording("call-1", b"OggS-egress", started_at=1.0)
 
             threads = [
-                threading.Thread(target=deliver),
-                threading.Thread(target=deliver),
+                threading.Thread(target=deliver_report),
+                threading.Thread(target=deliver_recording),
             ]
             for t in threads:
                 t.start()
@@ -777,39 +821,10 @@ class TestAtomicDelivery(_RecordingHarness):
                 for c in proc.downstream.on_end.call_args_list
                 if c.args[0]._attributes.get("langsmith.root_span")
             ]
-            # Exactly one root, and its single delivery carries both pieces.
             assert len(roots) == 1, f"attempt {attempt}: {len(roots)} roots"
             assert "langsmith.attachments" in roots[0]._attributes, attempt
             messages = json.loads(roots[0]._attributes["gen_ai.prompt"])["messages"]
             assert messages == [{"role": "user", "content": "Hello"}]
-
-    def test_delivery_claim_cancels_timeout_before_file_read(self, tmp_path):
-        audio = tmp_path / "audio.ogg"
-        audio.write_bytes(b"OggS")
-        proc = _processor(recording_timeout_seconds=0.05)
-        self._start_conversation(proc)
-        self._end_session(proc)
-        entered = threading.Event()
-        resume = threading.Event()
-        read_audio = proc._read_audio_file
-
-        def slow_read(path):
-            entered.set()
-            assert resume.wait(timeout=2)
-            return read_audio(path)
-
-        proc._read_audio_file = slow_read
-        delivery = threading.Thread(
-            target=proc.attach_session_report,
-            args=(_report(path=audio), "call-1"),
-        )
-        delivery.start()
-        assert entered.wait(timeout=2)
-        time.sleep(0.1)
-        assert self._root(proc) is None
-        resume.set()
-        delivery.join(timeout=2)
-        assert "langsmith.attachments" in self._root(proc)._attributes
 
 
 class TestRecordingTimeout(_RecordingHarness):
@@ -832,20 +847,36 @@ class TestRecordingTimeout(_RecordingHarness):
             root._attributes["langsmith.metadata.ls_audio_attach_status"] == "timeout"
         )
 
-    def test_none_mode_releases_immediately(self):
+    def test_egress_timeout_releases_when_recording_never_arrives(self):
+        proc = _processor(recording_mode="egress", recording_timeout_seconds=0.05)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+
+        deadline = time.monotonic() + 2.0
+        while self._root(proc) is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        root = self._root(proc)
+        assert root is not None
+        assert (
+            root._attributes["langsmith.metadata.ls_audio_attach_status"] == "timeout"
+        )
+
+    def test_none_mode_waits_for_report(self):
         proc = _processor(recording_mode="none")
         self._start_conversation(proc)
         self._end_session(proc)
-        # Nothing to wait for — the trace exports as soon as the session ends.
+        assert self._root(proc) is None
+
+        proc.attach_session_report(_report(), thread_id="call-1")
+
         assert self._root(proc) is not None
 
     @pytest.mark.parametrize("timeout", [0, -1])
     def test_nonpositive_timeout_is_rejected(self, timeout):
         with pytest.raises(ValueError, match="greater than zero"):
             _processor(recording_timeout_seconds=timeout)
-
-    def test_nonpositive_timeout_is_irrelevant_without_recording(self):
-        _processor(recording_mode="none", recording_timeout_seconds=0)
 
     def test_unknown_recording_mode_is_rejected(self):
         with pytest.raises(ValueError, match="recording_mode"):
@@ -967,7 +998,7 @@ class TestChatHistoryTranscript(_RecordingHarness):
             "name": "get_weather",
         }
 
-    def test_egress_report_and_audio_are_one_delivery(self):
+    def test_egress_report_and_audio_are_combined(self):
         proc = _processor(recording_mode="egress")
         self._start_conversation(proc)
         self._end_session(proc)
@@ -984,11 +1015,13 @@ class TestChatHistoryTranscript(_RecordingHarness):
                 ]
             ),
             thread_id="call-1",
-            recording=b"OggS-egress",
-            recording_started_at=(_ROOT_START_NS / 1e9) + 3.0,
+        )
+        proc.complete_recording(
+            "call-1",
+            b"OggS-egress",
+            started_at=(_ROOT_START_NS / 1e9) + 3.0,
         )
 
-        # The root is released once, carrying both pieces from the same call.
         root = self._root(proc)
         md = root._attributes
         payload = json.loads(md["langsmith.attachments"])
@@ -996,7 +1029,7 @@ class TestChatHistoryTranscript(_RecordingHarness):
         assert md["langsmith.metadata.ls_audio_recording_start_offset_ms"] == 3000
         assert self._messages(root) == [{"role": "user", "content": "Hello"}]
 
-    def test_none_mode_does_not_claim_late_report_transcript(self):
+    def test_none_mode_uses_report_transcript(self):
         proc = _processor(recording_mode="none")
         self._start_conversation(proc)
         self._end_session(proc)
@@ -1014,7 +1047,7 @@ class TestChatHistoryTranscript(_RecordingHarness):
             thread_id="call-1",
         )
         root = self._root(proc)
-        assert "gen_ai.prompt" not in root._attributes
+        assert self._messages(root) == [{"role": "user", "content": "Hello"}]
 
     def test_egress_path_falls_back_to_span_rollup(self):
         proc = _processor(recording_mode="egress")
@@ -1029,7 +1062,8 @@ class TestChatHistoryTranscript(_RecordingHarness):
         )
         self._end_session(proc)
         # An empty report transcript falls back to the conversation's spans.
-        proc.attach_session_report(_report(), thread_id="call-1", recording=b"x")
+        proc.attach_session_report(_report(), thread_id="call-1")
+        proc.complete_recording("call-1", b"x")
 
         messages = self._messages(self._root(proc))
         assert [m["content"] for m in messages] == ["Hello", "Hi there"]
@@ -1072,6 +1106,29 @@ class TestThreadId:
 
     def teardown_method(self):
         set_thread_id(None)
+
+    def test_state_uses_captured_thread_id(self):
+        proc = _processor()
+        proc._remember_thread_id(0xABC, "call-1")
+
+        with proc._state_lock:
+            state = proc._get_or_create_state(0xABC)
+
+        assert state.thread_id == "call-1"
+        assert proc._trace_by_thread == {"call-1": 0xABC}
+
+    def test_thread_cannot_route_to_two_active_traces(self):
+        proc = _processor()
+        proc._remember_thread_id(0xABC, "call-1")
+        proc._remember_thread_id(0xDEF, "call-1")
+
+        with proc._state_lock:
+            first = proc._get_or_create_state(0xABC)
+            second = proc._get_or_create_state(0xDEF)
+
+        assert first.thread_id == "call-1"
+        assert second.thread_id is None
+        assert proc._trace_by_thread["call-1"] == 0xABC
 
     def test_set_thread_id_injected(self):
         proc = _processor()

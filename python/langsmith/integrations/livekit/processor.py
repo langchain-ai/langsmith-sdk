@@ -4,11 +4,10 @@ Rewrites LiveKit's ``lk.*`` span data into the ``gen_ai.*`` / ``langsmith.*``
 namespaces LangSmith ingests; non-LiveKit spans on the same provider pass
 through untouched.
 
-In recorded modes the root span is held until :meth:`attach_session_report`
-delivers the complete transcript, recording, and time origin as one atomic unit.
-LiveKit's recorder supplies a path on the report; egress supplies bytes in the
-same call. Shared export / ``thread_id`` / message plumbing lives in
-:class:`BaseLangSmithSpanProcessor`.
+The root span is held until its session report arrives. LiveKit's recorder
+supplies audio on that report; egress audio arrives separately through
+:meth:`complete_recording`. Shared export / ``thread_id`` / message plumbing
+lives in :class:`BaseLangSmithSpanProcessor`.
 """
 
 from __future__ import annotations
@@ -50,9 +49,7 @@ from ._state import _ConversationState, _PendingAudio
 DEFAULT_STATE_TTL_SECONDS = 3600.0
 DEFAULT_STATE_MAXSIZE = 100_000
 
-# How long a root span waits for its recording before being exported without
-# one. Bounds the hold so a crashed job — or an ``on_session_end`` that never
-# runs — yields a trace with no audio rather than no trace at all.
+# How long a root span waits for its session data before being exported.
 DEFAULT_RECORDING_TIMEOUT_SECONDS = 30.0
 
 _STT_SPAN = "user_turn"  # audio → transcript (inference)
@@ -102,10 +99,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             audio_mime_type: default MIME type for embedded recordings.
             recording_mode: where recordings come from: ``"session_report"``
                 for LiveKit's recorder, ``"egress"`` for bytes supplied with
-                :meth:`attach_session_report`, or ``"none"`` to export without
-                waiting for a report.
-            recording_timeout_seconds: how long that hold lasts before the root
-                is exported without audio.
+                :meth:`complete_recording`, or ``"none"`` for report data
+                without audio.
+            recording_timeout_seconds: how long the root waits for required
+                session data before it is exported.
             state_ttl_seconds: lifetime for per-conversation state.
         """
         super().__init__(
@@ -119,11 +116,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             raise ValueError(
                 f"recording_mode must be one of {sorted(_RECORDING_MODES)!r}"
             )
-        if recording_mode != "none" and recording_timeout_seconds <= 0:
-            raise ValueError(
-                "recording_timeout_seconds must be greater than zero when a "
-                "recording is expected"
-            )
+        if recording_timeout_seconds <= 0:
+            raise ValueError("recording_timeout_seconds must be greater than zero")
         self._audio_mime_type = audio_mime_type
         self._recording_mode = recording_mode
         self._recording_timeout_seconds = recording_timeout_seconds
@@ -145,9 +139,26 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _get_or_create_state(self, trace_id: int) -> _ConversationState:
         state = self._get_state(trace_id)
-        if state is None:
-            state = _ConversationState(trace_id=trace_id)
-            self._state_by_trace[trace_id] = state
+        if state is not None:
+            return state
+
+        state = _ConversationState(trace_id=trace_id)
+        thread_id = self._thread_id_by_trace.get(trace_id)
+        if thread_id is not None:
+            existing_state = self._get_state_by_thread(thread_id)
+            if existing_state is not None:
+                logger.warning(
+                    "langsmith voice: thread id %s is already bound to an active "
+                    "LiveKit trace; recordings require one active trace per thread.",
+                    thread_id,
+                )
+            else:
+                state.thread_id = thread_id
+                self._trace_by_thread[thread_id] = trace_id
+                waiting = self._transcripts_waiting_for_trace.pop(thread_id, None)
+                if waiting:
+                    state.transcripts_waiting_for_span.extend(waiting)
+        self._state_by_trace[trace_id] = state
         return state
 
     def _get_state_by_thread(self, thread_id: str) -> Optional[_ConversationState]:
@@ -162,36 +173,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _refresh_state(self, state: _ConversationState) -> None:
         self._state_by_trace[state.trace_id] = state
-
-    def _associate_thread_with_state(
-        self, state: _ConversationState, thread_id: Optional[str]
-    ) -> None:
-        if thread_id is None:
-            return
-        thread = str(thread_id)
-        if state.thread_id is not None and state.thread_id != thread:
-            logger.warning(
-                "langsmith voice: trace %x already uses thread id %s; ignoring "
-                "conflicting id %s.",
-                state.trace_id,
-                state.thread_id,
-                thread,
-            )
-            return
-        existing_state = self._get_state_by_thread(thread)
-        if existing_state is not None and existing_state.trace_id != state.trace_id:
-            logger.warning(
-                "langsmith voice: thread id %s is already bound to an active "
-                "LiveKit trace; recordings require one active trace per thread.",
-                thread,
-            )
-            return
-        state.thread_id = thread
-        self._trace_by_thread[thread] = state.trace_id
-        waiting = self._transcripts_waiting_for_trace.pop(thread, None)
-        if waiting:
-            state.transcripts_waiting_for_span.extend(waiting)
-        self._refresh_state(state)
 
     def instrument_session(self, session: Any, thread_id: str) -> None:
         """Subscribe this processor to a LiveKit ``AgentSession``'s events.
@@ -227,143 +208,116 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self,
         report: Any,
         thread_id: str,
-        *,
-        recording: Optional[bytes] = None,
-        recording_name: str = "recording.ogg",
-        recording_mime_type: Optional[str] = None,
-        recording_started_at: Optional[float] = None,
     ) -> None:
-        """Attach a complete LiveKit session report and release the held root.
+        """Attach a LiveKit session report to the held conversation root.
 
-        This is the single terminal delivery for a recorded conversation. In
-        ``session_report`` mode it reads LiveKit's recording path and origin. In
-        ``egress`` mode pass the external recording bytes and origin in this same
-        call, so the root can never export with only half the delivery. In
-        ``none`` mode roots export at session end and reports are not accepted.
+        The report supplies chat history in every recording mode. In
+        ``session_report`` mode it also supplies the recording; egress audio is
+        delivered separately through :meth:`complete_recording`.
 
         Args:
             report: LiveKit's ``SessionReport`` (duck-typed — the module never
                 imports it, so it stays importable without ``livekit-agents``).
             thread_id: the conversation id, matching :func:`set_thread_id`.
-            recording: external audio bytes in ``egress`` mode.
-            recording_name: attachment name for external audio.
-            recording_mime_type: MIME type for external audio.
-            recording_started_at: external recording's first-sample epoch time.
         """
+        messages = build_messages_from_chat_history(report.chat_history)
+        report_audio = self._audio_from_session_report(report)
+
         thread = str(thread_id)
         with self._state_lock:
-            if not self._claim_report_delivery(thread):
+            state = self._get_state_by_thread(thread)
+            if state is None:
+                self._warn_missing_conversation(thread, "session report")
                 return
+            state.report_transcript = messages
+            state.report_received = True
+            if report_audio is not None:
+                (
+                    state.pending_audio,
+                    state.recording_started_at,
+                    state.audio_status,
+                ) = report_audio
+            self._refresh_state(state)
+            trace_id = state.trace_id
+        self._export_conversation_if_ready(trace_id)
 
-        messages = build_messages_from_chat_history(report.chat_history)
-        pending_audio, started_at, status = self._prepare_report_audio(
-            report,
-            recording=recording,
-            recording_name=recording_name,
-            recording_mime_type=recording_mime_type,
-            recording_started_at=recording_started_at,
-        )
-
-        with self._state_lock:
-            trace_id = self._complete_report_delivery(
-                thread,
-                transcript=messages,
-                pending_audio=pending_audio,
-                recording_started_at=started_at,
-                audio_status=status,
-            )
-        if trace_id is not None:
-            self._export_conversation_if_ready(trace_id)
-
-    def _claim_report_delivery(self, thread_id: str) -> bool:
-        state = self._get_state_by_thread(thread_id)
-        if state is None:
-            logger.warning(
-                "langsmith voice: no active LiveKit trace for thread %s; "
-                "the report arrived after export, or the id did not match "
-                "set_thread_id().",
-                thread_id,
-            )
-            return False
-        if self._recording_mode == "none":
-            logger.warning(
-                "langsmith voice: ignoring a session report for thread %s "
-                "because recording_mode='none' exports at session end.",
-                thread_id,
-            )
-            return False
-        if state.delivery_complete or state.delivery_in_progress:
-            logger.warning(
-                "langsmith voice: ignoring a duplicate session report for thread %s.",
-                thread_id,
-            )
-            return False
-        # Claim delivery and cancel the timeout before file I/O. A timer that
-        # fires after this point observes delivery_in_progress and cannot
-        # export a partial root.
-        state.delivery_in_progress = True
-        self._cancel_release_timer(state)
-        self._refresh_state(state)
-        return True
-
-    def _prepare_report_audio(
-        self,
-        report: Any,
-        *,
-        recording: Optional[bytes],
-        recording_name: str,
-        recording_mime_type: Optional[str],
-        recording_started_at: Optional[float],
-    ) -> tuple[Optional[_PendingAudio], Optional[float], Optional[str]]:
-        if self._recording_mode == "session_report":
-            audio_path = report.audio_recording_path
-            started_at = report.audio_recording_started_at
-            if audio_path is None:
-                return None, started_at, "none"
-            data, status = self._read_audio_file(audio_path)
-            if data is None:
-                return None, started_at, status
-            return (
-                _PendingAudio(
-                    name=audio_path.name,
-                    data=data,
-                    mime_type=self._audio_mime_type,
-                ),
-                started_at,
-                status,
-            )
-        if not recording:
-            return None, recording_started_at, "none"
-        return (
-            _PendingAudio(
-                name=recording_name,
-                data=bytes(recording),
-                mime_type=recording_mime_type or self._audio_mime_type,
-            ),
-            recording_started_at,
-            None,
-        )
-
-    def _complete_report_delivery(
+    def complete_recording(
         self,
         thread_id: str,
+        recording: Optional[bytes],
         *,
-        transcript: list[dict],
-        pending_audio: Optional[_PendingAudio],
-        recording_started_at: Optional[float],
-        audio_status: Optional[str],
-    ) -> Optional[int]:
-        state = self._get_state_by_thread(thread_id)
-        if state is None:
+        name: str = "recording.ogg",
+        mime_type: Optional[str] = None,
+        started_at: Optional[float] = None,
+    ) -> None:
+        """Attach completed egress audio, or ``None`` for a terminal failure.
+
+        ``name`` defaults to ``recording.ogg`` and ``mime_type`` defaults to the
+        processor's configured audio MIME type. ``started_at`` is the epoch time
+        of the recording's first sample and enables waterfall alignment.
+        """
+        if self._recording_mode != "egress":
+            raise RuntimeError("complete_recording() requires recording_mode='egress'")
+
+        pending_audio = None
+        status: Optional[str] = "none"
+        if recording:
+            if (
+                self.audio_size_limit_bytes is not None
+                and len(recording) > self.audio_size_limit_bytes
+            ):
+                status = "too_large"
+            else:
+                pending_audio = _PendingAudio(
+                    name=name,
+                    data=bytes(recording),
+                    mime_type=mime_type or self._audio_mime_type,
+                )
+                status = None
+
+        thread = str(thread_id)
+        with self._state_lock:
+            state = self._get_state_by_thread(thread)
+            if state is None:
+                self._warn_missing_conversation(thread, "recording")
+                return
+            state.pending_audio = pending_audio
+            state.recording_started_at = started_at
+            state.audio_status = status
+            state.recording_received = True
+            self._refresh_state(state)
+            trace_id = state.trace_id
+        self._export_conversation_if_ready(trace_id)
+
+    def _warn_missing_conversation(self, thread_id: str, delivery: str) -> None:
+        logger.warning(
+            "langsmith voice: no active LiveKit trace for thread %s; the %s "
+            "arrived after export, or the id did not match set_thread_id().",
+            thread_id,
+            delivery,
+        )
+
+    def _audio_from_session_report(
+        self, report: Any
+    ) -> Optional[tuple[Optional[_PendingAudio], Optional[float], Optional[str]]]:
+        if self._recording_mode != "session_report":
             return None
-        state.report_transcript = transcript
-        state.pending_audio = pending_audio
-        state.recording_started_at = recording_started_at
-        state.audio_status = audio_status
-        state.delivery_in_progress = False
-        state.delivery_complete = True
-        self._refresh_state(state)
-        return state.trace_id
+        audio_path = report.audio_recording_path
+        started_at = report.audio_recording_started_at
+        if audio_path is None:
+            return None, started_at, "none"
+        data, status = self._read_audio_file(audio_path)
+        if data is None:
+            return None, started_at, status
+        return (
+            _PendingAudio(
+                name=audio_path.name,
+                data=data,
+                mime_type=self._audio_mime_type,
+            ),
+            started_at,
+            status,
+        )
 
     def _dispatch(self, tspan: TranslatedSpan) -> bool:
         trace_id = tspan.span.context.trace_id
@@ -403,9 +357,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_kind("chain")
         with self._state_lock:
             state = self._get_or_create_state(trace_id)
-            self._associate_thread_with_state(
-                state, self._thread_id_by_trace.get(trace_id)
-            )
             state.session_ended = True
             held = state.spans_waiting_for_transcript
             state.spans_waiting_for_transcript = []
@@ -524,14 +475,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         end). Exported as-is (``True``) when there's no thread id to pair against.
         """
         tspan.set_kind("chain")
-        thread = tspan.attributes.get("langsmith.metadata.thread_id")
-        if thread is None:
-            return True
-        thread = str(thread)
-
         with self._state_lock:
             state = self._get_or_create_state(tspan.span.context.trace_id)
-            self._associate_thread_with_state(state, thread)
+            if state.thread_id is None:
+                return True
             has_transcript = bool(state.transcripts_waiting_for_span)
             transcript = (
                 state.transcripts_waiting_for_span.pop(0) if has_transcript else ""
@@ -607,31 +554,27 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_metadata(
             "ls_integration_version", (get_package_version("livekit-agents") or "")
         )
-        thread = tspan.attributes.get("langsmith.metadata.thread_id")
-        if thread is None and self._recording_mode != "none":
-            logger.warning(
-                "langsmith voice: trace %x has no thread id; its session report "
-                "and recording cannot be attached. Call set_thread_id() before "
-                "the conversation starts, or configure recording_mode='none'.",
-                trace_id,
-            )
         with self._state_lock:
             state = self._get_or_create_state(trace_id)
             state.root = tspan
-            self._associate_thread_with_state(
-                state, str(thread) if thread is not None else None
-            )
             self._refresh_state(state)
+            has_thread_id = state.thread_id is not None
+        if not has_thread_id:
+            logger.warning(
+                "langsmith voice: trace %x has no thread id; its session report "
+                "cannot be attached. Call set_thread_id() before the conversation "
+                "starts.",
+                trace_id,
+            )
         self._export_conversation_if_ready(trace_id)
 
     def _export_conversation_if_ready(
         self, trace_id: int, *, force: bool = False
     ) -> None:
-        """Export the deferred root once the session ended and audio is ready.
+        """Export the deferred root once the required session data is ready.
 
-        Requires the root and session end. Recorded modes additionally require
-        one complete :meth:`attach_session_report` delivery; while waiting, this
-        arms the bounded fallback timer. ``force`` skips the gates at shutdown.
+        Every mode waits for the report. Egress additionally waits for
+        :meth:`complete_recording`. ``force`` skips those gates at shutdown.
         """
         with self._state_lock:
             claimed = self._claim_conversation_for_export(trace_id, force=force)
@@ -648,12 +591,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             return None
         if not force and not state.session_ended:
             return None
-        expects_delivery = (
-            not force and self._recording_mode != "none" and state.thread_id is not None
-        )
-        if expects_delivery and not state.delivery_complete:
-            if not state.delivery_in_progress:
-                self._schedule_release_timeout(state)
+        expects_session_data = not force and state.thread_id is not None
+        if expects_session_data and not self._has_required_session_data(state):
+            self._schedule_release_timeout(state)
             return None
 
         root = state.root
@@ -664,6 +604,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._transcripts_waiting_for_trace.pop(state.thread_id, None)
         self._forget_thread_id(trace_id)
         return state, root
+
+    def _has_required_session_data(self, state: _ConversationState) -> bool:
+        return state.report_received and (
+            self._recording_mode != "egress" or state.recording_received
+        )
 
     def _export_completed_conversation(
         self, state: _ConversationState, root: TranslatedSpan
@@ -695,19 +640,22 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             if state is None:
                 return
             state.release_timer = None
-            if state.delivery_complete or state.delivery_in_progress:
+            if self._has_required_session_data(state):
                 return
+            missing = ["session report"] if not state.report_received else []
+            if self._recording_mode == "egress" and not state.recording_received:
+                missing.append("egress recording")
             logger.warning(
-                "langsmith voice: no session report for thread %s after %.1fs; "
-                "exporting the trace without audio. Call attach_session_report() "
-                "at session end, or configure recording_mode='none'.",
+                "langsmith voice: timed out waiting for %s for thread %s after "
+                "%.1fs; exporting the trace with available session data.",
+                " and ".join(missing),
                 state.thread_id,
                 self._recording_timeout_seconds,
             )
-            state.audio_status = "timeout"
-            state.delivery_complete = True
+            if self._recording_mode != "none" and state.pending_audio is None:
+                state.audio_status = "timeout"
             self._refresh_state(state)
-        self._export_conversation_if_ready(trace_id)
+        self._export_conversation_if_ready(trace_id, force=True)
 
     def _cancel_release_timer(self, state: _ConversationState) -> None:
         timer = state.release_timer

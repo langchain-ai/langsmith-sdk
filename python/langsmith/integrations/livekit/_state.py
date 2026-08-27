@@ -27,8 +27,8 @@ class _ConversationState:
     pending_audio: Optional[_PendingAudio] = None
     recording_started_at: Optional[float] = None
     audio_status: Optional[str] = None
-    delivery_complete: bool = False
-    delivery_in_progress: bool = False
+    report_received: bool = False
+    recording_received: bool = False
     release_timer: Optional[threading.Timer] = None
     spans_waiting_for_transcript: list[TranslatedSpan] = field(default_factory=list)
     transcripts_waiting_for_span: list[str] = field(default_factory=list)
