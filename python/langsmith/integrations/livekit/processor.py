@@ -407,8 +407,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 state, self._thread_id_by_trace.get(trace_id)
             )
             state.session_ended = True
-            held = state.deferred_user_speaking
-            state.deferred_user_speaking = []
+            held = state.spans_waiting_for_transcript
+            state.spans_waiting_for_transcript = []
             state.transcripts_waiting_for_span = []
             self._refresh_state(state)
         for speaking_span in held:
@@ -537,7 +537,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 state.transcripts_waiting_for_span.pop(0) if has_transcript else ""
             )
             if not has_transcript:
-                state.deferred_user_speaking.append(tspan)
+                state.spans_waiting_for_transcript.append(tspan)
             self._refresh_state(state)
         if has_transcript:
             self._apply_user_transcript(tspan, transcript)
@@ -560,8 +560,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 self._transcripts_waiting_for_trace[tid] = waiting
                 return
             tspan = (
-                state.deferred_user_speaking.pop(0)
-                if state.deferred_user_speaking
+                state.spans_waiting_for_transcript.pop(0)
+                if state.spans_waiting_for_transcript
                 else None
             )
             if tspan is None:
@@ -668,7 +668,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _export_completed_conversation(
         self, state: _ConversationState, root: TranslatedSpan
     ) -> None:
-        for speaking_span in state.deferred_user_speaking:
+        for speaking_span in state.spans_waiting_for_transcript:
             self._export(speaking_span)
         self._render_conversation(root, state)
         attached = self._attach_pending_audio(root, state)
@@ -776,7 +776,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._trace_by_thread.clear()
             self._transcripts_waiting_for_trace.clear()
         for state in remaining:
-            for speaking_span in state.deferred_user_speaking:
+            for speaking_span in state.spans_waiting_for_transcript:
                 self._export(speaking_span)
         super().shutdown()
 

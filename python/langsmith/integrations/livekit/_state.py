@@ -30,5 +30,5 @@ class _ConversationState:
     delivery_complete: bool = False
     delivery_in_progress: bool = False
     release_timer: Optional[threading.Timer] = None
-    deferred_user_speaking: list[TranslatedSpan] = field(default_factory=list)
+    spans_waiting_for_transcript: list[TranslatedSpan] = field(default_factory=list)
     transcripts_waiting_for_span: list[str] = field(default_factory=list)

@@ -219,7 +219,7 @@ class TestRealtimeUserTranscript:
         assert "gen_ai.completion" not in span._attributes
         # No state left behind.
         state = proc._state_by_trace[0xABC]
-        assert state.deferred_user_speaking == []
+        assert state.spans_waiting_for_transcript == []
         assert state.transcripts_waiting_for_span == []
 
     def test_transcript_before_span_is_buffered(self):
@@ -287,7 +287,7 @@ class TestRealtimeUserTranscript:
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
 
         assert len(self._exported(proc, "user_speaking")) == 1
-        assert proc._state_by_trace[tid].deferred_user_speaking == []
+        assert proc._state_by_trace[tid].spans_waiting_for_transcript == []
 
     def test_shutdown_flushes_untranscribed_span(self):
         proc = _processor(recording_mode="none")
