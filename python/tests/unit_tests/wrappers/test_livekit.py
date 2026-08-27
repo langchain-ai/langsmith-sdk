@@ -147,8 +147,8 @@ class TestDispatchDisposition:
 
         assert proc._trace_by_thread["call-1"] == 0xABC
 
-    def test_recorded_root_without_thread_warns_once(self, caplog):
-        proc = _processor()
+    def test_egress_root_without_thread_warns_once(self, caplog):
+        proc = _processor(recording_mode="egress")
         proc.on_end(_make_span("job_entrypoint", parent=None))
         proc.on_end(_make_span("agent_session", span_id=0x2))
 
@@ -661,6 +661,43 @@ class _RecordingHarness:
 
 
 class TestAutomaticSessionReport(_RecordingHarness):
+    def test_report_hook_correlates_unthreaded_trace_by_trace_id(
+        self, monkeypatch, tmp_path
+    ):
+        audio = tmp_path / "unthreaded.ogg"
+        audio.write_bytes(b"unthreaded-audio")
+        session = _FakeLifecycleSession()
+        ctx = _FakeJobContext(session, _report(path=audio))
+        current_context = {"value": ctx}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor()
+
+        self._start_conversation(proc, thread_id=None)
+        self._start_session(proc, thread_id=None)
+        self._end_session(proc)
+        assert self._root(proc) is None
+
+        session.close()
+
+        root = self._root(proc)
+        payload = json.loads(root._attributes["langsmith.attachments"])
+        assert base64.b64decode(payload[0]["content"]) == b"unthreaded-audio"
+        assert "langsmith.metadata.thread_id" not in root._attributes
+        assert ctx.make_report_calls == [session]
+
+    def test_unthreaded_egress_does_not_wait_for_report(self, monkeypatch):
+        session = _FakeLifecycleSession()
+        ctx = _FakeJobContext(session, _report())
+        current_context = {"value": ctx}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor(recording_mode="egress")
+
+        self._start_conversation(proc, thread_id=None)
+        self._start_session(proc, thread_id=None)
+        self._end_session(proc)
+
+        assert self._root(proc) is not None
+
     def test_direct_processor_captures_report_on_session_close(
         self, monkeypatch, tmp_path
     ):
@@ -1129,6 +1166,53 @@ class TestEgressDeliveryRace(_RecordingHarness):
 
 class TestRecordingTimeout(_RecordingHarness):
     """A recording that never arrives yields a trace without audio, not no trace."""
+
+    def test_shutdown_waits_for_in_flight_timeout_export(self):
+        proc = _processor(recording_timeout_seconds=60.0)
+        self._start_conversation(proc)
+        self._end_session(proc)
+        state = proc._get_state_by_thread("call-1")
+        assert state is not None
+        assert state.release_timer is not None
+        state.release_timer.cancel()
+
+        export_started = threading.Event()
+        allow_export = threading.Event()
+        shutdown_started = threading.Event()
+        shutdown_finished = threading.Event()
+        original_export = proc._export_completed_conversation
+
+        def blocking_export(state, root):
+            export_started.set()
+            assert allow_export.wait(timeout=5)
+            original_export(state, root)
+
+        def shut_down():
+            shutdown_started.set()
+            proc.shutdown()
+            shutdown_finished.set()
+
+        proc._export_completed_conversation = blocking_export
+        timeout_thread = threading.Thread(
+            target=proc._on_recording_timeout, args=(0xABC,)
+        )
+        timeout_thread.start()
+        assert export_started.wait(timeout=5)
+
+        shutdown_thread = threading.Thread(target=shut_down)
+        shutdown_thread.start()
+        assert shutdown_started.wait(timeout=5)
+        assert not shutdown_finished.wait(timeout=0.05)
+
+        allow_export.set()
+        timeout_thread.join(timeout=5)
+        shutdown_thread.join(timeout=5)
+
+        assert not timeout_thread.is_alive()
+        assert not shutdown_thread.is_alive()
+        assert shutdown_finished.is_set()
+        assert self._root(proc) is not None
+        proc.downstream.shutdown.assert_called_once()
 
     def test_timeout_releases_the_root(self):
         proc = _processor(recording_timeout_seconds=0.05)

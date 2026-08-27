@@ -1790,7 +1790,7 @@ requires-dist = [
     { name = "google-adk", marker = "extra == 'google-adk-live'", specifier = ">=2.3.0" },
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
-    { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=1.3" },
+    { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=1.6" },
     { name = "openai", marker = "extra == 'openai-realtime'", specifier = ">=1.50" },
     { name = "openai-agents", marker = "extra == 'openai-agents'", specifier = ">=0.0.3" },
     { name = "openai-agents", marker = "extra == 'openai-realtime'", specifier = ">=0.0.3" },

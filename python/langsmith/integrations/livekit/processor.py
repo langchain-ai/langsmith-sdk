@@ -136,6 +136,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         # The timeout fires on a timer thread; every conversation-state mutation
         # uses this lock, including the framework's normal span callbacks.
         self._state_lock = threading.RLock()
+        # Serialize the full claim-and-export operation with downstream shutdown.
+        # This is separate from ``_state_lock`` so exporter I/O does not block
+        # unrelated conversation-state updates. When both are needed, acquire
+        # this lock first.
+        self._export_lock = threading.RLock()
 
         def _cache() -> Any:
             return TTLCache(maxsize=DEFAULT_STATE_MAXSIZE, ttl=state_ttl_seconds)
@@ -752,12 +757,14 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             state = self._get_or_create_state(trace_id)
             state.root = tspan
             self._refresh_state(state)
-            has_thread_id = state.thread_id is not None
-        if not has_thread_id:
+            missing_egress_thread = (
+                state.recording_mode == "egress" and state.thread_id is None
+            )
+        if missing_egress_thread:
             logger.warning(
-                "langsmith voice: trace %x has no thread id; its session report "
-                "cannot be attached. Call set_thread_id() before the conversation "
-                "starts.",
+                "langsmith voice: egress trace %x has no thread id; its recording "
+                "cannot be delivered. Call set_thread_id() before the conversation "
+                "starts, or choose a different recording mode.",
                 trace_id,
             )
         self._export_conversation_if_ready(trace_id)
@@ -770,12 +777,13 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         Every mode waits for the report. Egress additionally waits for
         :meth:`complete_recording`. ``force`` skips those gates at shutdown.
         """
-        with self._state_lock:
-            claimed = self._claim_conversation_for_export(trace_id, force=force)
-        if claimed is None:
-            return
-        state, root = claimed
-        self._export_completed_conversation(state, root)
+        with self._export_lock:
+            with self._state_lock:
+                claimed = self._claim_conversation_for_export(trace_id, force=force)
+            if claimed is None:
+                return
+            state, root = claimed
+            self._export_completed_conversation(state, root)
 
     def _claim_conversation_for_export(
         self, trace_id: int, *, force: bool
@@ -785,7 +793,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             return None
         if not force and not state.session_ended:
             return None
-        expects_session_data = not force and state.thread_id is not None
+        expects_session_data = not force and self._expects_session_data(state)
         if expects_session_data and not self._has_required_session_data(state):
             self._schedule_release_timeout(state)
             return None
@@ -799,6 +807,16 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._transcripts_waiting_for_trace.pop(state.thread_id, None)
         self._forget_thread_id(trace_id)
         return state, root
+
+    def _expects_session_data(self, state: _ConversationState) -> bool:
+        """Whether this conversation has a viable session-data delivery route."""
+        if state.recording_mode == "egress":
+            # External recordings are routed by ``complete_recording(thread_id)``.
+            return state.thread_id is not None
+        # The automatic close hook captures this state's exact OTel trace id, so
+        # session-report and no-audio modes do not require a LangSmith thread id.
+        # A thread id also permits manual delivery through attach_session_report.
+        return state.report_hook_session_id is not None or state.thread_id is not None
 
     def _has_required_session_data(self, state: _ConversationState) -> bool:
         return state.report_received and (
@@ -907,23 +925,24 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         ``force_flush`` deliberately does not — a still-held root there is
         legitimately in progress, not a buffered export waiting to drain.
         """
-        with self._state_lock:
-            trace_ids = list(self._state_by_trace)
-            for state in list(self._state_by_trace.values()):
-                self._cancel_release_timer(state)
-        for trace_id in trace_ids:
-            self._export_conversation_if_ready(trace_id, force=True)
-        with self._state_lock:
-            remaining = list(self._state_by_trace.values())
-            self._state_by_trace.clear()
-            self._trace_by_thread.clear()
-            self._thread_state_waiting_for_trace.clear()
-            self._completed_threads.clear()
-            self._transcripts_waiting_for_trace.clear()
-        for state in remaining:
-            for speaking_span in state.spans_waiting_for_transcript:
-                self._export(speaking_span)
-        super().shutdown()
+        with self._export_lock:
+            with self._state_lock:
+                trace_ids = list(self._state_by_trace)
+                for state in list(self._state_by_trace.values()):
+                    self._cancel_release_timer(state)
+            for trace_id in trace_ids:
+                self._export_conversation_if_ready(trace_id, force=True)
+            with self._state_lock:
+                remaining = list(self._state_by_trace.values())
+                self._state_by_trace.clear()
+                self._trace_by_thread.clear()
+                self._thread_state_waiting_for_trace.clear()
+                self._completed_threads.clear()
+                self._transcripts_waiting_for_trace.clear()
+            for state in remaining:
+                for speaking_span in state.spans_waiting_for_transcript:
+                    self._export(speaking_span)
+            super().shutdown()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force-flush the downstream — deferred root spans are NOT finalized."""
