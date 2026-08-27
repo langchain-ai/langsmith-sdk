@@ -4517,7 +4517,11 @@ class Client:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
-            "limit": limit,
+            # /runs/query enforces a server-side page-size cap of 100.
+            # Clamp to 100 so callers who pass limit>100 don't get HTTP 400.
+            # The total-count cap below (i+1 >= limit) still honours the
+            # caller's intent across pages.
+            "limit": min(limit, 100) if limit is not None else 100,
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
