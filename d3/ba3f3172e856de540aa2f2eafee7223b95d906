@@ -1,0 +1,62 @@
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_95f4db418a652d::t_a5b52877801632 575-614
+  s_95f4db418a652d::t_6d7e82c2eedf8f 687,772-781,785-794
+  s_95f4db418a652d::t_47c69be6dca09d 647-651,663-686,688-723,750-771,782-784,795-819
+  s_95f4db418a652d::t_76c2b344f216f9 724-734,736-739,741-749,925-949
+  s_95f4db418a652d::t_ef48220f397206 735,740
+  s_95f4db418a652d::t_43b6d45d2d26a4 10,14,20,626-628,631
+  s_c138dc182265e7::t_77e9330998440e 13,79-93
+  s_95f4db418a652d::t_be248219b27507 894-905,907-924,950-959
+  s_95f4db418a652d::t_10f0223c9524ce 961-971
+  s_c138dc182265e7::t_cf6799e4b804a9 94-95
+  s_95f4db418a652d::t_68bc3a03f12de9 820-821
+  s_95f4db418a652d::t_48fcc82d0f8e4f 960
+python/langsmith/integrations/livekit/_state.py
+  s_95f4db418a652d::t_385f3acc76eb12 20-29,33,44
+  s_95f4db418a652d::t_278c2a71bbdafd 19
+python/langsmith/integrations/livekit/processor.py
+  s_c138dc182265e7::t_c7b79a27a3025f 115
+  s_95f4db418a652d::t_a502f7f0ae73e7 23,48,145-149,164-166,169-171,176-200,202-215,229-236
+  s_95f4db418a652d::t_6d7e82c2eedf8f 172,238
+  s_95f4db418a652d::t_2578cd65212240 239-281,285-286,288-301
+  s_95f4db418a652d::t_3cfa70e365f0ea 282-284,287,371-374,376
+  s_95f4db418a652d::t_6c563313951800 375,379-383
+  s_95f4db418a652d::t_11a889c4826201 24
+  s_95f4db418a652d::t_4400c956142ead 805,841,850,920
+  s_95f4db418a652d::t_a944fd65cd6e2b 358-370,377-378,384-388,391,400-409,411-424,465-476,478,497-499,502
+  s_c138dc182265e7::t_900756a455fff2 114
+  s_95f4db418a652d::t_3d8e05e9decaaa 7-10,107-108
+  s_95f4db418a652d::t_5eb042018ea595 352-355
+  s_95f4db418a652d::t_37e683da4dc209 150-153,201,410,462-464,797,921
+  s_c138dc182265e7::t_77e9330998440e 17-18,92,102,113,116-119
+  s_95f4db418a652d::t_f705192b0b13e2 237
+  s_95f4db418a652d::t_e8b842647ee7d5 425
+python/langsmith/integrations/livekit/__init__.py
+  s_c138dc182265e7::t_77e9330998440e 6-8,36,92,100-101,103-106
+  s_c138dc182265e7::t_c7b79a27a3025f 102
+  s_95f4db418a652d::t_8dafdf30c651b2 65-69,71-72,81-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d3ba3f3172e856de540aa2f2eafee7223b95d906",
+  "prompts": {},
+  "sessions": {
+    "s_95f4db418a652d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0443d-5a04-72b0-be11-d0131bfd63d8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    },
+    "s_c138dc182265e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04080-55e6-7383-832c-14676779c04b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
