@@ -82,6 +82,7 @@ export class CommandHandle {
   private _reconnectAttempts = 0;
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
+  private _stdinClosed: boolean;
 
   /** @internal */
   constructor(
@@ -94,6 +95,7 @@ export class CommandHandle {
       stderrOffset?: number;
       onStdout?: (data: string) => void;
       onStderr?: (data: string) => void;
+      stdinClosed?: boolean;
     },
   ) {
     this._stream = messageStream;
@@ -103,6 +105,7 @@ export class CommandHandle {
     this._lastStderrOffset = options?.stderrOffset ?? 0;
     this._onStdout = options?.onStdout;
     this._onStderr = options?.onStderr;
+    this._stdinClosed = options?.stdinClosed ?? false;
 
     // New executions (no commandId): _ensureStarted reads "started".
     // Reconnections (commandId set): skip since reconnect streams
@@ -297,8 +300,16 @@ export class CommandHandle {
 
   /**
    * Write data to the command's stdin.
+   *
+   * @throws If the command was run with stdin closed.
    */
   sendInput(data: string): void {
+    if (this._stdinClosed) {
+      throw new Error(
+        "stdin was closed for this command. Pass closeStdin: false to run() " +
+          "to keep it open for sendInput().",
+      );
+    }
     if (this._control) {
       this._control.sendInput(data);
     }

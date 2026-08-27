@@ -1932,6 +1932,18 @@ describe("CommandHandle", () => {
       // Should not throw
       handle.sendInput("test input");
     });
+
+    it("should throw when the command was run with stdin closed", () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        commandId: "cmd-123",
+        stdinClosed: true,
+      });
+
+      expect(() => handle.sendInput("test input")).toThrow(
+        /closeStdin: false/,
+      );
+    });
   });
 });
 

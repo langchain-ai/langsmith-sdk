@@ -883,6 +883,7 @@ class TestAsyncSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 

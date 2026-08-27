@@ -415,6 +415,7 @@ export async function runWsStream(
     killOnDisconnect = false,
     ttlSeconds = 600,
     pty,
+    closeStdin,
     headers: extraHeaders,
     openTimeout = WS_OPEN_TIMEOUT,
   } = options;
@@ -443,6 +444,7 @@ export async function runWsStream(
       if (cwd) payload.cwd = cwd;
       if (commandId) payload.command_id = commandId;
       if (pty) payload.pty = true;
+      if (closeStdin) payload.close_stdin = true;
 
       ws.send(JSON.stringify(payload));
 
