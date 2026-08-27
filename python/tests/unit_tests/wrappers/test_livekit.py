@@ -1195,7 +1195,7 @@ class TestChatHistoryTranscript(_RecordingHarness):
         f.write_bytes(b"OggS")
         return f
 
-    def test_orders_by_created_at_and_keeps_instructions(self, tmp_path):
+    def test_preserves_livekit_item_order_and_keeps_instructions(self, tmp_path):
         proc = _processor()
         self._start_conversation(proc)
         self._end_session(proc)
@@ -1205,27 +1205,27 @@ class TestChatHistoryTranscript(_RecordingHarness):
                 items=[
                     {
                         "type": "message",
-                        "role": "assistant",
-                        "content": ["Hi there"],
-                        "created_at": 20.0,
-                    },
-                    {
-                        "type": "message",
                         "role": "system",
                         "content": ["You are a bot"],
-                        "created_at": 0.0,
+                        "created_at": 20.0,
                     },
                     {
                         "type": "message",
                         "role": "developer",
                         "content": ["Be concise"],
-                        "created_at": 5.0,
+                        "created_at": 0.0,
                     },
                     {
                         "type": "message",
                         "role": "user",
                         "content": ["Hello"],
                         "created_at": 10.0,
+                    },
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": ["Hi there"],
+                        "created_at": 5.0,
                     },
                 ],
             ),
@@ -1259,7 +1259,7 @@ class TestChatHistoryTranscript(_RecordingHarness):
                         "call_id": "c1",
                         "name": "get_weather",
                         "arguments": '{"city": "Paris"}',
-                        "created_at": 2.0,
+                        "created_at": 3.0,
                     },
                     {
                         "type": "function_call_output",
@@ -1267,13 +1267,13 @@ class TestChatHistoryTranscript(_RecordingHarness):
                         "name": "get_weather",
                         "output": "18C",
                         "is_error": False,
-                        "created_at": 3.0,
+                        "created_at": 4.0,
                     },
                     {
                         "type": "message",
                         "role": "assistant",
                         "content": ["It's 18 degrees."],
-                        "created_at": 4.0,
+                        "created_at": 2.0,
                     },
                 ],
             ),

@@ -259,7 +259,7 @@ def build_messages_from_chat_history(chat_history: Any) -> list[dict]:
         return []
 
     messages: list[dict] = []
-    for item in sorted(items, key=lambda item: item["created_at"]):
+    for item in items:
         kind = item["type"]
         if kind == "message":
             role = item["role"]
