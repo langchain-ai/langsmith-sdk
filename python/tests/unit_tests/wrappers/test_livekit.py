@@ -220,7 +220,7 @@ class TestRealtimeUserTranscript:
         # No state left behind.
         state = proc._state_by_trace[0xABC]
         assert state.deferred_user_speaking == []
-        assert state.pending_user_transcripts == []
+        assert state.transcripts_waiting_for_span == []
 
     def test_transcript_before_span_is_buffered(self):
         # Transcript can race ahead of the span's on_end — buffer, then apply.
@@ -233,7 +233,7 @@ class TestRealtimeUserTranscript:
         exported = self._exported(proc, "user_speaking")
         assert len(exported) == 1
         assert exported[0]._attributes["lk.user_transcript"] == "hello there"
-        assert len(proc._unmatched_user_transcripts) == 0
+        assert len(proc._transcripts_waiting_for_trace) == 0
 
     def test_fifo_pairing_within_conversation(self):
         # Two utterances, two transcripts — paired in order.
@@ -457,7 +457,7 @@ class TestInstrumentSession:
             self._event(is_final=False, transcript="partial")
         )
         # Interim result buffered nothing; a later span has no transcript to pair.
-        assert len(proc._unmatched_user_transcripts) == 0
+        assert len(proc._transcripts_waiting_for_trace) == 0
 
 
 class TestForceFlush:

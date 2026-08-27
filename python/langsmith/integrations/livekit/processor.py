@@ -138,21 +138,19 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._trace_by_thread: MutableMapping[str, int] = _cache()
         # A transcript event may arrive after instrument_session() but before a
         # LiveKit span has given us that thread's trace id.
-        self._unmatched_user_transcripts: MutableMapping[str, list[str]] = _cache()
+        self._transcripts_waiting_for_trace: MutableMapping[str, list[str]] = _cache()
 
-    def _get_state_locked(self, trace_id: int) -> Optional[_ConversationState]:
+    def _get_state(self, trace_id: int) -> Optional[_ConversationState]:
         return self._state_by_trace.get(trace_id)
 
-    def _get_or_create_state_locked(self, trace_id: int) -> _ConversationState:
-        state = self._get_state_locked(trace_id)
+    def _get_or_create_state(self, trace_id: int) -> _ConversationState:
+        state = self._get_state(trace_id)
         if state is None:
             state = _ConversationState(trace_id=trace_id)
             self._state_by_trace[trace_id] = state
         return state
 
-    def _get_state_by_thread_locked(
-        self, thread_id: str
-    ) -> Optional[_ConversationState]:
+    def _get_state_by_thread(self, thread_id: str) -> Optional[_ConversationState]:
         trace_id = self._trace_by_thread.get(thread_id)
         if trace_id is None:
             return None
@@ -162,10 +160,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             return None
         return state
 
-    def _refresh_state_locked(self, state: _ConversationState) -> None:
+    def _refresh_state(self, state: _ConversationState) -> None:
         self._state_by_trace[state.trace_id] = state
 
-    def _associate_thread_with_state_locked(
+    def _associate_thread_with_state(
         self, state: _ConversationState, thread_id: Optional[str]
     ) -> None:
         if thread_id is None:
@@ -180,7 +178,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 thread,
             )
             return
-        existing_state = self._get_state_by_thread_locked(thread)
+        existing_state = self._get_state_by_thread(thread)
         if existing_state is not None and existing_state.trace_id != state.trace_id:
             logger.warning(
                 "langsmith voice: thread id %s is already bound to an active "
@@ -190,10 +188,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             return
         state.thread_id = thread
         self._trace_by_thread[thread] = state.trace_id
-        unmatched = self._unmatched_user_transcripts.pop(thread, None)
-        if unmatched:
-            state.pending_user_transcripts.extend(unmatched)
-        self._refresh_state_locked(state)
+        waiting = self._transcripts_waiting_for_trace.pop(thread, None)
+        if waiting:
+            state.transcripts_waiting_for_span.extend(waiting)
+        self._refresh_state(state)
 
     def instrument_session(self, session: Any, thread_id: str) -> None:
         """Subscribe this processor to a LiveKit ``AgentSession``'s events.
@@ -254,7 +252,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """
         thread = str(thread_id)
         with self._state_lock:
-            if not self._claim_report_delivery_locked(thread):
+            if not self._claim_report_delivery(thread):
                 return
 
         messages = build_messages_from_chat_history(report.chat_history)
@@ -267,7 +265,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         )
 
         with self._state_lock:
-            trace_id = self._complete_report_delivery_locked(
+            trace_id = self._complete_report_delivery(
                 thread,
                 transcript=messages,
                 pending_audio=pending_audio,
@@ -277,8 +275,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         if trace_id is not None:
             self._export_conversation_if_ready(trace_id)
 
-    def _claim_report_delivery_locked(self, thread_id: str) -> bool:
-        state = self._get_state_by_thread_locked(thread_id)
+    def _claim_report_delivery(self, thread_id: str) -> bool:
+        state = self._get_state_by_thread(thread_id)
         if state is None:
             logger.warning(
                 "langsmith voice: no active LiveKit trace for thread %s; "
@@ -304,8 +302,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         # fires after this point observes delivery_in_progress and cannot
         # export a partial root.
         state.delivery_in_progress = True
-        self._cancel_release_timer_locked(state)
-        self._refresh_state_locked(state)
+        self._cancel_release_timer(state)
+        self._refresh_state(state)
         return True
 
     def _prepare_report_audio(
@@ -346,7 +344,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             None,
         )
 
-    def _complete_report_delivery_locked(
+    def _complete_report_delivery(
         self,
         thread_id: str,
         *,
@@ -355,7 +353,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         recording_started_at: Optional[float],
         audio_status: Optional[str],
     ) -> Optional[int]:
-        state = self._get_state_by_thread_locked(thread_id)
+        state = self._get_state_by_thread(thread_id)
         if state is None:
             return None
         state.report_transcript = transcript
@@ -364,7 +362,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         state.audio_status = audio_status
         state.delivery_in_progress = False
         state.delivery_complete = True
-        self._refresh_state_locked(state)
+        self._refresh_state(state)
         return state.trace_id
 
     def _dispatch(self, tspan: TranslatedSpan) -> bool:
@@ -404,15 +402,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         trace_id = tspan.span.context.trace_id
         tspan.set_kind("chain")
         with self._state_lock:
-            state = self._get_or_create_state_locked(trace_id)
-            self._associate_thread_with_state_locked(
+            state = self._get_or_create_state(trace_id)
+            self._associate_thread_with_state(
                 state, self._thread_id_by_trace.get(trace_id)
             )
             state.session_ended = True
             held = state.deferred_user_speaking
             state.deferred_user_speaking = []
-            state.pending_user_transcripts = []
-            self._refresh_state_locked(state)
+            state.transcripts_waiting_for_span = []
+            self._refresh_state(state)
         for speaking_span in held:
             self._export(speaking_span)
         self._export_conversation_if_ready(trace_id)
@@ -514,9 +512,9 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _append_transcript(self, trace_id: int, message: dict, sort_key: Any) -> None:
         """Append a message to the transcript the root rolls up, keyed for ordering."""
         with self._state_lock:
-            state = self._get_or_create_state_locked(trace_id)
+            state = self._get_or_create_state(trace_id)
             state.transcript.append((sort_key, message))
-            self._refresh_state_locked(state)
+            self._refresh_state(state)
 
     def _handle_user_speaking(self, tspan: TranslatedSpan) -> bool:
         """Handle a ``user_speaking`` span — the realtime user turn.
@@ -532,13 +530,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         thread = str(thread)
 
         with self._state_lock:
-            state = self._get_or_create_state_locked(tspan.span.context.trace_id)
-            self._associate_thread_with_state_locked(state, thread)
-            has_transcript = bool(state.pending_user_transcripts)
-            transcript = state.pending_user_transcripts.pop(0) if has_transcript else ""
+            state = self._get_or_create_state(tspan.span.context.trace_id)
+            self._associate_thread_with_state(state, thread)
+            has_transcript = bool(state.transcripts_waiting_for_span)
+            transcript = (
+                state.transcripts_waiting_for_span.pop(0) if has_transcript else ""
+            )
             if not has_transcript:
                 state.deferred_user_speaking.append(tspan)
-            self._refresh_state_locked(state)
+            self._refresh_state(state)
         if has_transcript:
             self._apply_user_transcript(tspan, transcript)
             self._export(tspan)
@@ -553,11 +553,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """
         tid = str(thread_id)
         with self._state_lock:
-            state = self._get_state_by_thread_locked(tid)
+            state = self._get_state_by_thread(tid)
             if state is None:
-                pending = self._unmatched_user_transcripts.get(tid) or []
-                pending.append(transcript)
-                self._unmatched_user_transcripts[tid] = pending
+                waiting = self._transcripts_waiting_for_trace.get(tid) or []
+                waiting.append(transcript)
+                self._transcripts_waiting_for_trace[tid] = waiting
                 return
             tspan = (
                 state.deferred_user_speaking.pop(0)
@@ -565,8 +565,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 else None
             )
             if tspan is None:
-                state.pending_user_transcripts.append(transcript)
-            self._refresh_state_locked(state)
+                state.transcripts_waiting_for_span.append(transcript)
+            self._refresh_state(state)
         if tspan is not None:
             self._apply_user_transcript(tspan, transcript)
             self._export(tspan)
@@ -616,12 +616,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 trace_id,
             )
         with self._state_lock:
-            state = self._get_or_create_state_locked(trace_id)
+            state = self._get_or_create_state(trace_id)
             state.root = tspan
-            self._associate_thread_with_state_locked(
+            self._associate_thread_with_state(
                 state, str(thread) if thread is not None else None
             )
-            self._refresh_state_locked(state)
+            self._refresh_state(state)
         self._export_conversation_if_ready(trace_id)
 
     def _export_conversation_if_ready(
@@ -634,16 +634,16 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         arms the bounded fallback timer. ``force`` skips the gates at shutdown.
         """
         with self._state_lock:
-            claimed = self._claim_conversation_for_export_locked(trace_id, force=force)
+            claimed = self._claim_conversation_for_export(trace_id, force=force)
         if claimed is None:
             return
         state, root = claimed
         self._export_completed_conversation(state, root)
 
-    def _claim_conversation_for_export_locked(
+    def _claim_conversation_for_export(
         self, trace_id: int, *, force: bool
     ) -> Optional[tuple[_ConversationState, TranslatedSpan]]:
-        state = self._get_state_locked(trace_id)
+        state = self._get_state(trace_id)
         if state is None or state.root is None:
             return None
         if not force and not state.session_ended:
@@ -653,15 +653,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         )
         if expects_delivery and not state.delivery_complete:
             if not state.delivery_in_progress:
-                self._schedule_release_timeout_locked(state)
+                self._schedule_release_timeout(state)
             return None
 
         root = state.root
-        self._cancel_release_timer_locked(state)
+        self._cancel_release_timer(state)
         self._state_by_trace.pop(trace_id, None)
         if state.thread_id is not None:
             self._trace_by_thread.pop(state.thread_id, None)
-            self._unmatched_user_transcripts.pop(state.thread_id, None)
+            self._transcripts_waiting_for_trace.pop(state.thread_id, None)
         self._forget_thread_id(trace_id)
         return state, root
 
@@ -676,7 +676,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             self._stamp_recording_origin(root, state.recording_started_at)
         self._export(root)
 
-    def _schedule_release_timeout_locked(self, state: _ConversationState) -> None:
+    def _schedule_release_timeout(self, state: _ConversationState) -> None:
         if state.release_timer is not None:
             return
         timer = threading.Timer(
@@ -686,12 +686,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         )
         timer.daemon = True
         state.release_timer = timer
-        self._refresh_state_locked(state)
+        self._refresh_state(state)
         timer.start()
 
     def _on_recording_timeout(self, trace_id: int) -> None:
         with self._state_lock:
-            state = self._get_state_locked(trace_id)
+            state = self._get_state(trace_id)
             if state is None:
                 return
             state.release_timer = None
@@ -706,10 +706,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             )
             state.audio_status = "timeout"
             state.delivery_complete = True
-            self._refresh_state_locked(state)
+            self._refresh_state(state)
         self._export_conversation_if_ready(trace_id)
 
-    def _cancel_release_timer_locked(self, state: _ConversationState) -> None:
+    def _cancel_release_timer(self, state: _ConversationState) -> None:
         timer = state.release_timer
         state.release_timer = None
         if timer is not None:
@@ -767,14 +767,14 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         with self._state_lock:
             trace_ids = list(self._state_by_trace)
             for state in list(self._state_by_trace.values()):
-                self._cancel_release_timer_locked(state)
+                self._cancel_release_timer(state)
         for trace_id in trace_ids:
             self._export_conversation_if_ready(trace_id, force=True)
         with self._state_lock:
             remaining = list(self._state_by_trace.values())
             self._state_by_trace.clear()
             self._trace_by_thread.clear()
-            self._unmatched_user_transcripts.clear()
+            self._transcripts_waiting_for_trace.clear()
         for state in remaining:
             for speaking_span in state.deferred_user_speaking:
                 self._export(speaking_span)
