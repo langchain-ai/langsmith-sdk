@@ -83,6 +83,7 @@ export class CommandHandle {
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
   private _stdinClosed: boolean;
+  private _pty: boolean;
 
   /** @internal */
   constructor(
@@ -96,6 +97,7 @@ export class CommandHandle {
       onStdout?: (data: string) => void;
       onStderr?: (data: string) => void;
       stdinClosed?: boolean;
+      pty?: boolean;
     },
   ) {
     this._stream = messageStream;
@@ -106,6 +108,7 @@ export class CommandHandle {
     this._onStdout = options?.onStdout;
     this._onStderr = options?.onStderr;
     this._stdinClosed = options?.stdinClosed ?? false;
+    this._pty = options?.pty ?? false;
 
     // New executions (no commandId): _ensureStarted reads "started".
     // Reconnections (commandId set): skip since reconnect streams
@@ -312,6 +315,28 @@ export class CommandHandle {
     }
     if (this._control) {
       this._control.sendInput(data);
+    }
+  }
+
+  /**
+   * Close the command's stdin so a command reading it sees EOF.
+   *
+   * Call this once done sending input. Idempotent. Afterwards `sendInput()`
+   * throws.
+   *
+   * @throws If the command was run with a PTY.
+   */
+  closeStdin(): void {
+    if (this._pty) {
+      throw new Error(
+        "a PTY command has no separate stdin to close. Send an EOT byte " +
+          "(\u0004) with sendInput() to signal EOF instead.",
+      );
+    }
+    if (this._stdinClosed) return;
+    this._stdinClosed = true;
+    if (this._control) {
+      this._control.sendCloseStdin();
     }
   }
 

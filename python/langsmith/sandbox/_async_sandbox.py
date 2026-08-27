@@ -453,6 +453,7 @@ class AsyncSandbox:
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
                 stdin_closed=close_stdin,
+                pty=pty,
             )
             try:
                 await handle._ensure_started()

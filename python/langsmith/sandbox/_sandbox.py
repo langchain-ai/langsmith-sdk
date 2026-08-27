@@ -451,6 +451,7 @@ class Sandbox:
                     on_stdout=on_stdout,
                     on_stderr=on_stderr,
                     stdin_closed=close_stdin,
+                    pty=pty,
                 )
                 break
             except (

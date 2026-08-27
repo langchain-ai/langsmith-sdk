@@ -460,6 +460,7 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     for chunk in handle:
         if "Name:" in chunk.data:
             handle.send_input("World\n")
+            handle.close_stdin()  # done sending: the command now reads EOF
         print(chunk.data, end="")
 
     result = handle.result
@@ -1270,6 +1271,7 @@ Returned by `sb.run(wait=False)`. Iterable, yielding `OutputChunk` objects.
 | `result` | Final `ExecutionResult` (blocks until complete) |
 | `kill()` | Send SIGKILL to the running command |
 | `send_input(data)` | Write string data to the command's stdin. Raises unless the command was run with `close_stdin=False` |
+| `close_stdin()` | Close stdin so the command reads EOF. Call once done sending input; raises under `pty` |
 | `reconnect()` | Reconnect from last known offsets |
 
 ### OutputChunk

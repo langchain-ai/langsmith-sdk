@@ -1933,6 +1933,36 @@ describe("CommandHandle", () => {
       handle.sendInput("test input");
     });
 
+    it("should send close_stdin and then reject further input", () => {
+      const stream = createMockStream([]);
+      const control = new WSStreamControl();
+      const ws = { send: jest.fn(), readyState: 1 };
+      (control as any)._ws = ws;
+      const handle = new CommandHandle(stream, control, createMockSandbox(), {
+        commandId: "cmd-123",
+      });
+
+      handle.sendInput("data\n");
+      handle.closeStdin();
+      handle.closeStdin();
+
+      expect(ws.send.mock.calls.map((c: any) => JSON.parse(c[0]))).toEqual([
+        { type: "input", data: "data\n" },
+        { type: "close_stdin" },
+      ]);
+      expect(() => handle.sendInput("more\n")).toThrow(/closeStdin: false/);
+    });
+
+    it("should throw from closeStdin under a PTY", () => {
+      const stream = createMockStream([]);
+      const handle = new CommandHandle(stream, null, createMockSandbox(), {
+        commandId: "cmd-123",
+        pty: true,
+      });
+
+      expect(() => handle.closeStdin()).toThrow(/EOT/);
+    });
+
     it("should throw when the command was run with stdin closed", () => {
       const stream = createMockStream([]);
       const handle = new CommandHandle(stream, null, createMockSandbox(), {

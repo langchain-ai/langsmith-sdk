@@ -305,6 +305,7 @@ export class Sandbox {
         onStdout,
         onStderr,
         stdinClosed: closeStdin,
+        pty,
       });
       try {
         await handle._ensureStarted();

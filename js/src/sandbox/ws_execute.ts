@@ -180,6 +180,13 @@ export class WSStreamControl {
       this._ws.send(JSON.stringify({ type: "input", data }));
     }
   }
+
+  /** Ask the server to close the command's stdin, so it reads EOF. */
+  sendCloseStdin(): void {
+    if (this._ws && !this._closed && this._ws.readyState === 1) {
+      this._ws.send(JSON.stringify({ type: "close_stdin" }));
+    }
+  }
 }
 
 // =============================================================================

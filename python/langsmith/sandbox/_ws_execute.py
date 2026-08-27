@@ -166,6 +166,11 @@ class _WSStreamControl:
         if self._ws and not self._closed:
             self._ws.send(json.dumps({"type": "input", "data": data}))
 
+    def send_close_stdin(self) -> None:
+        """Ask the server to close the command's stdin, so it reads EOF."""
+        if self._ws and not self._closed:
+            self._ws.send(json.dumps({"type": "close_stdin"}))
+
 
 class _AsyncWSStreamControl:
     """Async equivalent of _WSStreamControl."""
@@ -202,6 +207,11 @@ class _AsyncWSStreamControl:
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
             await self._ws.send(json.dumps({"type": "input", "data": data}))
+
+    async def send_close_stdin(self) -> None:
+        """Ask the server to close the command's stdin, so it reads EOF."""
+        if self._ws and not self._closed:
+            await self._ws.send(json.dumps({"type": "close_stdin"}))
 
 
 # =============================================================================
