@@ -11,12 +11,14 @@ from langsmith._internal.voice import set_thread_id
 from .processor import (
     DEFAULT_RECORDING_TIMEOUT_SECONDS,
     LiveKitLangSmithSpanProcessor,
+    RecordingMode,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "LiveKitLangSmithSpanProcessor",
+    "RecordingMode",
     "configure_livekit",
     "set_thread_id",
 ]
@@ -28,7 +30,7 @@ def configure_livekit(
     api_key: Optional[str] = None,
     project: Optional[str] = None,
     endpoint: Optional[str] = None,
-    await_recording: bool = True,
+    recording_mode: RecordingMode = "session_report",
     recording_timeout_seconds: float = DEFAULT_RECORDING_TIMEOUT_SECONDS,
     **kwargs: Any,
 ) -> Optional[LiveKitLangSmithSpanProcessor]:
@@ -56,9 +58,9 @@ def configure_livekit(
     processor: the user transcript arrives as a session event rather than on a
     span, so without it the trace shows only the agent's turns.
 
-    Each conversation's root span is held open until its recording arrives, so
-    the recording can be attached and its time origin stamped on the trace.
-    Deliver it from an ``on_session_end`` callback::
+    In ``session_report`` mode, each conversation's root span is held until its
+    complete report arrives, so the transcript, recording, and time origin are
+    attached atomically. Deliver it from an ``on_session_end`` callback::
 
         processor = configure_livekit()
 
@@ -73,17 +75,19 @@ def configure_livekit(
 
 
         @server.rtc_session(on_session_end=on_session_end)
-        async def entrypoint(ctx: JobContext) -> None: ...
+        async def entrypoint(ctx: JobContext) -> None:
+            set_thread_id(ctx.room.name)
+            ...
 
-    With LiveKit Egress (or your own capture), call
-    :meth:`LiveKitLangSmithSpanProcessor.complete_recording` with the bytes and
-    the recording's ``started_at`` instead.
+    With LiveKit Egress (or your own capture), configure ``recording_mode="egress"``
+    and pass the completed bytes to that same ``attach_session_report`` call.
+    Use ``recording_mode="none"`` for sessions that should export immediately at
+    session end without a report.
 
     Args:
         api_key / project / endpoint: LangSmith exporter config; default to the
             standard ``LANGSMITH_*`` resolution.
-        await_recording: hold each root span until a recording is delivered.
-            Pass ``False`` when tracing a session with no audio.
+        recording_mode: ``"session_report"``, ``"egress"``, or ``"none"``.
         recording_timeout_seconds: how long that hold lasts before the trace is
             exported without audio.
 
@@ -103,7 +107,7 @@ def configure_livekit(
         api_key=api_key,
         project=project,
         endpoint=endpoint,
-        await_recording=await_recording,
+        recording_mode=recording_mode,
         recording_timeout_seconds=recording_timeout_seconds,
         **kwargs,
     )
