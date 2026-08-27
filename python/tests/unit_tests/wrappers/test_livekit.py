@@ -7,14 +7,17 @@ mocked and no framework install is needed.
 
 import base64
 import json
+import sys
 import threading
 import time
-from types import SimpleNamespace
+import warnings
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from langsmith._internal.voice import set_thread_id
+from langsmith.integrations.livekit import configure_livekit
 from langsmith.integrations.livekit._helpers import (
     build_assistant_tool_call_message,
     build_message_from_event,
@@ -71,6 +74,23 @@ def _start_span(proc, span, thread_id):
     proc.on_start(span)
     set_thread_id(None)
     return span
+
+
+class TestDeprecatedAudioPathProvider:
+    def test_is_accepted_but_not_called(self):
+        provider = MagicMock()
+
+        with pytest.warns(
+            DeprecationWarning, match="audio_path_provider is deprecated and ignored"
+        ):
+            _processor(audio_path_provider=provider)
+
+        provider.assert_not_called()
+
+    def test_none_does_not_warn(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            _processor(audio_path_provider=None)
 
 
 class TestDispatchDisposition:
@@ -552,6 +572,46 @@ def _report(*, path=None, started_at=None, items=None):
     )
 
 
+class _FakeLifecycleSession:
+    """Minimal additive/one-shot LiveKit session event emitter."""
+
+    def __init__(self):
+        self.listeners = {}
+
+    def once(self, name, callback):
+        self.listeners.setdefault(name, []).append(callback)
+
+    def close(self):
+        callbacks = self.listeners.pop("close", [])
+        for callback in callbacks:
+            callback(SimpleNamespace())
+
+
+class _FakeJobContext:
+    def __init__(self, session, report):
+        self._primary_agent_session = session
+        self.report = report
+        self.make_report_calls = []
+
+    def make_session_report(self, session):
+        self.make_report_calls.append(session)
+        return self.report
+
+
+def _install_fake_livekit(monkeypatch, current_context, telemetry=None):
+    """Install the tiny optional LiveKit surface the processor/configure use."""
+    agents_module = ModuleType("livekit.agents")
+    agents_module.get_job_context = lambda required=False: current_context["value"]
+    agents_module.telemetry = telemetry or SimpleNamespace(
+        set_tracer_provider=MagicMock()
+    )
+    livekit_module = ModuleType("livekit")
+    livekit_module.agents = agents_module
+    monkeypatch.setitem(sys.modules, "livekit", livekit_module)
+    monkeypatch.setitem(sys.modules, "livekit.agents", agents_module)
+    return agents_module
+
+
 # One second in nanoseconds — root start times are OTel ns, origins are epoch s.
 _NS = 1_000_000_000
 _ROOT_START_NS = 1_700_000_000 * _NS
@@ -563,10 +623,12 @@ class _RecordingHarness:
     def teardown_method(self):
         set_thread_id(None)
 
-    def _start_conversation(self, proc, tid=0xABC, start_time=_ROOT_START_NS):
+    def _start_conversation(
+        self, proc, tid=0xABC, start_time=_ROOT_START_NS, thread_id="call-1"
+    ):
         # The root's thread id comes from set_thread_id (captured at on_start),
         # exactly as in production; clearing it after simulates the detached end.
-        set_thread_id("call-1")
+        set_thread_id(thread_id)
         proc.on_start(
             _make_span(
                 "job_entrypoint", parent=None, trace_id=tid, start_time=start_time
@@ -582,6 +644,11 @@ class _RecordingHarness:
     def _end_session(self, proc, tid=0xABC):
         proc.on_end(_make_span("agent_session", trace_id=tid, span_id=0x3))
 
+    def _start_session(self, proc, thread_id="call-1", tid=0xABC):
+        set_thread_id(thread_id)
+        proc.on_start(_make_span("agent_session", trace_id=tid, span_id=0x2))
+        set_thread_id(None)
+
     def _root(self, proc):
         return next(
             (
@@ -591,6 +658,165 @@ class _RecordingHarness:
             ),
             None,
         )
+
+
+class TestAutomaticSessionReport(_RecordingHarness):
+    def test_direct_processor_captures_report_on_session_close(
+        self, monkeypatch, tmp_path
+    ):
+        audio = tmp_path / "automatic.ogg"
+        audio.write_bytes(b"automatic-audio")
+        session = _FakeLifecycleSession()
+        ctx = _FakeJobContext(session, _report(path=audio, items=[]))
+        current_context = {"value": ctx}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor()
+
+        self._start_conversation(proc)
+        self._start_session(proc)
+        self._end_session(proc)
+        assert self._root(proc) is None
+
+        session.close()
+
+        root = self._root(proc)
+        payload = json.loads(root._attributes["langsmith.attachments"])
+        assert base64.b64decode(payload[0]["content"]) == b"automatic-audio"
+        assert ctx.make_report_calls == [session]
+
+    def test_configured_processor_installs_the_same_automatic_hook(self, monkeypatch):
+        from opentelemetry import trace as otel_trace
+
+        session = _FakeLifecycleSession()
+        ctx = _FakeJobContext(session, _report())
+        current_context = {"value": ctx}
+        telemetry = SimpleNamespace(set_tracer_provider=MagicMock())
+        _install_fake_livekit(monkeypatch, current_context, telemetry=telemetry)
+        monkeypatch.setattr(otel_trace, "set_tracer_provider", MagicMock())
+
+        proc = configure_livekit(downstream_processor=MagicMock())
+        assert proc is not None
+        self._start_conversation(proc)
+        self._start_session(proc)
+        self._end_session(proc)
+        session.close()
+
+        assert self._root(proc) is not None
+        telemetry.set_tracer_provider.assert_called_once()
+
+    def test_existing_close_listener_is_preserved(self, monkeypatch):
+        session = _FakeLifecycleSession()
+        existing = MagicMock()
+        session.once("close", existing)
+        ctx = _FakeJobContext(session, _report())
+        current_context = {"value": ctx}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor(recording_mode="none")
+
+        self._start_conversation(proc)
+        self._start_session(proc)
+        self._end_session(proc)
+        session.close()
+
+        existing.assert_called_once()
+        assert self._root(proc) is not None
+
+    def test_egress_waits_for_automatic_report_and_completion(self, monkeypatch):
+        session = _FakeLifecycleSession()
+        report = _report()
+        ctx = _FakeJobContext(session, report)
+        current_context = {"value": ctx}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor(recording_mode="egress")
+
+        self._start_conversation(proc)
+        self._start_session(proc)
+        self._end_session(proc)
+        session.close()
+        assert self._root(proc) is None
+
+        # A duplicate manual delivery is harmless while the egress root is held.
+        proc.attach_session_report(report, thread_id="call-1")
+        proc.complete_recording("call-1", b"egress")
+
+        roots = [
+            call.args[0]
+            for call in proc.downstream.on_end.call_args_list
+            if call.args[0]._attributes.get("langsmith.root_span")
+        ]
+        assert len(roots) == 1
+        assert "langsmith.attachments" in roots[0]._attributes
+
+    def test_hook_registration_is_idempotent(self, monkeypatch):
+        session = _FakeLifecycleSession()
+        ctx = _FakeJobContext(session, _report())
+        current_context = {"value": ctx}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor()
+
+        self._start_conversation(proc)
+        self._start_session(proc)
+        self._start_session(proc)
+
+        assert len(session.listeners["close"]) == 1
+        self._end_session(proc)
+        session.close()
+        assert ctx.make_report_calls == [session]
+        assert self._root(proc) is not None
+
+    def test_reports_route_to_the_captured_trace(self, monkeypatch):
+        session_a = _FakeLifecycleSession()
+        session_b = _FakeLifecycleSession()
+        ctx_a = _FakeJobContext(
+            session_a,
+            _report(
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["A"],
+                        "created_at": 1,
+                    }
+                ]
+            ),
+        )
+        ctx_b = _FakeJobContext(
+            session_b,
+            _report(
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": ["B"],
+                        "created_at": 1,
+                    }
+                ]
+            ),
+        )
+        current_context = {"value": ctx_a}
+        _install_fake_livekit(monkeypatch, current_context)
+        proc = _processor(recording_mode="none")
+
+        self._start_conversation(proc, tid=0xAAA, thread_id="thread-a")
+        self._start_session(proc, tid=0xAAA, thread_id="thread-a")
+        current_context["value"] = ctx_b
+        self._start_conversation(proc, tid=0xBBB, thread_id="thread-b")
+        self._start_session(proc, tid=0xBBB, thread_id="thread-b")
+        self._end_session(proc, tid=0xAAA)
+        self._end_session(proc, tid=0xBBB)
+
+        session_b.close()
+        session_a.close()
+
+        roots = {
+            call.args[0].context.trace_id: call.args[0]
+            for call in proc.downstream.on_end.call_args_list
+            if call.args[0]._attributes.get("langsmith.root_span")
+        }
+        prompt_a = json.loads(roots[0xAAA]._attributes["gen_ai.prompt"])
+        prompt_b = json.loads(roots[0xBBB]._attributes["gen_ai.prompt"])
+        assert prompt_a["messages"][0]["content"] == "A"
+        assert prompt_b["messages"][0]["content"] == "B"
 
 
 class TestEgressRecording(_RecordingHarness):
@@ -665,10 +891,84 @@ class TestEgressRecording(_RecordingHarness):
         md = self._root(proc)._attributes
         assert md["langsmith.metadata.ls_audio_recording_start_offset_ms"] == 4250
 
-    def test_complete_recording_requires_egress_mode(self):
+    def test_complete_recording_before_spans_selects_egress_for_that_thread(self):
         proc = _processor()
-        with pytest.raises(RuntimeError, match="recording_mode='egress'"):
-            proc.complete_recording("call-1", b"x")
+        proc.complete_recording("call-1", b"x")
+        self._start_conversation(proc)
+        state = proc._get_state_by_thread("call-1")
+        assert state.recording_mode == "egress"
+        assert state.recording_received is True
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+        assert "langsmith.attachments" in self._root(proc)._attributes
+
+    def test_expect_recording_before_spans_overrides_only_that_thread(self):
+        proc = _processor()
+        proc.expect_recording("call-1")
+        self._start_conversation(proc)
+
+        state = proc._get_state_by_thread("call-1")
+        assert state.recording_mode == "egress"
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+        assert self._root(proc) is None
+
+        proc.complete_recording("call-1", b"x")
+        assert "langsmith.attachments" in self._root(proc)._attributes
+
+    def test_expect_recording_can_override_after_spans_arrive(self):
+        proc = _processor()
+        self._start_conversation(proc)
+        proc.expect_recording("call-1")
+
+        assert proc._get_state_by_thread("call-1").recording_mode == "egress"
+
+    def test_expect_recording_does_not_change_other_conversations(self):
+        proc = _processor()
+        proc.expect_recording("egress-call")
+        self._start_conversation(proc, tid=0xAAA, thread_id="egress-call")
+        self._start_conversation(proc, tid=0xBBB, thread_id="report-call")
+        self._end_session(proc, tid=0xAAA)
+        self._end_session(proc, tid=0xBBB)
+
+        proc.attach_session_report(_report(), thread_id="egress-call")
+        proc.attach_session_report(_report(), thread_id="report-call")
+        exported_trace_ids = {
+            call.args[0].context.trace_id
+            for call in proc.downstream.on_end.call_args_list
+            if call.args[0]._attributes.get("langsmith.root_span")
+        }
+        assert exported_trace_ids == {0xBBB}
+
+        proc.complete_recording("egress-call", b"x")
+        exported_trace_ids = {
+            call.args[0].context.trace_id
+            for call in proc.downstream.on_end.call_args_list
+            if call.args[0]._attributes.get("langsmith.root_span")
+        }
+        assert exported_trace_ids == {0xAAA, 0xBBB}
+
+    def test_processor_egress_default_does_not_require_expect_recording(self):
+        proc = _processor(recording_mode="egress")
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+        assert self._root(proc) is None
+
+        proc.complete_recording("call-1", b"x")
+        assert self._root(proc) is not None
+
+    def test_late_recording_is_not_reused_by_a_future_trace(self, caplog):
+        proc = _processor(recording_mode="egress")
+        self._start_conversation(proc)
+        self._end_session(proc)
+        proc.attach_session_report(_report(), thread_id="call-1")
+        proc.complete_recording("call-1", b"first")
+
+        proc.complete_recording("call-1", b"late")
+
+        assert "call-1" not in proc._thread_state_waiting_for_trace
+        assert any("no active LiveKit trace" in message for message in caplog.messages)
 
     def test_oversize_recording_is_not_buffered(self):
         proc = _processor(recording_mode="egress", audio_size_limit_bytes=3)

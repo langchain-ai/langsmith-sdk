@@ -4,22 +4,24 @@ Rewrites LiveKit's ``lk.*`` span data into the ``gen_ai.*`` / ``langsmith.*``
 namespaces LangSmith ingests; non-LiveKit spans on the same provider pass
 through untouched.
 
-The root span is held until its session report arrives. LiveKit's recorder
-supplies audio on that report; egress audio arrives separately through
-:meth:`complete_recording`. Shared export / ``thread_id`` / message plumbing
-lives in :class:`BaseLangSmithSpanProcessor`.
+The root span is held until the processor's AgentSession close hook captures
+its session report. LiveKit's recorder supplies audio on that report; egress
+audio arrives separately through :meth:`complete_recording`. Shared export /
+``thread_id`` / message plumbing lives in :class:`BaseLangSmithSpanProcessor`.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import MutableMapping
+import warnings
+from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any, Literal, Optional, get_args
 
 from cachetools import TTLCache
-from opentelemetry.sdk.trace import SpanProcessor
+from opentelemetry.context import Context
+from opentelemetry.sdk.trace import Span, SpanProcessor
 
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice._helpers import (
@@ -43,7 +45,7 @@ from ._helpers import (
     is_livekit_span,
     normalize_provider,
 )
-from ._state import _ConversationState, _PendingAudio
+from ._state import _ConversationState, _PendingAudio, _PendingThreadState
 
 # Lifetime / cap for per-conversation state; bounds memory for calls that never end.
 DEFAULT_STATE_TTL_SECONDS = 3600.0
@@ -87,6 +89,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         api_key: Optional[str] = None,
         project: Optional[str] = None,
         endpoint: Optional[str] = None,
+        audio_path_provider: Optional[Callable[[], Optional[Path]]] = None,
         audio_mime_type: str = "audio/ogg",
         recording_mode: RecordingMode = "session_report",
         recording_timeout_seconds: float = DEFAULT_RECORDING_TIMEOUT_SECONDS,
@@ -96,15 +99,24 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         """Create the processor.
 
         Args:
+            audio_path_provider: Deprecated compatibility parameter. It is ignored.
             audio_mime_type: default MIME type for embedded recordings.
             recording_mode: where recordings come from: ``"session_report"``
                 for LiveKit's recorder, ``"egress"`` for bytes supplied with
                 :meth:`complete_recording`, or ``"none"`` for report data
-                without audio.
+                without audio. This is the default for every conversation;
+                :meth:`expect_recording` can override one thread to egress.
             recording_timeout_seconds: how long the root waits for required
                 session data before it is exported.
             state_ttl_seconds: lifetime for per-conversation state.
         """
+        if audio_path_provider is not None:
+            warnings.warn(
+                "audio_path_provider is deprecated and ignored.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         super().__init__(
             downstream_processor,
             api_key=api_key,
@@ -130,6 +142,15 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
         self._state_by_trace: MutableMapping[int, _ConversationState] = _cache()
         self._trace_by_thread: MutableMapping[str, int] = _cache()
+        # ``expect_recording`` and ``complete_recording`` are legacy APIs that
+        # may be called before LiveKit starts the first span for a conversation.
+        self._thread_state_waiting_for_trace: MutableMapping[
+            str, _PendingThreadState
+        ] = _cache()
+        # Distinguish a genuinely early legacy delivery from one that arrived
+        # after its trace was already exported (which must not leak into a later
+        # conversation that reuses the same thread id).
+        self._completed_threads: MutableMapping[str, bool] = _cache()
         # A transcript event may arrive after instrument_session() but before a
         # LiveKit span has given us that thread's trace id.
         self._transcripts_waiting_for_trace: MutableMapping[str, list[str]] = _cache()
@@ -140,26 +161,57 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _get_or_create_state(self, trace_id: int) -> _ConversationState:
         state = self._get_state(trace_id)
         if state is not None:
+            self._associate_thread_with_state(
+                state, self._thread_id_by_trace.get(trace_id)
+            )
             return state
 
-        state = _ConversationState(trace_id=trace_id)
-        thread_id = self._thread_id_by_trace.get(trace_id)
-        if thread_id is not None:
-            existing_state = self._get_state_by_thread(thread_id)
-            if existing_state is not None:
-                logger.warning(
-                    "langsmith voice: thread id %s is already bound to an active "
-                    "LiveKit trace; recordings require one active trace per thread.",
-                    thread_id,
-                )
-            else:
-                state.thread_id = thread_id
-                self._trace_by_thread[thread_id] = trace_id
-                waiting = self._transcripts_waiting_for_trace.pop(thread_id, None)
-                if waiting:
-                    state.transcripts_waiting_for_span.extend(waiting)
+        state = _ConversationState(
+            trace_id=trace_id, recording_mode=self._recording_mode
+        )
+        self._associate_thread_with_state(state, self._thread_id_by_trace.get(trace_id))
         self._state_by_trace[trace_id] = state
         return state
+
+    def _associate_thread_with_state(
+        self, state: _ConversationState, thread_id: Optional[str]
+    ) -> None:
+        if thread_id is None or state.thread_id == thread_id:
+            return
+        if state.thread_id is not None:
+            logger.warning(
+                "langsmith voice: trace %x is already bound to thread %s; "
+                "ignoring a second thread id %s.",
+                state.trace_id,
+                state.thread_id,
+                thread_id,
+            )
+            return
+
+        existing_state = self._get_state_by_thread(thread_id)
+        if existing_state is not None and existing_state is not state:
+            logger.warning(
+                "langsmith voice: thread id %s is already bound to an active "
+                "LiveKit trace; recordings require one active trace per thread.",
+                thread_id,
+            )
+            return
+
+        state.thread_id = thread_id
+        self._completed_threads.pop(thread_id, None)
+        self._trace_by_thread[thread_id] = state.trace_id
+        waiting = self._transcripts_waiting_for_trace.pop(thread_id, None)
+        if waiting:
+            state.transcripts_waiting_for_span.extend(waiting)
+        pending = self._thread_state_waiting_for_trace.pop(thread_id, None)
+        if pending is not None:
+            if pending.recording_mode is not None:
+                state.recording_mode = pending.recording_mode
+            if pending.recording_received:
+                state.pending_audio = pending.pending_audio
+                state.recording_started_at = pending.recording_started_at
+                state.audio_status = pending.audio_status
+                state.recording_received = True
 
     def _get_state_by_thread(self, thread_id: str) -> Optional[_ConversationState]:
         trace_id = self._trace_by_thread.get(thread_id)
@@ -173,6 +225,79 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _refresh_state(self, state: _ConversationState) -> None:
         self._state_by_trace[state.trace_id] = state
+
+    def _remember_thread_id(self, trace_id: int, thread_id: str) -> None:
+        """Capture a late thread id and merge any pre-trace lifecycle data."""
+        super()._remember_thread_id(trace_id, thread_id)
+        with self._state_lock:
+            state = self._get_state(trace_id)
+            if state is not None:
+                self._associate_thread_with_state(state, thread_id)
+                self._refresh_state(state)
+
+    def on_start(self, span: Span, parent_context: Optional[Context] = None) -> None:
+        """Capture thread context and install the session-report close hook."""
+        super().on_start(span, parent_context)
+        if span.name != _SESSION_SPAN:
+            return
+        try:
+            self._install_session_report_hook(span.context.trace_id)
+        except Exception:
+            # Lifecycle instrumentation must never prevent a LiveKit session
+            # from starting. The release timeout remains the failure fallback.
+            logger.warning(
+                "langsmith voice: failed installing the automatic LiveKit "
+                "session-report callback.",
+                exc_info=True,
+            )
+
+    def _install_session_report_hook(self, trace_id: int) -> None:
+        """Attach one additive close listener to the active AgentSession."""
+        try:
+            from livekit.agents import get_job_context  # type: ignore[import-not-found]
+        except ImportError:
+            return
+
+        job_ctx = get_job_context(required=False)
+        if job_ctx is None:
+            return
+        session = getattr(job_ctx, "_primary_agent_session", None)
+        if session is None:
+            try:
+                session = job_ctx.primary_session
+            except (AttributeError, RuntimeError):
+                return
+
+        session_id = id(session)
+        with self._state_lock:
+            state = self._get_or_create_state(trace_id)
+            if state.report_hook_session_id == session_id:
+                return
+            state.report_hook_session_id = session_id
+            self._refresh_state(state)
+
+        def _capture_report(*_: Any) -> None:
+            try:
+                report = job_ctx.make_session_report(session)
+                self._attach_session_report_to_trace(
+                    report, trace_id=trace_id, expected_state=state
+                )
+            except Exception:
+                logger.warning(
+                    "langsmith voice: failed capturing the automatic LiveKit "
+                    "session report.",
+                    exc_info=True,
+                )
+
+        try:
+            session.once("close", _capture_report)
+        except Exception:
+            with self._state_lock:
+                current = self._get_state(trace_id)
+                if current is state and current.report_hook_session_id == session_id:
+                    current.report_hook_session_id = None
+                    self._refresh_state(current)
+            raise
 
     def instrument_session(self, session: Any, thread_id: str) -> None:
         """Subscribe this processor to a LiveKit ``AgentSession``'s events.
@@ -220,26 +345,83 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 imports it, so it stays importable without ``livekit-agents``).
             thread_id: the conversation id, matching :func:`set_thread_id`.
         """
-        messages = build_messages_from_chat_history(report.chat_history)
-        report_audio = self._audio_from_session_report(report)
-
         thread = str(thread_id)
         with self._state_lock:
             state = self._get_state_by_thread(thread)
             if state is None:
+                if self._completed_threads.get(thread):
+                    # An older user callback may deliver the same report after
+                    # the automatic close hook has already exported the trace.
+                    return
                 self._warn_missing_conversation(thread, "session report")
+                return
+            trace_id = state.trace_id
+        self._attach_session_report_to_trace(
+            report, trace_id=trace_id, expected_state=state
+        )
+
+    def _attach_session_report_to_trace(
+        self,
+        report: Any,
+        *,
+        trace_id: int,
+        expected_state: _ConversationState,
+    ) -> None:
+        """Commit a report to the exact state captured by a lifecycle hook."""
+        with self._state_lock:
+            state = self._get_state(trace_id)
+            if state is not expected_state or state.report_received:
+                return
+            read_report_audio = state.recording_mode == "session_report"
+
+        history = getattr(report, "chat_history", None)
+        messages = build_messages_from_chat_history(history) if history else []
+        report_audio = (
+            self._audio_from_session_report(report)
+            if read_report_audio
+            else (None, None, None)
+        )
+
+        with self._state_lock:
+            state = self._get_state(trace_id)
+            if state is not expected_state or state.report_received:
                 return
             state.report_transcript = messages
             state.report_received = True
-            if report_audio is not None:
+            if state.recording_mode == "session_report":
                 (
                     state.pending_audio,
                     state.recording_started_at,
                     state.audio_status,
                 ) = report_audio
             self._refresh_state(state)
-            trace_id = state.trace_id
         self._export_conversation_if_ready(trace_id)
+
+    def expect_recording(self, thread_id: str) -> None:
+        """Mark one conversation as awaiting :meth:`complete_recording`.
+
+        This legacy API overrides the processor's default recording mode for
+        only ``thread_id``. It may be called before LiveKit starts any spans.
+        """
+        thread = str(thread_id)
+        with self._state_lock:
+            state = self._get_state_by_thread(thread)
+            if state is None:
+                self._completed_threads.pop(thread, None)
+                pending = self._thread_state_waiting_for_trace.get(thread)
+                if pending is None:
+                    pending = _PendingThreadState()
+                pending.recording_mode = "egress"
+                self._thread_state_waiting_for_trace[thread] = pending
+                return
+            state.recording_mode = "egress"
+            if state.report_received and not state.recording_received:
+                # A report may have arrived before this override. Its audio is
+                # no longer authoritative; preserve only its transcript.
+                state.pending_audio = None
+                state.recording_started_at = None
+                state.audio_status = None
+            self._refresh_state(state)
 
     def complete_recording(
         self,
@@ -257,9 +439,6 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         audio MIME type. ``started_at`` is the epoch time of the recording's first
         sample and enables waterfall alignment.
         """
-        if self._recording_mode != "egress":
-            raise RuntimeError("complete_recording() requires recording_mode='egress'")
-
         pending_audio = None
         status: Optional[str] = "none"
         if data:
@@ -280,8 +459,23 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         with self._state_lock:
             state = self._get_state_by_thread(thread)
             if state is None:
-                self._warn_missing_conversation(thread, "recording")
+                if self._completed_threads.get(thread):
+                    self._warn_missing_conversation(thread, "recording")
+                    return
+                pending = self._thread_state_waiting_for_trace.get(thread)
+                if pending is None:
+                    pending = _PendingThreadState()
+                # A completed external recording is itself sufficient to
+                # identify this thread's source as egress. ``expect_recording``
+                # is still needed when the processor must wait before it arrives.
+                pending.recording_mode = "egress"
+                pending.pending_audio = pending_audio
+                pending.recording_started_at = started_at
+                pending.audio_status = status
+                pending.recording_received = True
+                self._thread_state_waiting_for_trace[thread] = pending
                 return
+            state.recording_mode = "egress"
             state.pending_audio = pending_audio
             state.recording_started_at = started_at
             state.audio_status = status
@@ -300,13 +494,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _audio_from_session_report(
         self, report: Any
-    ) -> Optional[tuple[Optional[_PendingAudio], Optional[float], Optional[str]]]:
-        if self._recording_mode != "session_report":
-            return None
-        audio_path = report.audio_recording_path
-        started_at = report.audio_recording_started_at
+    ) -> tuple[Optional[_PendingAudio], Optional[float], Optional[str]]:
+        audio_path = getattr(report, "audio_recording_path", None)
+        started_at = getattr(report, "audio_recording_started_at", None)
         if audio_path is None:
             return None, started_at, "none"
+        audio_path = Path(audio_path)
         data, status = self._read_audio_file(audio_path)
         if data is None:
             return None, started_at, status
@@ -601,6 +794,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         self._cancel_release_timer(state)
         self._state_by_trace.pop(trace_id, None)
         if state.thread_id is not None:
+            self._completed_threads[state.thread_id] = True
             self._trace_by_thread.pop(state.thread_id, None)
             self._transcripts_waiting_for_trace.pop(state.thread_id, None)
         self._forget_thread_id(trace_id)
@@ -608,7 +802,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _has_required_session_data(self, state: _ConversationState) -> bool:
         return state.report_received and (
-            self._recording_mode != "egress" or state.recording_received
+            state.recording_mode != "egress" or state.recording_received
         )
 
     def _export_completed_conversation(
@@ -644,7 +838,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             if self._has_required_session_data(state):
                 return
             missing = ["session report"] if not state.report_received else []
-            if self._recording_mode == "egress" and not state.recording_received:
+            if state.recording_mode == "egress" and not state.recording_received:
                 missing.append("egress recording")
             logger.warning(
                 "langsmith voice: timed out waiting for %s for thread %s after "
@@ -653,7 +847,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
                 state.thread_id,
                 self._recording_timeout_seconds,
             )
-            if self._recording_mode != "none" and state.pending_audio is None:
+            if state.recording_mode != "none" and state.pending_audio is None:
                 state.audio_status = "timeout"
             self._refresh_state(state)
         self._export_conversation_if_ready(trace_id, force=True)
@@ -723,6 +917,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             remaining = list(self._state_by_trace.values())
             self._state_by_trace.clear()
             self._trace_by_thread.clear()
+            self._thread_state_waiting_for_trace.clear()
+            self._completed_threads.clear()
             self._transcripts_waiting_for_trace.clear()
         for state in remaining:
             for speaking_span in state.spans_waiting_for_transcript:

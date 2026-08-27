@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import warnings
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Optional
 
 from langsmith._internal._beta_decorator import warn_beta
@@ -30,6 +33,7 @@ def configure_livekit(
     api_key: Optional[str] = None,
     project: Optional[str] = None,
     endpoint: Optional[str] = None,
+    audio_path_provider: Optional[Callable[[], Optional[Path]]] = None,
     recording_mode: RecordingMode = "session_report",
     recording_timeout_seconds: float = DEFAULT_RECORDING_TIMEOUT_SECONDS,
     **kwargs: Any,
@@ -58,29 +62,14 @@ def configure_livekit(
     processor: the user transcript arrives as a session event rather than on a
     span, so without it the trace shows only the agent's turns.
 
-    Each conversation's root span is held until its session report arrives.
-    Deliver it from an ``on_session_end`` callback::
+    Each conversation's root span is held until its session report arrives. The
+    processor registers an additive ``AgentSession`` close listener and captures
+    that report automatically; no ``on_session_end`` callback is required. In
+    ``session_report`` mode the report's recording is attached with its chat
+    history.
 
-        processor = configure_livekit()
-
-
-        async def on_session_end(ctx: JobContext) -> None:
-            processor.attach_session_report(
-                ctx.make_session_report(), thread_id=ctx.room.name
-            )
-
-
-        server = AgentServer()
-
-
-        @server.rtc_session(on_session_end=on_session_end)
-        async def entrypoint(ctx: JobContext) -> None:
-            set_thread_id(ctx.room.name)
-            ...
-
-    In ``session_report`` mode the report's recording is attached with its chat
-    history. With LiveKit Egress (or your own capture), configure
-    ``recording_mode="egress"`` and deliver the audio independently when it is
+    With LiveKit Egress (or your own capture), configure
+    ``recording_mode="egress"`` and deliver each conversation's audio when it is
     available::
 
         processor.complete_recording(
@@ -89,13 +78,18 @@ def configure_livekit(
             started_at=egress_started_at,
         )
 
-    The report and recording may arrive in either order. The root is released
-    after both, or after ``recording_timeout_seconds``. Use
+    Existing code may instead call ``processor.expect_recording(thread_id)`` at
+    conversation start. That marks only that conversation as egress, even when
+    the processor's default mode is ``session_report`` or ``none``. It may be
+    called before the conversation's spans start. The automatic report and
+    recording may arrive in either order; an egress root is released after both,
+    or after ``recording_timeout_seconds`` as failure protection. Use
     ``recording_mode="none"`` to attach report data without audio.
 
     Args:
         api_key / project / endpoint: LangSmith exporter config; default to the
             standard ``LANGSMITH_*`` resolution.
+        audio_path_provider: Deprecated compatibility parameter. It is ignored.
         recording_mode: ``"session_report"``, ``"egress"``, or ``"none"``.
         recording_timeout_seconds: how long the root waits for required session
             data before it is exported with whatever is available.
@@ -103,6 +97,13 @@ def configure_livekit(
     Returns:
         The processor, or ``None`` if LiveKit / OpenTelemetry aren't installed.
     """
+    if audio_path_provider is not None:
+        warnings.warn(
+            "audio_path_provider is deprecated and ignored.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     try:
         from opentelemetry import trace as otel_trace
         from opentelemetry.sdk.trace import TracerProvider
