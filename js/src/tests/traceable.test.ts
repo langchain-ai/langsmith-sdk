@@ -4,8 +4,9 @@ import { jest, expect, test, describe, it } from "@jest/globals";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import {
+  _INPUTS_PROCESSING_FAILED,
   _LC_CONTEXT_VARIABLES_KEY,
-  _processingFailed,
+  _OUTPUTS_PROCESSING_FAILED,
 } from "../singletons/constants.js";
 import {
   ROOT,
@@ -1787,7 +1788,7 @@ test("traceable with processInputs throwing error does not affect invocation", a
     edges: [],
     data: {
       "func:0": {
-        inputs: { ls_error: _processingFailed("inputs", new Error()) },
+        inputs: { ls_error: _INPUTS_PROCESSING_FAILED },
         outputs: { outputs: "Hello, user1" },
       },
     },
@@ -1828,7 +1829,7 @@ test("traceable with processOutputs throwing error does not affect invocation", 
     data: {
       "func:0": {
         inputs: { input: "test" },
-        outputs: { ls_error: _processingFailed("outputs", new Error()) },
+        outputs: { ls_error: _OUTPUTS_PROCESSING_FAILED },
       },
     },
   });
@@ -1864,7 +1865,7 @@ test("SECURITY: traceable processInputs failure drops the inputs (fail closed)",
   expect(JSON.stringify(tree)).not.toContain(SECRET);
   expect(tree.nodes).toEqual(["login:0"]);
   expect(tree.data["login:0"].inputs).toEqual({
-    ls_error: _processingFailed("inputs", new Error()),
+    ls_error: _INPUTS_PROCESSING_FAILED,
   });
 });
 
@@ -1891,7 +1892,7 @@ test("SECURITY: traceable async processInputs rejection drops the inputs (fail c
   expect(JSON.stringify(tree)).not.toContain(SECRET);
   expect(tree.nodes).toEqual(["login:0"]);
   expect(tree.data["login:0"].inputs).toEqual({
-    ls_error: _processingFailed("inputs", new Error()),
+    ls_error: _INPUTS_PROCESSING_FAILED,
   });
 });
 
@@ -1917,7 +1918,7 @@ test("SECURITY: traceable processOutputs failure drops the outputs (fail closed)
   expect(JSON.stringify(tree)).not.toContain(SECRET);
   expect(tree.nodes).toEqual(["login:0"]);
   expect(tree.data["login:0"].outputs).toEqual({
-    ls_error: _processingFailed("outputs", new Error()),
+    ls_error: _OUTPUTS_PROCESSING_FAILED,
   });
   // Not errored: that status is for the traced fn failing, not post-processing.
   expect(tree.data["login:0"].error).toBeFalsy();
@@ -1925,6 +1926,7 @@ test("SECURITY: traceable processOutputs failure drops the outputs (fail closed)
 
 test("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw inputs", async () => {
   const { client, callSpy } = mockClient();
+  // eslint-disable-next-line no-process-env
   process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS = "true";
   try {
     const processInputs = jest.fn((_inputs: Readonly<KVMap>) => {
@@ -1947,12 +1949,14 @@ test("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw inputs", async
       password: SECRET,
     });
   } finally {
+    // eslint-disable-next-line no-process-env
     delete process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS;
   }
 });
 
 test("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw outputs", async () => {
   const { client, callSpy } = mockClient();
+  // eslint-disable-next-line no-process-env
   process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS = "true";
   try {
     const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
@@ -1969,6 +1973,7 @@ test("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw outputs", asyn
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     expect(tree.data["login:0"].outputs).toEqual({ outputs: SECRET });
   } finally {
+    // eslint-disable-next-line no-process-env
     delete process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS;
   }
 });

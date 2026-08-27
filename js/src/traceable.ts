@@ -22,8 +22,9 @@ import {
 import {
   _LC_CHILD_RUN_END_PROMISES_KEY,
   _LC_CONTEXT_VARIABLES_KEY,
+  _INPUTS_PROCESSING_FAILED,
+  _OUTPUTS_PROCESSING_FAILED,
   _PROCESSING_FAILED_KEY,
-  _processingFailed,
 } from "./singletons/constants.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import type {
@@ -169,7 +170,7 @@ const handleRunInputs = <Args extends unknown[]>(
       return inputs;
     }
     console.warn("Error occurred during processInputs. Dropping inputs:", e);
-    return { [_PROCESSING_FAILED_KEY]: _processingFailed("inputs", e) };
+    return { [_PROCESSING_FAILED_KEY]: _INPUTS_PROCESSING_FAILED };
   };
   try {
     const processed = processInputs(inputs);
@@ -295,7 +296,7 @@ async function handleRunOutputs<Return>(params: {
       return unprocessed;
     }
     console.error("Error occurred during processOutputs. Dropping outputs:", e);
-    return { [_PROCESSING_FAILED_KEY]: _processingFailed("outputs", e) };
+    return { [_PROCESSING_FAILED_KEY]: _OUTPUTS_PROCESSING_FAILED };
   };
   const endOutputsDropped = async (e: unknown) => {
     const finalOutputs = droppedOutputs(e);
