@@ -1,0 +1,29 @@
+python/langsmith/integrations/livekit/processor.py
+  s_728508611677b0::t_92b15a52fd132f 139-143,780-786,928-945
+  s_728508611677b0::t_c8493bb119a798 760-763,765-767,796,811-819
+  s_728508611677b0::t_36abfbf8744d28 820
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_728508611677b0::t_92b15a52fd132f 1170-1180,1182-1190,1192-1203,1205-1216
+  s_728508611677b0::t_965aa482d9cc24 1181,1191,1204
+  s_728508611677b0::t_c8493bb119a798 150-151,664-700
+python/pyproject.toml
+  s_728508611677b0::t_8a438f56887abf 74
+python/uv.lock
+  s_728508611677b0::t_9ee48bb2242515 1793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c5b6a7bc36e4bf38ae727406ad59cf3a4ea6c182",
+  "prompts": {},
+  "sessions": {
+    "s_728508611677b0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04508-d615-7143-bb9b-b241084b88e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+python/tests/unit_tests/test_client.py
+  s_0bb4cd45437e72::t_c90bdf40a8cb36 2863-2876,2879-2880,2886-2891,2893-2895,2897-2909,2912-2913,2915-2918,2920-2927,2930-2931,2933-2934,2936-2938,2941-2943,2945-2949,2951-2958,2960-2961,2966,2972-2976,2978-2982,2984-2985,2987-2990,2992-2994,2996-3000
+js/src/tests/client.test.ts
+  s_0bb4cd45437e72::t_c90bdf40a8cb36 1233-1234,1236-1241,1244,1250-1259,1261-1271,1274,1280-1281
+  s_0bb4cd45437e72::t_38a6404df57540 136-176,1283
+js/src/client.ts
+  s_0bb4cd45437e72::t_c90bdf40a8cb36 726-752,2037-2038,2045,2050,5559-5561
+js/src/tests/batch_client.test.ts
+  s_0bb4cd45437e72::t_c90bdf40a8cb36 1195-1209,1211,1238,1273,1290-1321
+python/langsmith/utils.py
+  s_0bb4cd45437e72::t_c90bdf40a8cb36 798,813-814,830-832,836
+python/langsmith/client.py
+  s_0bb4cd45437e72::t_c90bdf40a8cb36 798-819,2507-2508,2527,8373-8374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "37e432e0dd22a2f54f47569bdb4a1054380c93d4",
+  "prompts": {},
+  "sessions": {
+    "s_0bb4cd45437e72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a78d183d-a657-437b-a086-3a1dfde3d877",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

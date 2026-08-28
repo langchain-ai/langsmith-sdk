@@ -1,0 +1,38 @@
+python/pyproject.toml
+  s_9b0a090a06147a::t_e7b97cc80ad8ce 181-188
+python/bench/__main__.py
+  s_9b0a090a06147a::t_046e3c38645b97 3,7
+python/bench/test_bench.py
+  s_9b0a090a06147a::t_88373701b8e64b 1-19
+python/bench/cases.py
+  s_9b0a090a06147a::t_b4e51d2940c66a 1-68
+.github/workflows/py-bench-datadog.yml
+  s_9b0a090a06147a::t_a1c9e4deb6cf90 1-3,8-20,24-59
+  s_9b0a090a06147a::t_039da0386d381c 4-7,21-23
+python/Makefile
+  s_9b0a090a06147a::t_500381f6957bea 1,16-27
+  s_9b0a090a06147a::t_fd5767d4b7f692 28
+python/uv.lock
+  s_9b0a090a06147a::t_a89a65573ab722 1413-1424,1737-1740,1851-1854,2029-2040,2268-2272,2286-2349,2387-2398,2408-2476,3392-3400,3588-3596,3871-3899,4837-4853,5133-5141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bd7038af1711563bdff603933b5ff03778f1b226",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_9b0a090a06147a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7fbf8000-9abe-47f5-851c-5af15a74a584",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

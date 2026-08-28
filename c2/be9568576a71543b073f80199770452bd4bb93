@@ -1,0 +1,39 @@
+python/tests/unit_tests/test_run_helpers.py
+  s_631a1ee18eeee4::t_43275f51df0335 469,502
+  s_631a1ee18eeee4::t_cd4ccd50e8f4d4 448-449,453,466-468,470-472,474-475,478-479,483,495-498,500-501,503-504
+  s_631a1ee18eeee4::t_455808615f69a7 36-37,473,499
+js/src/singletons/constants.ts
+  s_631a1ee18eeee4::t_03c3e783a8260e 10-16
+python/langsmith/run_helpers.py
+  s_631a1ee18eeee4::t_e38fb98c914815 62-68,1670,1672,1751,1755
+  s_631a1ee18eeee4::t_43275f51df0335 61,1668,1749
+  s_631a1ee18eeee4::t_3cf53b0ae785f3 1752
+js/src/tests/traceable.test.ts
+  s_631a1ee18eeee4::t_0c6923c3b46bde 1785-1790,1792-1795,1824-1831,1833-1834,1838,1842-1843,1855,1861-1865,1871,1875-1876,1886,1889-1891,1897,1900-1901,1906,1913-1914,1916,1921
+  s_631a1ee18eeee4::t_d2173a0008364d 7-10,1791,1832,1866-1868,1892-1894,1917-1918
+  s_631a1ee18eeee4::t_2c3a0675c7ee32 30-31
+  s_631a1ee18eeee4::t_43275f51df0335 1783,1823,1841,1920
+  s_631a1ee18eeee4::t_afe580b2819a17 6
+js/src/traceable.ts
+  s_631a1ee18eeee4::t_3ea95dde4b10cb 371
+  s_631a1ee18eeee4::t_03c3e783a8260e 23,26-27,151,270,305
+  s_631a1ee18eeee4::t_43275f51df0335 148,370
+  s_631a1ee18eeee4::t_dcf2536ddbea96 149-150,155-157,159,264-266,269,271,288,369,372-374
+  s_631a1ee18eeee4::t_a4c9c07f6e03c1 289-300,304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c2be9568576a71543b073f80199770452bd4bb93",
+  "prompts": {},
+  "sessions": {
+    "s_631a1ee18eeee4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9f20730-c042-4905-8825-6073da9fbbf4",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

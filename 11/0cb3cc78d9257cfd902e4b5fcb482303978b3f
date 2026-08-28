@@ -1,0 +1,23 @@
+python/langsmith/integrations/livekit/_state.py
+  s_c138dc182265e7::t_46356febf01a4f 34
+python/langsmith/integrations/livekit/processor.py
+  s_c138dc182265e7::t_46356febf01a4f 141,143,146-147,153,163,166,181,191-194,255,268,278-279,305-306,347,356,365,405-406,412-413,515,517,533-538,541,556,558-560,568-569,619,621,624,637,643,646,656,660,664,679,689,694,709,712,770,777
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_c138dc182265e7::t_46356febf01a4f 223,236,460
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "110cb3cc78d9257cfd902e4b5fcb482303978b3f",
+  "prompts": {},
+  "sessions": {
+    "s_c138dc182265e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04080-55e6-7383-832c-14676779c04b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

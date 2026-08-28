@@ -1,0 +1,22 @@
+python/tests/unit_tests/test_client.py
+  s_d01012fae8a371::t_2dbbf54e34bf4c 1868-1895
+  s_d01012fae8a371::t_429a5d24f32d5b 1896-1919
+python/langsmith/client.py
+  s_d01012fae8a371::t_f8388d58d4be2b 2859-2860,2870-2871,2903-2904
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3ae7621a1880d62da973a0510a226cc48c5199c1",
+  "prompts": {},
+  "sessions": {
+    "s_d01012fae8a371": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b49c750a-b59c-487f-95b6-f4f33d83ffc8",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

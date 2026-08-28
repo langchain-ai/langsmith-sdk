@@ -1,0 +1,20 @@
+.github/workflows/codspeed.yml
+  s_9b0a090a06147a::t_fea6d601bbdf08 23-24
+  s_9b0a090a06147a::t_b57db11461e974 57-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6bfbc72b85f0f55dd86ff5fb6304fee008e82d34",
+  "prompts": {},
+  "sessions": {
+    "s_9b0a090a06147a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7fbf8000-9abe-47f5-851c-5af15a74a584",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

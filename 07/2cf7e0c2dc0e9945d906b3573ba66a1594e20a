@@ -1,0 +1,20 @@
+python/langsmith/wrappers/_openai.py
+  h_f1ecc43c8f43eb 27,97-98,107,109-111,113
+  h_f1ecc43c8f43eb 94-96,108,112
+python/tests/unit_tests/wrappers/test_openai_processing.py
+  h_f1ecc43c8f43eb 3,344-349,351-390
+  h_f1ecc43c8f43eb 350
+python/langsmith/_internal/_redaction.py
+  h_f1ecc43c8f43eb 9,17-18,28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "072cf7e0c2dc0e9945d906b3573ba66a1594e20a",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

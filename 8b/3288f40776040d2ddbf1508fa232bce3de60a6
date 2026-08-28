@@ -1,0 +1,25 @@
+python/langsmith/client.py
+  s_657499fe2814f1::t_36b955e43364d7 1824-1825
+python/tests/unit_tests/test_httpx_compat.py
+  s_657499fe2814f1::t_dad02b2eeb8a2b 17
+  s_657499fe2814f1::t_6b8d14ff5b2902 12-16,18-19
+python/langsmith/async_client.py
+  s_657499fe2814f1::t_575490a0736fbb 23
+  s_657499fe2814f1::t_2ce8872f632382 112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8b3288f40776040d2ddbf1508fa232bce3de60a6",
+  "prompts": {},
+  "sessions": {
+    "s_657499fe2814f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "10e2a49a-5811-4c41-8fad-fddc2304d92a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

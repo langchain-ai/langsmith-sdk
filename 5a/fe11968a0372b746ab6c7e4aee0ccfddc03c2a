@@ -1,0 +1,24 @@
+python/langsmith/client.py
+  s_0bb4cd45437e72::t_4283577d91a1c2 8060-8061
+js/src/client.ts
+  s_0bb4cd45437e72::t_9078732bd2eb81 5538
+  s_0bb4cd45437e72::t_d89e24161ccb26 5845-5846
+js/src/utils/sampling.ts
+  s_0bb4cd45437e72::t_9078732bd2eb81 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5afe11968a0372b746ab6c7e4aee0ccfddc03c2a",
+  "prompts": {},
+  "sessions": {
+    "s_0bb4cd45437e72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a78d183d-a657-437b-a086-3a1dfde3d877",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+js/src/tests/traceable.test.ts
+  s_631a1ee18eeee4::t_45ad7fce49a310 1863-1864,1890-1891,1916-1917
+  s_631a1ee18eeee4::t_538a4bf9a3c6d7 8,1790,1831,1867,1894,1920
+  s_631a1ee18eeee4::t_19a924725be73c 1943,1945-1948,1970
+  s_631a1ee18eeee4::t_9c502413298e19 1926-1942,1944,1949-1969,1971-1975
+js/src/singletons/constants.ts
+  s_631a1ee18eeee4::t_4f7e071fedcd7f 12-32
+python/tests/unit_tests/test_run_helpers.py
+  s_631a1ee18eeee4::t_11aeb5f2e4e8da 40,472-473,499-500,508-560
+  s_631a1ee18eeee4::t_23220979b2d5cc 561-562
+python/langsmith/run_helpers.py
+  s_631a1ee18eeee4::t_392b2e1da050c1 62-87,1687-1699,1777-1792
+js/src/traceable.ts
+  s_631a1ee18eeee4::t_4f7e071fedcd7f 26,28,56-68,163-170,172
+  s_631a1ee18eeee4::t_9d6b8fea5016b6 276-277,287-296,298-301,304,337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "2171d8dca93c7e7b39c12379c1e2af604e611852",
+  "prompts": {},
+  "sessions": {
+    "s_631a1ee18eeee4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9f20730-c042-4905-8825-6073da9fbbf4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

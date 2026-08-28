@@ -1,0 +1,27 @@
+python/langsmith/integrations/elevenlabs/_otel.py
+  s_b2e374befd2550::t_36cdb37789b6be 1-21,23,25-45,50-116,120-256,258-340,343-344,346-422,433-442,444-447,450-533,535-601,624-737
+  s_b2e374befd2550::t_a3351e79b0c759 22,24,117-119,257,534
+  s_b2e374befd2550::t_6e0590eec86003 46-49,341-342,345,423-432,443,448-449,602-623
+python/langsmith/integrations/elevenlabs/__init__.py
+  s_b2e374befd2550::t_36cdb37789b6be 1-37
+python/tests/unit_tests/wrappers/test_elevenlabs.py
+  s_b2e374befd2550::t_a3351e79b0c759 191-193
+  s_b2e374befd2550::t_6e0590eec86003 281
+  s_b2e374befd2550::t_b92d8ceb40abbd 1-190,194-280,282-315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "26aeddfca22aba6b9d1c174922f1c0162badf2d4",
+  "prompts": {},
+  "sessions": {
+    "s_b2e374befd2550": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01be2-e4bc-7672-95bd-113ba68cc615",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
