@@ -279,30 +279,40 @@ os.environ["LANGSMITH_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 > **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
 
 > [!IMPORTANT]
-> The SDK reads the endpoint and workspace when each client is created. It does not
-> load `.env` files itself, and defaults to the US endpoint when no endpoint is set.
-> Load your `.env` file before creating the client, or pass `api_url` directly.
-> For a fail-loud region and workspace guard, also set `LANGSMITH_WORKSPACE_ID` or
-> pass `workspace_id`; a request to an endpoint that cannot serve that workspace
-> will fail instead of selecting another accessible workspace.
+> The SDK resolves the endpoint and workspace **once, when each client is
+> created** — from arguments, then environment variables, then the profile
+> config. It does **not** load `.env` files itself, so a `.env` that is loaded
+> after the client is constructed has no effect. When no endpoint is configured,
+> the client defaults to the US endpoint (`https://api.smith.langchain.com`).
+>
+> Because a workspace lives in a single region, a misconfigured endpoint can
+> silently connect to a *different* tenant that your credentials can also access
+> and return correct-looking data from the wrong workspace, with no error
+> raised. To avoid this: load your `.env` (or otherwise set `LANGSMITH_ENDPOINT`)
+> **before** creating the client, or pass `api_url` directly.
 
-You can verify the resolved endpoint and workspace before reading data:
+If you set `LANGSMITH_WORKSPACE_ID` / `workspace_id` but no endpoint, the client
+warns at construction that it defaulted to the US endpoint. For a hard guard,
+call `validate_workspace()`, which raises if the connected workspace does not
+match the one you expect:
 
 ```python
 from langsmith import Client
 
-expected_workspace_id = "<YOUR-WORKSPACE-ID>"
 client = Client(
     api_url="https://eu.api.smith.langchain.com",
-    workspace_id=expected_workspace_id,
+    workspace_id="<YOUR-WORKSPACE-ID>",
 )
-workspace = client.get_current_workspace()
-if workspace.id != expected_workspace_id:
-    raise RuntimeError(
-        f"LangSmith workspace mismatch: expected {expected_workspace_id}, "
-        f"connected to {workspace.id} via {client.api_url}"
-    )
+
+# Raises LangSmithUserError if the resolved endpoint/credentials connect to a
+# different workspace than the configured workspace_id.
+client.validate_workspace()
+
+# Or assert against a specific ID explicitly:
+client.validate_workspace(expected_workspace_id="<YOUR-WORKSPACE-ID>")
 ```
+
+`AsyncClient.validate_workspace()` is the awaitable equivalent.
 
 2. **Run an Agent, Chain, or Language Model in LangChain**
 

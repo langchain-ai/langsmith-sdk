@@ -242,6 +242,9 @@ class AsyncClient:
         api_key = ls_utils.get_api_key(api_key_)
         api_url = ls_utils.get_api_url(api_url_)
         self._workspace_id = ls_utils.get_workspace_id(workspace_id_)
+        ls_client._warn_if_workspace_without_endpoint(
+            self._workspace_id, api_url_, api_url
+        )
         self._profile_auth = None
         self._profile_auth_headers = {}
         if use_profile_oauth:
@@ -1831,6 +1834,46 @@ class AsyncClient:
     async def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant."""
         return await self.get_current_workspace()
+
+    async def validate_workspace(
+        self, expected_workspace_id: Optional[str] = None
+    ) -> ls_schemas.LangSmithSettings:
+        """Fail loudly if the client is not connected to the expected workspace.
+
+        The endpoint and workspace are resolved when the client is created. A
+        misconfigured endpoint/region can silently connect to a different
+        accessible tenant and return correct-looking data from the wrong
+        workspace. Call this before reading data to turn that silent mismatch
+        into an explicit error.
+
+        Args:
+            expected_workspace_id: The workspace ID you expect to be connected
+                to. Defaults to the client's configured ``workspace_id`` (from
+                the ``workspace_id`` argument or ``LANGSMITH_WORKSPACE_ID``).
+
+        Returns:
+            The resolved workspace settings when they match the expectation.
+
+        Raises:
+            LangSmithUserError: If no expectation is available, or if the
+                connected workspace does not match the expected one.
+        """
+        expected = expected_workspace_id or self._workspace_id
+        if not expected:
+            raise ls_utils.LangSmithUserError(
+                "validate_workspace() requires an expected workspace ID. Pass "
+                "expected_workspace_id, set the workspace_id argument, or set the "
+                "LANGSMITH_WORKSPACE_ID environment variable."
+            )
+        workspace = await self.get_current_workspace()
+        if str(workspace.id) != str(expected):
+            raise ls_utils.LangSmithUserError(
+                f"LangSmith workspace mismatch: expected workspace {expected!r} "
+                f"but connected to {workspace.id!r} via {self._api_url!r}. Check "
+                "LANGSMITH_ENDPOINT / api_url and LANGSMITH_WORKSPACE_ID / "
+                "workspace_id."
+            )
+        return workspace
 
     async def _current_tenant_is_owner(self, owner: str) -> bool:
         """Check if the current workspace has the same handle as owner.

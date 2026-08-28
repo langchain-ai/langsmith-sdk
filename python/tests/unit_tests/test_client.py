@@ -242,6 +242,95 @@ def test_get_current_workspace() -> None:
     request.assert_called_once_with("GET", "/settings")
 
 
+def _mock_settings_response(workspace_id: str) -> mock.Mock:
+    response = mock.Mock()
+    response.json.return_value = {
+        "id": workspace_id,
+        "display_name": "Workspace",
+        "created_at": "2026-07-11T00:00:00Z",
+    }
+    return response
+
+
+def test_validate_workspace_matches() -> None:
+    client = Client(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+        auto_batch_tracing=False,
+    )
+    with mock.patch.object(
+        Client,
+        "request_with_retries",
+        return_value=_mock_settings_response("expected-workspace"),
+    ):
+        workspace = client.validate_workspace()
+    assert workspace.id == "expected-workspace"
+
+
+def test_validate_workspace_mismatch_raises() -> None:
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+        auto_batch_tracing=False,
+    )
+    with mock.patch.object(
+        Client,
+        "request_with_retries",
+        return_value=_mock_settings_response("some-other-workspace"),
+    ):
+        with pytest.raises(LangSmithUserError, match="workspace mismatch"):
+            client.validate_workspace()
+
+
+def test_validate_workspace_explicit_expected_id() -> None:
+    client = Client(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        auto_batch_tracing=False,
+    )
+    with mock.patch.object(
+        Client,
+        "request_with_retries",
+        return_value=_mock_settings_response("connected-workspace"),
+    ):
+        with pytest.raises(LangSmithUserError, match="workspace mismatch"):
+            client.validate_workspace(expected_workspace_id="expected-workspace")
+
+
+def test_validate_workspace_requires_expectation() -> None:
+    client = Client(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        auto_batch_tracing=False,
+    )
+    with pytest.raises(LangSmithUserError, match="requires an expected workspace"):
+        client.validate_workspace()
+
+
+def test_workspace_without_endpoint_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
+    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
+    with pytest.warns(ls_utils.LangSmithWorkspaceEndpointWarning):
+        Client(
+            api_key="test-key",
+            workspace_id="expected-workspace",
+            auto_batch_tracing=False,
+        )
+
+
+def test_explicit_endpoint_with_workspace_does_not_warn() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ls_utils.LangSmithWorkspaceEndpointWarning)
+        Client(
+            api_url="https://eu.api.smith.langchain.com",
+            api_key="test-key",
+            workspace_id="expected-workspace",
+            auto_batch_tracing=False,
+        )
+
+
 def test_client_init_does_not_eagerly_initialize_openapi_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
