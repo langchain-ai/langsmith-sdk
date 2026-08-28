@@ -114,6 +114,7 @@ from langsmith._internal._operations import (
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
 )
+from langsmith._internal._sampling import is_sampled_by_id
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
@@ -976,7 +977,6 @@ class Client:
         "_web_url",
         "_tenant_id",
         "tracing_sample_rate",
-        "_filtered_post_uuids",
         "tracing_queue",
         "_anonymizer",
         "_hide_inputs",
@@ -1288,7 +1288,6 @@ class Client:
         self._profile_auth_headers: dict[str, str] = {}
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
-        self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
@@ -2484,20 +2483,13 @@ class Client:
             if added:
                 metadata.update(self._hide_run_metadata(added))
 
-    def _should_sample(self) -> bool:
-        if self.tracing_sample_rate is None:
-            return True
-        return random.random() < self.tracing_sample_rate
+    def _should_sample(self, identifier: Any = None) -> bool:
+        return is_sampled_by_id(identifier, self.tracing_sample_rate)
 
     def _filter_for_sampling(
         self,
         runs: Iterable[Union[dict, ls_schemas.Run, ls_schemas.RunLikeDict]],
-        *,
-        patch: bool = False,
     ) -> list:
-        if self.tracing_sample_rate is None:
-            return list(runs)
-
         def _val(run: Any, key: str, default: Any = _UNSET) -> Any:
             try:
                 return run[key]
@@ -2506,34 +2498,18 @@ class Client:
                     return getattr(run, key)
                 return getattr(run, key, default)
 
-        if patch:
-            sampled = []
-            for run in runs:
-                trace_id = _as_uuid(_val(run, "trace_id"))
-                if trace_id not in self._filtered_post_uuids:
-                    sampled.append(run)
-                elif _val(run, "id") == trace_id:
-                    self._filtered_post_uuids.remove(trace_id)
-            return sampled
-        else:
-            sampled = []
-            for run in runs:
-                trace_id = _val(run, "trace_id", None) or _val(run, "id")
+        def _sampling_key(run: Any) -> Any:
+            trace_id = _val(run, "trace_id", None)
+            if trace_id is not None:
+                return trace_id
+            # update_run() may omit trace_id; dotted order's first segment
+            # is the root.
+            dotted_order = _val(run, "dotted_order", None)
+            if dotted_order and "Z" in dotted_order:
+                return dotted_order.split(".", 1)[0].split("Z", 1)[1]
+            return _val(run, "id", None)
 
-                # If we've already made a decision about this trace, follow it
-                if trace_id in self._filtered_post_uuids:
-                    continue
-
-                # For new traces, apply sampling
-                if _val(run, "id") == trace_id:
-                    if self._should_sample():
-                        sampled.append(run)
-                    else:
-                        self._filtered_post_uuids.add(trace_id)
-                else:
-                    # Child runs follow their trace's sampling decision
-                    sampled.append(run)
-            return sampled
+        return [run for run in runs if self._should_sample(_sampling_key(run))]
 
     @property
     def tracing_mode(self) -> TracingMode:
@@ -3173,7 +3149,7 @@ class Client:
             return
         # filter out runs that are not sampled
         create = self._filter_for_sampling(create or EMPTY_SEQ)
-        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        update = self._filter_for_sampling(update or EMPTY_SEQ)
         if not create and not update:
             return
         # transform and convert to dicts
@@ -3442,7 +3418,7 @@ class Client:
             return
         # filter out runs that are not sampled
         create = self._filter_for_sampling(create or EMPTY_SEQ)
-        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        update = self._filter_for_sampling(update or EMPTY_SEQ)
         if not create and not update:
             return
         # transform and convert to dicts
@@ -3729,6 +3705,9 @@ class Client:
     ) -> None:
         """Update a run in the LangSmith API.
 
+        Sampling keys on the run's trace: pass `trace_id` or `dotted_order` when
+        updating a child run, or its own ID is hashed and may disagree.
+
         Args:
             run_id (Union[UUID, str]): The ID of the run to update.
             name (Optional[str]): The name of the run.
@@ -3811,7 +3790,7 @@ class Client:
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
         )
-        if not self._filter_for_sampling([data], patch=True):
+        if not self._filter_for_sampling([data]):
             return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
@@ -8078,7 +8057,13 @@ class Client:
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id if run is None else None,
                 extra=res.extra,
-                trace_id=getattr(run, "trace_id", None) if run else None,
+                # If an evaluator result targets a different run, we can't
+                # guarantee to know its trace_id.
+                trace_id=(
+                    getattr(run, "trace_id", None)
+                    if run is not None and run_id_ == run.id
+                    else None
+                ),
                 session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
@@ -8378,6 +8363,10 @@ class Client:
                 error=error,
                 extend_trace_retention=extend_trace_retention,
             )
+
+            sampling_id = feedback.trace_id or feedback.run_id
+            if sampling_id is not None and not self._should_sample(sampling_id):
+                return ls_schemas.Feedback(**feedback.model_dump())
 
             use_multipart = not self._multipart_disabled and (
                 self.info.batch_ingest_config or {}

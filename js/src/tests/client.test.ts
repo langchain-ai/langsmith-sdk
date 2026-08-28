@@ -19,6 +19,7 @@ import {
 } from "../utils/env.js";
 import { parseHubIdentifier } from "../utils/prompts.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
+import { isSampledById } from "../utils/sampling.js";
 
 describe("Client", () => {
   describe("resource tags on create", () => {
@@ -131,6 +132,130 @@ describe("Client", () => {
           startTime,
         }),
       );
+    });
+
+    it("applies run ID sampling before sending feedback", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+        tracingSamplingRate: 0.5,
+      });
+
+      // sessionId is supplied so the call never consults GET /info, leaving
+      // mockFetch to count feedback requests alone.
+      const sessionId = "550e8400-e29b-41d4-a716-446655440001";
+      const sampledFeedback = await client.createFeedback(
+        "00000000-0000-0000-0000-000000000015",
+        "Foo",
+        { score: 1, sessionId },
+      );
+      const filteredFeedback = await client.createFeedback(
+        "00000000-0000-0000-0000-000000000004",
+        "Foo",
+        { score: 0, sessionId },
+      );
+
+      expect(sampledFeedback.run_id).toBe(
+        "00000000-0000-0000-0000-000000000015",
+      );
+      expect(filteredFeedback.run_id).toBe(
+        "00000000-0000-0000-0000-000000000004",
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual(
+        expect.objectContaining({
+          run_id: "00000000-0000-0000-0000-000000000015",
+        }),
+      );
+    });
+
+    it("passes the run's trace ID through evaluation feedback", async () => {
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+      });
+      const createFeedback = jest
+        .spyOn(client, "createFeedback")
+        .mockResolvedValue({} as any);
+      const run = {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        trace_id: "550e8400-e29b-41d4-a716-4466554400ff",
+      } as any;
+
+      // Scoring the run itself: its trace is known, so it is forwarded.
+      await client.logEvaluationFeedback({ key: "quality", score: 1 }, run);
+      expect(createFeedback).toHaveBeenLastCalledWith(
+        run.id,
+        "quality",
+        expect.objectContaining({ traceId: run.trace_id }),
+      );
+
+      // targetRunId names a different run, whose trace we cannot know from
+      // `run`. Sampling must fall back to the run id rather than guess.
+      await client.logEvaluationFeedback(
+        {
+          key: "quality",
+          score: 1,
+          targetRunId: "550e8400-e29b-41d4-a716-446655440099",
+        },
+        run,
+      );
+      expect(createFeedback).toHaveBeenLastCalledWith(
+        "550e8400-e29b-41d4-a716-446655440099",
+        "quality",
+        expect.objectContaining({ traceId: undefined }),
+      );
+    });
+
+    it("samples feedback by trace ID, not run ID", async () => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response("{}", {
+          status: 200,
+          statusText: "OK",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      const client = new Client({
+        apiUrl: "http://localhost:1984",
+        apiKey: "test-api-key",
+        fetchImplementation: mockFetch,
+        tracingSamplingRate: 0.5,
+      });
+      const sessionId = "550e8400-e29b-41d4-a716-446655440001";
+      // A child run whose own id would be filtered out on its own.
+      const childId = "00000000-0000-0000-0000-000000000004";
+
+      // Sampled-in trace: the child's feedback goes out with it.
+      await client.createFeedback(childId, "Foo", {
+        score: 1,
+        sessionId,
+        traceId: "00000000-0000-0000-0000-000000000015",
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, init] = mockFetch.mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual(
+        expect.objectContaining({
+          run_id: childId,
+          trace_id: "00000000-0000-0000-0000-000000000015",
+        }),
+      );
+
+      // Filtered-out trace: nothing further is sent.
+      await client.createFeedback(childId, "Foo", {
+        score: 0,
+        sessionId,
+        traceId: "00000000-0000-0000-0000-000000000004",
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     const infoClient = (smithdbOnly: boolean) => {
@@ -1185,217 +1310,154 @@ describe("Client", () => {
     });
   });
 
-  describe("_filterForSampling patch logic", () => {
-    it("should filter patch runs based on trace_id instead of run.id", () => {
+  describe("update sampling", () => {
+    // A child whose own id would be filtered out if hashed on its own.
+    const childId = "00000000-0000-0000-0000-000000000004";
+    const sampledRoot = "00000000-0000-0000-0000-000000000015";
+    const filteredRoot = "00000000-0000-0000-0000-000000000004";
+    const dotted = (root: string) =>
+      `20240101T000000000000Z${root}.20240101T000000000001Z${childId}`;
+
+    const updateWith = (dottedOrder: string) => {
       const client = new Client({
         apiKey: "test-api-key",
         tracingSamplingRate: 0.5,
       });
+      const filtered = (client as any)._filterForSampling([
+        { id: childId, dotted_order: dottedOrder, outputs: { a: 1 } },
+      ]);
+      return filtered.length;
+    };
 
-      // Mock the _shouldSample method to control sampling decisions
-      let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
-        counter += 1;
-        return counter % 2 === 0; // Accept even-numbered calls (2nd, 4th, etc.)
-      });
-
-      // Create two traces
-      const traceId1 = "trace-1";
-      const traceId2 = "trace-2";
-      const childRunId1 = "child-1";
-      const childRunId2 = "child-2";
-
-      // Create root runs (these will be sampled)
-      const rootRuns = [
-        {
-          id: traceId1,
-          trace_id: traceId1,
-          name: "root_run_1",
-          run_type: "llm" as const,
-          inputs: { text: "hello" },
-        },
-        {
-          id: traceId2,
-          trace_id: traceId2,
-          name: "root_run_2",
-          run_type: "llm" as const,
-          inputs: { text: "world" },
-        },
-      ];
-
-      // Test POST filtering (initial sampling)
-      const postFiltered = (client as any)._filterForSampling(rootRuns, false);
-
-      // Based on our mock, first call returns false, second returns true
-      // So only root_run_2 should be sampled
-      expect(postFiltered).toHaveLength(1);
-      expect(postFiltered[0].id).toBe(traceId2);
-
-      // Verify that traceId1 is in filtered set, traceId2 is not
-      expect((client as any).filteredPostUuids.has(traceId1)).toBe(true);
-      expect((client as any).filteredPostUuids.has(traceId2)).toBe(false);
-
-      // Test PATCH filtering - child runs should follow their trace's sampling decision
-      const patchRuns = [
-        {
-          id: childRunId1,
-          trace_id: traceId1,
-          name: "child_run_1",
-          run_type: "tool" as const,
-          inputs: { text: "child hello" },
-          outputs: { result: "child result 1" },
-        },
-        {
-          id: childRunId2,
-          trace_id: traceId2,
-          name: "child_run_2",
-          run_type: "tool" as const,
-          inputs: { text: "child world" },
-          outputs: { result: "child result 2" },
-        },
-      ];
-
-      const patchFiltered = (client as any)._filterForSampling(patchRuns, true);
-
-      // Only child_run_2 should be included (its trace was sampled)
-      // child_run_1 should be filtered out (its trace was not sampled)
-      expect(patchFiltered).toHaveLength(1);
-      expect(patchFiltered[0].id).toBe(childRunId2);
-      expect(patchFiltered[0].trace_id).toBe(traceId2);
+    it("recovers the trace from dotted_order when trace_id is absent", () => {
+      // Root sampled in -> the child's patch goes out with it.
+      expect(updateWith(dotted(sampledRoot))).toBe(1);
+      // Root filtered out -> no orphan patch.
+      expect(updateWith(dotted(filteredRoot))).toBe(0);
     });
 
-    it("should remove trace_id from filtered set when processing root run patches", () => {
+    it("still falls back to the run id with neither trace_id nor dotted order", () => {
       const client = new Client({
         apiKey: "test-api-key",
         tracingSamplingRate: 0.5,
       });
+      expect(
+        (client as any)._filterForSampling([{ id: sampledRoot }]),
+      ).toHaveLength(1);
+      expect(
+        (client as any)._filterForSampling([{ id: filteredRoot }]),
+      ).toHaveLength(0);
+    });
+  });
 
-      // Mock the _shouldSample method to reject first trace, accept second
-      let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
-        counter += 1;
-        return counter % 2 === 0;
-      });
+  describe("cross-SDK sampling agreement", () => {
+    // Golden decisions at rate 0.5. The Python SDK asserts this exact table in
+    // python/tests/unit_tests/test_client.py: both must agree, or a trace
+    // sampled in by one SDK is dropped by the other. Regenerate both sides
+    // together, never one.
+    const decisionsAtHalf: [string, boolean][] = [
+      ["00000000-0000-0000-0000-000000000001", false],
+      ["00000000-0000-0000-0000-000000000004", false],
+      ["00000000-0000-0000-0000-000000000015", true],
+      ["0198f8a0-1234-7000-8000-000000000042", false],
+      ["b3d2c1a0-5f6e-7d8c-9b0a-1e2f3d4c5b6a", false],
+      ["abc", true],
+      ["", false],
+      ["trace-1", true],
+      ["trace-2", false],
+      // Non-ASCII pins the UTF-8 encoding: a UTF-16 implementation diverges.
+      ["\u00fcn\u00efc\u00f8d\u00e9-trace", false],
+      ["\u65e5\u672c\u8a9e", false],
+      // Case folding happens before hashing.
+      ["MiXeD-CaSe-ID", true],
+    ];
 
-      const traceId1 = "trace-1";
-      const traceId2 = "trace-2";
+    it.each(decisionsAtHalf)(
+      "matches the Python SDK for %p",
+      (identifier, expected) => {
+        expect(isSampledById(identifier, 0.5)).toBe(expected);
+      },
+    );
 
-      // Create root runs and sample them
-      const rootRuns = [
-        {
-          id: traceId1,
-          trace_id: traceId1,
-          name: "root_run_1",
-          run_type: "llm" as const,
-          inputs: { text: "hello" },
-        },
-        {
-          id: traceId2,
-          trace_id: traceId2,
-          name: "root_run_2",
-          run_type: "llm" as const,
-          inputs: { text: "world" },
-        },
-      ];
-
-      (client as any)._filterForSampling(rootRuns, false);
-
-      // Verify initial state
-      expect((client as any).filteredPostUuids.has(traceId1)).toBe(true);
-      expect((client as any).filteredPostUuids.has(traceId2)).toBe(false);
-
-      // Test PATCH filtering for root runs (updates to the root runs themselves)
-      const rootPatchRuns = [
-        {
-          id: traceId1,
-          trace_id: traceId1,
-          name: "root_run_1",
-          run_type: "llm" as const,
-          inputs: { text: "hello" },
-          outputs: { result: "root result 1" },
-        },
-        {
-          id: traceId2,
-          trace_id: traceId2,
-          name: "root_run_2",
-          run_type: "llm" as const,
-          inputs: { text: "world" },
-          outputs: { result: "root result 2" },
-        },
-      ];
-
-      const rootPatchFiltered = (client as any)._filterForSampling(
-        rootPatchRuns,
-        true,
-      );
-
-      // Only root_run_2 should be included, and traceId1 should be removed from filtered set
-      // since we're updating the root run that was originally filtered
-      expect(rootPatchFiltered).toHaveLength(1);
-      expect(rootPatchFiltered[0].id).toBe(traceId2);
-
-      // traceId1 should be removed from filtered set since we processed its root run
-      expect((client as any).filteredPostUuids.has(traceId1)).toBe(false);
-      expect((client as any).filteredPostUuids.has(traceId2)).toBe(false);
+    it("skips hashing at the rate bounds", () => {
+      for (const identifier of ["anything", "", null, undefined]) {
+        expect(isSampledById(identifier, undefined)).toBe(true);
+        expect(isSampledById(identifier, 1)).toBe(true);
+        expect(isSampledById(identifier, 0)).toBe(false);
+      }
     });
 
-    it("should handle mixed traces with patch sampling", () => {
+    it("honours the rate across many ids", () => {
+      const ids = Array.from(
+        { length: 20_000 },
+        (_, i) => `0198f8a0-1234-7000-8000-${String(i).padStart(12, "0")}`,
+      );
+      for (const rate of [0.1, 0.25, 0.75]) {
+        const kept =
+          ids.filter((id) => isSampledById(id, rate)).length / ids.length;
+        expect(Math.abs(kept - rate)).toBeLessThan(0.02);
+      }
+    });
+  });
+
+  describe("_filterForSampling run ID logic", () => {
+    // Buckets under XXH3-128 % 1_000_000: 10679 and 982794, so these stay on
+    // opposite sides of the threshold for any rate between 0.02 and 0.98.
+    const sampledRunId = "00000000-0000-0000-0000-000000000015";
+    const filteredRunId = "00000000-0000-0000-0000-000000000004";
+
+    const run = (id: string, traceId = id) => ({
+      id,
+      trace_id: traceId,
+      name: `run-${id}`,
+      run_type: "llm" as const,
+      inputs: { text: id },
+    });
+
+    it("should filter creates and patches by stable run ID", () => {
       const client = new Client({
         apiKey: "test-api-key",
         tracingSamplingRate: 0.5,
       });
 
-      // Mock sampling to accept every other trace
-      let counter = 0;
-      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
-        counter += 1;
-        return counter % 2 === 1; // Accept odd-numbered calls (1st, 3rd, etc.)
+      const sampledCreate = run(sampledRunId);
+      const filteredCreate = run(filteredRunId);
+      const sampledUpdate = {
+        ...sampledCreate,
+        outputs: { result: "sampled" },
+      };
+      const filteredUpdate = {
+        ...filteredCreate,
+        outputs: { result: "filtered" },
+      };
+
+      expect(
+        (client as any)._filterForSampling([sampledCreate, filteredCreate]),
+      ).toEqual([sampledCreate]);
+      expect(
+        (client as any)._filterForSampling([sampledUpdate, filteredUpdate]),
+      ).toEqual([sampledUpdate]);
+      expect((client as any)._shouldSample(sampledRunId)).toBe(true);
+      expect((client as any)._shouldSample(filteredRunId)).toBe(false);
+    });
+
+    it("should follow trace ID rather than run ID", () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        tracingSamplingRate: 0.5,
       });
 
-      // Create multiple traces
-      const traceIds = ["trace-0", "trace-1", "trace-2", "trace-3"];
-      const childRunIds = ["child-0", "child-1", "child-2", "child-3"];
+      // Child's own id would be filtered, but its trace is sampled -> kept.
+      const childInSampledTrace = run(filteredRunId, sampledRunId);
+      // Child's own id would be sampled, but its trace is filtered -> dropped.
+      const childInFilteredTrace = run(sampledRunId, filteredRunId);
 
-      // Create root runs
-      const rootRuns = traceIds.map((traceId, i) => ({
-        id: traceId,
-        trace_id: traceId,
-        name: `root_run_${i}`,
-        run_type: "llm" as const,
-        inputs: { text: `hello ${i}` },
-      }));
-
-      // Sample the root runs
-      const postFiltered = (client as any)._filterForSampling(rootRuns, false);
-
-      // Based on our mock: 1st and 3rd calls return true (indices 0, 2)
-      expect(postFiltered).toHaveLength(2);
-      const sampledTraceIds = new Set(postFiltered.map((run: any) => run.id));
-      expect(sampledTraceIds.has(traceIds[0])).toBe(true);
-      expect(sampledTraceIds.has(traceIds[2])).toBe(true);
-
-      // Create child runs for all traces
-      const childRuns = traceIds.map((traceId, i) => ({
-        id: childRunIds[i],
-        trace_id: traceId,
-        name: `child_run_${i}`,
-        run_type: "tool" as const,
-        inputs: { text: `child ${i}` },
-        outputs: { result: `child result ${i}` },
-      }));
-
-      // Test patch filtering for child runs
-      const patchFiltered = (client as any)._filterForSampling(childRuns, true);
-
-      // Only children of sampled traces should be included
-      expect(patchFiltered).toHaveLength(2);
-      const patchTraceIds = new Set(
-        patchFiltered.map((run: any) => run.trace_id),
-      );
-      expect(patchTraceIds.has(traceIds[0])).toBe(true);
-      expect(patchTraceIds.has(traceIds[2])).toBe(true);
-      expect(patchTraceIds.has(traceIds[1])).toBe(false);
-      expect(patchTraceIds.has(traceIds[3])).toBe(false);
+      expect(
+        (client as any)._filterForSampling([
+          childInSampledTrace,
+          childInFilteredTrace,
+        ]),
+      ).toEqual([childInSampledTrace]);
     });
   });
 
