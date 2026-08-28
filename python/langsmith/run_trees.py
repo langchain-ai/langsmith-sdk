@@ -11,7 +11,7 @@ import threading
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, Optional, Union, cast
+from typing import Any, NamedTuple, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, PrivateAttr, model_validator
@@ -83,6 +83,26 @@ class WriteReplica(TypedDict, total=False):
     The field is **not** propagated in distributed-tracing baggage (each service
     must construct its own clients).
     """
+
+
+class _PayloadKey(NamedTuple):
+    """The four things that decide whether two replicas serialize to the same bytes.
+
+    Credentials are absent on purpose: they do not affect the bytes, which is what
+    lets one group of replicas span several destinations.
+    """
+
+    client: Client
+    project_name: str
+    updates: Optional[dict]
+    primary: Optional[bool]
+
+
+class _ReplicaGroup(NamedTuple):
+    """Replicas that serialize alike, so they can share one payload."""
+
+    key: _PayloadKey
+    members: list[WriteReplica]
 
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
@@ -806,43 +826,36 @@ class RunTree(ls_schemas.RunBase):
             dup.update(updates)
         return dup
 
-    def _replica_groups(
-        self,
-    ) -> list[tuple[Client, str, Optional[dict], Optional[bool], list[WriteReplica]]]:
-        """Group replicas that would serialize to the same bytes.
+    def _replica_groups(self) -> list[_ReplicaGroup]:
+        """Bucket replicas by the payload each one would produce.
 
-        Credentials do not affect the bytes, so one group can span destinations.
+        `post()` and `patch()` remap UUIDs and serialize once per group - byte-identical
+        payloads make up a single group, even when authentication differs.
         """
-        groups: list[
-            tuple[Client, str, Optional[dict], Optional[bool], list[WriteReplica]]
-        ] = []
+        groups: list[_ReplicaGroup] = []
         for replica in self.replicas or ():
-            key = (
-                replica.get("client") or self.client,
-                replica.get("project_name") or self.session_name,
-                replica.get("updates"),
-                replica.get("primary"),
+            # Identity key - if those match across replicas, then payload can be reused.
+            key = _PayloadKey(
+                client=replica.get("client") or self.client,
+                project_name=replica.get("project_name") or self.session_name,
+                updates=replica.get("updates"),
+                primary=replica.get("primary"),
             )
-            # ponytail: O(n^2) over a handful of replicas, and `updates` compares by
-            # value without needing a hashable freeze. Use a key if that changes.
+            # Join the first group that matches, or start a new group
             for group in groups:
-                if group[:4] == key:
-                    group[4].append(replica)
+                if group.key == key:
+                    group.members.append(replica)
                     break
             else:
-                groups.append((*key, [replica]))
+                groups.append(_ReplicaGroup(key, [replica]))
         return groups
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
         if self.replicas:
-            for (
-                replica_client,
-                project_name,
-                updates,
-                primary,
-                members,
-            ) in self._replica_groups():
+            for group in self._replica_groups():
+                replica_client, project_name, updates, primary = group.key
+                members = group.members
                 if not hasattr(replica_client, "create_run"):
                     raise TypeError(
                         f"WriteReplica 'client' must be a langsmith.Client, "
@@ -908,13 +921,9 @@ class RunTree(ls_schemas.RunBase):
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
         if self.replicas:
-            for (
-                replica_client,
-                project_name,
-                updates,
-                primary,
-                members,
-            ) in self._replica_groups():
+            for group in self._replica_groups():
+                replica_client, project_name, updates, primary = group.key
+                members = group.members
                 if not hasattr(replica_client, "update_run"):
                     raise TypeError(
                         f"WriteReplica 'client' must be a langsmith.Client, "
