@@ -1,0 +1,21 @@
+python/tests/unit_tests/test_replica_compression.py
+  s_9ad5e82eb23414::t_9deb7a4c1bb5e8 662-724
+python/langsmith/client.py
+  s_9ad5e82eb23414::t_080964a136ed9f 2784,2793,2841-2842,2844-2845,3956,3965,4012-4013
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "fe1a52327184202d79a7eccb50ab3842c2f0dfac",
+  "prompts": {},
+  "sessions": {
+    "s_9ad5e82eb23414": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fef8e316-c17e-404e-94bb-5301e96209e7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
