@@ -175,8 +175,13 @@ def test_post_and_patch_for_one_destination_take_the_same_transport():
 # --- ownership ---------------------------------------------------------------
 
 
-def test_ownership_is_stable_across_flushes():
-    """reset() must not clear `destinations`, or the loser would alternate paths."""
+def test_a_fixed_replica_list_keeps_a_stable_outcome():
+    """Frames release their destinations when sent, but the result must not churn.
+
+    `post()` writes in replica-list order, so with an unchanged list the same set
+    claims every new frame and the other consistently uses the queue. A run's post
+    and patch therefore stay on one transport.
+    """
     with Harness() as h:
         h.post([_replica("https://b", "kb"), _replica("https://d", "kd")])
         h.flush()
@@ -192,21 +197,50 @@ def test_a_replica_only_client_is_never_challenged():
     with Harness() as h:
         for _ in range(3):
             h.post([_replica("https://b", "kb")])
+        assert h.client.compressed_traces.trace_count == 3
         h.flush()
     assert h.routes == [("https://b/runs/multipart", "kb")]
     assert not h.queued
 
 
-def test_the_frame_never_changes_owner():
+def test_an_open_frame_holds_its_destinations_and_a_sent_one_releases_them():
     dest_b = frozenset({ReplicaAuth(api_url="https://b", api_key="kb")})
     dest_d = frozenset({ReplicaAuth(api_url="https://d", api_key="kd")})
     traces = CompressedTraces()
+
+    # unclaimed: anything may enter
     assert traces.accepts(dest_b) and traces.accepts(dest_d)
+
+    # claimed: only its own destinations, or the frame would be mis-delivered
     traces.destinations = dest_b
-    traces.reset()
-    assert traces.destinations == dest_b
     assert traces.accepts(dest_b)
     assert not traces.accepts(dest_d)
+
+    # sent: released, so a client whose replicas changed is not stuck on dest_b
+    traces.reset()
+    assert traces.destinations is None
+    assert traces.accepts(dest_d)
+
+
+def test_replicas_that_change_can_claim_the_next_frame():
+    with Harness() as h:
+        h.post([_replica("https://b", "kb")])
+        h.flush()
+        h.post([_replica("https://d", "kd")])
+        assert h.client.compressed_traces.trace_count == 1
+        h.flush()
+    assert h.routes == [
+        ("https://b/runs/multipart", "kb"),
+        ("https://d/runs/multipart", "kd"),
+    ]
+    assert not h.queued
+
+
+def test_a_second_destination_set_still_waits_for_the_next_frame():
+    with Harness() as h:
+        h.post([_replica("https://b", "kb", "p1"), _replica("https://d", "kd", "p2")])
+        assert h.client.compressed_traces.trace_count == 1
+        assert [i.api_url for i in h.queued] == ["https://d"]
 
 
 # --- feedback ----------------------------------------------------------------

@@ -49,8 +49,9 @@ class CompressedTraces:
         self.lock = threading.Lock()
         self.uncompressed_size: int = 0
         self._context: list[str] = []
-        # Frame's destinations. Sent verbatim to each, so all ops in one frame
-        # must match. Set once, kept across resets.
+        # Where this frame goes. Sent verbatim to each, so all ops in one frame
+        # must share it. Claimed by the first op written, released when the frame
+        # is sent, so a client whose replicas change is not stuck on the first set.
         self.destinations: Optional[frozenset] = None
 
         self.compressor_writer = ZstdCompressor(
@@ -65,7 +66,8 @@ class CompressedTraces:
         return self.destinations is None or self.destinations == destinations
 
     def reset(self) -> None:
-        # destinations survives: a new frame inherits it, so ownership is decided once.
+        # The next op claims the new frame, whatever its destinations.
+        self.destinations = None
         self.buffer = io.BytesIO()
         self.trace_count = 0
         self.uncompressed_size = 0
