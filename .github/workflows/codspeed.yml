@@ -68,14 +68,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # 3.12 is the floor for flame graphs: pytest-codspeed reads CPython's
-      # PY_HAVE_PERF_TRAMPOLINE, which does not exist before then, and without
-      # it the run logs "callgraph: not supported" and the profiling pane is
-      # empty. No cache-suffix needed - setup-uv embeds the arch in its key.
+      # Flame graphs need CPython's perf trampoline: pytest-codspeed reads
+      # PY_HAVE_PERF_TRAMPOLINE, absent before 3.12, and without it the run logs
+      # "callgraph: not supported" and the profiling pane is empty. 3.12 is the
+      # floor; we pin 3.13. No cache-suffix needed - setup-uv embeds the arch.
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           enable-cache: true
 
       - name: Install dependencies
