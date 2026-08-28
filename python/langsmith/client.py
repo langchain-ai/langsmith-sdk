@@ -2734,13 +2734,11 @@ class Client:
     def _resolve_destinations(self, auth: ReplicaAuth) -> frozenset[ReplicaAuth]:
         """Where a frame carrying this op must be POSTed.
 
-        No per-call auth: every write endpoint, verbatim -- a None key must stay
-        None, it strips X-API-KEY. Otherwise the named endpoint, api_key resolved
-        as _apply_auth_overrides does: no fallback beside a service key.
+        Pre-resolve the URL + auth for each destination the compressed frame committed to
         """
         if not any(auth):
             return frozenset(
-                ReplicaAuth(url, key, None, None, None, None)
+                ReplicaAuth(api_url=url, api_key=key)
                 for url, key in self._write_api_urls.items()
             )
         api_key = auth.api_key
@@ -2769,7 +2767,12 @@ class Client:
             and run_create.get("dotted_order") is not None
         ):
             auth = ReplicaAuth(
-                api_url, api_key, service_key, tenant_id, authorization, cookie
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
             destinations = (
                 self._resolve_destinations(auth)
@@ -3680,9 +3683,7 @@ class Client:
         """
         _context: str = "; ".join(getattr(data_stream, "context", []))
         if destinations is None:
-            destinations = self._resolve_destinations(
-                ReplicaAuth(None, None, None, None, None, None)
-            )
+            destinations = self._resolve_destinations(ReplicaAuth())
 
         for dest in sorted(destinations, key=lambda d: d.api_url or ""):
             api_url = dest.api_url
@@ -3949,7 +3950,12 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=run_update)
             auth = ReplicaAuth(
-                api_url, api_key, service_key, tenant_id, authorization, cookie
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
             destinations = (
                 self._resolve_destinations(auth)
@@ -8432,9 +8438,7 @@ class Client:
                 # No per-call auth, so: the default destinations. Needs the same
                 # check as runs, or its bytes ride a replica's frame.
                 destinations = (
-                    self._resolve_destinations(
-                        ReplicaAuth(None, None, None, None, None, None)
-                    )
+                    self._resolve_destinations(ReplicaAuth())
                     if self.compressed_traces is not None
                     else None
                 )
@@ -11881,12 +11885,12 @@ def _destination_urls(destinations: frozenset) -> list[str]:
 class ReplicaAuth(NamedTuple):
     """One write destination: a server plus the credentials to reach it."""
 
-    api_url: str | None
-    api_key: str | None
-    service_key: str | None
-    tenant_id: str | None
-    authorization: str | None
-    cookie: str | None
+    api_url: str | None = None
+    api_key: str | None = None
+    service_key: str | None = None
+    tenant_id: str | None = None
+    authorization: str | None = None
+    cookie: str | None = None
 
     def __repr__(self) -> str:
         """Redact credentials: this reaches logs and tracebacks."""

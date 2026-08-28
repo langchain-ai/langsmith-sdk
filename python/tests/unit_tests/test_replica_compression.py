@@ -198,8 +198,8 @@ def test_a_replica_only_client_is_never_challenged():
 
 
 def test_the_frame_never_changes_owner():
-    dest_b = frozenset({ReplicaAuth("https://b", "kb", None, None, None, None)})
-    dest_d = frozenset({ReplicaAuth("https://d", "kd", None, None, None, None)})
+    dest_b = frozenset({ReplicaAuth(api_url="https://b", api_key="kb")})
+    dest_d = frozenset({ReplicaAuth(api_url="https://d", api_key="kd")})
     traces = CompressedTraces()
     assert traces.accepts(dest_b) and traces.accepts(dest_d)
     traces.destinations = dest_b
@@ -261,13 +261,13 @@ def _headers_for(client, destinations):
 @pytest.mark.parametrize(
     "auth",
     [
-        ReplicaAuth(None, None, None, None, None, None),
-        ReplicaAuth(None, "replica-key", None, None, None, None),
-        ReplicaAuth("https://b", None, None, None, None, None),
-        ReplicaAuth(None, None, "svc", None, None, None),
-        ReplicaAuth(None, None, None, None, "Bearer t", None),
-        ReplicaAuth(None, None, None, None, None, "c=1"),
-        ReplicaAuth("https://b", "kb", None, None, None, None),
+        ReplicaAuth(),
+        ReplicaAuth(api_key="replica-key"),
+        ReplicaAuth(api_url="https://b"),
+        ReplicaAuth(service_key="svc"),
+        ReplicaAuth(authorization="Bearer t"),
+        ReplicaAuth(cookie="c=1"),
+        ReplicaAuth(api_url="https://b", api_key="kb"),
     ],
     ids=[
         "none",
@@ -321,9 +321,7 @@ def test_a_null_write_api_url_key_still_strips_the_api_key_header():
     client = Client(
         api_urls={"https://a": ""}, session=MagicMock(), auto_batch_tracing=False
     )
-    destinations = client._resolve_destinations(
-        ReplicaAuth(None, None, None, None, None, None)
-    )
+    destinations = client._resolve_destinations(ReplicaAuth())
     assert [d.api_key for d in destinations] == [""]
 
 
@@ -389,7 +387,12 @@ def test_multipart_files_are_closed_whether_or_not_the_op_is_admitted():
 
 def test_replica_auth_never_renders_a_credential():
     auth = ReplicaAuth(
-        "https://x", "sk-secret", "svc-secret", "tenant-1", "Bearer tok", "c=v"
+        api_url="https://x",
+        api_key="sk-secret",
+        service_key="svc-secret",
+        tenant_id="tenant-1",
+        authorization="Bearer tok",
+        cookie="c=v",
     )
     secrets = ["sk-secret", "svc-secret", "Bearer tok", "c=v"]
     for rendered in (

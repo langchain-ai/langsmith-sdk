@@ -62,7 +62,7 @@ class CompressedTraces:
 
         Hold self.lock; commit and write in the same hold.
         """
-        return self.destinations in (None, destinations)
+        return self.destinations is None or self.destinations == destinations
 
     def reset(self) -> None:
         # destinations survives: a new frame inherits it, so ownership is decided once.
