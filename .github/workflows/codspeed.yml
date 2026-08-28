@@ -35,12 +35,10 @@ jobs:
     # Same-repo PRs only: forks would pollute the baseline and reach the self-hosted runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     # CodSpeed's bare-metal ARM64 runners, in the org's `oss-runners` group.
-    # Every instrument runs here: GitHub swaps the CPU model between hosted
-    # runs (Intel Xeon to AMD EPYC), which moves simulated cache behaviour and
-    # so the cycle counts, and shows up as phantom regressions.
+    # Hosted runners swap the CPU model between runs (Intel Xeon to AMD EPYC),
+    # which moves simulated cache behaviour and surfaces as phantom regressions.
     runs-on: codspeed-macro
-    # CPU simulation is far slower than a bare run, so the job timeout is what
-    # bounds a hung benchmark (see --timeout=0 below).
+    # Backstop only: `--timeout=0` below disables pytest's own timeout.
     timeout-minutes: 30
     strategy:
       # One job per instrument, so a failure in one cannot stop the others.
@@ -48,22 +46,19 @@ jobs:
       # runner hung installing Valgrind for simulation, memory never ran at all.
       fail-fast: false
       matrix:
-        # simulation models the CPU, memory tracks heap allocations, and
-        # walltime measures real elapsed time - the last of which matters for
-        # the create_*_run_trees cases, since they drive tracing threads.
+        # memory tracks heap allocations; walltime measures real elapsed time,
+        # which matters for the create_*_run_trees cases since they drive
+        # tracing threads.
         include:
-          # PROBE, revert once attributed. This leg completes zero of 9
-          # benchmarks in 27 minutes on ARM and hits the job timeout, on 3.12
-          # with callgraph (run 33004187688) and on 3.11 without it (run
-          # 33008357502) alike - so callgraph is not the cost, ARM Valgrind is.
-          # The same cases take 6m12s on x86. Trying 3.13 in case the
-          # interpreter build behaves differently under simulation.
-          - mode: simulation
-            python: "3.13"
+          # Disabled: Valgrind is too slow on the ARM64 macro runners. This leg
+          # completed zero of 9 benchmarks in 27 minutes and hit the job
+          # timeout, identically on 3.11, 3.12 and 3.13 (runs 33004187688,
+          # 33008357502, 33066038098), so neither the interpreter nor callgraph
+          # is the cause. The same cases take 6m12s on x86. Re-enable once
+          # CodSpeed offers x86_64 runners.
+          # - mode: simulation
           - mode: memory
-            python: "3.12"
           - mode: walltime
-            python: "3.12"
     permissions:
       contents: read # required for actions/checkout
       id-token: write # required for OIDC authentication with CodSpeed
@@ -80,7 +75,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.12"
           enable-cache: true
 
       - name: Install dependencies
