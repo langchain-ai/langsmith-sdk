@@ -34,9 +34,11 @@ jobs:
     name: "Python Benchmarks (${{ matrix.mode }})"
     # Same-repo PRs only: forks would pollute the baseline and reach the self-hosted runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-    runs-on: ${{ matrix.runner }}
-    # CPU simulation is far slower than a bare run, so the job timeout is what
-    # bounds a hung benchmark (see --timeout=0 below).
+    # CodSpeed's bare-metal ARM64 runners, in the org's `oss-runners` group.
+    # Hosted runners swap the CPU model between runs (Intel Xeon to AMD EPYC),
+    # which moves simulated cache behaviour and surfaces as phantom regressions.
+    runs-on: codspeed-macro
+    # Backstop only: `--timeout=0` below disables pytest's own timeout.
     timeout-minutes: 30
     strategy:
       # One job per instrument, so a failure in one cannot stop the others.
@@ -44,20 +46,19 @@ jobs:
       # runner hung installing Valgrind for simulation, memory never ran at all.
       fail-fast: false
       matrix:
+        # memory tracks heap allocations; walltime measures real elapsed time,
+        # which matters for the create_*_run_trees cases since they drive
+        # tracing threads.
         include:
-          # Models the CPU rather than timing it, so shared runners are fine.
-          - mode: simulation
-            runner: ubuntu-latest
-          # Heap allocations; also instrument-based, so shared runners are fine.
+          # Disabled: Valgrind is too slow on the ARM64 macro runners. This leg
+          # completed zero of 9 benchmarks in 27 minutes and hit the job
+          # timeout, identically on 3.11, 3.12 and 3.13 (runs 33004187688,
+          # 33008357502, 33066038098), so neither the interpreter nor callgraph
+          # is the cause. The same cases take 6m12s on x86. Re-enable once
+          # CodSpeed offers x86_64 runners.
+          # - mode: simulation
           - mode: memory
-            runner: ubuntu-latest
-          # Real elapsed time, including syscalls, I/O and thread parallelism,
-          # which matters for the create_*_run_trees cases (they drive tracing
-          # threads). Needs CodSpeed's bare-metal ARM64 runners to be low-noise;
-          # they are registered into the org's `oss-runners` group, which
-          # langsmith-sdk has access to.
           - mode: walltime
-            runner: codspeed-macro
     permissions:
       contents: read # required for actions/checkout
       id-token: write # required for OIDC authentication with CodSpeed
@@ -67,12 +68,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # No cache-suffix needed for the ARM64 runner: setup-uv already embeds the
-      # arch in its cache key, so x86 and ARM64 entries cannot collide.
+      # Flame graphs need CPython's perf trampoline: pytest-codspeed reads
+      # PY_HAVE_PERF_TRAMPOLINE, absent before 3.12, and without it the run logs
+      # "callgraph: not supported" and the profiling pane is empty. 3.12 is the
+      # floor; we pin 3.13. No cache-suffix needed - setup-uv embeds the arch.
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: 3.11
+          python-version: "3.13"
           enable-cache: true
 
       - name: Install dependencies
