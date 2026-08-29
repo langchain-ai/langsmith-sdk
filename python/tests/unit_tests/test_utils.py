@@ -309,6 +309,13 @@ def test_parse_prompt_identifier():
         "commit",
     )
     assert ls_utils.parse_prompt_identifier("name:commit") == ("-", "name", "commit")
+    # A trailing colon with no commit defaults to "latest" (not "").
+    assert ls_utils.parse_prompt_identifier("name:") == ("-", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name:") == (
+        "owner",
+        "name",
+        "latest",
+    )
 
     # Invalid cases
     invalid_identifiers = [
