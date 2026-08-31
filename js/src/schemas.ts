@@ -812,3 +812,66 @@ export type UsageMetadata = {
 };
 
 export type ExtractedUsageMetadata = Partial<UsageMetadata>;
+
+/**
+ * A running or completed Insights report (also called a clustering job).
+ */
+export interface InsightsReport {
+  id: string;
+  name: string;
+  status: string;
+  error?: string | null;
+  project_id: string;
+  tenant_id: string;
+  host_url: string;
+  /** Link to the report in the LangSmith UI. */
+  link: string;
+}
+
+/** A trace highlighted in an Insights report summary. */
+export interface InsightsHighlightedTrace {
+  run_id: string;
+  rank: number;
+  highlight_reason: string;
+  cluster_id?: string | null;
+  cluster_name?: string | null;
+  summary?: string | null;
+}
+
+/** High level summary of an Insights report. */
+export interface InsightsSummaryReport {
+  title?: string | null;
+  key_points?: string[];
+  highlighted_traces?: InsightsHighlightedTrace[];
+  created_at?: string | null;
+}
+
+/** One cluster of runs within an Insights report. */
+export interface InsightsCluster {
+  id: string;
+  level: number;
+  name: string;
+  description: string;
+  num_runs: number;
+  parent_id?: string | null;
+  parent_name?: string | null;
+  stats?: KVMap | null;
+}
+
+/** The full result of a completed Insights report. */
+export interface InsightsReportResult {
+  id: string;
+  name: string;
+  status: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  created_at?: string | null;
+  metadata?: KVMap | null;
+  shape?: Record<string, number> | null;
+  error?: string | null;
+  config_id?: string | null;
+  clusters: InsightsCluster[];
+  report?: InsightsSummaryReport | null;
+  /** Populated when `includeRuns` is true. */
+  runs: KVMap[];
+}

@@ -5,15 +5,17 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from uuid import UUID
 
+import pytest
+
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 
 
 class _DummyResponse:
-    def __init__(self, payload: Dict[str, Any]) -> None:
+    def __init__(self, payload: Any) -> None:
         self._payload = payload
 
-    def json(self) -> Dict[str, Any]:
+    def json(self) -> Any:
         return self._payload
 
     def raise_for_status(self) -> None:
@@ -22,7 +24,7 @@ class _DummyResponse:
 
 
 class _DummyClient(Client):
-    def __init__(self, responses: List[Dict[str, Any]]) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, responses: List[Any]) -> None:  # type: ignore[no-untyped-def]
         self._responses = responses
         self._calls: List[Dict[str, Any]] = []
 
@@ -179,3 +181,131 @@ def test_get_insights_report_with_runs_and_cluster_load_traces() -> None:
     for call in run_calls_with_cluster:
         assert "/insights/job-id/runs" in call["path"]
         assert call["kwargs"]["params"]["cluster_id"] == str(cluster.id)
+
+
+class _GenerateInsightsClient(_DummyClient):
+    """_DummyClient plus the attributes generate_insights reads off a real Client."""
+
+    _TENANT_ID = "44444444-4444-4444-4444-444444444444"
+
+    def _get_tenant_id(self) -> str:  # type: ignore[override]
+        return self._TENANT_ID
+
+    @property
+    def _host_url(self) -> str:  # type: ignore[override]
+        return "https://smith.langchain.com"
+
+
+def _make_secrets_payload() -> List[Dict[str, str]]:
+    return [{"key": "OPENAI_API_KEY"}]
+
+
+def _make_job_payload() -> Dict[str, Any]:
+    return {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "name": "test-report",
+        "status": "queued",
+        "error": None,
+    }
+
+
+def _make_project_payload(project_id: str) -> Dict[str, Any]:
+    return {
+        "id": project_id,
+        "name": "my-agent",
+        "tenant_id": _GenerateInsightsClient._TENANT_ID,
+        "reference_dataset_id": None,
+    }
+
+
+def test_generate_insights_over_existing_project_id() -> None:
+    project_id = "55555555-5555-5555-5555-555555555555"
+    client = _GenerateInsightsClient([_make_secrets_payload(), _make_job_payload()])
+
+    report = client.generate_insights(
+        project_id=project_id,
+        name="Conversation Topics",
+        instructions="What do users ask about?",
+        last_n_hours=24,
+        filter="eq(is_root, true)",
+        sample=0.1,
+    )
+
+    assert isinstance(report, ls_schemas.InsightsReport)
+    assert str(report.project_id) == project_id
+    assert f"clusterJobId={report.id}" in report.link
+
+    create_call = client._calls[1]
+    assert create_call["method"] == "POST"
+    assert create_call["path"] == f"/sessions/{project_id}/insights"
+
+    body = create_call["kwargs"]["json"]
+    assert body["last_n_hours"] == 24
+    assert body["filter"] == "eq(is_root, true)"
+    assert body["sample"] == 0.1
+    # Unset run-selection keys are omitted so the server applies its defaults.
+    assert "start_time" not in body
+    assert "end_time" not in body
+    assert (
+        body["user_context"]["What would you like to learn about your agent?"]
+        == "What do users ask about?"
+    )
+
+
+def test_generate_insights_resolves_project_name() -> None:
+    project_id = "55555555-5555-5555-5555-555555555555"
+    client = _GenerateInsightsClient(
+        [
+            _make_secrets_payload(),
+            [_make_project_payload(project_id)],
+            _make_job_payload(),
+        ]
+    )
+
+    client.generate_insights(project_name="my-agent")
+
+    read_call = client._calls[1]
+    assert read_call["path"] == "/sessions"
+    assert read_call["kwargs"]["params"]["name"] == "my-agent"
+    assert client._calls[2]["path"] == f"/sessions/{project_id}/insights"
+
+
+def test_generate_insights_passes_trace_structure() -> None:
+    client = _GenerateInsightsClient([_make_secrets_payload(), _make_job_payload()])
+
+    client.generate_insights(
+        project_id="55555555-5555-5555-5555-555555555555",
+        trace_structure="Look at outputs.answer.",
+    )
+
+    body = client._calls[1]["kwargs"]["json"]
+    assert (
+        body["user_context"]["How are your agent traces structured?"]
+        == "Look at outputs.answer."
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"project_id": "p", "project_name": "my-agent"},
+        {"chat_histories": [], "project_name": "my-agent"},
+    ],
+)
+def test_generate_insights_requires_exactly_one_source(kwargs: Dict[str, Any]) -> None:
+    client = _GenerateInsightsClient([])
+
+    with pytest.raises(ValueError, match="Exactly one argument"):
+        client.generate_insights(**kwargs)
+
+    assert client._calls == []
+
+
+def test_generate_insights_rejects_run_selection_with_chat_histories() -> None:
+    client = _GenerateInsightsClient([])
+
+    with pytest.raises(ValueError, match="cannot be used with 'chat_histories'"):
+        client.generate_insights(chat_histories=[], last_n_hours=24)
+
+    assert client._calls == []

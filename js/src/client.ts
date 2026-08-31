@@ -58,6 +58,8 @@ import {
   Entry,
   DirectoryCommitResponse,
   HubRepoType,
+  InsightsReport,
+  InsightsReportResult,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -823,6 +825,38 @@ const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 
 /** Maximum number of operations to batch in a single request. */
 const DEFAULT_BATCH_SIZE_LIMIT = 100;
+
+const OPENAI_API_KEY = "OPENAI_API_KEY";
+const ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY";
+const DEFAULT_INSIGHTS_INSTRUCTIONS =
+  "How are people using my agent? What are they asking about?";
+const UPLOADED_TRACE_STRUCTURE =
+  "The run.outputs.messages field contains a chat history between the user and the" +
+  " agent. This is all the context you need.";
+const DEFAULT_TRACE_STRUCTURE =
+  "Each trace is a single interaction with the agent. The root run's inputs and" +
+  " outputs are the primary context.";
+const MAX_INSIGHTS_CHAT_HISTORIES = 1000;
+
+/** Resolve an Insights job id and project id from either form of the args. */
+function _resolveInsightsIds(
+  report: InsightsReport | undefined,
+  id: string | undefined,
+  projectId: string | undefined,
+): [string, string] {
+  if (report !== undefined) {
+    if (id !== undefined || projectId !== undefined) {
+      throw new Error(
+        "Must provide either report or id and projectId, not both",
+      );
+    }
+    return [report.id, report.project_id];
+  }
+  if (id === undefined || projectId === undefined) {
+    throw new Error("Must provide either report or both id and projectId");
+  }
+  return [id, projectId];
+}
 
 /**
  * Reject header names or values that could alter a request's framing.
@@ -4369,6 +4403,366 @@ export class Client implements LangSmithTracingClientInterface {
       return projects[0].tenant_id;
     }
     throw new Error("No projects found to resolve tenant.");
+  }
+
+  /**
+   * Generate Insights over an existing tracing project or over chat histories
+   * you upload.
+   *
+   * Specify exactly one of `chatHistories`, `projectName`, or `projectId`. The
+   * first uploads the histories as traces to a new project, the latter two run
+   * over runs already traced to that project.
+   *
+   * Only available to Plus and higher tier LangSmith users. The Insights agent
+   * uses your own model API key; if you pass one it is stored as a workspace
+   * secret, meaning it is also used for evaluators and the playground.
+   *
+   * @example
+   * ```ts
+   * const report = await client.generateInsights({
+   *   projectName: "my-agent",
+   *   instructions: "What do users ask about?",
+   *   lastNHours: 24 * 7,
+   *   sample: 0.1,
+   * });
+   * await client.pollInsights({ report });
+   * ```
+   */
+  public async generateInsights({
+    chatHistories,
+    projectName,
+    projectId,
+    instructions = DEFAULT_INSIGHTS_INSTRUCTIONS,
+    traceStructure,
+    name,
+    lastNHours,
+    startTime,
+    endTime,
+    filter,
+    sample,
+    model,
+    openaiApiKey,
+    anthropicApiKey,
+  }: {
+    chatHistories?: KVMap[][];
+    projectName?: string;
+    projectId?: string;
+    instructions?: string;
+    traceStructure?: string;
+    name?: string;
+    lastNHours?: number;
+    startTime?: Date | string;
+    endTime?: Date | string;
+    filter?: string;
+    sample?: number;
+    model?: "openai" | "anthropic";
+    openaiApiKey?: string;
+    anthropicApiKey?: string;
+  }): Promise<InsightsReport> {
+    const sources = [chatHistories, projectName, projectId].filter(
+      (source) => source !== undefined,
+    );
+    if (sources.length !== 1) {
+      throw new Error(
+        "Must provide exactly one of chatHistories, projectName, or projectId",
+      );
+    }
+
+    let runSelection: RecordStringAny = {
+      last_n_hours: lastNHours,
+      start_time:
+        startTime instanceof Date ? startTime.toISOString() : startTime,
+      end_time: endTime instanceof Date ? endTime.toISOString() : endTime,
+      filter,
+      sample,
+    };
+    if (
+      chatHistories !== undefined &&
+      Object.values(runSelection).some((value) => value !== undefined)
+    ) {
+      throw new Error(
+        "lastNHours, startTime, endTime, filter, and sample select runs from an" +
+          " existing project and cannot be used with chatHistories",
+      );
+    }
+
+    const resolvedModel = await this._ensureInsightsApiKey({
+      openaiApiKey,
+      anthropicApiKey,
+      model,
+    });
+
+    let sessionId: string;
+    let defaultTraceStructure: string;
+    if (chatHistories !== undefined) {
+      sessionId = await this._ingestInsightsRuns(chatHistories, name);
+      // The runs were just ingested, so only the last hour can match.
+      runSelection = { last_n_hours: 1 };
+      defaultTraceStructure = UPLOADED_TRACE_STRUCTURE;
+    } else {
+      sessionId = projectId ?? (await this.readProject({ projectName })).id;
+      defaultTraceStructure = DEFAULT_TRACE_STRUCTURE;
+    }
+
+    const body: RecordStringAny = {
+      name: name ?? null,
+      user_context: {
+        "How are your agent traces structured?":
+          traceStructure ?? defaultTraceStructure,
+        "What would you like to learn about your agent?": instructions,
+      },
+      model: resolvedModel,
+    };
+    // Omit unset keys so the server applies its own defaults.
+    for (const [key, value] of Object.entries(runSelection)) {
+      if (value !== undefined) {
+        body[key] = value;
+      }
+    }
+
+    const serializedBody = JSON.stringify(body);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/sessions/${sessionId}/insights`,
+        {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: serializedBody,
+        },
+      );
+      await raiseForStatus(res, "generate insights");
+      return res;
+    });
+    return this._toInsightsReport(await response.json(), sessionId);
+  }
+
+  /**
+   * Poll an Insights report until it completes.
+   *
+   * Provide either `report` or both `id` and `projectId`. `rate` and `timeout`
+   * are in seconds.
+   */
+  public async pollInsights({
+    report,
+    id,
+    projectId,
+    rate = 30,
+    timeout = 30 * 60,
+  }: {
+    report?: InsightsReport;
+    id?: string;
+    projectId?: string;
+    rate?: number;
+    timeout?: number;
+  }): Promise<InsightsReport> {
+    const [jobId, sessionId] = _resolveInsightsIds(report, id, projectId);
+    const deadline = Date.now() + timeout * 1000;
+    do {
+      const job = await this._get<RecordStringAny>(
+        `/sessions/${sessionId}/insights/${jobId}`,
+      );
+      if (job.status === "success") {
+        return this._toInsightsReport(job, sessionId);
+      }
+      if (job.status === "error") {
+        throw new Error(`Failed to generate insights: ${job.error}`);
+      }
+      const delay = Math.min(rate * 1000, deadline - Date.now());
+      if (delay <= 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    } while (Date.now() < deadline);
+    throw new Error("Insights still pending");
+  }
+
+  /**
+   * Fetch a completed Insights report, by default including its runs.
+   *
+   * Provide either `report` or both `id` and `projectId`.
+   */
+  public async getInsightsReport({
+    id,
+    report,
+    projectId,
+    includeRuns = true,
+  }: {
+    id?: string;
+    report?: InsightsReport;
+    projectId?: string;
+    includeRuns?: boolean;
+  }): Promise<InsightsReportResult> {
+    const [jobId, sessionId] = _resolveInsightsIds(report, id, projectId);
+    const result = await this._get<InsightsReportResult>(
+      `/sessions/${sessionId}/insights/${jobId}`,
+    );
+    result.clusters = result.clusters ?? [];
+    result.runs = includeRuns
+      ? await this.fetchInsightsRuns({ id: jobId, projectId: sessionId })
+      : [];
+    return result;
+  }
+
+  /**
+   * Fetch the runs analyzed by an Insights report, optionally narrowed to one
+   * cluster.
+   */
+  public async fetchInsightsRuns({
+    id,
+    projectId,
+    clusterId,
+  }: {
+    id: string;
+    projectId: string;
+    clusterId?: string;
+  }): Promise<KVMap[]> {
+    const params = new URLSearchParams();
+    if (clusterId !== undefined) {
+      params.append("cluster_id", clusterId);
+    }
+    const runs: KVMap[] = [];
+    for await (const batch of this._getPaginated<KVMap, { runs?: KVMap[] }>(
+      `/sessions/${projectId}/insights/${id}/runs`,
+      params,
+      (data) => data.runs ?? [],
+    )) {
+      runs.push(...batch);
+    }
+    return runs;
+  }
+
+  private async _toInsightsReport(
+    job: RecordStringAny,
+    projectId: string,
+  ): Promise<InsightsReport> {
+    const tenantId = await this._getTenantId();
+    const hostUrl = this.getHostUrl();
+    return {
+      id: job.id,
+      name: job.name,
+      status: job.status,
+      error: job.error ?? null,
+      project_id: projectId,
+      tenant_id: tenantId,
+      host_url: hostUrl,
+      link:
+        `${hostUrl}/o/${tenantId}/projects/p/${projectId}` +
+        `?tab=3&clusterJobId=${job.id}`,
+    };
+  }
+
+  private async _ensureInsightsApiKey({
+    openaiApiKey,
+    anthropicApiKey,
+    model,
+  }: {
+    openaiApiKey?: string;
+    anthropicApiKey?: string;
+    model?: "openai" | "anthropic";
+  }): Promise<"openai" | "anthropic"> {
+    const secrets = await this._get<{ key?: string }[]>(
+      "/workspaces/current/secrets",
+    );
+    const workspaceKeys = new Set((secrets ?? []).map((secret) => secret.key));
+    const targetKeys: string[] = [];
+    if (model !== "anthropic") {
+      targetKeys.push(OPENAI_API_KEY);
+    }
+    if (model !== "openai") {
+      targetKeys.push(ANTHROPIC_API_KEY);
+    }
+
+    const existing = targetKeys.filter((key) => workspaceKeys.has(key));
+    if (existing.length > 0) {
+      return existing.includes(OPENAI_API_KEY) ? "openai" : "anthropic";
+    }
+
+    let apiKey: string | undefined;
+    let apiVar: string;
+    if (model === "openai") {
+      apiKey = openaiApiKey;
+      apiVar = OPENAI_API_KEY;
+    } else if (model === "anthropic") {
+      apiKey = anthropicApiKey;
+      apiVar = ANTHROPIC_API_KEY;
+    } else if (openaiApiKey || anthropicApiKey) {
+      apiKey = openaiApiKey ?? anthropicApiKey;
+      apiVar = openaiApiKey ? OPENAI_API_KEY : ANTHROPIC_API_KEY;
+    } else {
+      throw new Error("Must specify openaiApiKey or anthropicApiKey.");
+    }
+    if (!apiKey) {
+      const expected =
+        apiVar === OPENAI_API_KEY ? "openaiApiKey" : "anthropicApiKey";
+      throw new Error(`Must specify ${expected}.`);
+    }
+
+    const serializedBody = JSON.stringify([{ key: apiVar, value: apiKey }]);
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/workspaces/current/secrets`,
+        {
+          method: "POST",
+          headers: {
+            ...this._mergedHeaders,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: serializedBody,
+        },
+      );
+      await raiseForStatus(res, "store workspace secret", true);
+      return res;
+    });
+    return apiVar === OPENAI_API_KEY ? "openai" : "anthropic";
+  }
+
+  private async _ingestInsightsRuns(
+    chatHistories: KVMap[][],
+    name?: string,
+  ): Promise<string> {
+    let histories = chatHistories;
+    if (histories.length > MAX_INSIGHTS_CHAT_HISTORIES) {
+      warnOnce(
+        `Can only generate insights over ${MAX_INSIGHTS_CHAT_HISTORIES} chat` +
+          ` histories. Truncating to the first ${MAX_INSIGHTS_CHAT_HISTORIES}.`,
+      );
+      histories = histories.slice(0, MAX_INSIGHTS_CHAT_HISTORIES);
+    }
+    const projectName =
+      name ??
+      `insights ${new Date().toISOString().replace("T", " ").slice(0, 19)}`;
+    const project = await this.createProject({ projectName });
+    const endTime = new Date();
+    const startTime = new Date(endTime.getTime() - 1000);
+    const runCreates: RunCreate[] = histories.map((history) => {
+      const runId = uuid.v7();
+      return {
+        id: runId,
+        trace_id: runId,
+        dotted_order:
+          `${startTime.toISOString().slice(0, -1)}001Z`.replace(
+            /[^a-zA-Z0-9]/g,
+            "",
+          ) + runId,
+        name: "trace",
+        run_type: "chain",
+        inputs: { messages: history.slice(0, 1) },
+        outputs: { messages: history },
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        session_name: projectName,
+      };
+    });
+    await this.batchIngestRuns({ runCreates });
+    await this.flush();
+    return project.id;
   }
 
   public async *listProjects({

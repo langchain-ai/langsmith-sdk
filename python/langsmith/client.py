@@ -393,6 +393,14 @@ EMPTY_SEQ: tuple[dict, ...] = ()
 _UNSET = object()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
+_UPLOADED_TRACE_STRUCTURE = (
+    "The run.outputs.messages field contains a chat history between the user and the"
+    " agent. This is all the context you need."
+)
+_DEFAULT_TRACE_STRUCTURE = (
+    "Each trace is a single interaction with the agent. The root run's inputs and"
+    " outputs are the primary context."
+)
 
 _fallback_dirs_created: set[str] = set()
 
@@ -11236,36 +11244,64 @@ class Client:
         )
 
     @warn_beta
+    @ls_utils.xor_args(("chat_histories", "project_name", "project_id"))
     def generate_insights(
         self,
         *,
-        chat_histories: list[list[dict]],
+        chat_histories: list[list[dict]] | None = None,
+        project_name: str | None = None,
+        project_id: ID_TYPE | None = None,
         instructions: str = DEFAULT_INSTRUCTIONS,
+        trace_structure: str | None = None,
         name: str | None = None,
+        last_n_hours: int | None = None,
+        start_time: datetime.datetime | None = None,
+        end_time: datetime.datetime | None = None,
+        filter: str | None = None,
+        sample: float | int | None = None,
         model: Literal["openai", "anthropic"] | None = None,
         openai_api_key: str | None = None,
         anthropic_api_key: str | None = None,
     ) -> ls_schemas.InsightsReport:
-        """Generate Insights over your agent chat histories.
+        """Generate Insights over an existing tracing project or your chat histories.
+
+        Specify exactly one of 'chat_histories', 'project_name', or 'project_id'. The
+        first uploads the histories as traces to a new project, the latter two run
+        over runs already traced to that project.
 
         !!! note
 
             - Only available to Plus and higher tier LangSmith users.
             - Insights Agent uses user's model API key. The cost of the report
-                grows linearly with the number of chat histories you upload and the
-                size of each history. For more see [insights](https://docs.langchain.com/langsmith/insights).
-            - This method will upload your chat histories as traces to LangSmith.
+                grows linearly with the number of traces analyzed and the
+                size of each one. For more see [insights](https://docs.langchain.com/langsmith/insights).
             - If you pass in a model API key this will be set as a workspace secret
                 meaning it will be usedin for evaluators and the playground.
 
         Args:
-            chat_histories: A list of chat histories. Each chat history should be a
-                list of messages. We recommend formatting these as OpenAI messages with
-                a "role" and "content" key. Max length 1000 items.
+            chat_histories: A list of chat histories to upload as a new project. Each
+                chat history should be a list of messages. We recommend formatting
+                these as OpenAI messages with a "role" and "content" key. Max length
+                1000 items.
+            project_name: Name of an existing tracing project to analyze.
+            project_id: ID of an existing tracing project to analyze.
             instructions: Instructions for the Insights agent. Should focus on what
                 your agent does and what types of insights you
                 want to generate.
+            trace_structure: Description of how your traces are structured and where
+                the Insights agent should look for the agent's conversation. Defaults
+                to a generic description of a root run.
             name: Name for the generated Insights report.
+            last_n_hours: Analyze runs from the last N hours. Defaults to 168 (7 days)
+                server-side. Only for an existing project, and mutually exclusive with
+                'start_time'.
+            start_time: Analyze runs starting at this time. Only for an existing
+                project.
+            end_time: Analyze runs up until this time. Only for an existing project.
+            filter: LangSmith filter query narrowing which runs are analyzed. Defaults
+                to "eq(is_root, true)" server-side. Only for an existing project.
+            sample: Sample size (e.g. 200) or sampling rate (e.g. 0.1) of matching
+                runs. Only for an existing project.
             model: Whether to use OpenAI or Anthropic models. This will impact the
                 cost of generating the Insights Report.
             openai_api_key: OpenAI API key to use. Only needed if you have not already
@@ -11278,8 +11314,19 @@ class Client:
             import os
             from langsmith import Client
 
-            client = client()
+            client = Client()
 
+            # Over a project you are already tracing to.
+            report = client.generate_insights(
+                project_name="my-agent",
+                name="Conversation Topics",
+                instructions="What are the high-level topics of conversations users are having with the assistant?",
+                last_n_hours=24 * 7,
+                sample=0.1,
+                openai_api_key=os.environ["OPENAI_API_KEY"],
+            )
+
+            # Or over chat histories you upload.
             chat_histories = [
                 [
                     {"role": "user", "content": "how are you"},
@@ -11290,40 +11337,68 @@ class Client:
                     {"role": "assistant", "content": "only Tarkovsky"},
                 ],
             ]
-
             report = client.generate_insights(
                 chat_histories=chat_histories,
                 name="Conversation Topics",
-                instructions="What are the high-level topics of conversations users are having with the assistant?",
                 openai_api_key=os.environ["OPENAI_API_KEY"],
             )
 
             # client.poll_insights(report=report)
             ```
         """
+        run_selection: dict[str, Any] = {
+            "last_n_hours": last_n_hours,
+            "start_time": start_time.isoformat() if start_time else None,
+            "end_time": end_time.isoformat() if end_time else None,
+            "filter": filter,
+            "sample": sample,
+        }
+        if chat_histories is not None and any(
+            v is not None for v in run_selection.values()
+        ):
+            raise ValueError(
+                f"{sorted(run_selection)} select runs from an existing project and"
+                " cannot be used with 'chat_histories'."
+            )
+
         model = self._ensure_insights_api_key(
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
             model=model,
         )
-        project = self._ingest_insights_runs(chat_histories, name)
+        if chat_histories is not None:
+            session_id: ID_TYPE = self._ingest_insights_runs(chat_histories, name).id
+            # The runs were just ingested, so only the last hour can match.
+            run_selection = {"last_n_hours": 1}
+            default_trace_structure = _UPLOADED_TRACE_STRUCTURE
+        else:
+            session_id = (
+                _as_uuid(project_id, "project_id")
+                if project_id is not None
+                else self.read_project(project_name=project_name).id
+            )
+            default_trace_structure = _DEFAULT_TRACE_STRUCTURE
+
         config = {
             "name": name,
             "user_context": {
-                "How are your agent traces structured?": "The run.outputs.messages field contains a chat history between the user and the agent. This is all the context you need.",
+                "How are your agent traces structured?": (
+                    trace_structure or default_trace_structure
+                ),
                 "What would you like to learn about your agent?": instructions,
             },
-            "last_n_hours": 1,
             "model": model,
+            # Omit unset keys so the server applies its own defaults.
+            **{k: v for k, v in run_selection.items() if v is not None},
         }
         response = self.request_with_retries(
-            "POST", f"/sessions/{project.id}/insights", json=config
+            "POST", f"/sessions/{session_id}/insights", json=config
         )
         ls_utils.raise_for_status_with_text(response)
         res = response.json()
         report = ls_schemas.InsightsReport(
             **res,
-            project_id=project.id,
+            project_id=session_id,
             tenant_id=self._get_tenant_id(),
             host_url=self._host_url,
         )
@@ -11377,8 +11452,7 @@ class Client:
                     host_url=self._host_url,
                 )
                 print(  # noqa: T201
-                    "Insights report completed! View the results at %s",
-                    job.link,
+                    f"Insights report completed! View the results at {job.link}"
                 )
                 return job
             elif resp_json["status"] == "error":
