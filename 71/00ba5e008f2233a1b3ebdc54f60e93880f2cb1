@@ -1,0 +1,22 @@
+python/langsmith/wrappers/_anthropic.py
+  s_39a11d0044d84e::t_666b306d570a83 21
+  s_39a11d0044d84e::t_2feb5c8602ee07 44-81,98-103
+python/tests/unit_tests/wrappers/test_anthropic_processing.py
+  s_39a11d0044d84e::t_fbd297158a2ea3 6-7,9-15,258-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7100ba5e008f2233a1b3ebdc54f60e93880f2cb1",
+  "prompts": {},
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

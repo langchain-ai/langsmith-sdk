@@ -1,0 +1,14 @@
+python/bench/tracing_client_bench.py
+  h_f1ecc43c8f43eb 1-24,84-101,103,105-109,111-112,136-150,153-154,160-180,185-191,193-206,210-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b24d07cc75db5a6897187268762109c4e05aef48",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

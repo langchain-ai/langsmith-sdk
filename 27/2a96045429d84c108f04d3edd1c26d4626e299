@@ -1,0 +1,21 @@
+python/langsmith/_internal/_serde.py
+  s_39a11d0044d84e::t_8f352c3c6328bb 113-116,118-119
+python/tests/unit_tests/test_client.py
+  s_39a11d0044d84e::t_de06bca9ce1705 2439-2444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "272a96045429d84c108f04d3edd1c26d4626e299",
+  "prompts": {},
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+python/langsmith/_internal/_uuid.py
+  s_9ad5e82eb23414::t_3a9d97f891f50e 90,134
+  s_9ad5e82eb23414::t_d19d5d6eacfa5d 91-93,95-97,131-133
+python/tests/unit_tests/test_uuid_v7.py
+  s_9ad5e82eb23414::t_c5be338f75552e 184-189,198-201,204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "705dbeb01d030fc27c41923b8cb52c89d728e180",
+  "prompts": {},
+  "sessions": {
+    "s_9ad5e82eb23414": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fef8e316-c17e-404e-94bb-5301e96209e7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+js/src/tests/wrapped_gemini_config.test.ts
+  h_f1ecc43c8f43eb 1-69,72-78,80,82-91,93-149,151-157,163-182,208,211,219,221,227,230,232-294
+  h_f1ecc43c8f43eb 70-71,79,81,92,150,158-162,183-207,209-210,212-218,220,222-226,228-229,231
+js/src/wrappers/gemini.ts
+  h_f1ecc43c8f43eb 8,173,180-188,206-215,220,230-235,237,239-241,245,247-249,251-256,349,486
+  h_f1ecc43c8f43eb 174-179,189-205,216-219,221-229,236,238,242-244,246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7c8ba9cb259f53855004b43d8814a10f84f072e7",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

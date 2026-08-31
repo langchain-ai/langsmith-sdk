@@ -1,0 +1,48 @@
+python/langsmith/client.py
+  s_f3809d945b952a::t_6c2bedf6120e23 127
+python/langsmith/sandbox/_sandbox.py
+  s_f3809d945b952a::t_18418101a1e44b 9
+python/uv.lock
+  s_f3809d945b952a::t_103c6e357cea2b 1359-1371,1396-1421,1424,1426,1428,1690,1833,4774-4781
+  s_f3809d945b952a::t_5e8324074f0589 4782
+python/langsmith/sandbox/_async_client.py
+  s_f3809d945b952a::t_6c2bedf6120e23 14
+python/langsmith/sandbox/_client.py
+  s_f3809d945b952a::t_6c2bedf6120e23 18
+python/langsmith/async_client.py
+  s_f3809d945b952a::t_6c2bedf6120e23 28
+python/tests/unit_tests/test_httpx_compat.py
+  s_f3809d945b952a::t_29cb3c4466596b 1-30
+python/langsmith/sandbox/_transport.py
+  s_f3809d945b952a::t_18418101a1e44b 16
+python/langsmith/sandbox/_async_sandbox.py
+  s_f3809d945b952a::t_18418101a1e44b 11
+python/langsmith/utils.py
+  s_f3809d945b952a::t_6c2bedf6120e23 37
+python/langsmith/sandbox/_helpers.py
+  s_f3809d945b952a::t_18418101a1e44b 12
+python/tests/httpx2_alias/sitecustomize.py
+  s_f3809d945b952a::t_a47f6bfaa94cd6 1-5
+python/pyproject.toml
+  s_f3809d945b952a::t_a47f6bfaa94cd6 30
+python/langsmith/sandbox/_models.py
+  s_f3809d945b952a::t_18418101a1e44b 11
+python/Makefile
+  s_f3809d945b952a::t_a47f6bfaa94cd6 35,82-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9ba8464cc5f0327a8cfa9076a858ecde88a89373",
+  "prompts": {},
+  "sessions": {
+    "s_f3809d945b952a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "29d2c1bd-76b6-4aff-812b-7ab898ab9b76",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

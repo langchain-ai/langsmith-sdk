@@ -1,0 +1,50 @@
+python/langsmith/_internal/voice/base_span_processor.py
+  s_a5d2e0c92ada19::t_19ce4f0dcb8888 222-258
+python/pyproject.toml
+  s_a5d2e0c92ada19::t_93276e293b7c39 74
+python/langsmith/integrations/livekit/__init__.py
+  s_a5d2e0c92ada19::t_fc7fc64fd90c5b 11-14,31-32,106-107
+  s_a5d2e0c92ada19::t_e0b086c85b401f 72-76
+  s_a5d2e0c92ada19::t_2fff9e16dddb8f 65,70
+  s_a5d2e0c92ada19::t_93276e293b7c39 6,59-64,66-69,71,77-81,85-88
+python/langsmith/integrations/livekit/_helpers.py
+  s_a5d2e0c92ada19::t_85d994de0a5380 10,12,17-18,250-259,261,266-270,272-276,281-284
+  s_a5d2e0c92ada19::t_2b985883ac30ec 262-265
+  s_a5d2e0c92ada19::t_915e40628c63ef 227-249,260,271,277-280,285-326
+python/uv.lock
+  s_a5d2e0c92ada19::t_6a34157e62848b 14,1793
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a5d2e0c92ada19::t_eaa553c3239073 10-11,483,485,491-493,504-505,508,538-555,560,564,568,570,574,576,578-586,589-599,602,611-612,615-625,627-731,736-757,776-793,821-827,832-837,841-842,861-878
+  s_a5d2e0c92ada19::t_8ece01134c6f74 14-15
+  s_a5d2e0c92ada19::t_2fff9e16dddb8f 565-567,571-573,605-607,733-735,758-775,794-820,828-831,838-840
+  s_a5d2e0c92ada19::t_7c1b6effc5f0a8 484,486-490,494-503,506-507,509-517,529,843-860
+  s_a5d2e0c92ada19::t_2b985883ac30ec 518-528,530-537
+python/langsmith/integrations/livekit/processor.py
+  s_a5d2e0c92ada19::t_2289a9c0848e7d 639-640,646
+  s_a5d2e0c92ada19::t_4c7d1b49246196 57,81,201
+  s_a5d2e0c92ada19::t_e0b086c85b401f 224-228
+  s_a5d2e0c92ada19::t_68531908a2b686 681,686-688,697-698,712
+  s_a5d2e0c92ada19::t_2fff9e16dddb8f 222,670-672
+  s_a5d2e0c92ada19::t_22f8cab8731364 202-215,218-221,223,230-240,242-266,275,277-282,284-286,288-291,293,298-305
+  s_a5d2e0c92ada19::t_3402d0aafc9aa7 200,563-565,567-569,571-586,588-618,620-638,641-645,647-666
+  s_a5d2e0c92ada19::t_703c7bfd1ea28c 94-95,103-108,119-123,146-153,156-161,164-165
+  s_a5d2e0c92ada19::t_9336ebe1d8e5e1 5-13,19,21,39,53-56
+  s_a5d2e0c92ada19::t_871bffa8ed47af 18,80
+  s_a5d2e0c92ada19::t_26d8d337e6c5ad 229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ceb0cdb467f0a2ee57b35dbfa671e951ec965358",
+  "prompts": {},
+  "sessions": {
+    "s_a5d2e0c92ada19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e409226-5490-424b-b041-b7942cb6e4cc",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

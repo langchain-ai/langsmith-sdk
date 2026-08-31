@@ -1,0 +1,14 @@
+python/langsmith/_internal/_serde.py
+  h_f1ecc43c8f43eb 113-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "212b9d191477bcbc310c2bfd17d68433d03f8427",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

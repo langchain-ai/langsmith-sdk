@@ -1,0 +1,26 @@
+python/langsmith/sandbox/README.md
+  s_f3809d945b952a::t_50510669f84d94 1305,1312
+  h_f1ecc43c8f43eb 1313-1315
+  h_f1ecc43c8f43eb 1316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "1a7ccdbc6912754fea16d976855a603a3bea96a7",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f3809d945b952a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "29d2c1bd-76b6-4aff-812b-7ab898ab9b76",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

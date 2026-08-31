@@ -1,0 +1,25 @@
+js/src/tests/client.test.ts
+  s_7bb1f1e1d3e398::t_cccf6d0fb52461 222
+python/langsmith/client.py
+  s_7bb1f1e1d3e398::t_cccf6d0fb52461 761,4187,4281,4360,4555,4784,4839,4877,4905,4953,4990,8244,9273,9297,11159
+js/src/client.ts
+  s_7bb1f1e1d3e398::t_cccf6d0fb52461 581,2446,3181,3189,3215,3228,3308,3393,3595,3600,3634,3641,3867,3875,3902,3907,3923,3928,3952,3964,6253,6302
+python/langsmith/async_client.py
+  s_7bb1f1e1d3e398::t_cccf6d0fb52461 653,718,874,921,1162,1583,1607
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b2d34df5b8612325dd4b898066ca6b6ce09692ff",
+  "prompts": {},
+  "sessions": {
+    "s_7bb1f1e1d3e398": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1a097351-254f-420d-907a-f7adbd5c91bb",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

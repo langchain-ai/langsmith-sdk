@@ -1,0 +1,61 @@
+python/langsmith/integrations/livekit/_helpers.py
+  s_a5d2e0c92ada19::t_915e40628c63ef 227-249,260,271,277-280,285-326
+  s_a5d2e0c92ada19::t_85d994de0a5380 10,12,17-18,250-259,261,266-270,272-276,281-284
+  s_a5d2e0c92ada19::t_2b985883ac30ec 262-265
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_a5d2e0c92ada19::t_c2dca5963a252c 783,829,880-887,912-919
+  s_a5d2e0c92ada19::t_eaa553c3239073 10-11,483,485,491-493,504-505,508,538-555,560,564,568,570,574,576,578-586,589-599,602,611-612,615-668,670-731,736-750,758-762,764,784-793,795-799,801,830-835,840-845,849-850,926-942
+  s_a5d2e0c92ada19::t_d35065eebd5449 870-879,888-911,920-925
+  s_a5d2e0c92ada19::t_8ece01134c6f74 14-15
+  s_a5d2e0c92ada19::t_3f5ac815ec0c89 751-757,794,852,861
+  s_a5d2e0c92ada19::t_b1f3aa484a597a 763,800
+  s_a5d2e0c92ada19::t_2fff9e16dddb8f 565-567,571-573,605-607,733-735,765-782,802-828,836-839,846-848
+  s_a5d2e0c92ada19::t_7c1b6effc5f0a8 484,486-490,494-503,506-507,509-517,529,851,853-860,862-868
+  s_a5d2e0c92ada19::t_2b985883ac30ec 518-528,530-537
+  s_a5d2e0c92ada19::t_dbd022efdbe41e 869
+python/langsmith/integrations/livekit/__init__.py
+  s_a5d2e0c92ada19::t_fc7fc64fd90c5b 11-14,31-32,106-107
+  s_a5d2e0c92ada19::t_2fff9e16dddb8f 65,70
+  s_a5d2e0c92ada19::t_93276e293b7c39 6,59-64,66-69,71,77-81,85-88
+  s_a5d2e0c92ada19::t_e0b086c85b401f 72-76
+python/langsmith/integrations/livekit/processor.py
+  s_a5d2e0c92ada19::t_b7cc8f1d37e25a 192
+  s_a5d2e0c92ada19::t_2fff9e16dddb8f 690-692
+  s_a5d2e0c92ada19::t_77628f987e01fb 731-740,742-766
+  s_a5d2e0c92ada19::t_871bffa8ed47af 18,80
+  s_a5d2e0c92ada19::t_4c7d1b49246196 57,81
+  s_a5d2e0c92ada19::t_26d8d337e6c5ad 231
+  s_a5d2e0c92ada19::t_703c7bfd1ea28c 94-95,103-108,119-123,146-153,156-161,164-165
+  s_a5d2e0c92ada19::t_2289a9c0848e7d 659-660,666
+  s_a5d2e0c92ada19::t_331e1ad9a62990 173-175,187-191
+  s_a5d2e0c92ada19::t_e4127a98483b3b 257,266-270
+  s_a5d2e0c92ada19::t_68531908a2b686 701,706-708,717-718,769
+  s_a5d2e0c92ada19::t_22f8cab8731364 207-223,232-235,244-247,249-256,258-265,282,291,293-298,300-302,304-307,309,314-321
+  s_a5d2e0c92ada19::t_58c594d2c421f6 534-537
+  s_a5d2e0c92ada19::t_d35065eebd5449 236-243
+  s_a5d2e0c92ada19::t_e0b086c85b401f 226-230
+  s_a5d2e0c92ada19::t_384967dca58ba4 272-281
+  s_a5d2e0c92ada19::t_3402d0aafc9aa7 205,583-585,587-589,591-606,608-658,661-665,667-676,678-686
+  s_a5d2e0c92ada19::t_9336ebe1d8e5e1 5-13,19,21,39,53-56
+  s_a5d2e0c92ada19::t_1e424236c515ad 206,271
+python/uv.lock
+  s_a5d2e0c92ada19::t_6a34157e62848b 14,1793
+python/pyproject.toml
+  s_a5d2e0c92ada19::t_93276e293b7c39 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c3a5fae631dabe1bce44fcefd89753b142372e80",
+  "prompts": {},
+  "sessions": {
+    "s_a5d2e0c92ada19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e409226-5490-424b-b041-b7942cb6e4cc",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

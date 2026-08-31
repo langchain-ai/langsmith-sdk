@@ -1,0 +1,37 @@
+python/tests/unit_tests/wrappers/test_openai_processing.py
+  h_f1ecc43c8f43eb 9,12,193-280,322-342
+python/langsmith/wrappers/_openai.py
+  h_f1ecc43c8f43eb 73-99,103-117,119,121
+python/langsmith/_internal/_redaction.py
+  h_f1ecc43c8f43eb 1-13,15-16,18-32,34-40,42-47
+python/tests/unit_tests/wrappers/test_gemini_processing.py
+  s_4c09014a9f384f::t_725bf5b8d6c778 3-5,7-10,745-1016,1064,1094,1106,1110
+  s_4c09014a9f384f::t_5b4f5cf5acf1d3 1017-1019,1061-1063
+  s_4c09014a9f384f::t_be4a3a48a77959 1065-1067,1091-1093
+  s_4c09014a9f384f::t_844370ab8a46f5 1095-1097,1103-1105
+  s_4c09014a9f384f::t_29d0855b520468 1107-1109
+  s_4c09014a9f384f::t_526bc8ffe5a39a 1111-1113
+python/langsmith/wrappers/_gemini.py
+  s_4c09014a9f384f::t_8ba94c52a25266 22,54-138,140-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2acd647e7905c260434e9190633321af5f08d9fa",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_4c09014a9f384f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f51d174e-2519-4120-9541-1e23390da05d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
