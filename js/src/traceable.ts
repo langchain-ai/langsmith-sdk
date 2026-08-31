@@ -13,7 +13,7 @@ import {
   KVMap,
   ExtractedUsageMetadata,
 } from "./schemas.js";
-import { isEnvTracingEnabled } from "./env.js";
+import { allowUnprocessedPayloads, isEnvTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
@@ -22,11 +22,9 @@ import {
 import {
   _LC_CHILD_RUN_END_PROMISES_KEY,
   _LC_CONTEXT_VARIABLES_KEY,
-  _INPUTS_PROCESSING_FAILED,
-  _OUTPUTS_PROCESSING_FAILED,
   _PROCESSING_FAILED_KEY,
+  _processingFailed,
 } from "./singletons/constants.js";
-import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import type {
   TraceableFunction,
   ContextPlaceholder,
@@ -53,19 +51,6 @@ import {
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>(),
 );
-
-/**
- * Whether a failed redactor should fall back to tracing the raw payload.
- *
- * Set `LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS` to restore the pre-fail-closed
- * behavior in an emergency. It uploads data no redactor processed, so it is off
- * by default and the caller logs a warning naming it whenever it takes effect.
- * Read only on failure, so it stays off the hot path.
- */
-function allowUnprocessedPayloads(): boolean {
-  const value = getLangSmithEnvironmentVariable("ALLOW_UNPROCESSED_PAYLOADS");
-  return value?.toLowerCase() === "true" || value === "1";
-}
 
 /**
  * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
@@ -170,7 +155,9 @@ const handleRunInputs = <Args extends unknown[]>(
       return inputs;
     }
     console.warn("Error occurred during processInputs. Dropping inputs:", e);
-    return { [_PROCESSING_FAILED_KEY]: _INPUTS_PROCESSING_FAILED };
+    return {
+      [_PROCESSING_FAILED_KEY]: _processingFailed("inputs", "processInputs"),
+    };
   };
   try {
     const processed = processInputs(inputs);
@@ -296,7 +283,9 @@ async function handleRunOutputs<Return>(params: {
       return unprocessed;
     }
     console.error("Error occurred during processOutputs. Dropping outputs:", e);
-    return { [_PROCESSING_FAILED_KEY]: _OUTPUTS_PROCESSING_FAILED };
+    return {
+      [_PROCESSING_FAILED_KEY]: _processingFailed("outputs", "processOutputs"),
+    };
   };
   const endOutputsDropped = async (e: unknown) => {
     const finalOutputs = droppedOutputs(e);
