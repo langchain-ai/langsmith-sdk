@@ -331,7 +331,11 @@ export interface OnlineSpendLimit {
 export interface UpdateOnlineCodeEvaluatorRequest {
   code?: string;
 
+  dependencies?: string;
+
   language?: string;
+
+  workspace_secrets_keys?: Array<string>;
 }
 
 export interface UpdateOnlineEvaluatorRequest {
