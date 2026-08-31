@@ -17,6 +17,7 @@ import httpx
 
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import Langsmith
+from langsmith.sandbox._dockerignore import DockerIgnoreMatcher
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -83,14 +84,52 @@ def _box_url(base_url: str, name: str, *segments: str) -> str:
     return f"{base_url}/boxes/{_quote_path_segment(name)}{suffix}"
 
 
-def _make_docker_context_tar(context_path: Path) -> bytes:
+def _make_docker_context_tar(context_path: Path, dockerfile_rel: str) -> bytes:
+    dockerignore = ""
+    dockerignore_rel: Optional[str] = None
+    for candidate in (f"{dockerfile_rel}.dockerignore", ".dockerignore"):
+        try:
+            dockerignore = (context_path / candidate).read_text(encoding="utf-8")
+            dockerignore_rel = candidate
+            break
+        except FileNotFoundError:
+            pass
+
+    ignore = DockerIgnoreMatcher.parse("")
+    try:
+        ignore = DockerIgnoreMatcher.parse(dockerignore)
+    except ValueError:
+        # An unusable ignore file must not remove files from the build context.
+        pass
+
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
-        for path in sorted(context_path.rglob("*")):
+
+        def add_entry(path: Path) -> None:
             rel = path.relative_to(context_path)
-            if rel.parts and rel.parts[0] == ".git":
-                continue
-            tar.add(path, arcname=rel.as_posix(), recursive=False)
+            if ".git" in rel.parts:
+                return
+
+            tar_path = rel.as_posix()
+            is_directory = path.is_dir() and not path.is_symlink()
+            retained = (
+                tar_path == dockerignore_rel
+                or tar_path == dockerfile_rel
+                or (is_directory and dockerfile_rel.startswith(f"{tar_path}/"))
+            )
+            ignored = not retained and ignore.is_ignored(tar_path)
+
+            if not ignored:
+                tar.add(path, arcname=tar_path, recursive=False)
+            if not is_directory or (
+                ignored and not ignore.could_include_descendant(tar_path)
+            ):
+                return
+            for child in sorted(path.iterdir()):
+                add_entry(child)
+
+        for path in sorted(context_path.iterdir()):
+            add_entry(path)
     return buf.getvalue()
 
 
@@ -1080,7 +1119,7 @@ class SandboxClient:
         ) as sandbox:
             sandbox.write(
                 remote_tar,
-                _make_docker_context_tar(context_path),
+                _make_docker_context_tar(context_path, dockerfile_rel),
                 timeout=timeout,
                 headers=headers,
             )

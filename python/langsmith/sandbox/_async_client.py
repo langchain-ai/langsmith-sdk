@@ -989,7 +989,9 @@ class AsyncSandboxClient:
         ) as sandbox:
             await sandbox.write(
                 remote_tar,
-                await asyncio.to_thread(_make_docker_context_tar, context_path),
+                await asyncio.to_thread(
+                    _make_docker_context_tar, context_path, dockerfile_rel
+                ),
                 timeout=timeout,
                 headers=headers,
             )
