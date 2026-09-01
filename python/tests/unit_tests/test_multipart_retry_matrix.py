@@ -219,12 +219,13 @@ def test_retry_after_header_value_drives_the_delay(endpoint, no_sleep):
 
 
 def test_app_loop_does_not_back_off(endpoint, no_sleep):
-    """The app loop itself never sleeps, every delay comes from urllib3's gitter."""
+    """The app loop itself never sleeps -- every delay comes from urllib3."""
     endpoint.status = 500
     client = _client(endpoint)
 
     client._send_multipart_req(_one_run_payload())
 
+    # 3 app attempts x urllib3's ramp; no sleep before the first retry of each.
     assert [c.args[0] for c in no_sleep.call_args_list] == [
         pytest.approx(1, abs=0.01),
         pytest.approx(2, abs=0.01),
