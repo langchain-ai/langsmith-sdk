@@ -65,6 +65,10 @@ export interface RegistryResponse {
 
   name?: string;
 
+  provider?: 'DOCKER_REGISTRY' | 'HARBOR' | 'GHCR' | 'ECR' | 'GAR' | 'DOCKER_HUB';
+
+  repository_search_mode?: 'GLOBAL' | 'SCOPED' | 'NONE';
+
   updated_at?: string;
 
   updated_by?: string;
