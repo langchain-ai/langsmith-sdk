@@ -27,7 +27,7 @@ dependencies = [
     "pydantic>=2,<3",
     "requests>=2.0.0",
     "orjson>=3.9.14; platform_python_implementation != 'PyPy'",
-    "httpx>=0.23.0,<1",
+    "httpx2>=2,<3",
     "requests-toolbelt>=1.0.0",
     "zstandard>=0.23.0",
     "packaging>=23.2",
