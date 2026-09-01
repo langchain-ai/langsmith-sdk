@@ -183,10 +183,11 @@ def _tracing_thread_drain_queue(
 
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
-) -> tuple[Optional[io.BytesIO], Optional[tuple[int, int]]]:
+) -> tuple[Optional[io.BytesIO], Optional[tuple[int, int]], Optional[frozenset]]:
+    """Take the filled frame, plus the destination set it committed to."""
     try:
         if client.compressed_traces is None:
-            return None, None
+            return None, None, None
         with client.compressed_traces.lock:
             pre_compressed_size = client.compressed_traces.uncompressed_size
 
@@ -204,7 +205,7 @@ def _tracing_thread_drain_compressed_buffer(
             ) and (
                 size_limit is None or client.compressed_traces.trace_count < size_limit
             ):
-                return None, None
+                return None, None, None
 
             # Write final boundary and close compression stream
             client.compressed_traces.compressor_writer.write(
@@ -221,11 +222,12 @@ def _tracing_thread_drain_compressed_buffer(
             )
 
             compressed_traces_info = (pre_compressed_size, current_size)
+            destinations = client.compressed_traces.destinations
 
             client.compressed_traces.reset()
 
         filled_buffer.seek(0)
-        return (filled_buffer, compressed_traces_info)
+        return (filled_buffer, compressed_traces_info, destinations)
     except Exception:
         logger.error(
             "LangSmith tracing error: Failed to submit trace data.\n"
@@ -235,12 +237,12 @@ def _tracing_thread_drain_compressed_buffer(
         )
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
-        return None, None
+        return None, None, None
 
 
 def _process_buffered_run_ops_batch(
     client: Client,
-    batch_to_process: list[tuple[str, dict, dict[str, Optional[str]]]],
+    batch_to_process: list[tuple[str, dict, dict[str, Any]]],
 ) -> None:
     """Process a batch of run operations asynchronously."""
     try:
@@ -789,7 +791,7 @@ def tracing_control_thread_func_compress_parallel(
         if triggered:
             client._data_available_event.clear()
 
-            data_stream, compressed_traces_info = (
+            data_stream, compressed_traces_info, destinations = (
                 _tracing_thread_drain_compressed_buffer
             )(client, size_limit, size_limit_bytes)
             # If we have data, submit the send request
@@ -799,12 +801,14 @@ def tracing_control_thread_func_compress_parallel(
                         client._send_compressed_multipart_req,
                         data_stream,
                         compressed_traces_info,
+                        destinations=destinations,
                     )
                     client._futures.add(future)
                 except RuntimeError:
                     client._send_compressed_multipart_req(
                         data_stream,
                         compressed_traces_info,
+                        destinations=destinations,
                     )
             last_flush_time = time.monotonic()
 
@@ -813,6 +817,7 @@ def tracing_control_thread_func_compress_parallel(
                 (
                     data_stream,
                     compressed_traces_info,
+                    destinations,
                 ) = _tracing_thread_drain_compressed_buffer(
                     client, size_limit=1, size_limit_bytes=1
                 )
@@ -824,6 +829,7 @@ def tracing_control_thread_func_compress_parallel(
                                     client._send_compressed_multipart_req,
                                     data_stream,
                                     compressed_traces_info,
+                                    destinations=destinations,
                                 )
                             ]
                         )
@@ -831,6 +837,7 @@ def tracing_control_thread_func_compress_parallel(
                         client._send_compressed_multipart_req(
                             data_stream,
                             compressed_traces_info,
+                            destinations=destinations,
                         )
                 last_flush_time = time.monotonic()
 
@@ -848,6 +855,7 @@ def tracing_control_thread_func_compress_parallel(
         (
             final_data_stream,
             compressed_traces_info,
+            destinations,
         ) = _tracing_thread_drain_compressed_buffer(
             client, size_limit=1, size_limit_bytes=1
         )
@@ -863,6 +871,7 @@ def tracing_control_thread_func_compress_parallel(
                             client._send_compressed_multipart_req,
                             final_data_stream,
                             compressed_traces_info,
+                            destinations=destinations,
                         )
                     ]
                 )
@@ -875,6 +884,7 @@ def tracing_control_thread_func_compress_parallel(
                 client._send_compressed_multipart_req(
                     final_data_stream,
                     compressed_traces_info,
+                    destinations=destinations,
                 )
                 logger.debug("Compression thread final flush: sync send completed")
         else:

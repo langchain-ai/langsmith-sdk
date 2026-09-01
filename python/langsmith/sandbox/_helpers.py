@@ -9,8 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Optional
 
-import httpx
-
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import (
     QuotaExceededError,
     ResourceCreationError,

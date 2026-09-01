@@ -22,7 +22,14 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
-from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.client import (
+    ID_TYPE,
+    RUN_TYPE_T,
+    Client,
+    ReplicaAuth,
+    _dumps_json,
+    _ensure_uuid,
+)
 from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
@@ -76,6 +83,26 @@ class WriteReplica(TypedDict, total=False):
     The field is **not** propagated in distributed-tracing baggage (each service
     must construct its own clients).
     """
+
+
+class _PayloadKey(NamedTuple):
+    """The four things that decide whether two replicas serialize to the same bytes.
+
+    Credentials are absent on purpose: they do not affect the bytes, which is what
+    lets one group of replicas span several destinations.
+    """
+
+    client: Client
+    project_name: str
+    updates: Optional[dict]
+    primary: Optional[bool]
+
+
+class _ReplicaGroup(NamedTuple):
+    """Replicas that serialize alike, so they can share one payload."""
+
+    key: _PayloadKey
+    members: list[WriteReplica]
 
 
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
@@ -799,32 +826,47 @@ class RunTree(ls_schemas.RunBase):
             dup.update(updates)
         return dup
 
+    def _replica_groups(self) -> list[_ReplicaGroup]:
+        """Bucket replicas by the payload each one would produce.
+
+        `post()` and `patch()` remap UUIDs and serialize once per group - byte-identical
+        payloads make up a single group, even when authentication differs.
+        """
+        groups: list[_ReplicaGroup] = []
+        for replica in self.replicas or ():
+            # Identity key - if those match across replicas, then payload can be reused.
+            key = _PayloadKey(
+                client=replica.get("client") or self.client,
+                project_name=replica.get("project_name") or self.session_name,
+                updates=replica.get("updates"),
+                primary=replica.get("primary"),
+            )
+            # Join the first group that matches, or start a new group
+            for group in groups:
+                if group.key == key:
+                    group.members.append(replica)
+                    break
+            else:
+                groups.append(_ReplicaGroup(key, [replica]))
+        return groups
+
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
         if self.replicas:
-            for replica in self.replicas:
-                project_name = replica.get("project_name") or self.session_name
-                updates = replica.get("updates")
-                run_dict = self._remap_for_project(
-                    project_name, updates, primary=replica.get("primary")
-                )
-                api_url, api_key, service_key, tenant_id, authorization, cookie = (
-                    _extract_replica_auth(replica)
-                )
-                replica_client = replica.get("client") or self.client
+            for group in self._replica_groups():
+                replica_client, project_name, updates, primary = group.key
+                members = group.members
                 if not hasattr(replica_client, "create_run"):
                     raise TypeError(
                         f"WriteReplica 'client' must be a langsmith.Client, "
                         f"got {type(replica_client).__name__}"
                     )
+                run_dict = self._remap_for_project(
+                    project_name, updates, primary=primary
+                )
                 replica_client.create_run(
                     **run_dict,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
+                    _replica_auths=[_extract_replica_auth(r) for r in members],
                 )
         else:
             kwargs = self._get_dicts_safe()
@@ -879,21 +921,17 @@ class RunTree(ls_schemas.RunBase):
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
         if self.replicas:
-            for replica in self.replicas:
-                project_name = replica.get("project_name") or self.session_name
-                updates = replica.get("updates")
-                run_dict = self._remap_for_project(
-                    project_name, updates, primary=replica.get("primary")
-                )
-                api_url, api_key, service_key, tenant_id, authorization, cookie = (
-                    _extract_replica_auth(replica)
-                )
-                replica_client = replica.get("client") or self.client
+            for group in self._replica_groups():
+                replica_client, project_name, updates, primary = group.key
+                members = group.members
                 if not hasattr(replica_client, "update_run"):
                     raise TypeError(
                         f"WriteReplica 'client' must be a langsmith.Client, "
                         f"got {type(replica_client).__name__}"
                     )
+                run_dict = self._remap_for_project(
+                    project_name, updates, primary=primary
+                )
                 replica_client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
@@ -912,12 +950,7 @@ class RunTree(ls_schemas.RunBase):
                     tags=run_dict.get("tags"),
                     extra=run_dict.get("extra"),
                     attachments=attachments,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
+                    _replica_auths=[_extract_replica_auth(r) for r in members],
                 )
         else:
             self.client.update_run(
@@ -1418,15 +1451,6 @@ def _create_current_dotted_order(
     st = start_time or datetime.now(timezone.utc)
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
-
-
-class ReplicaAuth(NamedTuple):
-    api_url: str | None
-    api_key: str | None
-    service_key: str | None
-    tenant_id: str | None
-    authorization: str | None
-    cookie: str | None
 
 
 def _extract_replica_auth(
