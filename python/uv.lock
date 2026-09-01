@@ -11,7 +11,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-08-25T23:14:58.29605Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P1D"
 
 [manifest]
@@ -4889,11 +4889,11 @@ wheels = [
 
 [[package]]
 name = "types-tqdm"
-version = "4.70.0.20260731"
+version = "4.70.0.20260827"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/11/00/8992629b9ce59e80c8ac486f80c691d2ff4e8aba8c4f5afe02fef72c05eb/types_tqdm-4.70.0.20260731.tar.gz", hash = "sha256:6b02430954866dbb87b4ada1a16f396775508d0cafbe4c694673d65645e1984e", size = 19061, upload-time = "2026-07-31T05:22:09.618Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/66/f4a8d5483513ed883e8f01c607b5d47815ca0eb796d376349fdfe85a125c/types_tqdm-4.70.0.20260827.tar.gz", hash = "sha256:d3efd69243ac9093c552f1c0d081b77286d61ace96b6899a142542555bdad2dc", size = 19251, upload-time = "2026-08-27T12:06:55.911Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/37/f3/2b6b01a9c815411566b5c5dba03bb537d8fbf374f76289bacbd2c16204e6/types_tqdm-4.70.0.20260731-py3-none-any.whl", hash = "sha256:d2a8b4ced62afecc84b89d75e40397c22a228ca273eb778899713981e9b323dc", size = 25137, upload-time = "2026-07-31T05:22:08.555Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/f0/b0e2a33c0367e79806054f556159f0b43e6a98d7e728aea1b07028a56ee4/types_tqdm-4.70.0.20260827-py3-none-any.whl", hash = "sha256:d6e02da8ec2bc11124e02d4bc84bd8b67a444f4c5decf544846897c8272c7023", size = 25163, upload-time = "2026-08-27T12:06:54.898Z" },
 ]
 
 [[package]]
