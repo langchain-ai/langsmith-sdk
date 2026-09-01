@@ -1,7 +1,9 @@
 # mypy: disable-error-code="annotation-unchecked"
 import json
 import re
+import timeit
 import uuid
+from functools import partial
 from typing import List, Union, cast
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -15,6 +17,7 @@ from langsmith.anonymizer import (
     SECRET_PLACEHOLDER,
     RuleNodeProcessor,
     StringNodeRule,
+    _extract_string_nodes,
     create_anonymizer,
     create_secret_anonymizer,
 )
@@ -403,3 +406,31 @@ def test_secret_anonymizer_in_traceable():
     assert aws_key not in blob
     assert anthropic_key not in blob
     assert SECRET_PLACEHOLDER in blob
+
+
+def _fastest_walk_seconds(n: int) -> float:
+    """Fastest of 3 runs: noise only ever adds time, so the min is the real cost."""
+    payload = {"records": [{"id": f"r{i}", "text": "x" * 32} for i in range(n)]}
+    walk = partial(_extract_string_nodes, payload, {"max_depth": 10})
+    return min(timeit.repeat(walk, repeat=3, number=1))
+
+
+def test_extract_string_nodes_scales_linearly():
+    """8x the nodes must cost ~8x the time, not ~64x: `list.pop(0)` was O(n)."""
+    assert _fastest_walk_seconds(16_000) / _fastest_walk_seconds(2_000) < 20
+
+
+def test_extract_string_nodes_order_and_max_depth():
+    """Locks the traversal contract the scaling fix must not change."""
+    data = {"a": "1", "b": ["2", {"c": "3"}], "n": 7, "ok": True}
+
+    assert _extract_string_nodes(data, {"max_depth": 10}) == [
+        {"value": "1", "path": ["a"]},
+        {"value": "2", "path": ["b", 0]},
+        {"value": "3", "path": ["b", 1, "c"]},
+    ]
+    # Depth 2 reaches b[0] but not b[1]["c"]; non-strings are never emitted.
+    assert _extract_string_nodes(data, {"max_depth": 2}) == [
+        {"value": "1", "path": ["a"]},
+        {"value": "2", "path": ["b", 0]},
+    ]
