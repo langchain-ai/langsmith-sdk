@@ -18,6 +18,7 @@ import collections
 import concurrent.futures as cf
 import contextlib
 import contextvars
+import copy
 import datetime
 import functools
 import importlib
@@ -1354,7 +1355,7 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
-        self._run_ops_buffer: list[tuple[str, dict, dict[str, Optional[str]]]] = []
+        self._run_ops_buffer: list[tuple[str, dict, dict[str, Any]]] = []
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
@@ -2588,6 +2589,10 @@ class Client:
             ```
         """
         service_key: str | None = kwargs.pop("service_key", None)
+        # Popped before run_create is built, or it would become a run field.
+        replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
+            "_replica_auths", None
+        )
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
@@ -2627,6 +2632,7 @@ class Client:
                             "tenant_id": tenant_id,
                             "authorization": authorization,
                             "cookie": cookie,
+                            "_replica_auths": replica_auths,
                         },
                     )
                 )
@@ -2643,27 +2649,36 @@ class Client:
                 tenant_id=tenant_id,
                 authorization=authorization,
                 cookie=cookie,
+                _replica_auths=replica_auths,
             )
 
     def _enqueue_op(
         self,
         priority: str,
         op: Union[SerializedRunOperation, SerializedFeedbackOperation],
-        auth: ReplicaAuth,
+        auths: Sequence[ReplicaAuth],
     ) -> None:
-        """Put one op on the uncompressed queue, carrying its destination's auth."""
-        self._put_tracing_queue(
-            TracingQueueItem(
-                priority,
-                op,
-                **auth._asdict(),
-                otel_context=(
-                    self._set_span_in_context(self._otel_trace.get_current_span())
-                    if self.otel_exporter is not None
-                    else None
-                ),
-            )
+        """Put one queue item per destination.
+
+        A queue item carries one auth tuple, so a multi-destination op becomes
+        several items. They share the payload's bytes but need separate objects:
+        combine_serialized_queue_operations mutates the post op in place, per
+        auth group.
+        """
+        otel_context = (
+            self._set_span_in_context(self._otel_trace.get_current_span())
+            if self.otel_exporter is not None
+            else None
         )
+        for index, auth in enumerate(auths):
+            self._put_tracing_queue(
+                TracingQueueItem(
+                    priority,
+                    op if index == 0 else _duplicate_op(op),
+                    **auth._asdict(),
+                    otel_context=otel_context,
+                )
+            )
 
     def _compress_admitted(
         self, multipart_form: MultipartPartsAndContext, destinations: frozenset
@@ -2708,24 +2723,28 @@ class Client:
             _destination_urls(destinations) if destinations else "another endpoint",
         )
 
-    def _resolve_destinations(self, auth: ReplicaAuth) -> frozenset[ReplicaAuth]:
+    def _resolve_destinations(self, *auths: ReplicaAuth) -> frozenset[ReplicaAuth]:
         """Where a frame carrying this op must be POSTed.
 
         Pre-resolve the URL + auth for each destination the compressed frame committed to
         """
-        if not any(auth):
-            return frozenset(
-                ReplicaAuth(api_url=url, api_key=key)
-                for url, key in self._write_api_urls.items()
+        resolved: set[ReplicaAuth] = set()
+        for auth in auths:
+            if not any(auth):
+                resolved.update(
+                    ReplicaAuth(api_url=url, api_key=key)
+                    for url, key in self._write_api_urls.items()
+                )
+                continue
+            api_key = auth.api_key
+            if api_key is None and not any(
+                [auth.service_key, auth.authorization, auth.cookie]
+            ):
+                api_key = self.api_key
+            resolved.add(
+                auth._replace(api_url=auth.api_url or self.api_url, api_key=api_key)
             )
-        api_key = auth.api_key
-        if api_key is None and not any(
-            [auth.service_key, auth.authorization, auth.cookie]
-        ):
-            api_key = self.api_key
-        return frozenset(
-            {auth._replace(api_url=auth.api_url or self.api_url, api_key=api_key)}
-        )
+        return frozenset(resolved)
 
     def _create_run(
         self,
@@ -2737,13 +2756,10 @@ class Client:
         tenant_id: Optional[str] = None,
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
+        _replica_auths: Optional[Sequence[ReplicaAuth]] = None,
     ) -> None:
-        if (
-            # batch ingest requires trace_id and dotted_order to be set
-            run_create.get("trace_id") is not None
-            and run_create.get("dotted_order") is not None
-        ):
-            auth = ReplicaAuth(
+        auths = _replica_auths or [
+            ReplicaAuth(
                 api_url=api_url,
                 api_key=api_key,
                 service_key=service_key,
@@ -2751,8 +2767,14 @@ class Client:
                 authorization=authorization,
                 cookie=cookie,
             )
+        ]
+        if (
+            # batch ingest requires trace_id and dotted_order to be set
+            run_create.get("trace_id") is not None
+            and run_create.get("dotted_order") is not None
+        ):
             destinations = (
-                self._resolve_destinations(auth)
+                self._resolve_destinations(*auths)
                 if self.compressed_traces is not None
                 else None
             )
@@ -2779,7 +2801,7 @@ class Client:
                 admitted = self._compress_admitted(multipart_form, destinations)
                 _close_files(list(opened_files.values()))
                 if not admitted and self.tracing_queue is not None:
-                    self._enqueue_op(run_create["dotted_order"], serialized_op, auth)
+                    self._enqueue_op(run_create["dotted_order"], serialized_op, auths)
             elif self.tracing_queue is not None:
                 self._warn_compression_downgrade(destinations)
                 serialized_op = serialize_run_dict("post", run_create)
@@ -2789,29 +2811,15 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self._enqueue_op(run_create["dotted_order"], serialized_op, auth)
+                self._enqueue_op(run_create["dotted_order"], serialized_op, auths)
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run_non_batch(
-                    run_create,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
+                for auth in auths:
+                    self._create_run_non_batch(run_create, **auth._asdict())
         else:
-            self._create_run_non_batch(
-                run_create,
-                api_key=api_key,
-                api_url=api_url,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
+            for auth in auths:
+                self._create_run_non_batch(run_create, **auth._asdict())
 
     def _create_run_non_batch(
         self,
@@ -3830,6 +3838,9 @@ class Client:
             client.update_run(run["id"], **run)
             ```
         """
+        replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
+            "_replica_auths", None
+        )
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3890,6 +3901,7 @@ class Client:
                             "tenant_id": tenant_id,
                             "authorization": authorization,
                             "cookie": cookie,
+                            "_replica_auths": replica_auths,
                         },
                     )
                 )
@@ -3906,6 +3918,7 @@ class Client:
                 tenant_id=tenant_id,
                 authorization=authorization,
                 cookie=cookie,
+                _replica_auths=replica_auths,
             )
 
     def _update_run(
@@ -3918,7 +3931,18 @@ class Client:
         tenant_id: Optional[str] = None,
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
+        _replica_auths: Optional[Sequence[ReplicaAuth]] = None,
     ):
+        auths = _replica_auths or [
+            ReplicaAuth(
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
+        ]
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
@@ -3929,16 +3953,8 @@ class Client:
             self._pyo3_client.update_run(run_update)
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=run_update)
-            auth = ReplicaAuth(
-                api_url=api_url,
-                api_key=api_key,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
             destinations = (
-                self._resolve_destinations(auth)
+                self._resolve_destinations(*auths)
                 if self.compressed_traces is not None
                 else None
             )
@@ -3962,7 +3978,7 @@ class Client:
                 admitted = self._compress_admitted(multipart_form, destinations)
                 _close_files(list(opened_files.values()))
                 if not admitted and self.tracing_queue is not None:
-                    self._enqueue_op(run_update["dotted_order"], serialized_op, auth)
+                    self._enqueue_op(run_update["dotted_order"], serialized_op, auths)
             elif self.tracing_queue is not None:
                 self._warn_compression_downgrade(destinations)
                 logger.log(
@@ -3971,17 +3987,10 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self._enqueue_op(run_update["dotted_order"], serialized_op, auth)
+                self._enqueue_op(run_update["dotted_order"], serialized_op, auths)
         else:
-            self._update_run_non_batch(
-                run_update,
-                api_key=api_key,
-                api_url=api_url,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
+            for auth in auths:
+                self._update_run_non_batch(run_update, **auth._asdict())
 
     def _update_run_non_batch(
         self,
@@ -11865,6 +11874,18 @@ def prep_obj_for_push(obj: Any) -> Any:
 
 
 _COMPRESSION_DOWNGRADE_WARNED = False
+
+
+def _duplicate_op(
+    op: Union[SerializedRunOperation, SerializedFeedbackOperation],
+) -> Union[SerializedRunOperation, SerializedFeedbackOperation]:
+    """Copy an op for another destination, sharing its immutable bytes."""
+    duplicate = copy.copy(op)
+    # attachments is a dict, and combine_serialized_queue_operations updates it
+    # in place.
+    if isinstance(duplicate, SerializedRunOperation) and duplicate.attachments:
+        duplicate.attachments = dict(duplicate.attachments)
+    return duplicate
 
 
 def _destination_urls(destinations: frozenset) -> list[str]:
