@@ -44,6 +44,7 @@ tests:
 	 -u LANGSMITH_TRACING \
 	 PYTHONDEVMODE=1 \
 	 PYTHONASYNCIODEBUG=1 \
+	 PYTHONPATH=tests/httpx2_alias \
 	 uv run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 ${TEST}
 
 tests_watch:
@@ -90,7 +91,10 @@ test-wheel-imports:
 	uv pip install -r /tmp/langsmith-declared-deps.txt --python /tmp/langsmith-strict-test
 	/tmp/langsmith-strict-test/bin/python -c "\
 from langsmith._openapi_client import Langsmith; \
-from langsmith.client import Client"
+from langsmith.client import Client; \
+assert __import__('langsmith._openapi_client._httpx', fromlist=['httpx']).httpx.__name__ == 'httpx2'; \
+Langsmith(base_url='https://example.com').close(); \
+Client(api_url='https://example.com', api_key='test', auto_batch_tracing=False, info={}).close()"
 	rm -rf /tmp/langsmith-strict-test /tmp/langsmith-declared-deps.txt
 
 api_docs_build:

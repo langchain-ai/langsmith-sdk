@@ -1,7 +1,7 @@
 import re  # noqa
 import inspect
 from abc import abstractmethod
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any, Callable, Optional, TypedDict, Union
 
 
@@ -25,14 +25,13 @@ class StringNode(TypedDict):
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNode]:
     max_depth = options.get("max_depth") or 10
 
-    queue: list[tuple[Any, int, list[Union[str, int]]]] = [(data, 0, [])]
+    # deque, not a list: `list.pop(0)` is O(n), and this walk runs inline on the
+    # caller's event loop, so a quadratic drain stalls unrelated requests.
+    queue: deque[tuple[Any, int, list[Union[str, int]]]] = deque([(data, 0, [])])
     result: list[StringNode] = []
 
     while queue:
-        task = queue.pop(0)
-        if task is None:
-            continue
-        value, depth, path = task
+        value, depth, path = queue.popleft()
 
         if isinstance(value, (dict, defaultdict)):
             if depth >= max_depth:
