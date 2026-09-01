@@ -755,36 +755,15 @@ class OTELExporter:
                     "Failed to process inputs for run %s", op.id, exc_info=True
                 )
 
+        outputs: Optional[dict] = None
+        token_usage: Optional[tuple[int, int]] = None
+
         if op.outputs:
             try:
                 outputs = _orjson.loads(op.outputs)
 
                 # Extract token usage from outputs (for LLM runs)
                 token_usage = self.get_unified_run_tokens(outputs)
-                if not token_usage and not self._has_run_info_token_usage(run_info):
-                    # Some integrations (e.g. claude_agent_sdk) record real
-                    # per-turn usage only under extra.metadata.usage_metadata,
-                    # never in outputs or the top-level run token fields.
-                    # Fall back to it as a last resort so usage still
-                    # reaches OTEL. Lowest precedence: only used when
-                    # neither run_info nor outputs already supplied usage.
-                    extra = run_info.get("extra")
-                    metadata = (
-                        extra.get("metadata") if isinstance(extra, dict) else None
-                    )
-                    if isinstance(metadata, dict):
-                        token_usage = self._extract_unified_run_tokens(
-                            metadata.get("usage_metadata")
-                        )
-                if token_usage:
-                    span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, token_usage[0])
-                    span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, token_usage[1])
-                    span.set_attribute(
-                        GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1]
-                    )
-
-                    if "model" in outputs:
-                        span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
                 # Extract additional response attributes.
                 if isinstance(outputs, dict):
                     if "id" in outputs and outputs["id"] is not None:
@@ -848,6 +827,31 @@ class OTELExporter:
                 logger.debug(
                     "Failed to process outputs for run %s", op.id, exc_info=True
                 )
+
+        if not token_usage and not self._has_run_info_token_usage(run_info):
+            # Some integrations (e.g. claude_agent_sdk) record real per-turn
+            # usage only under extra.metadata.usage_metadata -- never in
+            # outputs or the top-level run token fields, and sometimes on a
+            # patch operation that carries no outputs at all. Fall back to
+            # it as a last resort so usage still reaches OTEL. Lowest
+            # precedence: only used when neither run_info nor outputs
+            # already supplied usage.
+            extra = run_info.get("extra")
+            metadata = extra.get("metadata") if isinstance(extra, dict) else None
+            if isinstance(metadata, dict):
+                token_usage = self._extract_unified_run_tokens(
+                    metadata.get("usage_metadata")
+                )
+
+        if token_usage:
+            span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, token_usage[0])
+            span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, token_usage[1])
+            span.set_attribute(
+                GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1]
+            )
+
+            if outputs is not None and "model" in outputs:
+                span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
 
     def _as_utc_nano(self, timestamp: Optional[str]) -> Optional[int]:
         if not timestamp:

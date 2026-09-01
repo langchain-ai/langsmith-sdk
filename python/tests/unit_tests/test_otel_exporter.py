@@ -374,6 +374,36 @@ def test_export_batch_promotes_usage_from_extra_metadata():
     assert attributes["gen_ai.usage.total_tokens"] == 21407
 
 
+def test_export_batch_promotes_usage_from_extra_metadata_without_outputs():
+    """The extra.metadata.usage_metadata fallback must not depend on
+    outputs being present -- a run/patch operation can carry usage there
+    while having no outputs at all (e.g. a patch that only updates usage).
+    """
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run_data = _base_llm_run(run_id, trace_id)
+    run_data.update(
+        extra={
+            "metadata": {
+                "usage_metadata": {
+                    "input_tokens": 21400,
+                    "output_tokens": 7,
+                    "total_tokens": 21407,
+                }
+            }
+        },
+    )
+    assert "outputs" not in run_data
+
+    spans = _export_single_run(run_data)
+
+    assert len(spans) == 1
+    attributes = spans[0].attributes
+    assert attributes["gen_ai.usage.input_tokens"] == 21400
+    assert attributes["gen_ai.usage.output_tokens"] == 7
+    assert attributes["gen_ai.usage.total_tokens"] == 21407
+
+
 def test_export_batch_outputs_usage_takes_precedence_over_extra_metadata():
     """The extra.metadata.usage_metadata fallback must never override real
     usage already present on run.outputs -- it is a last resort only.
