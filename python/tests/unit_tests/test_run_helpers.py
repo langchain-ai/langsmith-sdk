@@ -560,6 +560,45 @@ def test_allow_unprocessed_payloads_restores_raw_outputs(
         ls_utils.get_env_var.cache_clear()
 
 
+@pytest.mark.parametrize("iteration", ["anext", "aiter", "context"])
+async def test_traceable_async_stream_records_iteration_errors(
+    iteration: str, mock_client: Client
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class FailingAsyncStream:
+        async def __aenter__(self) -> "FailingAsyncStream":
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+            pass
+
+        def __aiter__(self) -> "FailingAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            raise RuntimeError("stream failed")
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> FailingAsyncStream:
+        return FailingAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with pytest.raises(RuntimeError, match="stream failed"):
+            if iteration == "anext":
+                await aitertools.py_anext(stream)
+            elif iteration == "aiter":
+                async for _ in stream:
+                    pass
+            else:
+                async with stream:
+                    raise RuntimeError("stream failed")
+
+    assert len(ended_runs) == 1
+    assert "RuntimeError('stream failed')" in ended_runs[0].error
+
+
 @patch("langsmith.run_trees.Client", autospec=True)
 def test_traceable_iterator_noargs(_: MagicMock) -> None:
     @traceable

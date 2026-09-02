@@ -2235,13 +2235,18 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         except StopAsyncIteration:
             await self._aend_trace()
             raise
+        except BaseException as e:
+            _cleanup_traceback(e)
+            await self._aend_trace(error=e)
+            raise
 
     async def __aiter__(self) -> AsyncIterator[T]:
         try:
             async for item in self.__ls_gen:
                 yield item
-        except BaseException:
-            await self._aend_trace()
+        except BaseException as e:
+            _cleanup_traceback(e)
+            await self._aend_trace(error=e)
             raise
         else:
             await self._aend_trace()
@@ -2254,7 +2259,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         try:
             return await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
         finally:
-            await self._aend_trace()
+            await self._aend_trace(error=exc_val if exc_type else None)
 
 
 def _get_function_result(results: list, reduce_fn: Callable) -> Any:
