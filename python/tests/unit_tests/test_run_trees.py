@@ -15,6 +15,7 @@ from requests_toolbelt import MultipartEncoder
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._multipart import RewindableMultipartBody
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
@@ -60,6 +61,8 @@ def _get_multipart_data(mock_calls):
             raw = data
         elif isinstance(data, MultipartEncoder):
             raw = data.to_string()
+        elif isinstance(data, RewindableMultipartBody):
+            raw = data.to_bytes()
         else:
             # Unknown format
             continue
