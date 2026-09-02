@@ -1469,7 +1469,7 @@ def _format_error_with_exceptions_to_handle(
     if exceptions_to_handle and isinstance(error, exceptions_to_handle):
         return None
 
-    stacktrace = utils._format_exc()
+    stacktrace = utils._format_exc(error)
     return f"{repr(error)}\n\n{stacktrace}"
 
 
@@ -2214,6 +2214,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             trace_container=trace_container,
             reduce_fn=reduce_fn,
         )
+        self.__ls_context_active__ = False
         self.__ls_stream__ = stream
         self.__ls_gen = _process_async_iterator(
             generator=self.__ls_stream__,
@@ -2233,7 +2234,8 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         try:
             return cast(T, await aitertools.py_anext(self.__ls_gen))
         except StopAsyncIteration:
-            await self._aend_trace()
+            if not self.__ls_context_active__:
+                await self._aend_trace()
             raise
         except BaseException as e:
             _cleanup_traceback(e)
@@ -2249,17 +2251,31 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             await self._aend_trace(error=e)
             raise
         else:
-            await self._aend_trace()
+            if not self.__ls_context_active__:
+                await self._aend_trace()
 
     async def __aenter__(self):
-        await self.__ls_stream__.__aenter__()
+        try:
+            await self.__ls_stream__.__aenter__()
+        except BaseException as e:
+            _cleanup_traceback(e)
+            await self._aend_trace(error=e)
+            raise
+        self.__ls_context_active__ = True
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         try:
-            return await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
-        finally:
+            result = await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
+        except BaseException as e:
+            _cleanup_traceback(e)
+            await self._aend_trace(error=e)
+            raise
+        else:
             await self._aend_trace(error=exc_val if exc_type else None)
+            return result
+        finally:
+            self.__ls_context_active__ = False
 
 
 def _get_function_result(results: list, reduce_fn: Callable) -> Any:
