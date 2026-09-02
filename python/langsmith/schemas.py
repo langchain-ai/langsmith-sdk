@@ -129,7 +129,10 @@ class ExampleUpsertWithAttachments(ExampleCreate):
 
 
 class AttachmentInfo(TypedDict):
-    """Info for an attachment."""
+    """Info for an attachment.
+
+    ``presigned_url`` contains unvalidated URL. Use ``reader`` to read attachment data.
+    """
 
     presigned_url: str
     reader: BinaryIOLike
