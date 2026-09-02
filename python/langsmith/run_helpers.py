@@ -2194,9 +2194,14 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
-            return self.__ls_stream__.__exit__(exc_type, exc_val, exc_tb)
-        finally:
-            self._end_trace(error=exc_val if exc_type else None)
+            result = self.__ls_stream__.__exit__(exc_type, exc_val, exc_tb)
+        except BaseException as e:
+            _cleanup_traceback(e)
+            self._end_trace(error=e)
+            raise
+        else:
+            self._end_trace(error=None if result else exc_val if exc_type else None)
+            return result
 
 
 class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
@@ -2214,7 +2219,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             trace_container=trace_container,
             reduce_fn=reduce_fn,
         )
-        self.__ls_context_active__ = False
+        self.__ls_context_depth__ = 0
         self.__ls_stream__ = stream
         self.__ls_gen = _process_async_iterator(
             generator=self.__ls_stream__,
@@ -2234,12 +2239,13 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         try:
             return cast(T, await aitertools.py_anext(self.__ls_gen))
         except StopAsyncIteration:
-            if not self.__ls_context_active__:
+            if self.__ls_context_depth__ == 0:
                 await self._aend_trace()
             raise
         except BaseException as e:
             _cleanup_traceback(e)
-            await self._aend_trace(error=e)
+            if self.__ls_context_depth__ == 0:
+                await self._aend_trace(error=e)
             raise
 
     async def __aiter__(self) -> AsyncIterator[T]:
@@ -2248,10 +2254,11 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
                 yield item
         except BaseException as e:
             _cleanup_traceback(e)
-            await self._aend_trace(error=e)
+            if self.__ls_context_depth__ == 0:
+                await self._aend_trace(error=e)
             raise
         else:
-            if not self.__ls_context_active__:
+            if self.__ls_context_depth__ == 0:
                 await self._aend_trace()
 
     async def __aenter__(self):
@@ -2259,9 +2266,10 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             await self.__ls_stream__.__aenter__()
         except BaseException as e:
             _cleanup_traceback(e)
-            await self._aend_trace(error=e)
+            if self.__ls_context_depth__ == 0:
+                await self._aend_trace(error=e)
             raise
-        self.__ls_context_active__ = True
+        self.__ls_context_depth__ += 1
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -2269,13 +2277,17 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             result = await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
         except BaseException as e:
             _cleanup_traceback(e)
-            await self._aend_trace(error=e)
+            self.__ls_context_depth__ -= 1
+            if self.__ls_context_depth__ == 0:
+                await self._aend_trace(error=e)
             raise
         else:
-            await self._aend_trace(error=exc_val if exc_type else None)
+            self.__ls_context_depth__ -= 1
+            if self.__ls_context_depth__ == 0:
+                await self._aend_trace(
+                    error=None if result else exc_val if exc_type else None
+                )
             return result
-        finally:
-            self.__ls_context_active__ = False
 
 
 def _get_function_result(results: list, reduce_fn: Callable) -> Any:
