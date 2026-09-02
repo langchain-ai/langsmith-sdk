@@ -25,13 +25,14 @@ from unittest import mock
 
 import pytest
 
+from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal._multipart import join_multipart_parts_and_context
 from langsmith._internal._operations import (
     SerializedRunOperation,
     serialized_run_operation_to_multipart_parts_and_context,
 )
-from langsmith.client import Client
+from langsmith.client import Client, _close_files
 
 
 class _Endpoint:
@@ -95,13 +96,17 @@ def no_sleep():
         yield slept
 
 
-def _payload(n_runs=1):
+def _payload(n_runs=1, extra_inputs_bytes=0):
     """Build a payload through the real serializer, so the log context is real.
 
     The per-op context string is ``trace=<trace_id>,id=<run_id>``
     (``_operations.py``), and ``join_multipart_parts_and_context`` concatenates
     one of those per operation with ``"; "``. Hand-writing the context in a test
     would pin a message shape that never occurs in production.
+
+    ``extra_inputs_bytes`` pads ``inputs`` so the encoded multipart body
+    crosses the 20MB threshold where ``_send_multipart_req`` switches from
+    buffering to ``bytes`` to streaming a ``SeekableMultipartEncoder``.
     """
     ops = []
     ids = []
@@ -123,7 +128,7 @@ def _payload(n_runs=1):
                 id=run_id,
                 trace_id=run_id,
                 _none=run_json,
-                inputs=None,
+                inputs=(b"x" * extra_inputs_bytes) if extra_inputs_bytes else None,
                 outputs=None,
                 events=None,
                 extra=None,
@@ -140,6 +145,22 @@ def _payload(n_runs=1):
 
 def _one_run_payload():
     return _payload(1)[0]
+
+
+def _large_run_payload():
+    """A payload whose encoded body exceeds the 20MB streaming threshold."""
+    return _payload(1, extra_inputs_bytes=20_100_000)[0]
+
+
+def _large_example_payload():
+    """An examples-multipart body whose encoded size exceeds 20MB.
+
+    Exercises ``_prepare_multipart_data`` (used by ``upload_examples_multipart``
+    / ``update_examples_multipart``), which has the same >20MB streaming body
+    as ``_send_multipart_req`` but -- unlike it -- no app-level retry loop of
+    its own: it relies entirely on urllib3 being able to rewind the body.
+    """
+    return [ls_schemas.ExampleCreate(inputs={"x": "y" * 20_100_000})]
 
 
 def _client(endpoint, failed_traces_dir=None, monkeypatch=None):
@@ -195,6 +216,110 @@ def test_multipart_retry_counts(
     assert endpoint.count == expected_requests, (
         f"HTTP {status} (Retry-After={retry_after}) produced {endpoint.count} "
         f"requests, expected {expected_requests} (retried by: {retried_by})"
+    )
+
+
+# Only status codes that actually trigger a retry are worth re-running at
+# 20MB: a one-shot request/failure (200, 409, 401, ...) never touches
+# ``SeekableMultipartEncoder.seek()`` at all, so payload size can't affect
+# it -- those rows are already covered by the small-body matrix above.
+RETRYABLE_ROWS = [row for row in RETRY_MATRIX if row[2] > 1]
+
+
+@pytest.mark.parametrize(
+    "status,retry_after,expected_requests,retried_by",
+    RETRYABLE_ROWS,
+    ids=[f"{s}{'+retry-after' if ra else ''}" for s, ra, _, _ in RETRYABLE_ROWS],
+)
+def test_multipart_retry_counts_over_20mb(
+    endpoint, no_sleep, status, retry_after, expected_requests, retried_by
+):
+    """Same matrix, but over the 20MB threshold where the body streams instead
+    of being buffered to ``bytes`` up front.
+
+    Streaming bodies have no ``tell``/``seek`` unless wrapped, so urllib3
+    can't rewind them for a retry: it resends a stale ``Content-Length``
+    against an already-exhausted stream, and the server hangs waiting for a
+    body that never arrives. If that regresses, this test hangs instead of
+    failing fast -- see ``SeekableMultipartEncoder``.
+    """
+    endpoint.status = status
+    endpoint.retry_after = retry_after
+    client = _client(endpoint)
+
+    client._send_multipart_req(_large_run_payload())
+
+    assert endpoint.count == expected_requests, (
+        f"HTTP {status} (Retry-After={retry_after}) over 20MB produced "
+        f"{endpoint.count} requests, expected {expected_requests} "
+        f"(retried by: {retried_by})"
+    )
+
+
+# `_prepare_multipart_data` backs `upload_examples_multipart` /
+# `update_examples_multipart`. Unlike `_send_multipart_req` it makes a single
+# `request_with_retries` call with no app-level retry loop of its own, so
+# these counts are RETRY_MATRIX with the "+ app loop" rows (500, 408)
+# un-multiplied back down to urllib3's raw count -- everything here is
+# retried by urllib3 alone, or not at all.
+#
+# Only rows where a retry actually happens are included
+PREPARE_MULTIPART_DATA_RETRY_MATRIX = [
+    (500, None, 4, "urllib3"),
+    (502, None, 4, "urllib3"),
+    (503, None, 4, "urllib3"),
+    (504, None, 4, "urllib3"),
+    (425, None, 4, "urllib3"),
+    (408, None, 4, "urllib3"),
+    (429, 1, 4, "urllib3 (Retry-After delay)"),
+    (429, None, 4, "urllib3 (backoff_factor delay)"),
+    (413, 1, 4, "urllib3 (Retry-After only)"),
+]
+
+
+@pytest.mark.parametrize(
+    "status,retry_after,expected_requests,retried_by",
+    PREPARE_MULTIPART_DATA_RETRY_MATRIX,
+    ids=[
+        f"{s}{'+retry-after' if ra else ''}"
+        for s, ra, _, _ in PREPARE_MULTIPART_DATA_RETRY_MATRIX
+    ],
+)
+def test_prepare_multipart_data_retry_counts_over_20mb(
+    endpoint, no_sleep, status, retry_after, expected_requests, retried_by
+):
+    """Same >20MB streaming-body bug as ``_send_multipart_req``, but no
+    app-level retry loop to paper over a failed rewind -- this call path
+    relies entirely on urllib3 being able to resend the body.
+
+    Every row here is a status that ultimately fails (there's no app loop to
+    exhaust first), so the call is always expected to raise once urllib3
+    gives up retrying.
+    """
+    endpoint.status = status
+    endpoint.retry_after = retry_after
+    client = _client(endpoint)
+
+    encoder, data, opened_files_dict = client._prepare_multipart_data(
+        _large_example_payload(), include_dataset_id=False
+    )
+    try:
+        with pytest.raises(Exception):
+            client.request_with_retries(
+                "POST",
+                "/examples/multipart",
+                request_kwargs={
+                    "data": data,
+                    "headers": {"Content-Type": encoder.content_type},
+                },
+            )
+    finally:
+        _close_files(list(opened_files_dict.values()))
+
+    assert endpoint.count == expected_requests, (
+        f"HTTP {status} (Retry-After={retry_after}) over 20MB via "
+        f"_prepare_multipart_data produced {endpoint.count} requests, "
+        f"expected {expected_requests} (retried by: {retried_by})"
     )
 
 

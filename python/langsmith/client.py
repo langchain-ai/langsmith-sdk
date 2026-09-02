@@ -103,6 +103,7 @@ from langsmith._internal._hub import (
 from langsmith._internal._multipart import (
     MultipartPart,
     MultipartPartsAndContext,
+    SeekableMultipartEncoder,
     join_multipart_parts_and_context,
 )
 from langsmith._internal._operations import (
@@ -3604,7 +3605,7 @@ class Client:
                     if encoder.len <= 20_000_000:  # ~20 MB
                         data = encoder.to_string()
                     else:
-                        data = encoder
+                        data = SeekableMultipartEncoder(parts, boundary=_BOUNDARY)
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",
@@ -3642,13 +3643,7 @@ class Client:
                     _fail_exc = e
                 # Fell through — final attempt failed or non-retryable error.
                 self._dump_failed_trace(
-                    lambda: (
-                        data
-                        if isinstance(data, bytes)
-                        else rqtb_multipart.MultipartEncoder(
-                            parts, boundary=_BOUNDARY
-                        ).to_string()
-                    ),
+                    lambda: data if isinstance(data, bytes) else data.to_bytes(),
                     {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
                 )
                 self._invoke_tracing_error_callback(_fail_exc)
@@ -6455,7 +6450,9 @@ class Client:
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
-    ) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
+    ) -> tuple[
+        Any, Union[bytes, SeekableMultipartEncoder], dict[str, io.BufferedReader]
+    ]:
         parts: list[MultipartPart] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
         if include_dataset_id:
@@ -6631,7 +6628,7 @@ class Client:
         if encoder.len <= 20_000_000:  # ~20 MB
             data = encoder.to_string()
         else:
-            data = encoder
+            data = SeekableMultipartEncoder(parts, boundary=_BOUNDARY)
 
         return encoder, data, opened_files_dict
 
