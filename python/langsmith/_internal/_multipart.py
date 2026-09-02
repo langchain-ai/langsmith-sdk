@@ -29,3 +29,10 @@ def join_multipart_parts_and_context(
         acc_parts.extend(parts_and_context.parts)
         acc_context.append(parts_and_context.context)
     return MultipartPartsAndContext(acc_parts, "; ".join(acc_context))
+
+
+def rewind_multipart_parts(parts: Iterable[MultipartPart]) -> None:
+    """Return every file-backed part to byte 0 so the parts can be re-encoded."""
+    for _name, (_filename, data, _content_type, _headers) in parts:
+        if hasattr(data, "seek"):
+            data.seek(0)

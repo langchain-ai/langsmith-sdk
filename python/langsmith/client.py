@@ -90,6 +90,7 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
+    _MULTIPART_INLINE_MAX_BYTES,
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
@@ -104,6 +105,7 @@ from langsmith._internal._multipart import (
     MultipartPart,
     MultipartPartsAndContext,
     join_multipart_parts_and_context,
+    rewind_multipart_parts,
 )
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
@@ -3600,8 +3602,12 @@ class Client:
         for target_api_url, headers_for_endpoint in endpoints:
             for idx in range(1, attempts + 1):
                 try:
+                    # Every attempt, and every write endpoint, builds a new
+                    # encoder from the same parts -- and encoding reads file
+                    # attachments to EOF, so reset them first.
+                    rewind_multipart_parts(parts)
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-                    if encoder.len <= 20_000_000:  # ~20 MB
+                    if encoder.len <= _MULTIPART_INLINE_MAX_BYTES:
                         data = encoder.to_string()
                     else:
                         data = encoder
@@ -3640,15 +3646,16 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     _fail_exc = e
+
                 # Fell through — final attempt failed or non-retryable error.
+                def _dump_body() -> bytes:
+                    rewind_multipart_parts(parts)
+                    return rqtb_multipart.MultipartEncoder(
+                        parts, boundary=_BOUNDARY
+                    ).to_string()
+
                 self._dump_failed_trace(
-                    lambda: (
-                        data
-                        if isinstance(data, bytes)
-                        else rqtb_multipart.MultipartEncoder(
-                            parts, boundary=_BOUNDARY
-                        ).to_string()
-                    ),
+                    _dump_body,
                     {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
                 )
                 self._invoke_tracing_error_callback(_fail_exc)
@@ -6628,7 +6635,7 @@ class Client:
                 )
 
         encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-        if encoder.len <= 20_000_000:  # ~20 MB
+        if encoder.len <= _MULTIPART_INLINE_MAX_BYTES:
             data = encoder.to_string()
         else:
             data = encoder
