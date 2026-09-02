@@ -16,6 +16,14 @@ from .runs import (
     RunsResourceWithStreamingResponse,
     AsyncRunsResourceWithStreamingResponse,
 )
+from .fleet import (
+    FleetResource,
+    AsyncFleetResource,
+    FleetResourceWithRawResponse,
+    AsyncFleetResourceWithRawResponse,
+    FleetResourceWithStreamingResponse,
+    AsyncFleetResourceWithStreamingResponse,
+)
 from .issues import (
     IssuesResource,
     AsyncIssuesResource,
@@ -82,6 +90,12 @@ from .online_evaluators import (
 )
 
 __all__ = [
+    "FleetResource",
+    "AsyncFleetResource",
+    "FleetResourceWithRawResponse",
+    "AsyncFleetResourceWithRawResponse",
+    "FleetResourceWithStreamingResponse",
+    "AsyncFleetResourceWithStreamingResponse",
     "DatasetsResource",
     "AsyncDatasetsResource",
     "DatasetsResourceWithRawResponse",

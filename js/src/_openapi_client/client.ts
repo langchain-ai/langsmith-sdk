@@ -121,6 +121,7 @@ import {
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
+import { Fleet } from './resources/fleet/fleet.js';
 import { Public } from './resources/public/public.js';
 import {
   ResponseBodyForRunsGenerateQuery,
@@ -928,6 +929,7 @@ export class Langsmith {
 
   static toFile = Uploads.toFile;
 
+  fleet: API.Fleet = new API.Fleet(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
   threads: API.Threads = new API.Threads(this);
@@ -940,6 +942,7 @@ export class Langsmith {
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
+Langsmith.Fleet = Fleet;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.Threads = Threads;
@@ -1007,6 +1010,8 @@ export declare namespace Langsmith {
     type ItemsCursorGetPaginationParams as ItemsCursorGetPaginationParams,
     type ItemsCursorGetPaginationResponse as ItemsCursorGetPaginationResponse,
   };
+
+  export { Fleet as Fleet };
 
   export {
     Datasets as Datasets,

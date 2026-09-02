@@ -36,6 +36,7 @@ export {
   type Missing,
   type SortByDatasetColumn,
 } from './datasets/datasets.js';
+export { Fleet } from './fleet/fleet.js';
 export { Info, type InfoListResponse } from './info.js';
 export {
   Issues,

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from .resources import (
         info,
         runs,
+        fleet,
         issues,
         public,
         traces,
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
     from .resources.issues import IssuesResource, AsyncIssuesResource
     from .resources.traces import TracesResource, AsyncTracesResource
     from .resources.runs.runs import RunsResource, AsyncRunsResource
+    from .resources.fleet.fleet import FleetResource, AsyncFleetResource
     from .resources.public.public import PublicResource, AsyncPublicResource
     from .resources.threads.threads import ThreadsResource, AsyncThreadsResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
@@ -137,6 +139,12 @@ class Langsmith(SyncAPIClient):
             custom_query=default_query,
             _strict_response_validation=_strict_response_validation,
         )
+
+    @cached_property
+    def fleet(self) -> FleetResource:
+        from .resources.fleet import FleetResource
+
+        return FleetResource(self)
 
     @cached_property
     def datasets(self) -> DatasetsResource:
@@ -407,6 +415,12 @@ class AsyncLangsmith(AsyncAPIClient):
         )
 
     @cached_property
+    def fleet(self) -> AsyncFleetResource:
+        from .resources.fleet import AsyncFleetResource
+
+        return AsyncFleetResource(self)
+
+    @cached_property
     def datasets(self) -> AsyncDatasetsResource:
         from .resources.datasets import AsyncDatasetsResource
 
@@ -613,6 +627,12 @@ class LangsmithWithRawResponse:
         self._client = client
 
     @cached_property
+    def fleet(self) -> fleet.FleetResourceWithRawResponse:
+        from .resources.fleet import FleetResourceWithRawResponse
+
+        return FleetResourceWithRawResponse(self._client.fleet)
+
+    @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithRawResponse:
         from .resources.datasets import DatasetsResourceWithRawResponse
 
@@ -678,6 +698,12 @@ class AsyncLangsmithWithRawResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
+
+    @cached_property
+    def fleet(self) -> fleet.AsyncFleetResourceWithRawResponse:
+        from .resources.fleet import AsyncFleetResourceWithRawResponse
+
+        return AsyncFleetResourceWithRawResponse(self._client.fleet)
 
     @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithRawResponse:
@@ -747,6 +773,12 @@ class LangsmithWithStreamedResponse:
         self._client = client
 
     @cached_property
+    def fleet(self) -> fleet.FleetResourceWithStreamingResponse:
+        from .resources.fleet import FleetResourceWithStreamingResponse
+
+        return FleetResourceWithStreamingResponse(self._client.fleet)
+
+    @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithStreamingResponse:
         from .resources.datasets import DatasetsResourceWithStreamingResponse
 
@@ -812,6 +844,12 @@ class AsyncLangsmithWithStreamedResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
+
+    @cached_property
+    def fleet(self) -> fleet.AsyncFleetResourceWithStreamingResponse:
+        from .resources.fleet import AsyncFleetResourceWithStreamingResponse
+
+        return AsyncFleetResourceWithStreamingResponse(self._client.fleet)
 
     @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithStreamingResponse:
