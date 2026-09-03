@@ -282,11 +282,46 @@ export class LangSmithToOTELTranslator {
     this.setIOAttributes(span, op);
   }
 
+  private static readonly LS_PROVIDER_TO_GEN_AI_SYSTEM: Record<
+    string,
+    string
+  > = {
+    anthropic: "anthropic",
+    openai: "openai",
+    azure: "az.ai.openai",
+    "azure-openai": "az.ai.openai",
+    bedrock: "aws.bedrock",
+    cohere: "cohere",
+    deepseek: "deepseek",
+    gemini: "gemini",
+    google: "gemini",
+    groq: "groq",
+    mistral: "mistral_ai",
+    perplexity: "perplexity",
+    vertex: "vertex_ai",
+    "vertex-ai": "vertex_ai",
+    xai: "xai",
+  };
+
   private setGenAiSystem(span: OTELSpan, runInfo: RunCreate | RunUpdate): void {
     // Default to "langchain" if we can't determine the system
     let system = "langchain";
 
-    // Extract model name to determine the system
+    // Prefer the explicit ls_provider set by wrappers (e.g. wrapAnthropic, wrapOpenAI)
+    // over model-name heuristics, as it is authoritative and not subject to alias ambiguity.
+    const lsProvider = runInfo.extra?.metadata?.ls_provider;
+    if (typeof lsProvider === "string" && lsProvider) {
+      const mapped =
+        LangSmithToOTELTranslator.LS_PROVIDER_TO_GEN_AI_SYSTEM[
+          lsProvider.toLowerCase()
+        ];
+      if (mapped) {
+        span.setAttribute(constants.GEN_AI_SYSTEM, mapped);
+        return;
+      }
+    }
+
+    // Fall back to model-name heuristics when ls_provider is absent
     const modelName = this.extractModelName(runInfo);
     if (modelName) {
       const modelLower = modelName.toLowerCase();
