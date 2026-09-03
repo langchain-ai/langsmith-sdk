@@ -698,7 +698,7 @@ export interface StartSandboxOptions {
 }
 
 /**
- * Options for updating a sandbox (name and/or retention settings).
+ * Options for updating a sandbox (name, retention settings, proxy config).
  */
 export interface UpdateSandboxOptions {
   /** New display name. */
@@ -715,6 +715,15 @@ export interface UpdateSandboxOptions {
    * `undefined`) to leave the existing value unchanged.
    */
   deleteAfterStopSeconds?: number;
+  /**
+   * Replacement proxy configuration, sent to the server as-is (same shape as
+   * `createSandbox`). Rules replace the existing set rather than merging into
+   * it, so include every rule the sandbox should keep. Opaque header values
+   * carry over from the current config, so rotating one credential does not
+   * mean re-supplying secrets that can no longer be read. The sandbox must be
+   * `ready`; start a stopped one first.
+   */
+  proxyConfig?: SandboxProxyConfig;
 }
 
 /**
