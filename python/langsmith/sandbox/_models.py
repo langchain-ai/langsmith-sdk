@@ -121,7 +121,6 @@ class Snapshot:
     name: str
     status: str
     fs_capacity_bytes: int
-    tags: list[str] = field(default_factory=list)
     docker_image: Optional[str] = None
     image_digest: Optional[str] = None
     source_sandbox_id: Optional[str] = None
@@ -131,6 +130,8 @@ class Snapshot:
     registry_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # Appended last so existing positional constructions keep their meaning.
+    tags: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Snapshot:
@@ -154,8 +155,8 @@ class Snapshot:
 
 
 @dataclass
-class SnapshotNameTag:
-    """One tag under a snapshot name and the snapshot it resolves to.
+class SnapshotTag:
+    """One tag published under a snapshot name, and the snapshot it resolves to.
 
     Attributes:
         tag: Tag name.
@@ -166,31 +167,9 @@ class SnapshotNameTag:
     snapshot_id: str
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SnapshotNameTag:
-        """Create a SnapshotNameTag from an API response dict."""
+    def from_dict(cls, data: dict[str, Any]) -> SnapshotTag:
+        """Create a SnapshotTag from an API response dict."""
         return cls(tag=data.get("tag", ""), snapshot_id=data.get("snapshot_id", ""))
-
-
-@dataclass
-class SnapshotName:
-    """A snapshot name and every tag published under it.
-
-    Attributes:
-        name: The snapshot name.
-        tags: Every tag under the name, each with the snapshot it resolves to.
-            Empty when the name exists but currently carries no tags.
-    """
-
-    name: str
-    tags: list[SnapshotNameTag] = field(default_factory=list)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SnapshotName:
-        """Create a SnapshotName from an API response dict."""
-        return cls(
-            name=data.get("name", ""),
-            tags=[SnapshotNameTag.from_dict(tag) for tag in data.get("tags") or []],
-        )
 
 
 # =============================================================================

@@ -1228,7 +1228,7 @@ class TestSnapshotOperations:
         assert snapshot.id == "snap-5"
         assert str(httpx_mock.get_requests()[0].url).endswith("/snapshots/my-env:v2")
 
-    def test_get_snapshot_name_lists_every_tag(
+    def test_list_snapshot_tags_lists_every_tag(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
         httpx_mock.add_response(
@@ -1243,15 +1243,14 @@ class TestSnapshotOperations:
             },
         )
 
-        result = client.get_snapshot_name("my-env")
+        tags = client.list_snapshot_tags("my-env")
 
-        assert result.name == "my-env"
-        assert [(tag.tag, tag.snapshot_id) for tag in result.tags] == [
+        assert [(tag.tag, tag.snapshot_id) for tag in tags] == [
             ("latest", "snap-5"),
             ("v1", "snap-4"),
         ]
 
-    def test_get_snapshot_name_raises_when_nobody_published(
+    def test_list_snapshot_tags_raises_when_nobody_published(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
         httpx_mock.add_response(
@@ -1262,7 +1261,7 @@ class TestSnapshotOperations:
         )
 
         with pytest.raises(ResourceNotFoundError):
-            client.get_snapshot_name("nope")
+            client.list_snapshot_tags("nope")
 
     def test_capture_snapshot_from_docker_image(
         self, client: SandboxClient, httpx_mock: HTTPXMock

@@ -37,7 +37,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     ServiceURL,
     Snapshot,
-    SnapshotName,
+    SnapshotTag,
 )
 from langsmith.sandbox._mounts import (
     SandboxMountConfig,
@@ -1251,17 +1251,17 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
-    def get_snapshot_name(
+    def list_snapshot_tags(
         self, name: str, *, headers: RequestHeaders = None
-    ) -> SnapshotName:
+    ) -> list[SnapshotTag]:
         """List every tag published under a snapshot name.
 
         Args:
             name: Snapshot name, without a tag.
 
         Returns:
-            The name and each tag under it, with the snapshot the tag resolves
-            to. The tag list is empty when the name carries no tags.
+            Each tag under the name with the snapshot it resolves to. Empty when
+            the name exists but currently carries no tags.
 
         Raises:
             ResourceNotFoundError: If nobody has published under the name.
@@ -1272,7 +1272,9 @@ class SandboxClient:
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
-            return SnapshotName.from_dict(response.json())
+            return [
+                SnapshotTag.from_dict(tag) for tag in response.json().get("tags") or []
+            ]
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(

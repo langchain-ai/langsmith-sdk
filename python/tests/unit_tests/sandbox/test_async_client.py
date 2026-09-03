@@ -1118,7 +1118,7 @@ class TestAsyncSnapshotTags:
             "tag": "v2",
         }
 
-    async def test_get_snapshot_name_lists_every_tag(
+    async def test_list_snapshot_tags_lists_every_tag(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
         httpx_mock.add_response(
@@ -1130,11 +1130,9 @@ class TestAsyncSnapshotTags:
             },
         )
 
-        result = await client.get_snapshot_name("my-env")
+        tags = await client.list_snapshot_tags("my-env")
 
-        assert [(tag.tag, tag.snapshot_id) for tag in result.tags] == [
-            ("latest", "snap-3")
-        ]
+        assert [(tag.tag, tag.snapshot_id) for tag in tags] == [("latest", "snap-3")]
 
     async def test_get_snapshot_by_reference_keeps_the_tag_separator(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock

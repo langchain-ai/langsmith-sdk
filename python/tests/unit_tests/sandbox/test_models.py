@@ -10,7 +10,7 @@ from langsmith.sandbox import (
     ResourceStatus,
     ServiceURL,
     Snapshot,
-    SnapshotName,
+    SnapshotTag,
 )
 
 
@@ -113,25 +113,15 @@ class TestSnapshotTags:
         )
         assert snapshot.tags == []
 
-    def test_snapshot_name_lists_each_tags_target(self):
-        result = SnapshotName.from_dict(
-            {
-                "name": "my-env",
-                "tags": [
-                    {"tag": "latest", "snapshot_id": "snap-2"},
-                    {"tag": "v1", "snapshot_id": "snap-1"},
-                ],
-            }
-        )
-        assert result.name == "my-env"
-        assert [(tag.tag, tag.snapshot_id) for tag in result.tags] == [
-            ("latest", "snap-2"),
-            ("v1", "snap-1"),
-        ]
+    def test_snapshot_tag_reads_its_target(self):
+        tag = SnapshotTag.from_dict({"tag": "latest", "snapshot_id": "snap-2"})
+        assert (tag.tag, tag.snapshot_id) == ("latest", "snap-2")
 
-    def test_snapshot_name_without_tags(self):
-        """A name that exists but carries no tags is a real, empty result."""
-        assert SnapshotName.from_dict({"name": "my-env"}).tags == []
+    def test_tags_are_appended_last_so_positional_callers_are_unchanged(self):
+        """Inserting it earlier would silently shift every positional arg after it."""
+        snapshot = Snapshot("snap-1", "my-env", "ready", 4096, "python:3.12-slim")
+        assert snapshot.docker_image == "python:3.12-slim"
+        assert snapshot.tags == []
 
 
 class TestServiceURL:

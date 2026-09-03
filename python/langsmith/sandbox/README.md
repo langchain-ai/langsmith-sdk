@@ -939,8 +939,7 @@ with client.sandbox(snapshot="my-python-env:v2") as box:
     box.run("python --version")
 
 # See every tag published under a name, and what each resolves to
-published = client.get_snapshot_name("my-python-env")
-for tag in published.tags:
+for tag in client.list_snapshot_tags("my-python-env"):
     print(tag.tag, tag.snapshot_id)
 ```
 
@@ -1235,7 +1234,7 @@ except SandboxClientError as e:
 | `create_snapshot(name, docker_image, fs_capacity_bytes, *, tag=None, timeout=60)` | Build a snapshot from a Docker image, published as `name:tag` (default `latest`) |
 | `capture_snapshot(sandbox_name, name, *, tag=None, timeout=60)` | Capture a snapshot from a running sandbox, published as `name:tag` (default `latest`) |
 | `get_snapshot(snapshot_id)` | Get a snapshot by ID, `name:tag`, or a bare name (means `name:latest`) |
-| `get_snapshot_name(name)` | List every tag published under a snapshot name |
+| `list_snapshot_tags(name)` | List every tag published under a snapshot name, with the snapshot each resolves to |
 | `list_snapshots(*, name_contains=None, limit=None, offset=None)` | List a page of snapshots (server paginates, default limit 50, max 500; `name_contains` is a case-insensitive substring match) |
 | `delete_snapshot(snapshot_id)` | Delete a snapshot |
 | `wait_for_snapshot(snapshot_id, *, timeout=300)` | Poll until snapshot is ready or failed |
