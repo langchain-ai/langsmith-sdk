@@ -841,8 +841,8 @@ class TestSandboxRunWs:
             ({}, True),
             ({"wait": False}, True),
             ({"pty": True}, False),
-            ({"close_stdin": False}, False),
-            ({"pty": True, "close_stdin": True}, True),
+            ({"close_input": False}, False),
+            ({"pty": True, "close_input": True}, True),
         ],
     )
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
@@ -863,7 +863,7 @@ class TestSandboxRunWs:
             _WSStreamControl(),
         )
         handle = self._make_sandbox().run("cmd", wait=False)
-        with pytest.raises(ValueError, match="close_stdin=False"):
+        with pytest.raises(ValueError, match="close_input=False"):
             handle.send_input("hi\n")
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
@@ -875,7 +875,7 @@ class TestSandboxRunWs:
             _make_stream([_started_msg(), _exit_msg(0)]),
             control,
         )
-        handle = self._make_sandbox().run("cmd", wait=False, close_stdin=False)
+        handle = self._make_sandbox().run("cmd", wait=False, close_input=False)
 
         handle.send_input("data\n")
         handle.close_input()
@@ -888,7 +888,7 @@ class TestSandboxRunWs:
 
         handle.close_input()  # idempotent
         assert control._ws.send.call_count == 2
-        with pytest.raises(ValueError, match="close_stdin=False"):
+        with pytest.raises(ValueError, match="close_input=False"):
             handle.send_input("more\n")
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
@@ -911,7 +911,7 @@ class TestSandboxRunWs:
             _make_stream([_started_msg(), _exit_msg(0)]),
             control,
         )
-        handle = self._make_sandbox().run("cmd", wait=False, close_stdin=False)
+        handle = self._make_sandbox().run("cmd", wait=False, close_input=False)
         handle.send_input("hi\n")
         control._ws.send.assert_called_once()
 

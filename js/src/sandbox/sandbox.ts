@@ -188,15 +188,15 @@ export class Sandbox {
       killOnDisconnect,
       ttlSeconds,
       pty,
-      closeStdin,
+      closeInput,
       ...restOptions
     } = options;
     const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
 
     // Left open, stdin makes any command that reads it block until the
     // timeout. Only a PTY needs it open by default; a caller that will
-    // sendInput() on a pipe asks for it with closeStdin: false.
-    const resolvedCloseStdin = closeStdin ?? !pty;
+    // sendInput() on a pipe asks for it with closeInput: false.
+    const resolvedCloseInput = closeInput ?? !pty;
 
     if (!wait || hasCallbacks) {
       // WebSocket required for streaming / non-blocking
@@ -206,7 +206,7 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
-        closeStdin: resolvedCloseStdin,
+        closeInput: resolvedCloseInput,
         onStdout,
         onStderr,
       });
@@ -228,7 +228,7 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
-        closeStdin: resolvedCloseStdin,
+        closeInput: resolvedCloseInput,
       });
       return await handle.result;
     }
@@ -263,7 +263,7 @@ export class Sandbox {
       killOnDisconnect,
       ttlSeconds,
       pty,
-      closeStdin,
+      closeInput,
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
@@ -293,7 +293,7 @@ export class Sandbox {
           killOnDisconnect,
           ttlSeconds,
           pty,
-          closeStdin,
+          closeStdin: closeInput,
           openTimeout: openTimeoutFor(deadline),
           ...(Object.keys(clientHeaders).length > 0
             ? { headers: clientHeaders }
@@ -304,7 +304,7 @@ export class Sandbox {
       const handle = new CommandHandle(stream, control, this, {
         onStdout,
         onStderr,
-        stdinClosed: closeStdin,
+        stdinClosed: closeInput,
         pty,
       });
       try {

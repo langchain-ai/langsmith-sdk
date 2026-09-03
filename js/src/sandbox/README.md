@@ -449,11 +449,11 @@ console.log(`Exit code: ${result.exit_code}`);
 ### Sending stdin and killing commands
 
 ```typescript
-// closeStdin: false keeps stdin open; it defaults to true (except with pty),
+// closeInput: false keeps stdin open; it defaults to true (except with pty),
 // so a command that reads stdin sees EOF instead of hanging.
 const handle = await sandbox.run("python -i", {
   wait: false,
-  closeStdin: false,
+  closeInput: false,
 });
 
 // Send input to stdin
@@ -855,7 +855,7 @@ try {
 | `pid` | Process ID on the sandbox |
 | `result` | Final `ExecutionResult` (drains stream if needed) |
 | `kill()` | Send SIGKILL to the running command |
-| `sendInput(data)` | Write string data to the command's stdin. Throws unless the command was run with `closeStdin: false` |
+| `sendInput(data)` | Write string data to the command's stdin. Throws unless the command was run with `closeInput: false` |
 | `closeInput()` | Close stdin so the command reads EOF. Call once done sending input; throws under `pty` |
 | `reconnect()` | Reconnect from the last known offsets |
 | `lastStdoutOffset` | Last stdout byte offset (for manual reconnection) |

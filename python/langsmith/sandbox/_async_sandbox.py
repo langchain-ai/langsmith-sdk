@@ -231,7 +231,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
         pty: bool = ...,
-        close_stdin: Optional[bool] = ...,
+        close_input: Optional[bool] = ...,
         headers: RequestHeaders = ...,
         wait: Literal[True] = ...,
     ) -> ExecutionResult: ...
@@ -251,7 +251,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
         pty: bool = ...,
-        close_stdin: Optional[bool] = ...,
+        close_input: Optional[bool] = ...,
         headers: RequestHeaders = ...,
         wait: Literal[False],
     ) -> AsyncCommandHandle: ...
@@ -270,7 +270,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
         pty: bool = False,
-        close_stdin: Optional[bool] = None,
+        close_input: Optional[bool] = None,
         headers: RequestHeaders = None,
         wait: bool = True,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
@@ -302,7 +302,7 @@ class AsyncSandbox:
                 Useful for commands that require a TTY (e.g., interactive
                 programs, commands that use terminal control codes).
                 Defaults to False.
-            close_stdin: Close the command's stdin so a command that reads it
+            close_input: Close the command's stdin so a command that reads it
                 sees EOF instead of blocking on a pipe nothing writes to.
                 Defaults to True unless pty=True. Pass False to keep stdin
                 open for send_input(); calling send_input() on a handle whose
@@ -337,8 +337,8 @@ class AsyncSandbox:
 
         # Left open, stdin makes any command that reads it block until the
         # timeout. Only a PTY needs it open by default; a caller that will
-        # send_input() on a pipe asks for it with close_stdin=False.
-        resolved_close_stdin = (not pty) if close_stdin is None else close_stdin
+        # send_input() on a pipe asks for it with close_input=False.
+        resolved_close_input = (not pty) if close_input is None else close_input
 
         use_ws = not wait or on_stdout or on_stderr
         if use_ws:
@@ -355,7 +355,7 @@ class AsyncSandbox:
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
                 pty=pty,
-                close_stdin=resolved_close_stdin,
+                close_input=resolved_close_input,
                 headers=headers,
             )
 
@@ -375,7 +375,7 @@ class AsyncSandbox:
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
                 pty=pty,
-                close_stdin=resolved_close_stdin,
+                close_input=resolved_close_input,
                 headers=headers,
             )
         return await self._run_http(
@@ -402,7 +402,7 @@ class AsyncSandbox:
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
         pty: bool = False,
-        close_stdin: bool = False,
+        close_input: bool = False,
         headers: RequestHeaders = None,
     ) -> Union[ExecutionResult, AsyncCommandHandle]:
         """Execute via WebSocket /execute/ws."""
@@ -430,7 +430,7 @@ class AsyncSandbox:
             "kill_on_disconnect": kill_on_disconnect,
             "ttl_seconds": ttl_seconds,
             "pty": pty,
-            "close_stdin": close_stdin,
+            "close_stdin": close_input,
         }
         merged = self._client._ws_default_headers(headers)
         if merged:
@@ -452,7 +452,7 @@ class AsyncSandbox:
                 self,
                 on_stdout=on_stdout,
                 on_stderr=on_stderr,
-                stdin_closed=close_stdin,
+                stdin_closed=close_input,
                 pty=pty,
             )
             try:

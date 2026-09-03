@@ -448,13 +448,13 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 
 ```python
 with client.sandbox(snapshot_id=snapshot_id) as sb:
-    # close_stdin=False keeps stdin open; it defaults to True (except with
+    # close_input=False keeps stdin open; it defaults to True (except with
     # pty), so a command that reads stdin sees EOF instead of hanging.
     handle = sb.run(
         "python -c 'name = input(\"Name: \"); print(f\"Hello {name}\")'",
         timeout=30,
         wait=False,
-        close_stdin=False,
+        close_input=False,
     )
 
     for chunk in handle:
@@ -1270,7 +1270,7 @@ Returned by `sb.run(wait=False)`. Iterable, yielding `OutputChunk` objects.
 | `pid` | Process ID on the sandbox |
 | `result` | Final `ExecutionResult` (blocks until complete) |
 | `kill()` | Send SIGKILL to the running command |
-| `send_input(data)` | Write string data to the command's stdin. Raises unless the command was run with `close_stdin=False` |
+| `send_input(data)` | Write string data to the command's stdin. Raises unless the command was run with `close_input=False` |
 | `close_input()` | Close stdin so the command reads EOF. Call once done sending input; raises under `pty` |
 | `reconnect()` | Reconnect from last known offsets |
 

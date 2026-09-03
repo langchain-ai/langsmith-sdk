@@ -263,7 +263,7 @@ export interface RunOptions {
    * handle whose stdin was closed throws. Ignored by sandboxes older than this
    * option.
    */
-  closeStdin?: boolean;
+  closeInput?: boolean;
 }
 
 /**

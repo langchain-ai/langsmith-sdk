@@ -309,7 +309,7 @@ export class CommandHandle {
   sendInput(data: string): void {
     if (this._stdinClosed) {
       throw new Error(
-        "stdin was closed for this command. Pass closeStdin: false to run() " +
+        "stdin was closed for this command. Pass closeInput: false to run() " +
           "to keep it open for sendInput().",
       );
     }

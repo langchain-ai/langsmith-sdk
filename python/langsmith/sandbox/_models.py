@@ -753,7 +753,7 @@ class CommandHandle:
     def _require_open_stdin(self) -> None:
         if self._stdin_closed:
             raise ValueError(
-                "stdin was closed for this command. Pass close_stdin=False to "
+                "stdin was closed for this command. Pass close_input=False to "
                 "run() to keep it open for send_input()."
             )
 
@@ -1041,7 +1041,7 @@ class AsyncCommandHandle:
     def _require_open_stdin(self) -> None:
         if self._stdin_closed:
             raise ValueError(
-                "stdin was closed for this command. Pass close_stdin=False to "
+                "stdin was closed for this command. Pass close_input=False to "
                 "run() to keep it open for send_input()."
             )
 

@@ -1950,7 +1950,7 @@ describe("CommandHandle", () => {
         { type: "input", data: "data\n" },
         { type: "close_stdin" },
       ]);
-      expect(() => handle.sendInput("more\n")).toThrow(/closeStdin: false/);
+      expect(() => handle.sendInput("more\n")).toThrow(/closeInput: false/);
     });
 
     it("should throw from closeInput under a PTY", () => {
@@ -1971,7 +1971,7 @@ describe("CommandHandle", () => {
       });
 
       expect(() => handle.sendInput("test input")).toThrow(
-        /closeStdin: false/,
+        /closeInput: false/,
       );
     });
   });
