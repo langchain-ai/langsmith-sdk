@@ -88,10 +88,11 @@ class ShareResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ShareRetrieveResponse:
-        """Returns the share token for a thread, or 404 when it is not shared.
+        """Returns the share token for a thread.
 
-        Gated on
-        runs:share so the control's state matches the control's permission.
+        The token is omitted when the thread is
+        not shared. Gated on runs:share so the control's state matches the control's
+        permission.
 
         Args:
           project_id: Project UUID
@@ -229,10 +230,11 @@ class AsyncShareResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ShareRetrieveResponse:
-        """Returns the share token for a thread, or 404 when it is not shared.
+        """Returns the share token for a thread.
 
-        Gated on
-        runs:share so the control's state matches the control's permission.
+        The token is omitted when the thread is
+        not shared. Gated on runs:share so the control's state matches the control's
+        permission.
 
         Args:
           project_id: Project UUID
