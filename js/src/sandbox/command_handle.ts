@@ -326,7 +326,7 @@ export class CommandHandle {
    *
    * @throws If the command was run with a PTY.
    */
-  closeStdin(): void {
+  closeInput(): void {
     if (this._pty) {
       throw new Error(
         "a PTY command has no separate stdin to close. Send an EOT byte " +

@@ -459,7 +459,7 @@ const handle = await sandbox.run("python -i", {
 // Send input to stdin
 handle.sendInput("print(2 + 2)\n");
 handle.sendInput("exit()\n");
-handle.closeStdin(); // done sending: the command now reads EOF
+handle.closeInput(); // done sending: the command now reads EOF
 
 for await (const chunk of handle) {
   process.stdout.write(chunk.data);
@@ -856,7 +856,7 @@ try {
 | `result` | Final `ExecutionResult` (drains stream if needed) |
 | `kill()` | Send SIGKILL to the running command |
 | `sendInput(data)` | Write string data to the command's stdin. Throws unless the command was run with `closeStdin: false` |
-| `closeStdin()` | Close stdin so the command reads EOF. Call once done sending input; throws under `pty` |
+| `closeInput()` | Close stdin so the command reads EOF. Call once done sending input; throws under `pty` |
 | `reconnect()` | Reconnect from the last known offsets |
 | `lastStdoutOffset` | Last stdout byte offset (for manual reconnection) |
 | `lastStderrOffset` | Last stderr byte offset (for manual reconnection) |

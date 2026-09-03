@@ -1943,8 +1943,8 @@ describe("CommandHandle", () => {
       });
 
       handle.sendInput("data\n");
-      handle.closeStdin();
-      handle.closeStdin();
+      handle.closeInput();
+      handle.closeInput();
 
       expect(ws.send.mock.calls.map((c: any) => JSON.parse(c[0]))).toEqual([
         { type: "input", data: "data\n" },
@@ -1953,14 +1953,14 @@ describe("CommandHandle", () => {
       expect(() => handle.sendInput("more\n")).toThrow(/closeStdin: false/);
     });
 
-    it("should throw from closeStdin under a PTY", () => {
+    it("should throw from closeInput under a PTY", () => {
       const stream = createMockStream([]);
       const handle = new CommandHandle(stream, null, createMockSandbox(), {
         commandId: "cmd-123",
         pty: true,
       });
 
-      expect(() => handle.closeStdin()).toThrow(/EOT/);
+      expect(() => handle.closeInput()).toThrow(/EOT/);
     });
 
     it("should throw when the command was run with stdin closed", () => {

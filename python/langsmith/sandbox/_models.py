@@ -780,7 +780,7 @@ class CommandHandle:
         if self._control:
             self._control.send_input(data)
 
-    def close_stdin(self) -> None:
+    def close_input(self) -> None:
         """Close the command's stdin so a command reading it sees EOF.
 
         Call this once done sending input. Idempotent. Afterwards send_input()
@@ -1062,7 +1062,7 @@ class AsyncCommandHandle:
         if self._control:
             await self._control.send_input(data)
 
-    async def close_stdin(self) -> None:
+    async def close_input(self) -> None:
         """Close the command's stdin so a command reading it sees EOF.
 
         Call this once done sending input. Idempotent. Afterwards send_input()
