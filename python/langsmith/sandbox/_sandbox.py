@@ -226,6 +226,7 @@ class Sandbox:
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
         pty: bool = ...,
+        close_input: Optional[bool] = ...,
         headers: RequestHeaders = ...,
         wait: Literal[True] = ...,
     ) -> ExecutionResult: ...
@@ -245,6 +246,7 @@ class Sandbox:
         kill_on_disconnect: bool = ...,
         ttl_seconds: int = ...,
         pty: bool = ...,
+        close_input: Optional[bool] = ...,
         headers: RequestHeaders = ...,
         wait: Literal[False],
     ) -> CommandHandle: ...
@@ -263,6 +265,7 @@ class Sandbox:
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
         pty: bool = False,
+        close_input: Optional[bool] = None,
         headers: RequestHeaders = None,
         wait: bool = True,
     ) -> Union[ExecutionResult, CommandHandle]:
@@ -294,6 +297,12 @@ class Sandbox:
                 Useful for commands that require a TTY (e.g., interactive
                 programs, commands that use terminal control codes).
                 Defaults to False.
+            close_input: Close the command's stdin so a command that reads it
+                sees EOF instead of blocking on a pipe nothing writes to.
+                Defaults to True unless pty=True. Pass False to keep stdin
+                open for send_input(); calling send_input() on a handle whose
+                stdin was closed raises ValueError. Ignored by sandboxes older
+                than this option.
             wait: If True (default), block until the command completes and
                 return ExecutionResult. If False, return a
                 CommandHandle immediately for streaming output,
@@ -321,6 +330,11 @@ class Sandbox:
 
         self._require_dataplane_url()
 
+        # Left open, stdin makes any command that reads it block until the
+        # timeout. Only a PTY needs it open by default; a caller that will
+        # send_input() on a pipe asks for it with close_input=False.
+        resolved_close_input = (not pty) if close_input is None else close_input
+
         # When not waiting or callbacks are requested, WS is required
         use_ws = not wait or on_stdout or on_stderr
         if use_ws:
@@ -337,6 +351,7 @@ class Sandbox:
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
                 pty=pty,
+                close_input=resolved_close_input,
                 headers=headers,
             )
 
@@ -356,6 +371,7 @@ class Sandbox:
                 kill_on_disconnect=kill_on_disconnect,
                 ttl_seconds=ttl_seconds,
                 pty=pty,
+                close_input=resolved_close_input,
                 headers=headers,
             )
         return self._run_http(
@@ -382,6 +398,7 @@ class Sandbox:
         kill_on_disconnect: bool = False,
         ttl_seconds: int = 600,
         pty: bool = False,
+        close_input: bool = False,
         headers: RequestHeaders = None,
     ) -> Union[ExecutionResult, CommandHandle]:
         """Execute via WebSocket /execute/ws."""
@@ -409,6 +426,7 @@ class Sandbox:
             "kill_on_disconnect": kill_on_disconnect,
             "ttl_seconds": ttl_seconds,
             "pty": pty,
+            "close_stdin": close_input,
         }
         merged = self._client._ws_default_headers(headers)
         if merged:
@@ -431,6 +449,8 @@ class Sandbox:
                     self,
                     on_stdout=on_stdout,
                     on_stderr=on_stderr,
+                    stdin_closed=close_input,
+                    pty=pty,
                 )
                 break
             except (

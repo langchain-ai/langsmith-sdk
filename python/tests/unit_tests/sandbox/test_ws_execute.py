@@ -831,8 +831,89 @@ class TestSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected"),
+        [
+            ({}, True),
+            ({"wait": False}, True),
+            ({"pty": True}, False),
+            ({"close_input": False}, False),
+            ({"pty": True, "close_input": True}, True),
+        ],
+    )
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_close_stdin_default(self, mock_run_ws, kwargs, expected):
+        """stdin is closed unless a PTY is requested or the caller opts out."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        self._make_sandbox().run("cmd", **kwargs)
+        assert mock_run_ws.call_args.kwargs["close_stdin"] is expected
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_send_input_rejected_when_stdin_closed(self, mock_run_ws):
+        """send_input() on a closed-stdin handle points at the fix."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        handle = self._make_sandbox().run("cmd", wait=False)
+        with pytest.raises(ValueError, match="close_input=False"):
+            handle.send_input("hi\n")
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_close_input_after_sending_input(self, mock_run_ws):
+        """Input then EOF: close_input() sends the message and locks the door."""
+        control = _WSStreamControl()
+        control._ws = MagicMock()
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            control,
+        )
+        handle = self._make_sandbox().run("cmd", wait=False, close_input=False)
+
+        handle.send_input("data\n")
+        handle.close_input()
+
+        sent = [json.loads(c.args[0]) for c in control._ws.send.call_args_list]
+        assert sent == [
+            {"type": "input", "data": "data\n"},
+            {"type": "close_stdin"},
+        ]
+
+        handle.close_input()  # idempotent
+        assert control._ws.send.call_count == 2
+        with pytest.raises(ValueError, match="close_input=False"):
+            handle.send_input("more\n")
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_close_input_rejected_under_pty(self, mock_run_ws):
+        """A PTY has no separate stdin; the error says to send EOT."""
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            _WSStreamControl(),
+        )
+        handle = self._make_sandbox().run("cmd", wait=False, pty=True)
+        with pytest.raises(ValueError, match=r"EOT"):
+            handle.close_input()
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_send_input_allowed_when_stdin_open(self, mock_run_ws):
+        """Opting out keeps send_input() working."""
+        control = _WSStreamControl()
+        control._ws = MagicMock()
+        mock_run_ws.return_value = (
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            control,
+        )
+        handle = self._make_sandbox().run("cmd", wait=False, close_input=False)
+        handle.send_input("hi\n")
+        control._ws.send.assert_called_once()
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
     def test_run_forwards_client_default_headers(self, mock_run_ws):

@@ -166,6 +166,11 @@ class _WSStreamControl:
         if self._ws and not self._closed:
             self._ws.send(json.dumps({"type": "input", "data": data}))
 
+    def send_close_stdin(self) -> None:
+        """Ask the server to close the command's stdin, so it reads EOF."""
+        if self._ws and not self._closed:
+            self._ws.send(json.dumps({"type": "close_stdin"}))
+
 
 class _AsyncWSStreamControl:
     """Async equivalent of _WSStreamControl."""
@@ -202,6 +207,11 @@ class _AsyncWSStreamControl:
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
             await self._ws.send(json.dumps({"type": "input", "data": data}))
+
+    async def send_close_stdin(self) -> None:
+        """Ask the server to close the command's stdin, so it reads EOF."""
+        if self._ws and not self._closed:
+            await self._ws.send(json.dumps({"type": "close_stdin"}))
 
 
 # =============================================================================
@@ -322,6 +332,7 @@ def run_ws_stream(
     kill_on_disconnect: bool = False,
     ttl_seconds: int = 600,
     pty: bool = False,
+    close_stdin: bool = False,
     headers: Optional[Mapping[str, str]] = None,
     open_timeout: Optional[float] = WS_OPEN_TIMEOUT,
 ) -> tuple[Iterator[dict], _WSStreamControl]:
@@ -374,6 +385,8 @@ def run_ws_stream(
                     payload["cwd"] = cwd
                 if pty:
                     payload["pty"] = True
+                if close_stdin:
+                    payload["close_stdin"] = True
                 ws.send(json.dumps(payload))
 
                 # Read messages until exit or error
@@ -529,6 +542,7 @@ async def run_ws_stream_async(
     kill_on_disconnect: bool = False,
     ttl_seconds: int = 600,
     pty: bool = False,
+    close_stdin: bool = False,
     headers: Optional[Mapping[str, str]] = None,
     open_timeout: Optional[float] = WS_OPEN_TIMEOUT,
 ) -> tuple[AsyncIterator[dict], _AsyncWSStreamControl]:
@@ -570,6 +584,8 @@ async def run_ws_stream_async(
                     payload["cwd"] = cwd
                 if pty:
                     payload["pty"] = True
+                if close_stdin:
+                    payload["close_stdin"] = True
                 await ws.send(json.dumps(payload))
 
                 async for raw_msg in ws:

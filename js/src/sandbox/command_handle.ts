@@ -82,6 +82,8 @@ export class CommandHandle {
   private _reconnectAttempts = 0;
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
+  private _stdinClosed: boolean;
+  private _pty: boolean;
 
   /** @internal */
   constructor(
@@ -94,6 +96,8 @@ export class CommandHandle {
       stderrOffset?: number;
       onStdout?: (data: string) => void;
       onStderr?: (data: string) => void;
+      stdinClosed?: boolean;
+      pty?: boolean;
     },
   ) {
     this._stream = messageStream;
@@ -103,6 +107,8 @@ export class CommandHandle {
     this._lastStderrOffset = options?.stderrOffset ?? 0;
     this._onStdout = options?.onStdout;
     this._onStderr = options?.onStderr;
+    this._stdinClosed = options?.stdinClosed ?? false;
+    this._pty = options?.pty ?? false;
 
     // New executions (no commandId): _ensureStarted reads "started".
     // Reconnections (commandId set): skip since reconnect streams
@@ -297,10 +303,40 @@ export class CommandHandle {
 
   /**
    * Write data to the command's stdin.
+   *
+   * @throws If the command was run with stdin closed.
    */
   sendInput(data: string): void {
+    if (this._stdinClosed) {
+      throw new Error(
+        "stdin was closed for this command. Pass closeInput: false to run() " +
+          "to keep it open for sendInput().",
+      );
+    }
     if (this._control) {
       this._control.sendInput(data);
+    }
+  }
+
+  /**
+   * Close the command's stdin so a command reading it sees EOF.
+   *
+   * Call this once done sending input. Idempotent. Afterwards `sendInput()`
+   * throws.
+   *
+   * @throws If the command was run with a PTY.
+   */
+  closeInput(): void {
+    if (this._pty) {
+      throw new Error(
+        "a PTY command has no separate stdin to close. Send an EOT byte " +
+          "(\u0004) with sendInput() to signal EOF instead.",
+      );
+    }
+    if (this._stdinClosed) return;
+    this._stdinClosed = true;
+    if (this._control) {
+      this._control.sendCloseStdin();
     }
   }
 

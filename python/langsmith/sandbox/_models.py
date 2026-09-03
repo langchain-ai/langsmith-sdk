@@ -569,12 +569,16 @@ class CommandHandle:
         stderr_offset: int = 0,
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
+        stdin_closed: bool = False,
+        pty: bool = False,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
+        self._stdin_closed = stdin_closed
+        self._pty = pty
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -745,17 +749,51 @@ class CommandHandle:
         if self._control:
             self._control.send_kill()
 
+    def _require_open_stdin(self) -> None:
+        if self._stdin_closed:
+            raise ValueError(
+                "stdin was closed for this command. Pass close_input=False to "
+                "run() to keep it open for send_input()."
+            )
+
+    def _require_closable_stdin(self) -> None:
+        if self._pty:
+            raise ValueError(
+                "a PTY command has no separate stdin to close. Send an EOT "
+                "byte (\\x04) with send_input() to signal EOF instead."
+            )
+
     def send_input(self, data: str) -> None:
         """Write data to the command's stdin.
 
         Args:
             data: String data to write to stdin.
 
+        Raises:
+            ValueError: If the command was run with stdin closed.
+
         Has no effect if the command has already exited or the
         WebSocket connection is closed.
         """
+        self._require_open_stdin()
         if self._control:
             self._control.send_input(data)
+
+    def close_input(self) -> None:
+        """Close the command's stdin so a command reading it sees EOF.
+
+        Call this once done sending input. Idempotent. Afterwards send_input()
+        raises.
+
+        Raises:
+            ValueError: If the command was run with a PTY.
+        """
+        self._require_closable_stdin()
+        if self._stdin_closed:
+            return
+        self._stdin_closed = True
+        if self._control:
+            self._control.send_close_stdin()
 
     @property
     def last_stdout_offset(self) -> int:
@@ -837,12 +875,16 @@ class AsyncCommandHandle:
         stderr_offset: int = 0,
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
+        stdin_closed: bool = False,
+        pty: bool = False,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
+        self._stdin_closed = stdin_closed
+        self._pty = pty
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -995,10 +1037,45 @@ class AsyncCommandHandle:
         if self._control:
             await self._control.send_kill()
 
+    def _require_open_stdin(self) -> None:
+        if self._stdin_closed:
+            raise ValueError(
+                "stdin was closed for this command. Pass close_input=False to "
+                "run() to keep it open for send_input()."
+            )
+
+    def _require_closable_stdin(self) -> None:
+        if self._pty:
+            raise ValueError(
+                "a PTY command has no separate stdin to close. Send an EOT "
+                "byte (\\x04) with send_input() to signal EOF instead."
+            )
+
     async def send_input(self, data: str) -> None:
-        """Write data to the command's stdin."""
+        """Write data to the command's stdin.
+
+        Raises:
+            ValueError: If the command was run with stdin closed.
+        """
+        self._require_open_stdin()
         if self._control:
             await self._control.send_input(data)
+
+    async def close_input(self) -> None:
+        """Close the command's stdin so a command reading it sees EOF.
+
+        Call this once done sending input. Idempotent. Afterwards send_input()
+        raises.
+
+        Raises:
+            ValueError: If the command was run with a PTY.
+        """
+        self._require_closable_stdin()
+        if self._stdin_closed:
+            return
+        self._stdin_closed = True
+        if self._control:
+            await self._control.send_close_stdin()
 
     @property
     def last_stdout_offset(self) -> int:
