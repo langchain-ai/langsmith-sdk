@@ -1,7 +1,7 @@
-import asyncio
 import contextlib
 import contextvars
 import functools
+import inspect
 import warnings
 from collections.abc import Iterator
 from typing import Any, Callable
@@ -67,7 +67,7 @@ def deprecated(message: str) -> Callable:
     """
 
     def decorator(func: Callable) -> Callable:
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
