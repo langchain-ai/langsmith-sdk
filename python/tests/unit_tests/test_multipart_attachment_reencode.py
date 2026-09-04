@@ -23,6 +23,7 @@ from unittest import mock
 
 import pytest
 import urllib3
+from requests_toolbelt import multipart as rqtb_multipart
 
 from langsmith import utils as ls_utils
 from langsmith._internal._constants import _BOUNDARY
@@ -294,3 +295,35 @@ def test_rewindable_body_replays_byte_for_byte(attachment_batch):
 
     with pytest.raises(OSError):
         body.seek(1)
+
+
+def test_rewindable_body_encodes_once_per_send(attachment_batch, monkeypatch):
+    """A fresh body must not re-encode: rewinding is only for an actual resend.
+
+    Encoding walks every part, renders its headers and re-reads every
+    file-backed part from disk. ``to_bytes()`` used to rewind unconditionally,
+    throwing away the encoder built in ``__init__`` and paying that walk twice
+    on the first send of every batch.
+    """
+    encoder_cls = rqtb_multipart.MultipartEncoder
+    built = []
+    original_init = encoder_cls.__init__
+
+    def counting_init(self, *args, **kwargs):
+        built.append(self)
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(encoder_cls, "__init__", counting_init)
+
+    parts = attachment_batch().parts
+    body = RewindableMultipartBody(parts, _BOUNDARY)
+    assert len(built) == 1, "constructing the body must encode exactly once"
+
+    first = body.to_bytes()
+    assert len(built) == 1, "a virgin encoder must be reused, not rebuilt"
+    assert ATTACHMENT in first
+
+    # Drained body: now a re-encode is required for the replay to be complete.
+    replay = body.to_bytes()
+    assert len(built) == 2
+    assert replay == first

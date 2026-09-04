@@ -84,9 +84,13 @@ class RewindableMultipartBody:
     def to_bytes(self) -> bytes:
         """Materialize the whole body; the result is inherently replayable.
 
-        Rewinds first, so this is correct even after the body has been read.
+        Rewinds first when the current encoder has already been drained, so this
+        is correct even after the body has been read. A virgin encoder is used
+        as-is: re-encoding it would double the per-request encoding cost, which
+        is the dominant term for a batch of runs.
         """
-        self.seek(0)
+        if self._pos:
+            self.seek(0)
         body = self._encoder.to_string()
         self._pos = self._total
         return body
