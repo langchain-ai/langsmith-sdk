@@ -4,9 +4,9 @@ This is the executable spec for *what gets retried and how many times* when
 ``POST /runs/multipart`` fails. Two independent layers decide that:
 
 1. urllib3 ``Retry`` mounted on the session adapter (``_default_retry_config``):
-   ``status_forcelist=[502, 503, 504, 408, 425]`` plus a second, easy-to-miss
-   trigger -- ``respect_retry_after_header`` makes 413/429/503 retryable *only*
-   when the response actually carries a ``Retry-After`` header.
+   ``status_forcelist=[429, 500, 502, 503, 504, 408, 425]`` plus a second,
+   easy-to-miss trigger -- ``respect_retry_after_header`` makes 413 retryable
+   *only* when the response actually carries a ``Retry-After`` header.
 2. The ``for idx in range(1, attempts + 1)`` loop in ``_send_multipart_req``,
    which retries only ``LangSmithConnectionError`` / ``LangSmithRequestTimeout``
    / ``LangSmithAPIError`` (500) and swallows everything else.
@@ -77,7 +77,11 @@ def endpoint(socket_enabled):
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # poll_interval bounds how long shutdown() blocks. The 0.5s default would
+    # dominate this file's runtime; 0 would work too but busy-spins.
+    threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.001}, daemon=True
+    ).start()
     ep.url = f"http://127.0.0.1:{server.server_address[1]}"
     yield ep
     server.shutdown()
@@ -151,29 +155,18 @@ RETRY_MATRIX = [
     (200, None, 1, "none"),
     # 409 is treated as a duplicate/no-op and breaks immediately.
     (409, None, 1, "none"),
-    # Only *exactly* 500 maps to LangSmithAPIError -> app-layer loop (3 attempts).
-    (500, None, 3, "app loop"),
+    # In both retry layers, 500 maps to LangSmithAPIError, so urllib3's 4
+    # requests run once per app attempt (3 attempts).
+    (500, None, 12, "urllib3 + app loop"),
     # In status_forcelist -> urllib3 retries 3x, app loop then gives up.
     (502, None, 4, "urllib3"),
     (503, None, 4, "urllib3"),
     (504, None, 4, "urllib3"),
     (425, None, 4, "urllib3"),
-    # 408 is the only status in BOTH layers: 4 requests x 3 app attempts.
+    # Likewise 408 -> LangSmithRequestTimeout.
     (408, None, 12, "urllib3 + app loop"),
-    # 429 is NOT in status_forcelist, but IS in Retry.RETRY_AFTER_STATUS_CODES,
-    # so the header alone decides whether it is retried at all.
-    #
-    # TODO: a 429 with no Retry-After is dropped after a single attempt. Neither
-    # the smith-go /runs/multipart route (no ratelimit middleware on the chi
-    # router) nor the load balancer sets Retry-After, so in practice rate-limited
-    # ingest traffic is thrown away rather than backed off. Fix by adding 429 to
-    # `status_forcelist` in `_default_retry_config` so it is retried with the
-    # normal backoff when the header is absent, and/or by making the server send
-    # Retry-After. When that lands, the (429, None) row below becomes 4 and this
-    # test will fail loudly -- update the row, don't delete it.
-    (429, 1, 4, "urllib3 (Retry-After only)"),
-    (429, None, 1, "none"),
-    # Same conditional mechanism applies to 413.
+    (429, 1, 4, "urllib3 (Retry-After delay)"),
+    (429, None, 4, "urllib3 (backoff_factor delay)"),
     (413, 1, 4, "urllib3 (Retry-After only)"),
     (413, None, 1, "none"),
     # Plain client errors are never retried.
@@ -208,10 +201,8 @@ def test_multipart_retry_counts(
 def test_retry_after_header_value_drives_the_delay(endpoint, no_sleep):
     """429 retries honour Retry-After, not ``backoff_factor``.
 
-    The (429, ...) rows in RETRY_MATRIX already pin *whether* the header enables
-    retries at all -- 1 request without it, 4 with. This covers the part a
-    request count cannot see: the delay comes from the header (2s), not from
-    ``backoff_factor=0.5``.
+    Both (429, ...) rows in RETRY_MATRIX are 4 requests, so the counts no longer
+    distinguish them. The delay does.
     """
     endpoint.status = 429
     endpoint.retry_after = 2
@@ -222,21 +213,23 @@ def test_retry_after_header_value_drives_the_delay(endpoint, no_sleep):
     assert no_sleep.call_args_list, (
         "429 carrying Retry-After was not retried at all, so no backoff happened"
     )
-    assert no_sleep.call_args_list[-1].args[0] == pytest.approx(2, abs=0.01)
+    assert [c.args[0] for c in no_sleep.call_args_list] == [
+        pytest.approx(2, abs=0.01)
+    ] * 3
 
 
 def test_app_loop_does_not_back_off(endpoint, no_sleep):
-    """The 3 app-layer attempts for a 500 fire back-to-back with no delay.
-
-    500 is not in the forcelist, so urllib3 never sleeps; the app loop is a bare
-    `continue`. Zero sleeps for the three requests RETRY_MATRIX already counts.
-    """
+    """The app loop itself never sleeps -- every delay comes from urllib3."""
     endpoint.status = 500
     client = _client(endpoint)
 
     client._send_multipart_req(_one_run_payload())
 
-    assert no_sleep.call_count == 0
+    # 3 app attempts x urllib3's ramp; no sleep before the first retry of each.
+    assert [c.args[0] for c in no_sleep.call_args_list] == [
+        pytest.approx(1, abs=0.01),
+        pytest.approx(2, abs=0.01),
+    ] * 3
 
 
 @pytest.mark.parametrize(
@@ -297,8 +290,9 @@ def test_no_failed_traces_dir_means_silent_data_loss(endpoint, no_sleep, monkeyp
 def _only_warning(caplog):
     """Return the single warning emitted for a dropped batch.
 
-    Asserting the count here covers every caller: retries are silent, so three
-    POSTs for a 500 still produce exactly one warning, not one per attempt.
+    Asserting the count here covers every caller: retries are silent, so the
+    twelve POSTs for a 500 still produce exactly one warning, not one per
+    attempt.
     """
     msgs = [
         r.getMessage()
@@ -334,7 +328,7 @@ def test_warning_message_when_retries_exhausted(endpoint, no_sleep, caplog):
 
 
 def test_warning_message_when_not_retryable(endpoint, no_sleep, caplog):
-    """Exact message for a non-retryable failure (429 with no Retry-After).
+    """Exact message for a failure the *app loop* will not retry (429).
 
     Note this path formats the exception differently from the exhausted-retry
     path above: it goes through ``traceback.format_exception_only``, so the

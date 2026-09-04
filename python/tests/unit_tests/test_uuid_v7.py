@@ -149,6 +149,13 @@ def test_uuid7_deterministic_produces_expected_values() -> None:
             "key": "test",
             "expected": UUID("01900000-0000-7132-8131-f80e352488a3"),
         },
+        {
+            # Non-UUIDv7 original: no timestamp to preserve, so all 122 derived
+            # bits come from the hash. The other cases only cover the v7 branch.
+            "input": UUID("00000000-0000-4000-8000-000000000000"),
+            "key": "some-project",
+            "expected": UUID("a9457421-4152-7a3c-9bd5-db046e6cb943"),
+        },
     ]
 
     for test_case in test_cases:
@@ -181,7 +188,12 @@ def test_uuid7_deterministic() -> None:
 
 
 def test_uuid7_deterministic_timestamp_handling() -> None:
-    """Test timestamp is preserved from UUID7, fresh for non-UUID7."""
+    """Timestamp preserved from a UUID7 original, hash-derived otherwise.
+
+    A non-UUID7 original carries no timestamp to preserve. The field is filled
+    from the hash rather than the clock, keeping the function pure -- it is
+    called repeatedly for the same id and every call must agree.
+    """
     import time
     import uuid as uuid_module
 
@@ -190,10 +202,10 @@ def test_uuid7_deterministic_timestamp_handling() -> None:
     derived_v7 = uuid7_deterministic(original_v7, "key")
     assert _uuid_v7_ms(derived_v7) == _uuid_v7_ms(original_v7)
 
-    # UUID4 input: gets fresh timestamp
-    before_ms = time.time_ns() // 1_000_000
-    derived_v4 = uuid7_deterministic(uuid_module.uuid4(), "key")
-    after_ms = time.time_ns() // 1_000_000
+    # UUID4 input: still a valid v7, and independent of when it was derived
+    original_v4 = uuid_module.uuid4()
+    derived_v4 = uuid7_deterministic(original_v4, "key")
+    time.sleep(0.01)
 
     assert derived_v4.version == 7
-    assert before_ms <= _uuid_v7_ms(derived_v4) <= after_ms
+    assert uuid7_deterministic(original_v4, "key") == derived_v4

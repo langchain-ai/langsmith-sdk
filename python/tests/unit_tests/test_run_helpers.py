@@ -37,6 +37,7 @@ from langsmith.run_helpers import (
     _cached_attachment_args,
     _get_inputs,
     _get_inputs_and_attachments_safe,
+    _processing_failed,
     as_runnable,
     get_current_run_tree,
     is_traceable_function,
@@ -441,6 +442,122 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
             body_2 = parse_request_data(mock_calls[1].kwargs["data"])
             assert body_2["patch"]
             assert body_2["patch"][0]["outputs"]["output"] == expected
+
+
+def test_process_inputs_failure_drops_inputs(mock_client: Client) -> None:
+    """A failing ``process_inputs`` uploads a marker, never the raw inputs."""
+    secret = "super-secret-value"
+
+    def failing_redactor(inputs: dict) -> dict:
+        raise ValueError(f"redactor boom on {inputs}")  # echoes the secret
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_inputs=failing_redactor)
+        def login(username: str, password: str) -> str:
+            return f"Welcome, {username}"
+
+        result = login("user1", secret)
+
+    # The user's function is unaffected by the tracing failure.
+    assert result == "Welcome, user1"
+
+    datas = _get_data(_get_calls(mock_client))
+    payloads = [p for _, p in datas]
+    assert payloads, "the run must still be traced"
+    # Fail closed: no cleartext reaches LangSmith, not even via the error text.
+    assert secret not in json.dumps(payloads, default=str)
+    # ...and the gap is explicit rather than silent.
+    assert any(
+        p.get("inputs", {}).get("ls_error")
+        == _processing_failed("inputs", ValueError())
+        for p in payloads
+    ), f"expected the inputs marker, got {[p.get('inputs') for p in payloads]}"
+
+
+def test_process_outputs_failure_drops_outputs(mock_client: Client) -> None:
+    """A failing ``process_outputs`` uploads a marker, never the raw outputs."""
+    secret = "token=super-secret-value"
+
+    def failing_redactor(outputs: Any) -> dict:
+        raise ValueError(f"redactor boom on {outputs}")  # echoes the secret
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_outputs=failing_redactor)
+        def make_token(user: str) -> str:
+            return secret
+
+        result = make_token("user1")
+
+    assert result == secret
+
+    datas = _get_data(_get_calls(mock_client))
+    payloads = [p for _, p in datas]
+    assert secret not in json.dumps(payloads, default=str)
+    assert any(
+        p.get("outputs", {}).get("ls_error")
+        == _processing_failed("outputs", ValueError())
+        for p in payloads
+    ), f"expected the outputs marker, got {[p.get('outputs') for p in payloads]}"
+    # Still ended, and not errored: that status is for the traced fn failing.
+    assert any(p.get("end_time") for p in payloads), "run must still be ended"
+    assert all(not p.get("error") for p in payloads), "run must not be errored"
+
+
+def test_allow_unprocessed_payloads_restores_raw_inputs(
+    mock_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The env flag restores the pre-fail-closed behavior for inputs."""
+    monkeypatch.setenv("LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS", "true")
+    ls_utils.get_env_var.cache_clear()
+    secret = "super-secret-value"
+
+    def failing_redactor(inputs: dict) -> dict:
+        raise ValueError("redactor boom")
+
+    try:
+        with tracing_context(enabled=True):
+
+            @traceable(client=mock_client, process_inputs=failing_redactor)
+            def login(username: str, password: str) -> str:
+                return f"Welcome, {username}"
+
+            assert login("user1", secret) == "Welcome, user1"
+
+        payloads = [p for _, p in _get_data(_get_calls(mock_client))]
+        # Escape hatch: the raw payload is traced, no marker.
+        assert secret in json.dumps(payloads, default=str)
+        assert all("ls_error" not in (p.get("inputs") or {}) for p in payloads)
+    finally:
+        ls_utils.get_env_var.cache_clear()
+
+
+def test_allow_unprocessed_payloads_restores_raw_outputs(
+    mock_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The env flag restores the pre-fail-closed behavior for outputs."""
+    monkeypatch.setenv("LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS", "true")
+    ls_utils.get_env_var.cache_clear()
+    secret = "token=super-secret-value"
+
+    def failing_redactor(outputs: Any) -> dict:
+        raise ValueError("redactor boom")
+
+    try:
+        with tracing_context(enabled=True):
+
+            @traceable(client=mock_client, process_outputs=failing_redactor)
+            def make_token(user: str) -> str:
+                return secret
+
+            assert make_token("user1") == secret
+
+        payloads = [p for _, p in _get_data(_get_calls(mock_client))]
+        assert secret in json.dumps(payloads, default=str)
+        assert all("ls_error" not in (p.get("outputs") or {}) for p in payloads)
+    finally:
+        ls_utils.get_env_var.cache_clear()
 
 
 @patch("langsmith.run_trees.Client", autospec=True)

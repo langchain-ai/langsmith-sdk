@@ -1302,12 +1302,17 @@ service in the sandbox. Properties auto-refresh the token near expiry.
 
 | Method | Description |
 |--------|-------------|
-| `request(method, path="/", **kwargs)` | Make an HTTP request with auth header injected. Returns `httpx.Response`. |
+| `request(method, path="/", **kwargs)` | Make an HTTP request with auth header injected. Returns `httpx2.Response`. |
 | `get(path="/", **kwargs)` | HTTP GET |
 | `post(path="/", **kwargs)` | HTTP POST |
 | `put(path="/", **kwargs)` | HTTP PUT |
 | `patch(path="/", **kwargs)` | HTTP PATCH |
 | `delete(path="/", **kwargs)` | HTTP DELETE |
+
+These return `httpx2.Response`, or `httpx.Response` if `httpx2` is not installed. `httpx2` is a fork
+of `httpx`, not a subclass, so if directly imported `isinstance(resp, httpx.Response)` could be
+`False` and calling `resp.raise_for_status()` yourself could raise `httpx2.HTTPStatusError`, which
+`except httpx.HTTPStatusError` will not catch.
 
 `AsyncServiceURL` is the async variant. Use `await svc.get_token()`,
 `await svc.get_service_url()`, etc. for auto-refreshing access, and

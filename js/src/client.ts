@@ -85,6 +85,7 @@ import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
+import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
@@ -482,6 +483,7 @@ interface feedback_source {
 interface FeedbackCreate {
   id: string;
   run_id: string | null;
+  trace_id?: string;
   key: string;
   score?: ScoreType;
   value?: ValueType;
@@ -562,6 +564,8 @@ export type CreateFeedbackOptions = {
   feedbackConfig?: FeedbackConfig;
   sourceRunId?: string;
   feedbackId?: string;
+  /** The trace the run belongs to. Omit for a root run. */
+  traceId?: string;
   comparativeExperimentId?: string;
   /**
    * The run's start time, ISO string or epoch ms. Better performance if provided.
@@ -1042,8 +1046,6 @@ export class Client implements LangSmithTracingClientInterface {
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
-
-  private filteredPostUuids = new Set();
 
   private autoBatchTracing = true;
 
@@ -2009,56 +2011,19 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   // Allows mocking for tests
-  private _shouldSample(): boolean {
-    if (this.tracingSampleRate === undefined) {
-      return true;
-    }
-    return Math.random() < this.tracingSampleRate;
+  private _shouldSample(identifier?: string | null): boolean {
+    return isSampledById(identifier, this.tracingSampleRate);
   }
 
-  private _filterForSampling(
-    runs: CreateRunParams[] | UpdateRunParams[],
-    patch = false,
-  ) {
-    if (this.tracingSampleRate === undefined) {
-      return runs;
-    }
-
-    if (patch) {
-      const sampled = [];
-      for (const run of runs) {
-        if (!this.filteredPostUuids.has(run.trace_id)) {
-          sampled.push(run);
-        } else if (run.id === run.trace_id) {
-          this.filteredPostUuids.delete(run.trace_id);
-        }
-      }
-      return sampled;
-    } else {
-      // For new runs, sample at trace level to maintain consistency
-      const sampled = [];
-      for (const run of runs) {
-        const traceId = run.trace_id ?? run.id;
-
-        // If we've already made a decision about this trace, follow it
-        if (this.filteredPostUuids.has(traceId)) {
-          continue;
-        }
-
-        // For new traces, apply sampling
-        if (run.id === traceId) {
-          if (this._shouldSample()) {
-            sampled.push(run);
-          } else {
-            this.filteredPostUuids.add(traceId);
-          }
-        } else {
-          // Child runs follow their trace's sampling decision
-          sampled.push(run);
-        }
-      }
-      return sampled;
-    }
+  private _filterForSampling(runs: CreateRunParams[] | UpdateRunParams[]) {
+    // updateRun() may omit trace_id; dotted order's first segment is the root.
+    return runs.filter((run) =>
+      this._shouldSample(
+        run.trace_id ??
+          run.dotted_order?.split(".", 1)[0].split("Z")[1] ??
+          run.id,
+      ),
+    );
   }
 
   private async _getBatchSizeLimitBytes(): Promise<number> {
@@ -3124,7 +3089,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
-    if (!this._filterForSampling([data], true).length) {
+    if (!this._filterForSampling([data]).length) {
       return;
     }
     if (
@@ -5519,6 +5484,7 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackId,
       feedbackConfig,
       projectId,
+      traceId,
       comparativeExperimentId,
       sessionId,
       startTime,
@@ -5555,6 +5521,7 @@ export class Client implements LangSmithTracingClientInterface {
     const feedback: FeedbackCreate = {
       id: feedbackId ?? uuid.v7(),
       run_id: runId,
+      trace_id: traceId,
       key,
       score: _formatFeedbackScore(score),
       value,
@@ -5567,6 +5534,10 @@ export class Client implements LangSmithTracingClientInterface {
       start_time: startTime,
       extend_trace_retention: extendTraceRetention,
     };
+    const samplingId = traceId ?? runId;
+    if (samplingId != null && !this._shouldSample(samplingId)) {
+      return feedback as Feedback;
+    }
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
@@ -5871,6 +5842,9 @@ export class Client implements LangSmithTracingClientInterface {
           feedbackSourceType: "model",
           sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
+          // If an evaluator result targets a different run, we can't
+          // guarantee to know its trace ID.
+          traceId: runId_ === run?.id ? run?.trace_id : undefined,
         }),
       );
     }

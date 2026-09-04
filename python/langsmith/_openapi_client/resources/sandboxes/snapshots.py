@@ -15,10 +15,10 @@ from ..._response import (
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
-from ..._base_client import make_request_options
+from ...pagination import SyncItemsCursorGetPagination, AsyncItemsCursorGetPagination
+from ..._base_client import AsyncPaginator, make_request_options
 from ...types.sandboxes import snapshot_list_params, snapshot_create_params
 from ...types.snapshot_response import SnapshotResponse
-from ...types.snapshot_list_response import SnapshotListResponse
 from ...types.sandboxes.snapshot_retrieve_by_name_response import SnapshotRetrieveByNameResponse
 
 __all__ = ["SnapshotsResource", "AsyncSnapshotsResource"]
@@ -132,12 +132,15 @@ class SnapshotsResource(SyncAPIResource):
         self,
         *,
         created_by: str | Omit = omit,
+        cursor: str | Omit = omit,
         label: SequenceNotStr[str] | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
         offset: int | Omit = omit,
+        page_size: int | Omit = omit,
         sort_by: str | Omit = omit,
         sort_direction: str | Omit = omit,
+        sort_order: str | Omit = omit,
         status: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -145,26 +148,35 @@ class SnapshotsResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SnapshotListResponse:
+    ) -> SyncItemsCursorGetPagination[SnapshotResponse]:
         """
         List sandbox snapshots for the authenticated tenant, with optional filtering,
-        sorting, and pagination.
+        sorting, and pagination. Page with page_size and cursor: replay the response's
+        next_cursor until it comes back null, which is the only signal that no pages
+        remain. Cursors are opaque and only valid on this endpoint; do not parse or
+        construct one.
 
         Args:
           created_by: Filter by creator identity. Only 'me' is supported.
 
+          cursor: Opaque pagination cursor from a prior response's next_cursor
+
           label: Filter by label. Repeatable; all must match. Use 'key' to match on key presence
               or 'key=value' for equality.
 
-          limit: Maximum number of results
+          limit: Deprecated: use page_size. Maximum number of results
 
           name_contains: Filter by name substring
 
-          offset: Pagination offset
+          offset: Deprecated: use cursor. Pagination offset
+
+          page_size: Number of results per page
 
           sort_by: Sort column (name, status, created_at)
 
-          sort_direction: Sort direction (asc, desc)
+          sort_direction: Deprecated: use sort_order. Sort direction (asc, desc)
+
+          sort_order: Sort direction (asc, desc)
 
           status: Filter by status (building, ready, failed, deleting)
 
@@ -176,8 +188,9 @@ class SnapshotsResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        return self._get(
+        return self._get_api_list(
             "/api/v2/sandboxes/snapshots",
+            page=SyncItemsCursorGetPagination[SnapshotResponse],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -186,18 +199,21 @@ class SnapshotsResource(SyncAPIResource):
                 query=maybe_transform(
                     {
                         "created_by": created_by,
+                        "cursor": cursor,
                         "label": label,
                         "limit": limit,
                         "name_contains": name_contains,
                         "offset": offset,
+                        "page_size": page_size,
                         "sort_by": sort_by,
                         "sort_direction": sort_direction,
+                        "sort_order": sort_order,
                         "status": status,
                     },
                     snapshot_list_params.SnapshotListParams,
                 ),
             ),
-            cast_to=SnapshotListResponse,
+            model=SnapshotResponse,
         )
 
     def delete(
@@ -375,16 +391,19 @@ class AsyncSnapshotsResource(AsyncAPIResource):
             cast_to=SnapshotResponse,
         )
 
-    async def list(
+    def list(
         self,
         *,
         created_by: str | Omit = omit,
+        cursor: str | Omit = omit,
         label: SequenceNotStr[str] | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
         offset: int | Omit = omit,
+        page_size: int | Omit = omit,
         sort_by: str | Omit = omit,
         sort_direction: str | Omit = omit,
+        sort_order: str | Omit = omit,
         status: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -392,26 +411,35 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SnapshotListResponse:
+    ) -> AsyncPaginator[SnapshotResponse, AsyncItemsCursorGetPagination[SnapshotResponse]]:
         """
         List sandbox snapshots for the authenticated tenant, with optional filtering,
-        sorting, and pagination.
+        sorting, and pagination. Page with page_size and cursor: replay the response's
+        next_cursor until it comes back null, which is the only signal that no pages
+        remain. Cursors are opaque and only valid on this endpoint; do not parse or
+        construct one.
 
         Args:
           created_by: Filter by creator identity. Only 'me' is supported.
 
+          cursor: Opaque pagination cursor from a prior response's next_cursor
+
           label: Filter by label. Repeatable; all must match. Use 'key' to match on key presence
               or 'key=value' for equality.
 
-          limit: Maximum number of results
+          limit: Deprecated: use page_size. Maximum number of results
 
           name_contains: Filter by name substring
 
-          offset: Pagination offset
+          offset: Deprecated: use cursor. Pagination offset
+
+          page_size: Number of results per page
 
           sort_by: Sort column (name, status, created_at)
 
-          sort_direction: Sort direction (asc, desc)
+          sort_direction: Deprecated: use sort_order. Sort direction (asc, desc)
+
+          sort_order: Sort direction (asc, desc)
 
           status: Filter by status (building, ready, failed, deleting)
 
@@ -423,28 +451,32 @@ class AsyncSnapshotsResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        return await self._get(
+        return self._get_api_list(
             "/api/v2/sandboxes/snapshots",
+            page=AsyncItemsCursorGetPagination[SnapshotResponse],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
                 extra_body=extra_body,
                 timeout=timeout,
-                query=await async_maybe_transform(
+                query=maybe_transform(
                     {
                         "created_by": created_by,
+                        "cursor": cursor,
                         "label": label,
                         "limit": limit,
                         "name_contains": name_contains,
                         "offset": offset,
+                        "page_size": page_size,
                         "sort_by": sort_by,
                         "sort_direction": sort_direction,
+                        "sort_order": sort_order,
                         "status": status,
                     },
                     snapshot_list_params.SnapshotListParams,
                 ),
             ),
-            cast_to=SnapshotListResponse,
+            model=SnapshotResponse,
         )
 
     async def delete(

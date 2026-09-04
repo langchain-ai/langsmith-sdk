@@ -147,6 +147,7 @@ import {
   RunsItemsCursorPostPagination,
 } from './resources/runs/runs.js';
 import {
+  DownloadURLResponse,
   SandboxListResponse,
   SandboxResponse,
   SandboxStatusResponse,
@@ -294,7 +295,7 @@ export class Langsmith {
     };
 
     this.baseURL = options.baseURL!;
-    this.timeout = options.timeout ?? Langsmith.DEFAULT_TIMEOUT /* 1.5 minutes */;
+    this.timeout = options.timeout ?? Langsmith.DEFAULT_TIMEOUT; /* 1.5 minutes */
     this.logger = options.logger ?? console;
     const defaultLogLevel = 'warn';
     // Set default logLevel early so that we can log a warning in parseLogLevel.
@@ -583,9 +584,7 @@ export class Langsmith {
       throw new Errors.APIConnectionError({ cause: response });
     }
 
-    const responseInfo = `[${requestLogID}${retryLogStr}] ${req.method} ${url} ${
-      response.ok ? 'succeeded' : 'failed'
-    } with status ${response.status} in ${headersTime - startTime}ms`;
+    const responseInfo = `[${requestLogID}${retryLogStr}] ${req.method} ${url} ${response.ok ? 'succeeded' : 'failed'} with status ${response.status} in ${headersTime - startTime}ms`;
 
     if (!response.ok) {
       const shouldRetry = await this.shouldRetry(response);
@@ -1125,6 +1124,7 @@ export declare namespace Langsmith {
 
   export {
     Sandboxes as Sandboxes,
+    type DownloadURLResponse as DownloadURLResponse,
     type SandboxListResponse as SandboxListResponse,
     type SandboxResponse as SandboxResponse,
     type SandboxStatusResponse as SandboxStatusResponse,

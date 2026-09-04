@@ -127,14 +127,14 @@ function _fastHash128(str: string): Uint8Array {
 /**
  * Generate a deterministic UUID v7 derived from an original UUID and a key.
  *
- * This function creates a new UUID that:
- * - Preserves the timestamp from the original UUID if it's UUID v7
- * - Uses current time if the original is not UUID v7
- * - Uses deterministic "random" bits derived from hashing the original + key
- * - Is valid UUID v7 format
+ * A pure function of `originalId` and `key`: it reads no ambient state, so the
+ * same pair always yields the same UUID, in any process, at any time. This is
+ * used for creating replica ids that are reproducible across distributed
+ * systems, including across SDK implementations.
  *
- * This is used for creating replica IDs that maintain time-ordering properties
- * while being deterministic across distributed systems.
+ * A UUID v7 original keeps its timestamp, so derived ids stay ordered by run
+ * start time. Any other original has none to keep, and the field is
+ * hash-derived: stable, but not chronological.
  *
  * @param originalId - The source UUID string (ideally UUID v7 to preserve timestamp)
  * @param key - A string key used for deterministic derivation (e.g., project name)
@@ -167,24 +167,16 @@ export function nonCryptographicUuid7Deterministic(
 
   const b = new Uint8Array(16);
 
-  // Check if original is UUID v7 - if so, preserve its timestamp
-  // If not, use current time to ensure the derived UUID has a valid timestamp
   const version = getUuidVersion(originalId);
   if (version === 7) {
     // Preserve timestamp from original UUID7 (bytes 0-5)
     const originalBytes = uuidToBytes(originalId);
     b.set(originalBytes.slice(0, 6), 0);
   } else {
-    // Generate fresh timestamp for non-UUID7 inputs
-    // This matches the uuid npm package's v7 implementation:
-    // https://github.com/uuidjs/uuid/blob/main/src/v7.ts
-    const msecs = Date.now();
-    b[0] = (msecs / 0x10000000000) & 0xff;
-    b[1] = (msecs / 0x100000000) & 0xff;
-    b[2] = (msecs / 0x1000000) & 0xff;
-    b[3] = (msecs / 0x10000) & 0xff;
-    b[4] = (msecs / 0x100) & 0xff;
-    b[5] = msecs & 0xff;
+    // No timestamp to preserve. Use the six hash bytes left unused below: a
+    // clock read here would make this impure, and the same id is derived
+    // from several runs, all of which must agree.
+    b.set(h.slice(10, 16), 0);
   }
 
   // Set version 7 (0111) in high nibble + 4 bits from hash

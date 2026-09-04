@@ -89,12 +89,15 @@ export {
 } from './runs/runs.js';
 export {
   Sandboxes,
+  type DownloadURLResponse,
   type SandboxListResponse,
   type SandboxResponse,
   type SandboxStatusResponse,
   type ServiceURLResponse,
   type SnapshotListResponse,
   type SnapshotResponse,
+  type SandboxResponsesItemsCursorGetPagination,
+  type SnapshotResponsesItemsCursorGetPagination,
 } from './sandboxes/sandboxes.js';
 export {
   Threads,

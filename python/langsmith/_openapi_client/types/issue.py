@@ -1,11 +1,30 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 from typing import List, Optional
+from datetime import datetime
 from typing_extensions import Literal
 
 from .._models import BaseModel
 
-__all__ = ["Issue"]
+__all__ = ["Issue", "LinearSync"]
+
+
+class LinearSync(BaseModel):
+    identifier: Optional[str] = None
+
+    issue_id: Optional[str] = None
+
+    last_attempted_at: Optional[datetime] = None
+
+    last_error: Optional[str] = None
+
+    last_synced_at: Optional[datetime] = None
+
+    linear_issue_id: Optional[str] = None
+
+    state: Optional[Literal["pending", "synced", "failed", "auth_required", "paused"]] = None
+
+    url: Optional[str] = None
 
 
 class Issue(BaseModel):
@@ -38,6 +57,8 @@ class Issue(BaseModel):
     fix_verification: Optional[object] = None
 
     last_seen_at: Optional[str] = None
+
+    linear_sync: Optional[LinearSync] = None
 
     name: Optional[str] = None
 

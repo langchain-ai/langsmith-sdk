@@ -27,7 +27,7 @@ dependencies = [
     "pydantic>=2,<3",
     "requests>=2.0.0",
     "orjson>=3.9.14; platform_python_implementation != 'PyPy'",
-    "httpx>=0.23.0,<1",
+    "httpx2>=2,<3",
     "requests-toolbelt>=1.0.0",
     "zstandard>=0.23.0",
     "packaging>=23.2",
@@ -71,7 +71,7 @@ pipecat = [
 
 # Enabled via `pip install langsmith[livekit]`
 livekit = [
-    "livekit-agents>=1.0",
+    "livekit-agents>=1.6",
     "opentelemetry-sdk>=1.30.0",
     "opentelemetry-api>=1.30.0",
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
@@ -171,15 +171,16 @@ dev = [
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
-    "ty==0.0.65",
+    "ty==0.0.75",
     "pytest-httpx>=0.30.0",
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
     "pytest-timeout>=2.3.1",
 ]
 
-# Benchmarking dependencies (`make benchmark-codspeed`). Kept out of `dev` so
-# it's only installed by the bench workflow / when explicitly requested.
+# Benchmarking dependencies (`make benchmark-codspeed`, `make benchmark-datadog`).
+# Kept out of `dev` so it's only installed by the bench workflows / when
+# explicitly requested.
 bench = [
     "pytest-benchmark>=5.1.0",
     "pytest-codspeed>=4.3.0",  # 4.3.0+ adds the memory instrument

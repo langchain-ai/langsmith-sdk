@@ -18,6 +18,7 @@ import collections
 import concurrent.futures as cf
 import contextlib
 import contextvars
+import copy
 import datetime
 import functools
 import importlib
@@ -46,6 +47,7 @@ from typing import (
     Any,
     Callable,
     Literal,
+    NamedTuple,
     Optional,
     TypedDict,
     Union,
@@ -54,7 +56,6 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import httpx as _httpx
 import packaging.version
 import requests
 from pydantic import Field
@@ -114,6 +115,7 @@ from langsmith._internal._operations import (
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
 )
+from langsmith._internal._sampling import is_sampled_by_id
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith._internal._v2_migration_utils import QueryBackend, get_query_backend
@@ -125,6 +127,7 @@ from langsmith._openapi_client._base_client import (
 from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
+from langsmith._openapi_client._httpx import httpx as _httpx
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -670,7 +673,7 @@ def _default_retry_config() -> Retry:
     """
     retry_params = dict(
         total=3,
-        status_forcelist=[502, 503, 504, 408, 425],
+        status_forcelist=[429, 500, 502, 503, 504, 408, 425],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
@@ -976,7 +979,6 @@ class Client:
         "_web_url",
         "_tenant_id",
         "tracing_sample_rate",
-        "_filtered_post_uuids",
         "tracing_queue",
         "_anonymizer",
         "_hide_inputs",
@@ -1288,7 +1290,6 @@ class Client:
         self._profile_auth_headers: dict[str, str] = {}
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
-        self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
@@ -1354,7 +1355,7 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
-        self._run_ops_buffer: list[tuple[str, dict, dict[str, Optional[str]]]] = []
+        self._run_ops_buffer: list[tuple[str, dict, dict[str, Any]]] = []
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
@@ -1488,7 +1489,7 @@ class Client:
         if ls_utils.get_env_var("USE_PYO3_CLIENT") is not None:
             langsmith_pyo3 = None
             try:
-                import langsmith_pyo3  # type: ignore[import-not-found, no-redef]
+                import langsmith_pyo3  # type: ignore[import-not-found, import-untyped, no-redef]
             except ImportError as e:
                 logger.warning(
                     "Failed to import `langsmith_pyo3` when PyO3 client was requested, "
@@ -1821,7 +1822,8 @@ class Client:
 
     def _compute_headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": f"langsmith-py/{langsmith.__version__}",
+            # `_httpx.__name__` is `httpx2` or `httpx`; no version, to keep cardinality low.
+            "User-Agent": f"langsmith-py/{langsmith.__version__}-{_httpx.__name__}",
             "Accept": "application/json",
         }
         # Merge custom headers first so they don't override required headers
@@ -2484,20 +2486,13 @@ class Client:
             if added:
                 metadata.update(self._hide_run_metadata(added))
 
-    def _should_sample(self) -> bool:
-        if self.tracing_sample_rate is None:
-            return True
-        return random.random() < self.tracing_sample_rate
+    def _should_sample(self, identifier: Any = None) -> bool:
+        return is_sampled_by_id(identifier, self.tracing_sample_rate)
 
     def _filter_for_sampling(
         self,
         runs: Iterable[Union[dict, ls_schemas.Run, ls_schemas.RunLikeDict]],
-        *,
-        patch: bool = False,
     ) -> list:
-        if self.tracing_sample_rate is None:
-            return list(runs)
-
         def _val(run: Any, key: str, default: Any = _UNSET) -> Any:
             try:
                 return run[key]
@@ -2506,34 +2501,18 @@ class Client:
                     return getattr(run, key)
                 return getattr(run, key, default)
 
-        if patch:
-            sampled = []
-            for run in runs:
-                trace_id = _as_uuid(_val(run, "trace_id"))
-                if trace_id not in self._filtered_post_uuids:
-                    sampled.append(run)
-                elif _val(run, "id") == trace_id:
-                    self._filtered_post_uuids.remove(trace_id)
-            return sampled
-        else:
-            sampled = []
-            for run in runs:
-                trace_id = _val(run, "trace_id", None) or _val(run, "id")
+        def _sampling_key(run: Any) -> Any:
+            trace_id = _val(run, "trace_id", None)
+            if trace_id is not None:
+                return trace_id
+            # update_run() may omit trace_id; dotted order's first segment
+            # is the root.
+            dotted_order = _val(run, "dotted_order", None)
+            if dotted_order and "Z" in dotted_order:
+                return dotted_order.split(".", 1)[0].split("Z", 1)[1]
+            return _val(run, "id", None)
 
-                # If we've already made a decision about this trace, follow it
-                if trace_id in self._filtered_post_uuids:
-                    continue
-
-                # For new traces, apply sampling
-                if _val(run, "id") == trace_id:
-                    if self._should_sample():
-                        sampled.append(run)
-                    else:
-                        self._filtered_post_uuids.add(trace_id)
-                else:
-                    # Child runs follow their trace's sampling decision
-                    sampled.append(run)
-            return sampled
+        return [run for run in runs if self._should_sample(_sampling_key(run))]
 
     @property
     def tracing_mode(self) -> TracingMode:
@@ -2610,6 +2589,10 @@ class Client:
             ```
         """
         service_key: str | None = kwargs.pop("service_key", None)
+        # Popped before run_create is built, or it would become a run field.
+        replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
+            "_replica_auths", None
+        )
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
@@ -2649,6 +2632,7 @@ class Client:
                             "tenant_id": tenant_id,
                             "authorization": authorization,
                             "cookie": cookie,
+                            "_replica_auths": replica_auths,
                         },
                     )
                 )
@@ -2665,7 +2649,102 @@ class Client:
                 tenant_id=tenant_id,
                 authorization=authorization,
                 cookie=cookie,
+                _replica_auths=replica_auths,
             )
+
+    def _enqueue_op(
+        self,
+        priority: str,
+        op: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        auths: Sequence[ReplicaAuth],
+    ) -> None:
+        """Put one queue item per destination.
+
+        A queue item carries one auth tuple, so a multi-destination op becomes
+        several items. They share the payload's bytes but need separate objects:
+        combine_serialized_queue_operations mutates the post op in place, per
+        auth group.
+        """
+        otel_context = (
+            self._set_span_in_context(self._otel_trace.get_current_span())
+            if self.otel_exporter is not None
+            else None
+        )
+        for index, auth in enumerate(auths):
+            self._put_tracing_queue(
+                TracingQueueItem(
+                    priority,
+                    op if index == 0 else _duplicate_op(op),
+                    **auth._asdict(),
+                    otel_context=otel_context,
+                )
+            )
+
+    def _compress_admitted(
+        self, multipart_form: MultipartPartsAndContext, destinations: frozenset
+    ) -> bool:
+        """Write one op into the frame if the frame goes where it does.
+
+        Check, commit and write in one lock hold, or two threads adopt an
+        uncommitted frame and the loser's bytes go to the winner. True also covers
+        a full frame dropping the op, as before.
+        """
+        ct = self.compressed_traces
+        if ct is None:
+            return False
+        if self._data_available_event is None:
+            raise ValueError(
+                "Run compression is enabled but threading event is not configured"
+            )
+        with ct.lock:
+            if not ct.accepts(destinations):
+                return False
+            if ct.destinations is None:
+                ct.destinations = destinations
+                logger.debug(
+                    "Compressed frame committed to %s", _destination_urls(destinations)
+                )
+            if compress_multipart_parts_and_context(multipart_form, ct, _BOUNDARY):
+                ct.trace_count += 1
+                self._data_available_event.set()
+        return True
+
+    def _warn_compression_downgrade(self, destinations: Optional[frozenset]) -> None:
+        """Warn once when compression is on but this op cannot use it."""
+        global _COMPRESSION_DOWNGRADE_WARNED
+        if self.compressed_traces is None or _COMPRESSION_DOWNGRADE_WARNED:
+            return
+        _COMPRESSION_DOWNGRADE_WARNED = True
+        logger.warning(
+            "Run compression is enabled, but this client's compressed buffer already "
+            "belongs to a different destination, so writes to %s are sent "
+            "uncompressed. Use one set of tracing credentials per Client to avoid "
+            "this.",
+            _destination_urls(destinations) if destinations else "another endpoint",
+        )
+
+    def _resolve_destinations(self, *auths: ReplicaAuth) -> frozenset[ReplicaAuth]:
+        """Where a frame carrying this op must be POSTed.
+
+        Pre-resolve the URL + auth for each destination the compressed frame committed to
+        """
+        resolved: set[ReplicaAuth] = set()
+        for auth in auths:
+            if not any(auth):
+                resolved.update(
+                    ReplicaAuth(api_url=url, api_key=key)
+                    for url, key in self._write_api_urls.items()
+                )
+                continue
+            api_key = auth.api_key
+            if api_key is None and not any(
+                [auth.service_key, auth.authorization, auth.cookie]
+            ):
+                api_key = self.api_key
+            resolved.add(
+                auth._replace(api_url=auth.api_url or self.api_url, api_key=api_key)
+            )
+        return frozenset(resolved)
 
     def _create_run(
         self,
@@ -2677,27 +2756,36 @@ class Client:
         tenant_id: Optional[str] = None,
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
+        _replica_auths: Optional[Sequence[ReplicaAuth]] = None,
     ) -> None:
+        auths = _replica_auths or [
+            ReplicaAuth(
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
+        ]
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
+            destinations = (
+                self._resolve_destinations(*auths)
+                if self.compressed_traces is not None
+                else None
+            )
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif (
                 self.compressed_traces is not None
-                and api_key is None
-                and api_url is None
-                and service_key is None
-                and tenant_id is None
-                and authorization is None
-                and cookie is None
+                and destinations is not None
+                # Cheap reject; the real check is inside the lock.
+                and self.compressed_traces.accepts(destinations)
             ):
-                if self._data_available_event is None:
-                    raise ValueError(
-                        "Run compression is enabled but threading event is not configured"
-                    )
                 serialized_op = serialize_run_dict("post", run_create)
                 (
                     multipart_form,
@@ -2710,18 +2798,12 @@ class Client:
                     "Adding compressed multipart to queue with context: %s",
                     multipart_form.context,
                 )
-                with self.compressed_traces.lock:
-                    enqueued = compress_multipart_parts_and_context(
-                        multipart_form,
-                        self.compressed_traces,
-                        _BOUNDARY,
-                    )
-                    if enqueued:
-                        self.compressed_traces.trace_count += 1
-                        self._data_available_event.set()
-
+                admitted = self._compress_admitted(multipart_form, destinations)
                 _close_files(list(opened_files.values()))
+                if not admitted and self.tracing_queue is not None:
+                    self._enqueue_op(run_create["dotted_order"], serialized_op, auths)
             elif self.tracing_queue is not None:
+                self._warn_compression_downgrade(destinations)
                 serialized_op = serialize_run_dict("post", run_create)
                 logger.log(
                     5,
@@ -2729,57 +2811,15 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if self.otel_exporter is not None:
-                    self._put_tracing_queue(
-                        TracingQueueItem(
-                            run_create["dotted_order"],
-                            serialized_op,
-                            api_key=api_key,
-                            api_url=api_url,
-                            service_key=service_key,
-                            tenant_id=tenant_id,
-                            authorization=authorization,
-                            cookie=cookie,
-                            otel_context=self._set_span_in_context(
-                                self._otel_trace.get_current_span()
-                            ),
-                        )
-                    )
-                else:
-                    self._put_tracing_queue(
-                        TracingQueueItem(
-                            run_create["dotted_order"],
-                            serialized_op,
-                            api_key=api_key,
-                            api_url=api_url,
-                            service_key=service_key,
-                            tenant_id=tenant_id,
-                            authorization=authorization,
-                            cookie=cookie,
-                        )
-                    )
+                self._enqueue_op(run_create["dotted_order"], serialized_op, auths)
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run_non_batch(
-                    run_create,
-                    api_key=api_key,
-                    api_url=api_url,
-                    service_key=service_key,
-                    tenant_id=tenant_id,
-                    authorization=authorization,
-                    cookie=cookie,
-                )
+                for auth in auths:
+                    self._create_run_non_batch(run_create, **auth._asdict())
         else:
-            self._create_run_non_batch(
-                run_create,
-                api_key=api_key,
-                api_url=api_url,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
+            for auth in auths:
+                self._create_run_non_batch(run_create, **auth._asdict())
 
     def _create_run_non_batch(
         self,
@@ -2856,7 +2896,8 @@ class Client:
         if self._hide_inputs is True:
             return {}
         if self._anonymizer:
-            json_inputs = _orjson.loads(_dumps_json(inputs))
+            # stdlib json.loads keeps ints >= 2**64 exact; orjson.loads floats them.
+            json_inputs = json.loads(_dumps_json(inputs))
             return self._anonymizer(json_inputs)
         if self._hide_inputs is False:
             return inputs
@@ -2866,7 +2907,8 @@ class Client:
         if self._hide_outputs is True:
             return {}
         if self._anonymizer:
-            json_outputs = _orjson.loads(_dumps_json(outputs))
+            # stdlib json.loads keeps ints >= 2**64 exact; orjson.loads floats them.
+            json_outputs = json.loads(_dumps_json(outputs))
             return self._anonymizer(json_outputs)
         if self._hide_outputs is False:
             return outputs
@@ -2898,7 +2940,8 @@ class Client:
         if self._hide_metadata is True:
             return {}
         if self._anonymizer:
-            json_metadata = _orjson.loads(_dumps_json(metadata))
+            # stdlib json.loads keeps ints >= 2**64 exact; orjson.loads floats them.
+            json_metadata = json.loads(_dumps_json(metadata))
             return self._anonymizer(json_metadata)
         if self._hide_metadata is False:
             return metadata
@@ -3170,7 +3213,7 @@ class Client:
             return
         # filter out runs that are not sampled
         create = self._filter_for_sampling(create or EMPTY_SEQ)
-        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        update = self._filter_for_sampling(update or EMPTY_SEQ)
         if not create and not update:
             return
         # transform and convert to dicts
@@ -3439,7 +3482,7 @@ class Client:
             return
         # filter out runs that are not sampled
         create = self._filter_for_sampling(create or EMPTY_SEQ)
-        update = self._filter_for_sampling(update or EMPTY_SEQ, patch=True)
+        update = self._filter_for_sampling(update or EMPTY_SEQ)
         if not create and not update:
             return
         # transform and convert to dicts
@@ -3616,23 +3659,30 @@ class Client:
         data_stream: io.BytesIO,
         compressed_traces_info: Optional[tuple[int, int]],
         *,
+        destinations: Optional[frozenset] = None,
         attempts: int = 3,
     ):
-        """Send a zstd-compressed multipart form data stream to the backend."""
-        _context: str = "; ".join(getattr(data_stream, "context", []))
+        """Send a zstd-compressed multipart stream to each of `destinations`.
 
-        for api_url, api_key in self._write_api_urls.items():
+        None means the client's default set: every _write_api_urls entry.
+        """
+        _context: str = "; ".join(getattr(data_stream, "context", []))
+        if destinations is None:
+            destinations = self._resolve_destinations(ReplicaAuth())
+
+        for dest in sorted(destinations, key=lambda d: d.api_url or ""):
+            api_url = dest.api_url
             data_stream.seek(0)
 
             for idx in range(1, attempts + 1):
                 try:
                     headers = _apply_auth_overrides(
                         self._headers,
-                        api_key=api_key,
-                        service_key=None,
-                        tenant_id=None,
-                        authorization=None,
-                        cookie=None,
+                        api_key=dest.api_key,
+                        service_key=dest.service_key,
+                        tenant_id=dest.tenant_id,
+                        authorization=dest.authorization,
+                        cookie=dest.cookie,
                         fallback_api_key=None,
                     )
                     headers["Content-Type"] = (
@@ -3726,6 +3776,9 @@ class Client:
     ) -> None:
         """Update a run in the LangSmith API.
 
+        Sampling keys on the run's trace: pass `trace_id` or `dotted_order` when
+        updating a child run, or its own ID is hashed and may disagree.
+
         Args:
             run_id (Union[UUID, str]): The ID of the run to update.
             name (Optional[str]): The name of the run.
@@ -3785,6 +3838,9 @@ class Client:
             client.update_run(run["id"], **run)
             ```
         """
+        replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
+            "_replica_auths", None
+        )
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3808,7 +3864,7 @@ class Client:
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
         )
-        if not self._filter_for_sampling([data], patch=True):
+        if not self._filter_for_sampling([data]):
             return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
@@ -3845,6 +3901,7 @@ class Client:
                             "tenant_id": tenant_id,
                             "authorization": authorization,
                             "cookie": cookie,
+                            "_replica_auths": replica_auths,
                         },
                     )
                 )
@@ -3861,6 +3918,7 @@ class Client:
                 tenant_id=tenant_id,
                 authorization=authorization,
                 cookie=cookie,
+                _replica_auths=replica_auths,
             )
 
     def _update_run(
@@ -3873,7 +3931,18 @@ class Client:
         tenant_id: Optional[str] = None,
         authorization: Optional[str] = None,
         cookie: Optional[str] = None,
+        _replica_auths: Optional[Sequence[ReplicaAuth]] = None,
     ):
+        auths = _replica_auths or [
+            ReplicaAuth(
+                api_url=api_url,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+            )
+        ]
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
@@ -3884,14 +3953,16 @@ class Client:
             self._pyo3_client.update_run(run_update)
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=run_update)
+            destinations = (
+                self._resolve_destinations(*auths)
+                if self.compressed_traces is not None
+                else None
+            )
             if (
                 self.compressed_traces is not None
-                and api_key is None
-                and api_url is None
-                and service_key is None
-                and tenant_id is None
-                and authorization is None
-                and cookie is None
+                and destinations is not None
+                # Cheap reject; the real check is inside the lock.
+                and self.compressed_traces.accepts(destinations)
             ):
                 (
                     multipart_form,
@@ -3904,66 +3975,22 @@ class Client:
                     "Adding compressed multipart to queue with context: %s",
                     multipart_form.context,
                 )
-                with self.compressed_traces.lock:
-                    if self._data_available_event is None:
-                        raise ValueError(
-                            "Run compression is enabled but threading event is not configured"
-                        )
-                    enqueued = compress_multipart_parts_and_context(
-                        multipart_form,
-                        self.compressed_traces,
-                        _BOUNDARY,
-                    )
-                    if enqueued:
-                        self.compressed_traces.trace_count += 1
-                        self._data_available_event.set()
+                admitted = self._compress_admitted(multipart_form, destinations)
                 _close_files(list(opened_files.values()))
+                if not admitted and self.tracing_queue is not None:
+                    self._enqueue_op(run_update["dotted_order"], serialized_op, auths)
             elif self.tracing_queue is not None:
+                self._warn_compression_downgrade(destinations)
                 logger.log(
                     5,
                     "Adding to tracing queue: trace_id=%s, run_id=%s",
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if self.otel_exporter is not None:
-                    self._put_tracing_queue(
-                        TracingQueueItem(
-                            run_update["dotted_order"],
-                            serialized_op,
-                            api_key=api_key,
-                            api_url=api_url,
-                            service_key=service_key,
-                            tenant_id=tenant_id,
-                            authorization=authorization,
-                            cookie=cookie,
-                            otel_context=self._set_span_in_context(
-                                self._otel_trace.get_current_span()
-                            ),
-                        )
-                    )
-                else:
-                    self._put_tracing_queue(
-                        TracingQueueItem(
-                            run_update["dotted_order"],
-                            serialized_op,
-                            api_key=api_key,
-                            api_url=api_url,
-                            service_key=service_key,
-                            tenant_id=tenant_id,
-                            authorization=authorization,
-                            cookie=cookie,
-                        )
-                    )
+                self._enqueue_op(run_update["dotted_order"], serialized_op, auths)
         else:
-            self._update_run_non_batch(
-                run_update,
-                api_key=api_key,
-                api_url=api_url,
-                service_key=service_key,
-                tenant_id=tenant_id,
-                authorization=authorization,
-                cookie=cookie,
-            )
+            for auth in auths:
+                self._update_run_non_batch(run_update, **auth._asdict())
 
     def _update_run_non_batch(
         self,
@@ -4049,6 +4076,7 @@ class Client:
         (
             final_data_stream,
             compressed_traces_info,
+            destinations,
         ) = _tracing_thread_drain_compressed_buffer(
             self, size_limit=1, size_limit_bytes=1
         )
@@ -4061,13 +4089,17 @@ class Client:
                     self._send_compressed_multipart_req,
                     final_data_stream,
                     compressed_traces_info,
+                    destinations=destinations,
                     attempts=attempts,
                 )
                 self._futures.add(future)
             except RuntimeError:
                 # In case the ThreadPoolExecutor is already shutdown
                 self._send_compressed_multipart_req(
-                    final_data_stream, compressed_traces_info, attempts=attempts
+                    final_data_stream,
+                    compressed_traces_info,
+                    destinations=destinations,
+                    attempts=attempts,
                 )
 
         # If we got a future, wait for it to complete
@@ -8075,7 +8107,13 @@ class Client:
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id if run is None else None,
                 extra=res.extra,
-                trace_id=getattr(run, "trace_id", None) if run else None,
+                # If an evaluator result targets a different run, we can't
+                # guarantee to know its trace_id.
+                trace_id=(
+                    getattr(run, "trace_id", None)
+                    if run is not None and run_id_ == run.id
+                    else None
+                ),
                 session_id=run_session_id or project_id,
                 start_time=run.start_time if run else None,
                 error=error,
@@ -8376,6 +8414,10 @@ class Client:
                 extend_trace_retention=extend_trace_retention,
             )
 
+            sampling_id = feedback.trace_id or feedback.run_id
+            if sampling_id is not None and not self._should_sample(sampling_id):
+                return ls_schemas.Feedback(**feedback.model_dump())
+
             use_multipart = not self._multipart_disabled and (
                 self.info.batch_ingest_config or {}
             ).get("use_multipart_endpoint", True)
@@ -8392,23 +8434,23 @@ class Client:
                 and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
-                if self.compressed_traces is not None:
+                # No per-call auth, so: the default destinations. Needs the same
+                # check as runs, or its bytes ride a replica's frame.
+                destinations = (
+                    self._resolve_destinations(ReplicaAuth())
+                    if self.compressed_traces is not None
+                    else None
+                )
+                admitted = False
+                if destinations is not None:
                     multipart_form = (
                         serialized_feedback_operation_to_multipart_parts_and_context(
                             serialized_op
                         )
                     )
-                    with self.compressed_traces.lock:
-                        enqueued = compress_multipart_parts_and_context(
-                            multipart_form,
-                            self.compressed_traces,
-                            _BOUNDARY,
-                        )
-                        if enqueued:
-                            self.compressed_traces.trace_count += 1
-                            if self._data_available_event:
-                                self._data_available_event.set()
-                elif self.tracing_queue is not None:
+                    admitted = self._compress_admitted(multipart_form, destinations)
+                if not admitted and self.tracing_queue is not None:
+                    self._warn_compression_downgrade(destinations)
                     self._put_tracing_queue(
                         TracingQueueItem(str(feedback.id), serialized_op)
                     )
@@ -11829,6 +11871,42 @@ def prep_obj_for_push(obj: Any) -> Any:
             # called.
             chain_to_push = RunnableSequence(prompt, bound_model)
     return chain_to_push
+
+
+_COMPRESSION_DOWNGRADE_WARNED = False
+
+
+def _duplicate_op(
+    op: Union[SerializedRunOperation, SerializedFeedbackOperation],
+) -> Union[SerializedRunOperation, SerializedFeedbackOperation]:
+    """Copy an op for another destination, sharing its immutable bytes."""
+    duplicate = copy.copy(op)
+    # attachments is a dict, and combine_serialized_queue_operations updates it
+    # in place.
+    if isinstance(duplicate, SerializedRunOperation) and duplicate.attachments:
+        duplicate.attachments = dict(duplicate.attachments)
+    return duplicate
+
+
+def _destination_urls(destinations: frozenset) -> list[str]:
+    """Log-safe rendering of a destination set: URLs only, never credentials."""
+    return sorted({d.api_url or "" for d in destinations})
+
+
+class ReplicaAuth(NamedTuple):
+    """One write destination: a server plus the credentials to reach it."""
+
+    api_url: str | None = None
+    api_key: str | None = None
+    service_key: str | None = None
+    tenant_id: str | None = None
+    authorization: str | None = None
+    cookie: str | None = None
+
+    def __repr__(self) -> str:
+        """Redact credentials: this reaches logs and tracebacks."""
+        set_fields = [f for f in self._fields[1:] if getattr(self, f) is not None]
+        return f"ReplicaAuth(api_url={self.api_url!r}, set={set_fields})"
 
 
 def _apply_auth_overrides(

@@ -13,8 +13,7 @@ import logging
 import random
 import time
 
-import httpx
-
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import SandboxConnectionError
 
 logger = logging.getLogger(__name__)

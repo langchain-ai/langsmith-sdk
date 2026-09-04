@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import importlib
 import io
+import json
 import logging
 import os
 import queue
@@ -1591,13 +1592,16 @@ def test_fallback_json_serialization():
         (Document(content=item), expected) for item, expected in raw_surrogates
     ]
 
+    # Compare decoded values rather than bytes: which encoder produced the
+    # output is an implementation detail. The stdlib-json fallback keeps
+    # non-BMP characters as escaped surrogate pairs and separates keys with
+    # ": ", where the orjson path emits raw UTF-8 and no space. Both decode
+    # to the same string.
     for item, expected in raw_surrogates:
-        output = dumps_json(item).decode("utf8")
-        assert f'"{expected}"' == output
+        assert json.loads(dumps_json(item)) == expected
 
     for item, expected in pydantic_surrogates:
-        output = dumps_json(item).decode("utf8")
-        assert f'{{"content":"{expected}"}}' == output
+        assert json.loads(dumps_json(item)) == {"content": expected}
 
 
 def test_runs_stats():

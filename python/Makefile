@@ -1,4 +1,4 @@
-.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast benchmark-codspeed test-wheel-imports
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast benchmark-codspeed benchmark-datadog test-wheel-imports
 
 
 OUTPUT ?= out/benchmark.json
@@ -19,6 +19,12 @@ benchmark-fast:
 benchmark-codspeed:
 	uv run --group bench python -m pytest bench/test_bench.py --codspeed
 
+# Same cases again, under plain pytest-benchmark. Emits to Datadog Test
+# Optimization when PYTEST_ADDOPTS=--ddtrace is exported by the
+# datadog/test-visibility-github-action step; a plain local run stays offline.
+benchmark-datadog:
+	uv run --group bench python -m pytest bench/test_bench.py
+
 PROFILE_NAME ?= output
 
 profile-background-thread:
@@ -38,6 +44,7 @@ tests:
 	 -u LANGSMITH_TRACING \
 	 PYTHONDEVMODE=1 \
 	 PYTHONASYNCIODEBUG=1 \
+	 PYTHONPATH=tests/httpx2_alias \
 	 uv run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 ${TEST}
 
 tests_watch:
@@ -84,7 +91,10 @@ test-wheel-imports:
 	uv pip install -r /tmp/langsmith-declared-deps.txt --python /tmp/langsmith-strict-test
 	/tmp/langsmith-strict-test/bin/python -c "\
 from langsmith._openapi_client import Langsmith; \
-from langsmith.client import Client"
+from langsmith.client import Client; \
+assert __import__('langsmith._openapi_client._httpx', fromlist=['httpx']).httpx.__name__ == 'httpx2'; \
+Langsmith(base_url='https://example.com').close(); \
+Client(api_url='https://example.com', api_key='test', auto_batch_tracing=False, info={}).close()"
 	rm -rf /tmp/langsmith-strict-test /tmp/langsmith-declared-deps.txt
 
 api_docs_build:

@@ -40,15 +40,7 @@ declare const Deno: any;
 declare const EdgeRuntime: any;
 type Arch = 'x32' | 'x64' | 'arm' | 'arm64' | `other:${string}` | 'unknown';
 type PlatformName =
-  | 'MacOS'
-  | 'Linux'
-  | 'Windows'
-  | 'FreeBSD'
-  | 'OpenBSD'
-  | 'iOS'
-  | 'Android'
-  | `Other:${string}`
-  | 'Unknown';
+  'MacOS' | 'Linux' | 'Windows' | 'FreeBSD' | 'OpenBSD' | 'iOS' | 'Android' | `Other:${string}` | 'Unknown';
 type Browser = 'ie' | 'edge' | 'chrome' | 'firefox' | 'safari';
 type PlatformProperties = {
   'X-Stainless-Lang': 'js';
@@ -68,7 +60,7 @@ const getPlatformProperties = (): PlatformProperties => {
       'X-Stainless-Arch': normalizeArch(Deno.build.arch),
       'X-Stainless-Runtime': 'deno',
       'X-Stainless-Runtime-Version':
-        typeof Deno.version === 'string' ? Deno.version : Deno.version?.deno ?? 'unknown',
+        typeof Deno.version === 'string' ? Deno.version : (Deno.version?.deno ?? 'unknown'),
     };
   }
   if (typeof EdgeRuntime !== 'undefined') {

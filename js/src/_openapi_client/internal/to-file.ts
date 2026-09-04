@@ -67,10 +67,7 @@ const isResponseLike = (value: any): value is ResponseLike =>
   typeof value.blob === 'function';
 
 export type ToFileInput =
-  | FileLike
-  | ResponseLike
-  | Exclude<BlobLikePart, string>
-  | AsyncIterable<BlobLikePart>;
+  FileLike | ResponseLike | Exclude<BlobLikePart, string> | AsyncIterable<BlobLikePart>;
 
 /**
  * Helper for creating a {@link File} to pass to an SDK upload method from a variety of different data formats

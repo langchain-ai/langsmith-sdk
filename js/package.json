@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.9.0",
+  "version": "0.10.1",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "pnpm@10.33.0",
   "files": [
@@ -168,7 +168,7 @@
     "@anthropic-ai/sdk": "^0.98.0",
     "@babel/preset-env": "^8.0.2",
     "@earendil-works/pi-coding-agent": "0.80.10",
-    "@faker-js/faker": "^8.4.1",
+    "@faker-js/faker": "^10.5.0",
     "@google/genai": "^2.0.1",
     "@jest/globals": "^30.4.1",
     "@jest/reporters": "^30.2.0",
@@ -192,6 +192,7 @@
     "@typescript-eslint/parser": "^8.62.1",
     "ai": "7.0.36",
     "babel-jest": "^30.2.0",
+    "browserslist": "4.28.7",
     "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
     "jest": "^29.5.0",
@@ -485,7 +486,7 @@
       "brace-expansion@<1.1.16": "1.1.16",
       "brace-expansion@>=2.0.0 <2.1.2": "2.1.2",
       "brace-expansion@>=3.0.0 <5.0.7": "5.0.7",
-      "fast-uri": "3.1.5",
+      "fast-uri": "3.1.6",
       "postcss": "8.5.23",
       "js-yaml": "4.3.1",
       "hono": "4.12.34",

@@ -48,22 +48,35 @@ function uploadedRuns(callSpy: any): any[] {
     .filter((run: any) => run?.inputs);
 }
 
-async function traceCreate(params: Record<string, unknown>) {
+async function traceCreate(
+  params: Record<string, unknown>,
+  requestOptions?: Record<string, unknown>,
+) {
   const { client, callSpy } = mockClient();
   const patched = wrapAnthropic(stubAnthropic(), {
     client,
     tracingEnabled: true,
   });
 
-  await patched.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 16,
-    messages: [{ role: "user", content: "hi" }],
-    ...params,
-  } as any);
+  const args: unknown[] = [
+    {
+      model: "claude-haiku-4-5",
+      max_tokens: 16,
+      messages: [{ role: "user", content: "hi" }],
+      ...params,
+    },
+  ];
+  if (requestOptions !== undefined) args.push(requestOptions);
+
+  await (patched.messages.create as any)(...args);
 
   const runs = uploadedRuns(callSpy);
   return { runs, wire: JSON.stringify(runs) };
+}
+
+/** Traced provider params; a multi-argument call is recorded as `{ args: [...] }`. */
+function tracedParams(run: any): any {
+  return Array.isArray(run.inputs.args) ? run.inputs.args[0] : run.inputs;
 }
 
 const mcpServers = (extra: Record<string, unknown> = {}) => [
@@ -135,4 +148,60 @@ describe("mcp_servers credentials are masked before tracing", () => {
 
     expect(runs[0].inputs.mcp_servers).toEqual(servers);
   });
+});
+
+describe("masking survives every argument shape", () => {
+  test.each([
+    ["langsmithExtra only", { langsmithExtra: { metadata: { foo: "bar" } } }],
+    ["an empty options object", {}],
+    ["real request options", { timeout: 5000 }],
+  ])("masks mcp_servers when called with %s", async (_label, options) => {
+    const { runs, wire } = await traceCreate(
+      { mcp_servers: mcpServers() },
+      options,
+    );
+
+    expect(wire).not.toContain(FAKE_TOKEN);
+    expect(tracedParams(runs[0]).mcp_servers[0].authorization_token).toBe(
+      SECRET_PLACEHOLDER,
+    );
+  });
+
+  test("masks credentials in the request options themselves", async () => {
+    const { runs, wire } = await traceCreate(
+      {},
+      { headers: { Authorization: `Bearer ${FAKE_TOKEN}` } },
+    );
+
+    expect(wire).not.toContain(FAKE_TOKEN);
+    expect(runs[0].inputs.args[1].headers).toEqual({
+      Authorization: SECRET_PLACEHOLDER,
+    });
+  });
+
+  test("the caller's arguments are left intact for the API call", async () => {
+    const servers = mcpServers();
+    const options = { headers: { Authorization: `Bearer ${FAKE_TOKEN}` } };
+
+    await traceCreate({ mcp_servers: servers }, options);
+
+    expect(servers[0].authorization_token).toBe(FAKE_TOKEN);
+    expect(options.headers.Authorization).toBe(`Bearer ${FAKE_TOKEN}`);
+  });
+});
+
+describe("per-request transport overrides are masked", () => {
+  test.each(["extra_headers", "extra_body", "extra_query"])(
+    "%s keeps its key names but not its values",
+    async (key) => {
+      const { runs, wire } = await traceCreate({
+        [key]: { Authorization: `Bearer ${FAKE_TOKEN}` },
+      });
+
+      expect(wire).not.toContain(FAKE_TOKEN);
+      expect(runs[0].inputs[key]).toEqual({
+        Authorization: SECRET_PLACEHOLDER,
+      });
+    },
+  );
 });

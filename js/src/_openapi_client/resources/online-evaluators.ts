@@ -185,8 +185,8 @@ export interface OnlineEvaluator {
   feedback_keys?: Array<string>;
 
   /**
-   * IsManaged marks a LangChain-managed evaluator (currently the managed Perceived
-   * Error judge). NULL in the DB is read as false via COALESCE.
+   * IsManaged marks a LangChain Tuned Evaluator (currently the tuned Perceived Error
+   * judge). NULL in the DB is read as false via COALESCE.
    */
   is_managed?: boolean;
 

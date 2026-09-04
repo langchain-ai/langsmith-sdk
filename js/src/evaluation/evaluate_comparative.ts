@@ -367,6 +367,8 @@ export async function evaluateComparative(
         comparativeExperimentId: comparativeExperiment.id,
         sessionId: run?.session_id,
         startTime: run?.start_time,
+        // `run` is the run being scored, so its trace is the right key.
+        traceId: run?.trace_id,
       });
     }
 

@@ -8,21 +8,15 @@ span detection, and the tiny chat-message builders the handlers reuse.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Optional
 
 from langsmith._internal.voice._helpers import try_parse_json_object
 
-# The instrumentation scope LiveKit's tracer is created under
-# (``get_tracer("livekit-agents")``). Every span LiveKit emits carries it, so it
-# is how we tell a LiveKit span apart from a non-LiveKit run riding the same OTel
-# provider (e.g. a LangChain/LangGraph trace under ``LANGSMITH_TRACING_MODE=otel``).
+logger = logging.getLogger(__name__)
+
 _LIVEKIT_INSTRUMENTATION_SCOPE = "livekit-agents"
 
-# LiveKit reports some providers as the API base-URL host (e.g. its OpenAI
-# plugin → ``api.openai.com``), but LangSmith's cost engine keys on provider
-# *slugs* (``openai`` / ``deepgram`` / …), so a hostname never matches a price.
-# We recover the slug by substring — so ``beta.anthropic.com`` still → ``anthropic``
-# — mirroring how LangSmith itself infers the provider from a model name.
 _PROVIDER_ALIASES = (
     "openai",
     "anthropic",
@@ -202,6 +196,21 @@ def build_tool_message(
     return msg
 
 
+def build_assistant_tool_call_message(call_id: str, name: str, arguments: str) -> dict:
+    """Build an assistant message containing one tool call."""
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": arguments},
+            }
+        ],
+    }
+
+
 def build_message_from_event(role: str, event: Any) -> dict:
     """Build a chat message dict from a LiveKit ``gen_ai.*`` span event.
 
@@ -220,3 +229,55 @@ def build_message_from_event(role: str, event: Any) -> dict:
     if tool_calls:
         msg["tool_calls"] = tool_calls
     return msg
+
+
+def _content_to_text(content: list[Any]) -> str:
+    """Flatten a ``ChatMessage.content`` list to text, dropping non-text parts."""
+    return "\n".join(part for part in content if isinstance(part, str))
+
+
+def build_messages_from_chat_history(chat_history: Any) -> list[dict]:
+    """Convert a LiveKit ``ChatContext`` into LangSmith chat messages.
+
+    Keeps LiveKit's conversation order, including instructions, tool calls, and
+    tool outputs. Returns ``[]`` if LiveKit cannot serialize the history, so
+    export falls back to the span-derived transcript.
+    """
+    try:
+        items = chat_history.to_dict(
+            exclude_timestamp=False,
+            exclude_function_call=False,
+            exclude_metrics=True,
+            exclude_config_update=True,
+        )["items"]
+    except Exception:
+        logger.warning(
+            "langsmith voice: could not read the session report's chat history; "
+            "falling back to the transcript built from spans.",
+            exc_info=True,
+        )
+        return []
+
+    messages: list[dict] = []
+    for item in items:
+        kind = item["type"]
+        if kind == "message":
+            role = item["role"]
+            text = _content_to_text(item["content"])
+            if text:
+                messages.append({"role": role, "content": text})
+        elif kind == "function_call":
+            messages.append(
+                build_assistant_tool_call_message(
+                    item["call_id"], item["name"], item["arguments"]
+                )
+            )
+        elif kind == "function_call_output":
+            messages.append(
+                build_tool_message(
+                    item["output"],
+                    tool_call_id=item["call_id"],
+                    name=item["name"],
+                )
+            )
+    return messages

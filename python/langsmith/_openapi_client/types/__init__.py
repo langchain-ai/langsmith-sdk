@@ -6,6 +6,7 @@ from .run import Run as Run
 from .issue import Issue as Issue
 from .trace import Trace as Trace
 from .thread import Thread as Thread
+from .missing import Missing as Missing
 from .run_type import RunType as RunType
 from .data_type import DataType as DataType
 from .thread_stats import ThreadStats as ThreadStats
@@ -30,6 +31,7 @@ from .thread_stats_params import ThreadStatsParams as ThreadStatsParams
 from .online_llm_evaluator import OnlineLlmEvaluator as OnlineLlmEvaluator
 from .run_get_url_response import RunGetURLResponse as RunGetURLResponse
 from .service_url_response import ServiceURLResponse as ServiceURLResponse
+from .download_url_response import DownloadURLResponse as DownloadURLResponse
 from .online_code_evaluator import OnlineCodeEvaluator as OnlineCodeEvaluator
 from .online_evaluator_type import OnlineEvaluatorType as OnlineEvaluatorType
 from .sandbox_list_response import SandboxListResponse as SandboxListResponse
