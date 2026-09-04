@@ -1142,3 +1142,22 @@ class TestHandshakeFailureWrapping:
             )
             with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
                 list(msg_stream)
+
+    def test_abrupt_execute_close_is_retryable(self):
+        from websockets.exceptions import ConnectionClosedError, InvalidHandshake
+
+        ws = MagicMock()
+        ws.__iter__.side_effect = ConnectionClosedError(None, None)
+        connect = MagicMock()
+        connect.return_value.__enter__.return_value = ws
+
+        with patch(
+            "langsmith.sandbox._ws_execute._ensure_websockets",
+            return_value=(connect, ConnectionClosedError, InvalidHandshake),
+        ):
+            msg_stream, _ = run_ws_stream("https://sb.example.com", "key", "echo hi")
+            with pytest.raises(
+                SandboxRetryableConnectionError,
+                match="no close frame received or sent",
+            ):
+                list(msg_stream)
