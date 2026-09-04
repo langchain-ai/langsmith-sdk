@@ -14,6 +14,8 @@ export {
   type Thread,
   type ThreadStats,
   type ThreadTrace,
+  type ThreadAggregateStatsResponse,
+  type ThreadAggregateStatsParams,
   type ThreadListTracesParams,
   type ThreadQueryParams,
   type ThreadStatsParams,

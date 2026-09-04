@@ -27,6 +27,34 @@ export class Threads extends APIResource {
   share: ShareAPI.Share = new ShareAPI.Share(this._client);
 
   /**
+   * GET with body payload — no resources created. Returns aggregate statistics for
+   * threads in a tracing project. The response includes the thread counts, run
+   * counts, latency percentiles, rates, token totals, and cost totals requested in
+   * `select`.
+   *
+   * Self-hosted deployments require LangSmith `v0.17` or later.
+   *
+   * @example
+   * ```ts
+   * const response = await client.threads.aggregateStats({
+   *   project_id: '0190a1b2-c3d4-7ef0-a5b6-6ea3a82e9328',
+   *   select: [
+   *     'THREAD_COUNT',
+   *     'TRACE_COUNT',
+   *     'TOTAL_TOKENS',
+   *     'TOTAL_COST',
+   *   ],
+   * });
+   * ```
+   */
+  aggregateStats(
+    body: ThreadAggregateStatsParams,
+    options?: RequestOptions,
+  ): APIPromise<ThreadAggregateStatsResponse> {
+    return this._client.post('/api/v2/threads/stats', { body, ...options });
+  }
+
+  /**
    * Retrieve all traces belonging to a specific thread within a project.
    *
    * Self-hosted deployments require LangSmith `v0.16` or later.
@@ -725,6 +753,255 @@ export namespace ThreadTrace {
   }
 }
 
+export interface ThreadAggregateStatsResponse {
+  /**
+   * `completion_cost` is the completion cost across matching traces in USD.
+   */
+  completion_cost?: number;
+
+  /**
+   * `completion_cost_details` contains completion-cost totals by category.
+   */
+  completion_cost_details?: { [key: string]: number };
+
+  /**
+   * `completion_token_details` contains completion-token totals by category.
+   */
+  completion_token_details?: { [key: string]: number };
+
+  /**
+   * `completion_tokens` is the sum of completion tokens across matching traces.
+   */
+  completion_tokens?: number;
+
+  /**
+   * `error_rate` is the fraction of matching traces that contain an error.
+   */
+  error_rate?: number;
+
+  /**
+   * `first_token_p50_seconds` is the approximate median time to first token in
+   * seconds. Populated when `FIRST_TOKEN_P50` is selected.
+   */
+  first_token_p50_seconds?: number;
+
+  /**
+   * `first_token_p99_seconds` is the approximate p99 time to first token in seconds.
+   * Populated when `FIRST_TOKEN_P99` is selected.
+   */
+  first_token_p99_seconds?: number;
+
+  /**
+   * `latency_p50_seconds` is the approximate median trace latency in seconds.
+   * Populated when `LATENCY_P50` is selected.
+   */
+  latency_p50_seconds?: number;
+
+  /**
+   * `latency_p99_seconds` is the approximate p99 trace latency in seconds. Populated
+   * when `LATENCY_P99` is selected.
+   */
+  latency_p99_seconds?: number;
+
+  /**
+   * `median_tokens` is the approximate median of total tokens across matching
+   * traces. Populated when `MEDIAN_TOKENS` is selected.
+   */
+  median_tokens?: number;
+
+  /**
+   * `prompt_cost` is the prompt cost across matching traces in USD.
+   */
+  prompt_cost?: number;
+
+  /**
+   * `prompt_cost_details` contains prompt-cost totals by category.
+   */
+  prompt_cost_details?: { [key: string]: number };
+
+  /**
+   * `prompt_token_details` contains prompt-token totals by category.
+   */
+  prompt_token_details?: { [key: string]: number };
+
+  /**
+   * `prompt_tokens` is the sum of prompt tokens across matching traces.
+   */
+  prompt_tokens?: number;
+
+  /**
+   * `streaming_rate` is the fraction of completed matching traces that streamed
+   * tokens.
+   */
+  streaming_rate?: number;
+
+  /**
+   * `thread_count` is the number of distinct threads matching the query. Populated
+   * when `THREAD_COUNT` is selected.
+   */
+  thread_count?: number;
+
+  /**
+   * `thread_feedback_stats` contains aggregate thread-level feedback statistics
+   * keyed by feedback key. Populated when `THREAD_FEEDBACK_STATS` is selected.
+   */
+  thread_feedback_stats?: { [key: string]: ThreadAggregateStatsResponse.ThreadFeedbackStats };
+
+  /**
+   * `total_cost` is the total cost across matching traces in USD.
+   */
+  total_cost?: number;
+
+  /**
+   * `total_tokens` is the sum of all tokens across matching traces.
+   */
+  total_tokens?: number;
+
+  /**
+   * `trace_count` is the number of traces in the matching threads. Populated when
+   * `TRACE_COUNT` is selected.
+   */
+  trace_count?: number;
+}
+
+export namespace ThreadAggregateStatsResponse {
+  export interface ThreadFeedbackStats {
+    /**
+     * `avg` is the arithmetic mean of numeric feedback scores for this key on the run,
+     * or `null` when no numeric score has been recorded (for example purely
+     * categorical feedback).
+     */
+    avg?: number;
+
+    /**
+     * `comments` is a sample of human-readable comments attached to feedback points
+     * for this key, in no particular order. May be empty; is not exhaustive when many
+     * comments exist.
+     */
+    comments?: Array<string>;
+
+    /**
+     * `contains_thread_feedback` is true when at least one feedback point for this key
+     * was submitted at the thread level (rather than at an individual run). Always
+     * false on responses that already describe a single run in isolation.
+     */
+    contains_thread_feedback?: boolean;
+
+    /**
+     * `errors` is the number of feedback points recorded as errors rather than
+     * successful scores (for example an automated evaluator that raised an exception).
+     * Defaults to 0 when no errors occurred.
+     */
+    errors?: number;
+
+    /**
+     * `max` is the largest numeric feedback score recorded for this key on the run, or
+     * `null` when no numeric score has been recorded.
+     */
+    max?: number;
+
+    /**
+     * `min` is the smallest numeric feedback score recorded for this key on the run,
+     * or `null` when no numeric score has been recorded.
+     */
+    min?: number;
+
+    /**
+     * `n` is the number of feedback points recorded for this key on the run. For
+     * numeric feedback this is the sample size behind `avg`, `min`, `max`, and
+     * `stdev`; for categorical feedback it is the sum of the `values` counts.
+     */
+    n?: number;
+
+    /**
+     * `sources` is a sample of feedback sources for this key. Each entry is either a
+     * plain string identifier (for example `"api"`, `"app"`, `"model"`) or a JSON
+     * object describing a synthetic source (for example
+     * `{"type": "__ls_composite_feedback"}` for a computed aggregate). Clients must
+     * tolerate both shapes.
+     */
+    sources?: Array<unknown>;
+
+    /**
+     * `stdev` is the sample standard deviation of numeric feedback scores for this key
+     * on the run, or `null` when it cannot be computed (for example fewer than two
+     * numeric scores, or purely categorical feedback).
+     */
+    stdev?: number;
+
+    /**
+     * `values` is the distribution of categorical feedback labels for this key,
+     * mapping each label to its occurrence count. Empty (`{}`) for purely numeric
+     * feedback.
+     */
+    values?: { [key: string]: number };
+  }
+}
+
+export interface ThreadAggregateStatsParams {
+  /**
+   * `project_id` is the tracing project UUID.
+   */
+  project_id: string;
+
+  /**
+   * `select` lists the aggregate statistics to compute and return. At least one
+   * value is required.
+   */
+  select: Array<
+    | 'THREAD_COUNT'
+    | 'TRACE_COUNT'
+    | 'TOTAL_TOKENS'
+    | 'TOTAL_COST'
+    | 'ERROR_RATE'
+    | 'STREAMING_RATE'
+    | 'LATENCY_P50'
+    | 'LATENCY_P99'
+    | 'MEDIAN_TOKENS'
+    | 'FIRST_TOKEN_P50'
+    | 'FIRST_TOKEN_P99'
+    | 'PROMPT_TOKENS'
+    | 'COMPLETION_TOKENS'
+    | 'PROMPT_COST'
+    | 'COMPLETION_COST'
+    | 'PROMPT_TOKEN_DETAILS'
+    | 'COMPLETION_TOKEN_DETAILS'
+    | 'PROMPT_COST_DETAILS'
+    | 'COMPLETION_COST_DETAILS'
+    | 'THREAD_FEEDBACK_STATS'
+  >;
+
+  /**
+   * `max_start_time` is the exclusive upper bound on thread activity (RFC3339
+   * date-time). Defaults to now (UTC) when omitted.
+   */
+  max_start_time?: string;
+
+  /**
+   * `min_start_time` is the inclusive lower bound on thread activity (RFC3339
+   * date-time). Defaults to 1 day before now (UTC) when omitted.
+   */
+  min_start_time?: string;
+
+  /**
+   * `thread_filter` narrows eligible threads using a LangSmith filter expression
+   * evaluated against the complete thread summary.
+   */
+  thread_filter?: string;
+
+  /**
+   * `trace_filter` narrows eligible threads to those containing a trace whose root
+   * run matches this LangSmith filter expression.
+   */
+  trace_filter?: string;
+
+  /**
+   * `tree_filter` narrows eligible threads to those containing a matching run
+   * anywhere in a trace tree.
+   */
+  tree_filter?: string;
+}
+
 export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
   /**
    * `project_id` is the tracing project UUID (required).
@@ -884,8 +1161,10 @@ export declare namespace Threads {
     type Thread as Thread,
     type ThreadStats as ThreadStats,
     type ThreadTrace as ThreadTrace,
+    type ThreadAggregateStatsResponse as ThreadAggregateStatsResponse,
     type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
     type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
+    type ThreadAggregateStatsParams as ThreadAggregateStatsParams,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,

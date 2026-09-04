@@ -154,6 +154,8 @@ import {
 } from './resources/sandboxes/sandboxes.js';
 import {
   Thread,
+  ThreadAggregateStatsParams,
+  ThreadAggregateStatsResponse,
   ThreadListTracesParams,
   ThreadQueryParams,
   ThreadStats,
@@ -1049,8 +1051,10 @@ export declare namespace Langsmith {
     type Thread as Thread,
     type ThreadStats as ThreadStats,
     type ThreadTrace as ThreadTrace,
+    type ThreadAggregateStatsResponse as ThreadAggregateStatsResponse,
     type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
     type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
+    type ThreadAggregateStatsParams as ThreadAggregateStatsParams,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,
