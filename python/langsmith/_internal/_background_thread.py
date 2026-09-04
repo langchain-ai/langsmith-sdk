@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import concurrent.futures as cf
-import copy
 import functools
 import io
 import logging
@@ -470,53 +469,20 @@ def _hybrid_tracing_thread_handle_batch(
         mark_task_done: Whether to mark queue tasks as done after processing.
             Set to False primarily for testing when items weren't actually queued.
     """
-    # Combine operations once to avoid race conditions
+    # Combine operations once so both legs send exactly the same thing. Neither
+    # leg modifies them, so they can share one copy.
     ops = combine_serialized_queue_operations([item.item for item in batch])
 
-    # Create copies for each thread to avoid shared mutation
-    langsmith_ops = copy.deepcopy(ops)
-    otel_ops = copy.deepcopy(ops)
-
-    try:
-        # Use ThreadPoolExecutor for parallel execution
-        with cf.ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit both tasks
-            future_langsmith = executor.submit(
-                _tracing_thread_handle_batch,
-                client,
-                tracing_queue,
-                batch,
-                use_multipart,
-                False,  # Don't mark tasks done - we'll do it once at the end
-                langsmith_ops,
-            )
-            future_otel = executor.submit(
-                _otel_tracing_thread_handle_batch,
-                client,
-                tracing_queue,
-                batch,
-                False,  # Don't mark tasks done - we'll do it once at the end
-                otel_ops,
-            )
-
-            # Wait for both to complete
-            future_langsmith.result()
-            future_otel.result()
-    except RuntimeError as e:
-        if "cannot schedule new futures after interpreter shutdown" in str(e):
-            # During interpreter shutdown, ThreadPoolExecutor is blocked,
-            # fall back to sequential processing
-            logger.debug(
-                "Interpreter shutting down, falling back to sequential processing"
-            )
-            _tracing_thread_handle_batch(
-                client, tracing_queue, batch, use_multipart, False, langsmith_ops
-            )
-            _otel_tracing_thread_handle_batch(
-                client, tracing_queue, batch, False, otel_ops
-            )
-        else:
-            raise
+    # Sent one after the other on this thread. The OTEL leg is a small amount of
+    # CPU work next to the LangSmith network send, so overlapping the two saves
+    # about 1% of a batch and is not worth a helper thread. Batches still go out
+    # in parallel: there is one of these threads per drain loop, up to
+    # _AUTO_SCALE_UP_NTHREADS_LIMIT of them. Each leg logs and swallows its own
+    # errors, so neither can stop the other or kill this thread.
+    _tracing_thread_handle_batch(
+        client, tracing_queue, batch, use_multipart, False, ops
+    )
+    _otel_tracing_thread_handle_batch(client, tracing_queue, batch, False, ops)
 
     # Mark all tasks as done once, only if requested
     if mark_task_done and tracing_queue is not None:
