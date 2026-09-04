@@ -35,13 +35,6 @@ def join_multipart_parts_and_context(
     return MultipartPartsAndContext(acc_parts, "; ".join(acc_context))
 
 
-def _rewind_parts(parts: Iterable[MultipartPart]) -> None:
-    """Return every file-backed part to byte 0 so the parts can be re-encoded."""
-    for _name, (_filename, data, _content_type, _headers) in parts:
-        if hasattr(data, "seek"):
-            data.seek(0)
-
-
 class RewindableMultipartBody:
     """A replayable request body for ``MultipartEncoder``-encoded parts.
 
@@ -50,8 +43,8 @@ class RewindableMultipartBody:
     urllib3 retries the statuses in ``_default_retry_config``'s
     ``status_forcelist`` beneath our own retry loop, and it resends the *same*
     body object -- an exhausted encoder, i.e. an empty body under the
-    already-declared ``Content-Length``. The server accepts that as a complete
-    run, so the attachment is dropped with an HTTP 200.
+    already-declared ``Content-Length``. The server accepts that as a
+    complete request, so the entire payload is silently dropped with an HTTP 200.
 
     ``tell``/``seek`` are what urllib3's ``rewind_body`` looks for: a
     ``seek(0)`` rewinds the parts and builds a fresh encoder, so every resend
@@ -61,6 +54,13 @@ class RewindableMultipartBody:
 
     __slots__ = ("_boundary", "_encoder", "_parts", "_pos", "_total")
 
+    @staticmethod
+    def _rewind_parts(parts: Iterable[MultipartPart]) -> None:
+        """Return every file-backed part to byte 0 so the parts can be re-encoded."""
+        for _name, (_filename, data, _content_type, _headers) in parts:
+            if hasattr(data, "seek"):
+                data.seek(0)
+
     def __init__(self, parts: Sequence[MultipartPart], boundary: str) -> None:
         self._parts = parts
         self._boundary = boundary
@@ -69,7 +69,7 @@ class RewindableMultipartBody:
         self._pos = 0
 
     def _encode(self) -> rqtb_multipart.MultipartEncoder:
-        _rewind_parts(self._parts)
+        self._rewind_parts(self._parts)
         return rqtb_multipart.MultipartEncoder(self._parts, boundary=self._boundary)
 
     @property
