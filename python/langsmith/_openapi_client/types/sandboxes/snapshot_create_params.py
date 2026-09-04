@@ -15,6 +15,12 @@ class SnapshotCreateParams(TypedDict, total=False):
 
     name: Required[str]
 
+    description: str
+    """
+    Description says what this snapshot's image can do, so a caller can hand it to
+    an agent as a capability summary. At most 1024 characters.
+    """
+
     labels: Dict[str, str]
     """
     Labels seed the snapshot's labels, overriding any label of the same key derived

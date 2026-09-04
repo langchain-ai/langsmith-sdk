@@ -243,6 +243,13 @@ class Run(BaseModel):
     latency_seconds: Optional[float] = None
     """`latency_seconds` is wall-clock duration from start to end in seconds."""
 
+    ls_user_id: Optional[str] = None
+    """`ls_user_id` identifies the LangSmith user whose credential traced the run.
+
+    It is absent for runs traced with a service-account API key, which has no
+    associated user.
+    """
+
     manifest: Optional[Dict[str, object]] = None
     """
     `manifest` is the serialized configuration of the traced component (for example

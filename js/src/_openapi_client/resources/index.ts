@@ -36,8 +36,15 @@ export {
   type Missing,
   type SortByDatasetColumn,
 } from './datasets/datasets.js';
+export { Fleet } from './fleet/fleet.js';
 export { Info, type InfoListResponse } from './info.js';
-export { Issues, type Issue, type IssueListParams, type IssuesOffsetPaginationIssues } from './issues.js';
+export {
+  Issues,
+  type Issue,
+  type IssueRetrieveParams,
+  type IssueListParams,
+  type IssuesOffsetPaginationIssues,
+} from './issues.js';
 export {
   OnlineEvaluators,
   type BulkDeleteEvaluatorFailedItem,
@@ -104,12 +111,14 @@ export {
   type Thread,
   type ThreadStats,
   type ThreadTrace,
+  type ThreadAggregateStatsResponse,
+  type ThreadAggregateStatsParams,
   type ThreadListTracesParams,
   type ThreadQueryParams,
   type ThreadStatsParams,
   type ThreadTracesItemsCursorGetPagination,
   type ThreadsItemsCursorPostPagination,
-} from './threads.js';
+} from './threads/threads.js';
 export {
   Traces,
   type Trace,

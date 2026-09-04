@@ -590,6 +590,12 @@ export namespace BoxCreateParams {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -630,6 +636,12 @@ export namespace BoxCreateParams {
       name: string;
 
       aws?: Rule.Aws;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -742,6 +754,12 @@ export namespace BoxUpdateParams {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -782,6 +800,12 @@ export namespace BoxUpdateParams {
       name: string;
 
       aws?: Rule.Aws;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -920,6 +944,12 @@ export interface BoxCreateSnapshotParams {
    * if omitted, creates a fresh checkpoint from the running VM
    */
   checkpoint?: string;
+
+  /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary. At most 1024 characters.
+   */
+  description?: string;
 
   /**
    * sandbox-local Docker image to export

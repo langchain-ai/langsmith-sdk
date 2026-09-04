@@ -14,6 +14,12 @@ class SnapshotResponse(BaseModel):
 
     created_by: Optional[str] = None
 
+    description: Optional[str] = None
+    """
+    Description says what this snapshot's image can do, so a caller can hand it to
+    an agent as a capability summary.
+    """
+
     docker_image: Optional[str] = None
 
     fs_capacity_bytes: Optional[int] = None

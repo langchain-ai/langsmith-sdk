@@ -559,6 +559,12 @@ class ProxyConfigRule(TypedDict, total=False):
 
     aws: ProxyConfigRuleAws
 
+    description: str
+    """
+    Description says what this rule lets the sandbox reach, so an agent driving the
+    sandbox can be told its capabilities. At most 1024 characters.
+    """
+
     enabled: bool
 
     env_vars: Dict[str, str]
@@ -590,6 +596,12 @@ class ProxyConfig(TypedDict, total=False):
     access_control: ProxyConfigAccessControl
 
     callbacks: Iterable[ProxyConfigCallback]
+
+    description: str
+    """
+    Description says what this configuration as a whole lets the sandbox reach,
+    complementing the per-rule descriptions. At most 1024 characters.
+    """
 
     no_proxy: SequenceNotStr[str]
 

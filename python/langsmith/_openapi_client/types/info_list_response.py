@@ -40,6 +40,12 @@ class SDKVersions(BaseModel):
 class InfoListResponse(BaseModel):
     batch_ingest_config: Optional[BatchIngestConfig] = None
 
+    billing_installation_id: Optional[str] = None
+    """
+    BillingInstallationID is the persistent per-installation identity for
+    self-hosted deployments.
+    """
+
     customer_info: Optional[CustomerInfo] = None
 
     git_sha: Optional[str] = None

@@ -16,6 +16,12 @@ class BoxCreateSnapshotParams(TypedDict, total=False):
     checkpoint: str
     """if omitted, creates a fresh checkpoint from the running VM"""
 
+    description: str
+    """
+    Description says what this snapshot's image can do, so a caller can hand it to
+    an agent as a capability summary. At most 1024 characters.
+    """
+
     docker_image: str
     """sandbox-local Docker image to export"""
 

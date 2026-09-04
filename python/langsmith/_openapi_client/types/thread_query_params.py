@@ -77,3 +77,5 @@ class ThreadQueryParams(TypedDict, total=False):
     https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
     for syntax.
     """
+
+    accept: Annotated[str, PropertyInfo(alias="Accept")]

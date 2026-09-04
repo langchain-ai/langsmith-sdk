@@ -41,7 +41,13 @@ import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
 import { Info, InfoListResponse } from './resources/info.js';
-import { Issue, IssueListParams, Issues, IssuesOffsetPaginationIssues } from './resources/issues.js';
+import {
+  Issue,
+  IssueListParams,
+  IssueRetrieveParams,
+  Issues,
+  IssuesOffsetPaginationIssues,
+} from './resources/issues.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -71,17 +77,6 @@ import {
   UpdateOnlineEvaluatorResponse,
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
-import {
-  Thread,
-  ThreadListTracesParams,
-  ThreadQueryParams,
-  ThreadStats,
-  ThreadStatsParams,
-  ThreadTrace,
-  ThreadTracesItemsCursorGetPagination,
-  Threads,
-  ThreadsItemsCursorPostPagination,
-} from './resources/threads.js';
 import {
   Trace,
   TraceAggregates,
@@ -126,6 +121,7 @@ import {
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
+import { Fleet } from './resources/fleet/fleet.js';
 import { Public } from './resources/public/public.js';
 import {
   ResponseBodyForRunsGenerateQuery,
@@ -156,6 +152,19 @@ import {
   SnapshotListResponse,
   SnapshotResponse,
 } from './resources/sandboxes/sandboxes.js';
+import {
+  Thread,
+  ThreadAggregateStatsParams,
+  ThreadAggregateStatsResponse,
+  ThreadListTracesParams,
+  ThreadQueryParams,
+  ThreadStats,
+  ThreadStatsParams,
+  ThreadTrace,
+  ThreadTracesItemsCursorGetPagination,
+  Threads,
+  ThreadsItemsCursorPostPagination,
+} from './resources/threads/threads.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
@@ -922,6 +931,7 @@ export class Langsmith {
 
   static toFile = Uploads.toFile;
 
+  fleet: API.Fleet = new API.Fleet(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
   threads: API.Threads = new API.Threads(this);
@@ -934,6 +944,7 @@ export class Langsmith {
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
+Langsmith.Fleet = Fleet;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.Threads = Threads;
@@ -1002,6 +1013,8 @@ export declare namespace Langsmith {
     type ItemsCursorGetPaginationResponse as ItemsCursorGetPaginationResponse,
   };
 
+  export { Fleet as Fleet };
+
   export {
     Datasets as Datasets,
     type DataType as DataType,
@@ -1038,8 +1051,10 @@ export declare namespace Langsmith {
     type Thread as Thread,
     type ThreadStats as ThreadStats,
     type ThreadTrace as ThreadTrace,
+    type ThreadAggregateStatsResponse as ThreadAggregateStatsResponse,
     type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
     type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
+    type ThreadAggregateStatsParams as ThreadAggregateStatsParams,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,
@@ -1119,6 +1134,7 @@ export declare namespace Langsmith {
     Issues as Issues,
     type Issue as Issue,
     type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueRetrieveParams as IssueRetrieveParams,
     type IssueListParams as IssueListParams,
   };
 

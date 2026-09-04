@@ -13,8 +13,12 @@ export class Issues extends APIResource {
    *
    * Returns one issue for the authenticated tenant.
    */
-  retrieve(id: string, options?: RequestOptions): APIPromise<Issue> {
-    return this._client.get(path`/api/v1/platform/issues/${id}`, options);
+  retrieve(
+    id: string,
+    query: IssueRetrieveParams | null | undefined = {},
+    options?: RequestOptions,
+  ): APIPromise<Issue> {
+    return this._client.get(path`/api/v1/platform/issues/${id}`, { query, ...options });
   }
 
   /**
@@ -67,6 +71,8 @@ export interface Issue {
 
   last_seen_at?: string;
 
+  linear_context?: Issue.LinearContext;
+
   linear_sync?: Issue.LinearSync;
 
   name?: string;
@@ -103,6 +109,12 @@ export interface Issue {
 }
 
 export namespace Issue {
+  export interface LinearContext {
+    github_pr_urls?: Array<string>;
+
+    workflow_state?: string;
+  }
+
   export interface LinearSync {
     identifier?: string;
 
@@ -122,7 +134,20 @@ export namespace Issue {
   }
 }
 
+export interface IssueRetrieveParams {
+  /**
+   * Include current Linear workflow state and validated linked GitHub pull request
+   * URLs
+   */
+  include_linear_context?: boolean;
+}
+
 export interface IssueListParams extends OffsetPaginationIssuesParams {
+  /**
+   * Filter by Engine activity (repeatable; OR semantics)
+   */
+  activity?: Array<'fixing' | 'watching' | 'recurred'>;
+
   /**
    * Filter by session ID (UUID)
    */
@@ -139,14 +164,25 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
   severity?: 0 | 1 | 2 | 3;
 
   /**
+   * Filter by exact severity (repeatable; OR semantics)
+   */
+  severity_exact?: Array<0 | 1 | 2 | 3>;
+
+  /**
    * Sort field
    */
-  sort_by?: 'created_at' | 'updated_at' | 'severity';
+  sort_by?:
+    'default' | 'created_at' | 'updated_at' | 'last_seen' | 'last_updated' | 'trace_count' | 'severity';
 
   /**
    * Filter by status
    */
   status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
+
+  /**
+   * Group results by issue lifecycle status before applying sort_by
+   */
+  status_first?: boolean;
 
   /**
    * Filter by tag (exact match)
@@ -168,6 +204,7 @@ export declare namespace Issues {
   export {
     type Issue as Issue,
     type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueRetrieveParams as IssueRetrieveParams,
     type IssueListParams as IssueListParams,
   };
 }
