@@ -37,9 +37,30 @@ logger = logging.getLogger("langsmith.client")
 
 LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 
-# Persistent pool reused across batches in hybrid tracing mode so we don't
-# spawn and join two OS threads for every drained batch.
-LANGSMITH_HYBRID_TRACING_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=2)
+# In hybrid mode each tracing thread needs a helper to run the OTEL leg while it
+# sends the LangSmith payload itself. A threading.local holds a separate value
+# per thread, so every tracing thread gets its own helper and none is shared.
+_hybrid_executor_local = threading.local()
+
+
+def _get_hybrid_executor() -> cf.ThreadPoolExecutor:
+    """Return this thread's OTEL helper, creating it on first use.
+
+    Created inside the thread that uses it on purpose: os.fork() keeps only the
+    forking thread, so a helper made up front would look idle in the child while
+    its worker no longer exists, and waiting on it would never return. This
+    covers the helper only -- a Client itself is not usable across a fork,
+    because its tracing threads do not survive one either. Build a new Client
+    in the child.
+    """
+    executor = getattr(_hybrid_executor_local, "executor", None)
+    if executor is None:
+        # One writer per thread, so no lock. No explicit shutdown either: the
+        # worker retires when the thread that owns it goes away.
+        executor = _hybrid_executor_local.executor = cf.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="langsmith-otel"
+        )
+    return executor
 
 
 def _group_batch_by_api_endpoint(
@@ -481,18 +502,14 @@ def _hybrid_tracing_thread_handle_batch(
     langsmith_ops = copy.deepcopy(ops)
     otel_ops = copy.deepcopy(ops)
 
+    # Only the hand-off can fail, and it happens before either leg starts, so
+    # neither leg can run twice.
+    future_otel: Optional[cf.Future] = None
     try:
-        # Reuse a persistent pool for parallel execution
-        future_langsmith = LANGSMITH_HYBRID_TRACING_THREAD_POOL.submit(
-            _tracing_thread_handle_batch,
-            client,
-            tracing_queue,
-            batch,
-            use_multipart,
-            False,  # Don't mark tasks done - we'll do it once at the end
-            langsmith_ops,
-        )
-        future_otel = LANGSMITH_HYBRID_TRACING_THREAD_POOL.submit(
+        # The OTEL leg is CPU work, so one helper is enough. The LangSmith leg
+        # waits on the network, so this thread runs it instead of idling: the
+        # two overlap, and every tracing thread sends in parallel.
+        future_otel = _get_hybrid_executor().submit(
             _otel_tracing_thread_handle_batch,
             client,
             tracing_queue,
@@ -500,25 +517,22 @@ def _hybrid_tracing_thread_handle_batch(
             False,  # Don't mark tasks done - we'll do it once at the end
             otel_ops,
         )
-
-        # Wait for both to complete
-        future_langsmith.result()
-        future_otel.result()
     except RuntimeError as e:
-        if "cannot schedule new futures after interpreter shutdown" in str(e):
-            # During interpreter shutdown, ThreadPoolExecutor is blocked,
-            # fall back to sequential processing
-            logger.debug(
-                "Interpreter shutting down, falling back to sequential processing"
-            )
-            _tracing_thread_handle_batch(
-                client, tracing_queue, batch, use_multipart, False, langsmith_ops
-            )
-            _otel_tracing_thread_handle_batch(
-                client, tracing_queue, batch, False, otel_ops
-            )
-        else:
-            raise
+        # submit() raises RuntimeError whenever no helper can take the job: the
+        # interpreter is shutting down, or the OS refused a new thread. Either
+        # way this thread does both legs itself. Letting this escape would kill
+        # the tracing thread and leave the batch unfinished forever.
+        logger.debug("No OTEL helper thread (%s), sending sequentially instead", e)
+        # Drop the unusable helper so the next batch builds a fresh one.
+        _hybrid_executor_local.executor = None
+
+    _tracing_thread_handle_batch(
+        client, tracing_queue, batch, use_multipart, False, langsmith_ops
+    )
+    if future_otel is None:
+        _otel_tracing_thread_handle_batch(client, tracing_queue, batch, False, otel_ops)
+    else:
+        future_otel.result()
 
     # Mark all tasks as done once, only if requested
     if mark_task_done and tracing_queue is not None:
