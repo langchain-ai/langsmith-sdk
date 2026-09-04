@@ -19,6 +19,7 @@ import {
   type ItemsCursorPostPaginationParams,
   PagePromise,
 } from '../../core/pagination.js';
+import { buildHeaders } from '../../internal/headers.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
 
@@ -68,13 +69,15 @@ export class Threads extends APIResource {
    * ```
    */
   query(
-    body: ThreadQueryParams,
+    params: ThreadQueryParams,
     options?: RequestOptions,
   ): PagePromise<ThreadsItemsCursorPostPagination, Thread> {
+    const { Accept, ...body } = params;
     return this._client.getAPIList('/api/v2/threads/query', ItemsCursorPostPagination<Thread>, {
       body,
       method: 'post',
       ...options,
+      headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
     });
   }
 
@@ -773,58 +776,64 @@ export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
 
 export interface ThreadQueryParams extends ItemsCursorPostPaginationParams {
   /**
-   * `filter` narrows which threads are returned, using a LangSmith filter expression
-   * evaluated against each thread's root run. For example: has(tags, "production")
-   * or eq(status, "error"). See
+   * Body param: `filter` narrows which threads are returned, using a LangSmith
+   * filter expression evaluated against each thread's root run. For example:
+   * has(tags, "production") or eq(status, "error"). See
    * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
    * for syntax.
    */
   filter?: string;
 
   /**
-   * `max_start_time` is the exclusive upper bound on thread activity (RFC3339
-   * date-time). Defaults to now (UTC) when omitted.
+   * Body param: `max_start_time` is the exclusive upper bound on thread activity
+   * (RFC3339 date-time). Defaults to now (UTC) when omitted.
    */
   max_start_time?: string;
 
   /**
-   * `min_start_time` is the inclusive lower bound on thread activity (RFC3339
-   * date-time). Defaults to 1 day before now (UTC) when omitted.
+   * Body param: `min_start_time` is the inclusive lower bound on thread activity
+   * (RFC3339 date-time). Defaults to 1 day before now (UTC) when omitted.
    */
   min_start_time?: string;
 
   /**
-   * `project_id` is the tracing project UUID.
+   * Body param: `project_id` is the tracing project UUID.
    */
   project_id?: string;
 
   /**
-   * `thread_filter` narrows results using a LangSmith filter expression evaluated
-   * against each complete thread summary. Self-hosted deployments require LangSmith
-   * v0.17 or later; unsupported deployments return 501. See
+   * Body param: `thread_filter` narrows results using a LangSmith filter expression
+   * evaluated against each complete thread summary. Self-hosted deployments require
+   * LangSmith v0.17 or later; unsupported deployments return 501. See
    * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
    * for syntax.
    */
   thread_filter?: string;
 
   /**
-   * `trace_filter` narrows results to threads containing at least one trace whose
-   * root run matches this LangSmith filter expression. Trace-level aggregate fields
-   * are evaluated using the complete trace summary. Self-hosted deployments require
-   * LangSmith v0.17 or later; unsupported deployments return 501. See
+   * Body param: `trace_filter` narrows results to threads containing at least one
+   * trace whose root run matches this LangSmith filter expression. Trace-level
+   * aggregate fields are evaluated using the complete trace summary. Self-hosted
+   * deployments require LangSmith v0.17 or later; unsupported deployments
+   * return 501. See
    * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
    * for syntax.
    */
   trace_filter?: string;
 
   /**
-   * `tree_filter` narrows results to threads containing at least one trace with a
-   * matching run anywhere in its run tree. Self-hosted deployments require LangSmith
-   * v0.17 or later; unsupported deployments return 501. See
+   * Body param: `tree_filter` narrows results to threads containing at least one
+   * trace with a matching run anywhere in its run tree. Self-hosted deployments
+   * require LangSmith v0.17 or later; unsupported deployments return 501. See
    * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
    * for syntax.
    */
   tree_filter?: string;
+
+  /**
+   * Header param: application/json or text/event-stream
+   */
+  Accept?: string;
 }
 
 export interface ThreadStatsParams {

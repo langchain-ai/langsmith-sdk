@@ -17,7 +17,7 @@ from .share import (
 from ...types import thread_query_params, thread_stats_params, thread_list_traces_params
 from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
-from ..._utils import path_template, maybe_transform, async_maybe_transform
+from ..._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
 from ..._compat import cached_property
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from ..._response import (
@@ -173,6 +173,7 @@ class ThreadsResource(SyncAPIResource):
         thread_filter: str | Omit = omit,
         trace_filter: str | Omit = omit,
         tree_filter: str | Omit = omit,
+        accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -237,6 +238,7 @@ class ThreadsResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/api/v2/threads/query",
             page=SyncItemsCursorPostPagination[Thread],
@@ -477,6 +479,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         thread_filter: str | Omit = omit,
         trace_filter: str | Omit = omit,
         tree_filter: str | Omit = omit,
+        accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -541,6 +544,7 @@ class AsyncThreadsResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/api/v2/threads/query",
             page=AsyncItemsCursorPostPagination[Thread],
