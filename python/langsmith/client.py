@@ -5777,7 +5777,7 @@ class Client:
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_orjson.dumps(dataset),
+            data=_dumps_json(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
 

@@ -4,6 +4,8 @@ from abc import abstractmethod
 from collections import defaultdict, deque
 from typing import Any, Callable, Optional, TypedDict, Union
 
+from langsmith.secret import LangSmithSecret
+
 
 class _ExtractOptions(TypedDict):
     max_depth: Optional[int]
@@ -44,6 +46,9 @@ def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNod
             for i, item in enumerate(value):
                 queue.append((item, depth + 1, path + [i]))
         elif isinstance(value, str):
+            # A replacer would rewrite a secret back to a plain `str`.
+            if isinstance(value, LangSmithSecret):
+                continue
             result.append(StringNode(value=value, path=path))
 
     return result
