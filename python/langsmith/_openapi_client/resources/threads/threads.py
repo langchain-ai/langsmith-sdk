@@ -89,6 +89,7 @@ class ThreadsResource(SyncAPIResource):
                 "THREAD_FEEDBACK_STATS",
             ]
         ],
+        filter: str | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
         thread_filter: str | Omit = omit,
@@ -115,6 +116,12 @@ class ThreadsResource(SyncAPIResource):
 
           select: `select` lists the aggregate statistics to compute and return. At least one
               value is required.
+
+          filter: `filter` is a deprecated, unscoped LangSmith filter expression evaluated against
+              trace root runs. Kept for compatibility with deployments that serve this
+              endpoint via the legacy ClickHouse backend (no SmithDB query service
+              configured); prefer `trace_filter`, `tree_filter`, or `thread_filter` otherwise,
+              since those require SmithDB.
 
           max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
               date-time). Defaults to now (UTC) when omitted.
@@ -145,6 +152,7 @@ class ThreadsResource(SyncAPIResource):
                 {
                     "project_id": project_id,
                     "select": select,
+                    "filter": filter,
                     "max_start_time": max_start_time,
                     "min_start_time": min_start_time,
                     "thread_filter": thread_filter,
@@ -493,6 +501,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                 "THREAD_FEEDBACK_STATS",
             ]
         ],
+        filter: str | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
         thread_filter: str | Omit = omit,
@@ -519,6 +528,12 @@ class AsyncThreadsResource(AsyncAPIResource):
 
           select: `select` lists the aggregate statistics to compute and return. At least one
               value is required.
+
+          filter: `filter` is a deprecated, unscoped LangSmith filter expression evaluated against
+              trace root runs. Kept for compatibility with deployments that serve this
+              endpoint via the legacy ClickHouse backend (no SmithDB query service
+              configured); prefer `trace_filter`, `tree_filter`, or `thread_filter` otherwise,
+              since those require SmithDB.
 
           max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
               date-time). Defaults to now (UTC) when omitted.
@@ -549,6 +564,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                 {
                     "project_id": project_id,
                     "select": select,
+                    "filter": filter,
                     "max_start_time": max_start_time,
                     "min_start_time": min_start_time,
                     "thread_filter": thread_filter,
