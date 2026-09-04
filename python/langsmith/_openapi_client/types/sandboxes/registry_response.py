@@ -11,6 +11,10 @@ __all__ = ["RegistryResponse"]
 class RegistryResponse(BaseModel):
     id: Optional[str] = None
 
+    auth_type: Optional[Literal["DOCKER_CONFIG", "AWS_ROLE"]] = None
+
+    aws_role_arn: Optional[str] = None
+
     created_at: Optional[str] = None
 
     created_by: Optional[str] = None
