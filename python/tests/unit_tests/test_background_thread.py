@@ -1,67 +1,16 @@
 """Unit tests for the tracing background threads."""
 
-import gc
-import threading
-import time
 import uuid
+from queue import Queue
+from unittest.mock import MagicMock
 
-from langsmith._internal._background_thread import _get_hybrid_executor
-
-
-def test_hybrid_executor_is_per_thread():
-    """Every thread gets its own helper and keeps the same one."""
-    seen = {}
-
-    def grab(name):
-        seen[name] = (_get_hybrid_executor(), _get_hybrid_executor())
-
-    threads = [threading.Thread(target=grab, args=(i,)) for i in range(3)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    assert len(seen) == 3
-    for first, second in seen.values():
-        assert first is second  # stable inside one thread
-    assert len({id(first) for first, _ in seen.values()}) == 3  # distinct across
+from langsmith._internal import _background_thread as bt
+from langsmith._internal._operations import serialize_run_dict
 
 
-def test_hybrid_executor_retires_with_its_thread():
-    """The helper's worker goes away once its owning thread exits."""
-    baseline = threading.active_count()
-
-    def use_helper():
-        _get_hybrid_executor().submit(lambda: None).result()
-
-    for _ in range(3):
-        t = threading.Thread(target=use_helper)
-        t.start()
-        t.join()
-
-    # Workers stop shortly after their owner is collected, so give them a moment.
-    gc.collect()
-    deadline = time.time() + 5
-    while threading.active_count() > baseline and time.time() < deadline:
-        time.sleep(0.05)
-
-    assert threading.active_count() <= baseline
-
-
-def test_hybrid_batch_sends_both_legs_when_no_helper_thread(monkeypatch):
-    """If no helper thread can start, this thread sends both legs itself."""
-    from queue import Queue
-    from unittest.mock import MagicMock
-
-    from langsmith._internal import _background_thread as bt
-    from langsmith._internal._operations import serialize_run_dict
-
-    class RefusesJobs:
-        def submit(self, *args, **kwargs):
-            raise RuntimeError("can't start new thread")
-
+def test_hybrid_batch_sends_both_legs_once_and_finishes_the_queue(monkeypatch):
+    """Hybrid mode sends each leg exactly once and always drains the queue."""
     sent = []
-    monkeypatch.setattr(bt, "_get_hybrid_executor", RefusesJobs)
     monkeypatch.setattr(
         bt, "_tracing_thread_handle_batch", lambda *a, **k: sent.append("langsmith")
     )
@@ -90,5 +39,5 @@ def test_hybrid_batch_sends_both_legs_when_no_helper_thread(monkeypatch):
         MagicMock(), queue, [item], use_multipart=True
     )
 
-    assert sorted(sent) == ["langsmith", "otel"]  # each leg exactly once
+    assert sent == ["langsmith", "otel"]  # each leg exactly once
     assert queue.unfinished_tasks == 0  # so flush() cannot hang
