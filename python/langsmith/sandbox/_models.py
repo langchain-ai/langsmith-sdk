@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
@@ -112,6 +112,8 @@ class Snapshot:
         registry_id: Private registry ID, if applicable.
         created_at: Timestamp when the snapshot was created.
         updated_at: Timestamp when the snapshot was last updated.
+        tags: Tags currently resolving to this snapshot, under its name. Empty
+            means the snapshot is dangling — reachable only by id.
     """
 
     id: str
@@ -127,6 +129,8 @@ class Snapshot:
     registry_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # Appended last so existing positional constructions keep their meaning.
+    tags: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Snapshot:
@@ -145,7 +149,26 @@ class Snapshot:
             registry_id=data.get("registry_id"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
+            tags=list(data.get("tags") or []),
         )
+
+
+@dataclass
+class SnapshotTag:
+    """One tag published under a snapshot name, and the snapshot it resolves to.
+
+    Attributes:
+        tag: Tag name.
+        snapshot_id: Snapshot the tag currently points at.
+    """
+
+    tag: str
+    snapshot_id: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SnapshotTag:
+        """Create a SnapshotTag from an API response dict."""
+        return cls(tag=data.get("tag", ""), snapshot_id=data.get("snapshot_id", ""))
 
 
 # =============================================================================

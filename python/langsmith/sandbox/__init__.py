@@ -67,6 +67,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     ServiceURL,
     Snapshot,
+    SnapshotTag,
 )
 from langsmith.sandbox._mounts import (
     AWSMountAuthConfig,
@@ -114,6 +115,7 @@ __all__ = [
     "ResourceStatus",
     "ExecutionResult",
     "Snapshot",
+    "SnapshotTag",
     "ServiceURL",
     "DownloadURL",
     "DownloadContentDisposition",

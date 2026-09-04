@@ -881,7 +881,7 @@ class TestAsyncSandboxOperations:
 
         with pytest.raises(
             ValueError,
-            match="At most one of snapshot_id or snapshot_name may be set",
+            match="At most one of snapshot_id, snapshot or snapshot_name may be set",
         ):
             await client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
 
@@ -1077,6 +1077,81 @@ class TestAsyncSandboxOperations:
 
         assert sandbox_mock.call_args.kwargs["vcpus"] == 2
         assert sandbox_mock.call_args.kwargs["mem_bytes"] == 8589934592
+
+
+class TestAsyncSnapshotTags:
+    """The async client mirrors the sync tag surface."""
+
+    async def test_capture_snapshot_publishes_the_requested_tag(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-3",
+                "name": "my-env",
+                "status": "building",
+                "fs_capacity_bytes": 4294967296,
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-3",
+            json={
+                "id": "snap-3",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "tags": ["v2"],
+            },
+        )
+
+        snapshot = await client.capture_snapshot("my-vm", "my-env", tag="v2")
+
+        assert snapshot.tags == ["v2"]
+        assert json.loads(httpx_mock.get_requests()[0].content) == {
+            "name": "my-env",
+            "tag": "v2",
+        }
+
+    async def test_list_snapshot_tags_lists_every_tag(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots-by-name/my-env",
+            json={
+                "name": "my-env",
+                "tags": [{"tag": "latest", "snapshot_id": "snap-3"}],
+            },
+        )
+
+        tags = await client.list_snapshot_tags("my-env")
+
+        assert [(tag.tag, tag.snapshot_id) for tag in tags] == [("latest", "snap-3")]
+
+    async def test_get_snapshot_by_reference_keeps_the_tag_separator(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/my-env:v2",
+            json={
+                "id": "snap-5",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 1,
+                "tags": ["v2"],
+            },
+        )
+
+        snapshot = await client.get_snapshot("my-env:v2")
+
+        assert snapshot.id == "snap-5"
 
 
 class TestAsyncConnectionErrors:
