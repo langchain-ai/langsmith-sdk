@@ -711,6 +711,14 @@ export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   return run;
 }
 
+/**
+ * Header carrying the client's configured trace sampling rate on run-ingestion
+ * requests, so the backend can attribute the traces it receives to the rate
+ * they were kept at. Omitted when no rate is configured: absence means "not
+ * configured", which is distinct from `1`.
+ */
+const SAMPLE_RATE_HEADER = "x-langsmith-sample-rate";
+
 const getTracingSamplingRate = (configRate?: number) => {
   const samplingRateStr =
     configRate?.toString() ??
@@ -1582,6 +1590,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.workspaceId) {
       names.add("x-tenant-id");
     }
+    if (this.tracingSampleRate !== undefined) {
+      names.add(SAMPLE_RATE_HEADER);
+    }
     return names;
   }
 
@@ -1618,6 +1629,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (this.workspaceId) {
       headers["x-tenant-id"] = this.workspaceId;
+    }
+    if (this.tracingSampleRate !== undefined) {
+      headers[SAMPLE_RATE_HEADER] = String(this.tracingSampleRate);
     }
     return headers;
   }
