@@ -60,9 +60,6 @@ import packaging.version
 import requests
 from pydantic import Field
 from requests import adapters as requests_adapters
-from requests_toolbelt import (  # type: ignore[import-untyped]
-    multipart as rqtb_multipart,
-)
 from typing_extensions import TypeGuard, deprecated, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
@@ -90,6 +87,7 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
+    _MULTIPART_INLINE_MAX_BYTES,
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
@@ -103,6 +101,7 @@ from langsmith._internal._hub import (
 from langsmith._internal._multipart import (
     MultipartPart,
     MultipartPartsAndContext,
+    RewindableMultipartBody,
     join_multipart_parts_and_context,
 )
 from langsmith._internal._operations import (
@@ -3600,11 +3599,15 @@ class Client:
         for target_api_url, headers_for_endpoint in endpoints:
             for idx in range(1, attempts + 1):
                 try:
-                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-                    if encoder.len <= 20_000_000:  # ~20 MB
-                        data = encoder.to_string()
-                    else:
-                        data = encoder
+                    # A fresh body per attempt and per endpoint: an encoder is
+                    # single-use, and this one also rewinds itself for the
+                    # transport-level retries urllib3 runs beneath us.
+                    body = RewindableMultipartBody(parts, _BOUNDARY)
+                    data: Union[bytes, RewindableMultipartBody] = (
+                        body.to_bytes()
+                        if len(body) <= _MULTIPART_INLINE_MAX_BYTES
+                        else body
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",
@@ -3612,7 +3615,7 @@ class Client:
                             "data": data,
                             "headers": {
                                 **headers_for_endpoint,
-                                "Content-Type": encoder.content_type,
+                                "Content-Type": body.content_type,
                             },
                             "timeout": _TRACING_SEND_TIMEOUT,
                         },
@@ -3640,15 +3643,13 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     _fail_exc = e
+
                 # Fell through — final attempt failed or non-retryable error.
+                def _dump_body() -> bytes:
+                    return RewindableMultipartBody(parts, _BOUNDARY).to_bytes()
+
                 self._dump_failed_trace(
-                    lambda: (
-                        data
-                        if isinstance(data, bytes)
-                        else rqtb_multipart.MultipartEncoder(
-                            parts, boundary=_BOUNDARY
-                        ).to_string()
-                    ),
+                    _dump_body,
                     {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
                 )
                 self._invoke_tracing_error_callback(_fail_exc)
@@ -6455,7 +6456,11 @@ class Client:
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
-    ) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
+    ) -> tuple[
+        RewindableMultipartBody,
+        Union[bytes, RewindableMultipartBody],
+        dict[str, io.BufferedReader],
+    ]:
         parts: list[MultipartPart] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
         if include_dataset_id:
@@ -6627,13 +6632,12 @@ class Client:
                     )
                 )
 
-        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-        if encoder.len <= 20_000_000:  # ~20 MB
-            data = encoder.to_string()
-        else:
-            data = encoder
+        body = RewindableMultipartBody(parts, _BOUNDARY)
+        data: Union[bytes, RewindableMultipartBody] = (
+            body.to_bytes() if len(body) <= _MULTIPART_INLINE_MAX_BYTES else body
+        )
 
-        return encoder, data, opened_files_dict
+        return body, data, opened_files_dict
 
     def update_examples_multipart(
         self,
@@ -6681,7 +6685,7 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data, opened_files_dict = self._prepare_multipart_data(
+        body, data, opened_files_dict = self._prepare_multipart_data(
             updates,
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
@@ -6695,7 +6699,7 @@ class Client:
                     "data": data,
                     "headers": {
                         **self._headers,
-                        "Content-Type": encoder.content_type,
+                        "Content-Type": body.content_type,
                     },
                 },
             )
@@ -6822,7 +6826,7 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data, opened_files_dict = self._prepare_multipart_data(
+        body, data, opened_files_dict = self._prepare_multipart_data(
             uploads,
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
@@ -6836,7 +6840,7 @@ class Client:
                     "data": data,
                     "headers": {
                         **self._headers,
-                        "Content-Type": encoder.content_type,
+                        "Content-Type": body.content_type,
                     },
                 },
             )
@@ -6867,7 +6871,7 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data, opened_files_dict = self._prepare_multipart_data(
+        body, data, opened_files_dict = self._prepare_multipart_data(
             upserts,
             include_dataset_id=True,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
@@ -6885,7 +6889,7 @@ class Client:
                     "data": data,
                     "headers": {
                         **self._headers,
-                        "Content-Type": encoder.content_type,
+                        "Content-Type": body.content_type,
                     },
                 },
             )
