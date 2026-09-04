@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import concurrent.futures as cf
-import copy
 import functools
 import io
 import logging
@@ -36,31 +35,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("langsmith.client")
 
 LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
-
-# In hybrid mode each tracing thread needs a helper to run the OTEL leg while it
-# sends the LangSmith payload itself. A threading.local holds a separate value
-# per thread, so every tracing thread gets its own helper and none is shared.
-_hybrid_executor_local = threading.local()
-
-
-def _get_hybrid_executor() -> cf.ThreadPoolExecutor:
-    """Return this thread's OTEL helper, creating it on first use.
-
-    Created inside the thread that uses it on purpose: os.fork() keeps only the
-    forking thread, so a helper made up front would look idle in the child while
-    its worker no longer exists, and waiting on it would never return. This
-    covers the helper only -- a Client itself is not usable across a fork,
-    because its tracing threads do not survive one either. Build a new Client
-    in the child.
-    """
-    executor = getattr(_hybrid_executor_local, "executor", None)
-    if executor is None:
-        # One writer per thread, so no lock. No explicit shutdown either: the
-        # worker retires when the thread that owns it goes away.
-        executor = _hybrid_executor_local.executor = cf.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="langsmith-otel"
-        )
-    return executor
 
 
 def _group_batch_by_api_endpoint(
@@ -495,44 +469,20 @@ def _hybrid_tracing_thread_handle_batch(
         mark_task_done: Whether to mark queue tasks as done after processing.
             Set to False primarily for testing when items weren't actually queued.
     """
-    # Combine operations once to avoid race conditions
+    # Combine operations once so both legs send exactly the same thing. Neither
+    # leg modifies them, so they can share one copy.
     ops = combine_serialized_queue_operations([item.item for item in batch])
 
-    # Create copies for each thread to avoid shared mutation
-    langsmith_ops = copy.deepcopy(ops)
-    otel_ops = copy.deepcopy(ops)
-
-    # Only the hand-off can fail, and it happens before either leg starts, so
-    # neither leg can run twice.
-    future_otel: Optional[cf.Future] = None
-    try:
-        # The OTEL leg is CPU work, so one helper is enough. The LangSmith leg
-        # waits on the network, so this thread runs it instead of idling: the
-        # two overlap, and every tracing thread sends in parallel.
-        future_otel = _get_hybrid_executor().submit(
-            _otel_tracing_thread_handle_batch,
-            client,
-            tracing_queue,
-            batch,
-            False,  # Don't mark tasks done - we'll do it once at the end
-            otel_ops,
-        )
-    except RuntimeError as e:
-        # submit() raises RuntimeError whenever no helper can take the job: the
-        # interpreter is shutting down, or the OS refused a new thread. Either
-        # way this thread does both legs itself. Letting this escape would kill
-        # the tracing thread and leave the batch unfinished forever.
-        logger.debug("No OTEL helper thread (%s), sending sequentially instead", e)
-        # Drop the unusable helper so the next batch builds a fresh one.
-        _hybrid_executor_local.executor = None
-
+    # Sent one after the other on this thread. The OTEL leg is a small amount of
+    # CPU work next to the LangSmith network send, so overlapping the two saves
+    # about 1% of a batch and is not worth a helper thread. Batches still go out
+    # in parallel: there is one of these threads per drain loop, up to
+    # _AUTO_SCALE_UP_NTHREADS_LIMIT of them. Each leg logs and swallows its own
+    # errors, so neither can stop the other or kill this thread.
     _tracing_thread_handle_batch(
-        client, tracing_queue, batch, use_multipart, False, langsmith_ops
+        client, tracing_queue, batch, use_multipart, False, ops
     )
-    if future_otel is None:
-        _otel_tracing_thread_handle_batch(client, tracing_queue, batch, False, otel_ops)
-    else:
-        future_otel.result()
+    _otel_tracing_thread_handle_batch(client, tracing_queue, batch, False, ops)
 
     # Mark all tasks as done once, only if requested
     if mark_task_done and tracing_queue is not None:
