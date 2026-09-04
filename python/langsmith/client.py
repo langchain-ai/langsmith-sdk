@@ -2474,6 +2474,11 @@ class Client:
         if self._omit_traced_runtime_info:
             return
         runtime_env = ls_env.get_runtime_environment()
+        if self.tracing_sample_rate is not None:
+            runtime_env = {
+                **runtime_env,
+                "tracing_sample_rate": self.tracing_sample_rate,
+            }
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
