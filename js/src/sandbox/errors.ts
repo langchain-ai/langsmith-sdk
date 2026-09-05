@@ -59,9 +59,12 @@ export class LangSmithSandboxConnectionError extends LangSmithSandboxError {
  * deduplicate an attempt whose outcome is unknown.
  */
 export class LangSmithSandboxRetryableConnectionError extends LangSmithSandboxConnectionError {
-  constructor(message: string) {
+  readonly retryAfterSeconds?: number;
+
+  constructor(message: string, retryAfterSeconds?: number) {
     super(message);
     this.name = "LangSmithSandboxRetryableConnectionError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 

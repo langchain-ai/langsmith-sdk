@@ -315,6 +315,9 @@ export class Sandbox {
           CommandHandle.BACKOFF_BASE * 2 ** (attempt - 1),
           CommandHandle.BACKOFF_MAX,
         );
+        if (e instanceof LangSmithSandboxRetryableConnectionError) {
+          delay = e.retryAfterSeconds ?? delay * (0.8 + Math.random() * 0.2);
+        }
         const remaining = remainingBudget(deadline);
         if (remaining !== undefined) {
           if (remaining <= 0) {
