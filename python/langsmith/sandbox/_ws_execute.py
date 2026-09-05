@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import random
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any, Callable, Optional
@@ -209,7 +211,7 @@ class _AsyncWSStreamControl:
 # =============================================================================
 
 
-_TRANSIENT_HANDSHAKE_STATUSES = frozenset({500, 502, 503, 504})
+_TRANSIENT_HANDSHAKE_STATUSES = frozenset({429, 500, 502, 503, 504})
 _MAX_HANDSHAKE_ERROR_BYTES = 16 * 1024
 
 
@@ -239,6 +241,28 @@ def _handshake_server_detail(exc: Exception) -> Optional[str]:
     return " (".join(parts) + ("" if len(parts) < 2 else ")") if parts else None
 
 
+def _handshake_retry_after(exc: Exception) -> Optional[float]:
+    """Return a non-negative Retry-After delay from a rejected handshake."""
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("Retry-After")
+        delay = float(raw)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return delay if math.isfinite(delay) and delay >= 0 else None
+
+
+def _retry_delay(
+    exc: SandboxRetryableConnectionError, exponential_backoff: float
+) -> float:
+    """Prefer a server hint, otherwise jitter the local backoff."""
+    if exc.retry_after is not None:
+        return exc.retry_after
+    return random.uniform(exponential_backoff * 0.8, exponential_backoff)
+
+
 def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
     """Raise a clear error when the WebSocket upgrade handshake fails.
 
@@ -260,7 +284,8 @@ def _raise_for_invalid_handshake(exc: Exception, ws_url: str) -> None:
         ) from exc
     if status in _TRANSIENT_HANDSHAKE_STATUSES:
         raise SandboxRetryableConnectionError(
-            f"WebSocket upgrade temporarily rejected by server (HTTP {status}){suffix}"
+            f"WebSocket upgrade temporarily rejected by server (HTTP {status}){suffix}",
+            retry_after=_handshake_retry_after(exc),
         ) from exc
     if status is not None:
         raise SandboxConnectionError(

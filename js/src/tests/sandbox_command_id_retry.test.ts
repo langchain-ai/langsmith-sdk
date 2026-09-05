@@ -169,6 +169,82 @@ describe("run() early-close retry", () => {
     expect(first.commandId).toBe(second.commandId);
   });
 
+  it("waits for Retry-After before retrying a rate-limited handshake", async () => {
+    jest.useFakeTimers();
+    try {
+      const sandbox = makeSandbox();
+
+      runWsStream
+        .mockImplementationOnce((..._args: unknown[]) => [
+          failingStream(
+            new LangSmithSandboxRetryableConnectionError("HTTP 429", 10),
+          ),
+          null,
+        ])
+        .mockImplementationOnce((...args: unknown[]) => {
+          const opts = args[3] as { commandId: string };
+          return [
+            makeStream([
+              { type: "started", command_id: opts.commandId, pid: 1 },
+              { type: "exit", exit_code: 0 },
+            ]),
+            null,
+          ];
+        });
+
+      const resultPromise = sandbox.run("echo hi");
+      await jest.advanceTimersByTimeAsync(9_999);
+      expect(runWsStream).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(1);
+      const result = await resultPromise;
+
+      expect(result.exit_code).toBe(0);
+      const first = runWsStream.mock.calls[0][3] as { commandId: string };
+      const second = runWsStream.mock.calls[1][3] as { commandId: string };
+      expect(first.commandId).toBe(second.commandId);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("jitters retries without Retry-After", async () => {
+    jest.useFakeTimers();
+    const random = jest.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      const sandbox = makeSandbox();
+
+      runWsStream
+        .mockImplementationOnce((..._args: unknown[]) => [
+          failingStream(
+            new LangSmithSandboxRetryableConnectionError("HTTP 429"),
+          ),
+          null,
+        ])
+        .mockImplementationOnce((...args: unknown[]) => {
+          const opts = args[3] as { commandId: string };
+          return [
+            makeStream([
+              { type: "started", command_id: opts.commandId, pid: 1 },
+              { type: "exit", exit_code: 0 },
+            ]),
+            null,
+          ];
+        });
+
+      const resultPromise = sandbox.run("echo hi");
+      await jest.advanceTimersByTimeAsync(449);
+      expect(runWsStream).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(runWsStream).toHaveBeenCalledTimes(2);
+      await expect(resultPromise).resolves.toMatchObject({ exit_code: 0 });
+    } finally {
+      random.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it("does not retry a rejected handshake", async () => {
     const sandbox = makeSandbox();
     runWsStream.mockImplementation((..._args: unknown[]) => [

@@ -750,6 +750,53 @@ class TestSandboxRunWs:
         assert result.exit_code == 0
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_retries_rate_limited_handshake_after_retry_after(self, mock_run_ws):
+        """A pre-execution 429 waits for the server hint and reuses the command ID."""
+        rate_limited = SandboxRetryableConnectionError("HTTP 429", retry_after=10.0)
+
+        def rejected_stream():
+            raise rate_limited
+            yield
+
+        mock_run_ws.side_effect = [
+            (rejected_stream(), _WSStreamControl()),
+            (_make_stream([_started_msg(), _exit_msg(0)]), _WSStreamControl()),
+        ]
+        sandbox = self._make_sandbox()
+
+        with patch("time.sleep") as mock_sleep:
+            result = sandbox.run("echo hello")
+
+        assert result.exit_code == 0
+        mock_sleep.assert_called_once_with(10.0)
+        first_id = mock_run_ws.call_args_list[0].kwargs["command_id"]
+        second_id = mock_run_ws.call_args_list[1].kwargs["command_id"]
+        assert first_id == second_id
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_jitters_retry_without_retry_after(self, mock_run_ws):
+        """Retries without a server hint do not synchronize on a fixed delay."""
+
+        def rejected_stream():
+            raise SandboxRetryableConnectionError("HTTP 429")
+            yield
+
+        mock_run_ws.side_effect = [
+            (rejected_stream(), _WSStreamControl()),
+            (_make_stream([_started_msg(), _exit_msg(0)]), _WSStreamControl()),
+        ]
+        sandbox = self._make_sandbox()
+
+        with (
+            patch("random.uniform", return_value=0.45),
+            patch("time.sleep") as mock_sleep,
+        ):
+            result = sandbox.run("echo hello")
+
+        assert result.exit_code == 0
+        mock_sleep.assert_called_once_with(0.45)
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
     def test_run_wait_false(self, mock_run_ws):
         """wait=False returns CommandHandle."""
         mock_run_ws.return_value = (
@@ -1023,6 +1070,37 @@ class TestRaiseForInvalidHandshake:
 
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_429_is_retryable_and_preserves_retry_after(self):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "10"}
+        mock_response.body = b""
+        exc = Exception("server rejected WebSocket connection: HTTP 429")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxRetryableConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+        assert exc_info.value.retry_after == 10.0
+
+    @pytest.mark.parametrize("retry_after", ["nan", "inf", "-inf"])
+    def test_429_ignores_non_finite_retry_after(self, retry_after):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": retry_after}
+        mock_response.body = b""
+        exc = Exception("server rejected WebSocket connection: HTTP 429")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxRetryableConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+        assert exc_info.value.retry_after is None
 
     def test_503_is_retryable(self):
         from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
