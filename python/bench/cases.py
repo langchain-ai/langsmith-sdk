@@ -10,6 +10,7 @@ from bench.dumps_json import (
     DeeplyNestedModelV1,
     create_nested_instance,
 )
+from bench.hybrid_tracing import handle_hybrid_batches, make_batches
 from langsmith.client import _dumps_json
 
 
@@ -48,6 +49,11 @@ BENCHMARKS = (
         "create_20_000_compressed_run_trees",
         create_compressed_run_trees,
         20_000,
+    ),
+    (
+        "hybrid_handle_200_batches_of_100",
+        handle_hybrid_batches,
+        make_batches(200, ops_per_batch=100),
     ),
     (
         "dumps_class_nested_py_branch_and_leaf_200x400",
