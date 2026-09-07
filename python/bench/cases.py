@@ -3,6 +3,7 @@
 Each entry is ``(name, fn, input)``; ``fn(input)`` is the timed call.
 """
 
+from bench.create_compressed_run_tree import create_compressed_run_trees
 from bench.create_run_tree import create_run_trees
 from bench.dumps_json import (
     DeeplyNestedModel,
@@ -31,6 +32,21 @@ BENCHMARKS = (
     (
         "create_20_000_run_trees",
         create_run_trees,
+        20_000,
+    ),
+    (
+        "create_5_000_compressed_run_trees",
+        create_compressed_run_trees,
+        5_000,
+    ),
+    (
+        "create_10_000_compressed_run_trees",
+        create_compressed_run_trees,
+        10_000,
+    ),
+    (
+        "create_20_000_compressed_run_trees",
+        create_compressed_run_trees,
         20_000,
     ),
     (
