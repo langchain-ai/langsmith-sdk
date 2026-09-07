@@ -2912,6 +2912,32 @@ def test_sampling_and_batching():
     assert [post["id"] for post in batch_data.get("post", [])] == [str(SAMPLED_RUN_ID)]
 
 
+def test_sample_rate_survives_a_patch_without_extra() -> None:
+    """A patch carrying no ``extra`` must still report the sampling rate.
+
+    The server replaces ``extra`` wholesale on update, so a patch that omits it
+    overwrites whatever the create stamped. ``RunTree.post()`` + ``patch()`` with
+    no user metadata hits exactly this path, and the lost rate is unrecoverable
+    for that run -- the trace still lands, so nothing anywhere reports an error
+    and the exported trace potential is silently understated.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, tracing_sampling_rate=0.25)
+
+    client.update_run(
+        SAMPLED_RUN_ID,
+        trace_id=SAMPLED_RUN_ID,
+        dotted_order=f"20210101T000000000000Z{SAMPLED_RUN_ID}",
+        outputs={"result": "ok"},
+    )
+
+    payload = _find_request_payload(session, "PATCH", "/runs/")
+    # `or {}` rather than a default: the regression sends `"extra": null`
+    # explicitly, so a missing-key default would crash instead of reporting.
+    runtime = (payload.get("extra") or {}).get("runtime") or {}
+    assert runtime.get("tracing_sample_rate") == 0.25
+
+
 # Golden decisions at rate 0.5. The JS SDK asserts this exact table in
 # js/src/tests/client.test.ts: both must agree, or a trace sampled in by one
 # SDK is dropped by the other. Regenerate both sides together, never one.

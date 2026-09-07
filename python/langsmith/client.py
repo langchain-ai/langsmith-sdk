@@ -2474,6 +2474,10 @@ class Client:
         if self._omit_traced_runtime_info:
             return
         runtime_env = ls_env.get_runtime_environment()
+        # Known gap: the OTEL exporter emits `extra.metadata.*` as span attributes
+        # but never `extra.runtime` (`LANGSMITH_RUNTIME` at
+        # _internal/otel/_otel_exporter.py:103 is declared and unused), so this is
+        # dropped in `tracing_mode="otel"`.
         if self.tracing_sample_rate is not None:
             runtime_env = {
                 **runtime_env,
@@ -3854,7 +3858,7 @@ class Client:
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
             "tags": tags,
-            "extra": extra,
+            "extra": extra or {},
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
@@ -3885,10 +3889,15 @@ class Client:
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = self._filter_new_token_events(events)
-        if data["extra"]:
-            if metadata := data["extra"].get("metadata"):
-                data["extra"]["metadata"] = self._hide_run_metadata(metadata)
-            self._insert_runtime_env([data])
+        if data["extra"] and (metadata := data["extra"].get("metadata")):
+            data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+        # Stamp on every patch, not only patches that already carry an `extra`:
+        # the server replaces `extra` wholesale on update, so a patch without it
+        # wipes what the create stamped -- including ls_tracing_sample_rate, which
+        # is then unrecoverable for that run.
+        # if data["extra"] is None:
+        #     data["extra"] = {}
+        self._insert_runtime_env([data])
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
 
