@@ -77,9 +77,11 @@ class LangSmithSecret(str):
 
     Known limits:
 
-    - ``"Bearer " + secret`` and ``"".join([secret])`` yield a plain ``str``:
-      ``str`` handles those itself and never consults this class. Wrap the
-      final value instead -- ``LangSmithSecret(f"Bearer {key}")``.
+    - ``f"Bearer {secret}"``, ``"".join([secret])`` and
+      ``"Bearer {}".format(secret)`` yield a plain ``str``: those build the
+      result in C, where the operand gets no say in its type. Wrap the finished
+      value instead -- ``LangSmithSecret(f"Bearer {key}")``. Concatenation and
+      ``%`` are covered, in either operand order.
     - ``secret.encode()`` returns the real bytes, by design.
     - A secret used as a **dict key** is masked, but two of them in one dict
       collapse to a single entry. A key held inside a dataclass is not masked:
@@ -106,6 +108,21 @@ class LangSmithSecret(str):
         it when LangSmith stringifies that object.
         """
         return f"{type(self).__name__}({LANGSMITH_SECRET_MASK!r})"
+
+    # `str` has no reflected operators, so these cannot go in `_STR_RETURNING`.
+    # CPython tries the `nb_add`/`nb_remainder` slots, which a subclass defining
+    # these fills, before `str`'s own concatenation.
+    def __radd__(self, other: Any) -> Any:
+        """Keep the marker on ``"Bearer " + secret``."""
+        if not isinstance(other, str):
+            return NotImplemented
+        return LangSmithSecret(str.__add__(other, self))
+
+    def __rmod__(self, other: Any) -> Any:
+        """Keep the marker on ``"Bearer %s" % secret``."""
+        if not isinstance(other, str):
+            return NotImplemented
+        return LangSmithSecret(str.__mod__(other, self))
 
 
 def _make_str_wrapper(name: str) -> Any:

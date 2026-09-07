@@ -130,6 +130,8 @@ def test_str_methods_return_plaintext_value_and_keep_the_marker(secret, method, 
         (lambda s: s[:6], LangSmithSecret),
         (lambda s: s[0], LangSmithSecret),
         (lambda s: s + "!", LangSmithSecret),
+        (lambda s: "Bearer " + s, LangSmithSecret),
+        (lambda s: "Bearer %s" % s, LangSmithSecret),
         (lambda s: s * 2, LangSmithSecret),
         (lambda s: 2 * s, LangSmithSecret),
         (lambda s: s.format_map({}), LangSmithSecret),
@@ -161,10 +163,8 @@ def test_rpartition_marks_each_element(secret):
 @pytest.mark.parametrize(
     "op",
     [
-        pytest.param(lambda s: "Bearer " + s, id="prepend-concat"),
         pytest.param(lambda s: "".join([s]), id="str.join"),
         pytest.param(lambda s: "Bearer {}".format(s), id="format-into-plain-str"),
-        pytest.param(lambda s: "Bearer %s" % s, id="percent-format-into-plain-str"),
         pytest.param(lambda s: f"Bearer {s}", id="f-string-interpolation"),
     ],
 )
