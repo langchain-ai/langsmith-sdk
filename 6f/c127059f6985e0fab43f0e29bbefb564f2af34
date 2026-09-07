@@ -1,0 +1,32 @@
+python/bench/wrapped_llm_calls.py
+  s_9d798f94fcb60d::t_761d1b4004af3d 2,4-84,88-94,98-113,121-123,125-127,129-135,137-140,142-150,152-160
+  s_9d798f94fcb60d::t_c54e209cf64631 128,141
+  s_9d798f94fcb60d::t_e3d72157b7fbf4 95-97,124
+  s_9d798f94fcb60d::t_2f9366bf8baa0a 161-190
+  h_f1ecc43c8f43eb 1,3,116-120
+  s_9d798f94fcb60d::t_d7746484828586 85-87,114-115,136,151
+python/bench/cases.py
+  s_9d798f94fcb60d::t_e3d72157b7fbf4 14-18
+  s_9d798f94fcb60d::t_e6a2184173231d 95-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6fc127059f6985e0fab43f0e29bbefb564f2af34",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_9d798f94fcb60d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4d01e5-b817-4e2b-80b3-cb47b4623147",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
