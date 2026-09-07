@@ -2934,8 +2934,8 @@ def test_sample_rate_survives_a_patch_without_extra() -> None:
     payload = _find_request_payload(session, "PATCH", "/runs/")
     # `or {}` rather than a default: the regression sends `"extra": null`
     # explicitly, so a missing-key default would crash instead of reporting.
-    runtime = (payload.get("extra") or {}).get("runtime") or {}
-    assert runtime.get("tracing_sample_rate") == 0.25
+    metadata = (payload.get("extra") or {}).get("metadata") or {}
+    assert metadata.get("ls_tracing_sample_rate") == 0.25
 
 
 # Golden decisions at rate 0.5. The JS SDK asserts this exact table in

@@ -2474,15 +2474,7 @@ class Client:
         if self._omit_traced_runtime_info:
             return
         runtime_env = ls_env.get_runtime_environment()
-        # Known gap: the OTEL exporter emits `extra.metadata.*` as span attributes
-        # but never `extra.runtime` (`LANGSMITH_RUNTIME` at
-        # _internal/otel/_otel_exporter.py:103 is declared and unused), so this is
-        # dropped in `tracing_mode="otel"`.
-        if self.tracing_sample_rate is not None:
-            runtime_env = {
-                **runtime_env,
-                "tracing_sample_rate": self.tracing_sample_rate,
-            }
+        sample_rate = self.tracing_sample_rate
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
@@ -2494,6 +2486,8 @@ class Client:
             added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
             if added:
                 metadata.update(self._hide_run_metadata(added))
+            if sample_rate is not None:
+                metadata.setdefault("ls_tracing_sample_rate", sample_rate)
 
     def _should_sample(self, identifier: Any = None) -> bool:
         return is_sampled_by_id(identifier, self.tracing_sample_rate)
@@ -3891,6 +3885,11 @@ class Client:
             data["events"] = self._filter_new_token_events(events)
         if data["extra"] and (metadata := data["extra"].get("metadata")):
             data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+        # Stamp on every patch, not only patches that already carry an `extra`:
+        # the server replaces `extra` wholesale on update, so a patch without it
+        # wipes what the create stamped -- including ls_tracing_sample_rate,
+        # which is then unrecoverable for that run. `data["extra"]` is
+        # `extra or {}` above, so it is always a dict here.
         self._insert_runtime_env([data])
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
