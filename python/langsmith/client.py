@@ -3885,11 +3885,6 @@ class Client:
             data["events"] = self._filter_new_token_events(events)
         if data["extra"] and (metadata := data["extra"].get("metadata")):
             data["extra"]["metadata"] = self._hide_run_metadata(metadata)
-        # Stamp on every patch, not only patches that already carry an `extra`:
-        # the server replaces `extra` wholesale on update, so a patch without it
-        # wipes what the create stamped -- including ls_tracing_sample_rate,
-        # which is then unrecoverable for that run. `data["extra"]` is
-        # `extra or {}` above, so it is always a dict here.
         self._insert_runtime_env([data])
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
