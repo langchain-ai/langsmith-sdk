@@ -34,7 +34,7 @@ def pipeline(user_input: str):
 pipeline("Hello, world!")
 ```
 
-See the resulting nested trace [🌐 here](https://smith.langchain.com/public/b37ca9b1-60cd-4a2a-817e-3c4e4443fdc0/r).
+Every LLM call inside `pipeline` is nested under a single trace in the LangSmith UI.
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM application.
 
@@ -323,7 +323,8 @@ client = wrap_openai(openai.Client())
 @traceable
 def argument_generator(query: str, additional_description: str = "") -> str:
     return client.chat.completions.create(
-        [
+        model="gpt-3.5-turbo",
+        messages=[
             {"role": "system", "content": "You are a debater making an argument on a topic."
              f"{additional_description}"
              f" The current time is {datetime.now()}"},
@@ -405,7 +406,7 @@ child_chain_run.post()
 try:
     # .... the component does work
     raise ValueError("Something went wrong")
-    child_chain_run.end(outputs={"output": "foo"}
+    child_chain_run.end(outputs={"output": "foo"})
     child_chain_run.patch()
 except Exception as e:
     child_chain_run.end(error=f"I errored again {e}")
