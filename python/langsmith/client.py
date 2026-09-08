@@ -3884,13 +3884,6 @@ class Client:
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = self._filter_new_token_events(events)
-        # The server replaces ``extra`` wholesale on update, so which branch
-        # runs decides who owns the run's final ``extra``:
-        #   nothing on the patch -> the create's copy stands, untouched.
-        #   an ``extra`` on the patch -> it replaces the create's, so it has to
-        #   carry the runtime env and sample rate or the run loses both.
-        # Introducing one where the caller sent none would erase every metadata
-        # key they set at create time, so only stamp what they already supplied.
         if data["extra"]:
             if metadata := data["extra"].get("metadata"):
                 data["extra"]["metadata"] = self._hide_run_metadata(metadata)
