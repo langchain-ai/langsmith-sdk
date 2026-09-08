@@ -104,6 +104,12 @@ export interface SandboxResponse {
 
   proxy_config?: SandboxResponse.ProxyConfig;
 
+  /**
+   * RunConfig is what the sandbox's commands run with: the user, working directory
+   * and base env beneath env_vars.
+   */
+  run_config?: SandboxResponse.RunConfig;
+
   size_class?: string;
 
   snapshot_id?: string;
@@ -626,6 +632,18 @@ export namespace SandboxResponse {
       }
     }
   }
+
+  /**
+   * RunConfig is what the sandbox's commands run with: the user, working directory
+   * and base env beneath env_vars.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface SandboxStatusResponse {
@@ -702,6 +720,12 @@ export interface SnapshotResponse {
 
   registry_id?: string;
 
+  /**
+   * RunConfig is what sandboxes from this snapshot boot with. Absent on snapshots
+   * built before it was recorded, which run as root with their own env.
+   */
+  run_config?: SnapshotResponse.RunConfig;
+
   source_sandbox_id?: string;
 
   status?: string;
@@ -715,6 +739,20 @@ export interface SnapshotResponse {
   tags?: Array<string>;
 
   updated_at?: string;
+}
+
+export namespace SnapshotResponse {
+  /**
+   * RunConfig is what sandboxes from this snapshot boot with. Absent on snapshots
+   * built before it was recorded, which run as root with their own env.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 Sandboxes.Boxes = Boxes;

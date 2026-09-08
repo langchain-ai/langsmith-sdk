@@ -21,6 +21,7 @@ __all__ = [
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
+    "RunConfig",
 ]
 
 
@@ -43,6 +44,13 @@ class BoxUpdateParams(TypedDict, total=False):
     body_name: Annotated[str, PropertyInfo(alias="name")]
 
     proxy_config: ProxyConfig
+
+    run_config: RunConfig
+    """
+    RunConfig changes what subsequent commands run with: user and work_dir replace
+    the current values, env_vars merge over them. Commands already running are
+    unaffected.
+    """
 
     tag_value_ids: SequenceNotStr[str]
 
@@ -175,3 +183,17 @@ class ProxyConfig(TypedDict, total=False):
     no_proxy: SequenceNotStr[str]
 
     rules: Iterable[ProxyConfigRule]
+
+
+class RunConfig(TypedDict, total=False):
+    """
+    RunConfig changes what subsequent commands run with: user and work_dir
+    replace the current values, env_vars merge over them. Commands already
+    running are unaffected.
+    """
+
+    env_vars: Dict[str, str]
+
+    user: str
+
+    work_dir: str

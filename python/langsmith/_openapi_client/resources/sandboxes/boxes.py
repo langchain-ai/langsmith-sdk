@@ -65,6 +65,7 @@ class BoxesResource(SyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        run_config: box_create_params.RunConfig | Omit = omit,
         snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
@@ -112,6 +113,10 @@ class BoxesResource(SyncAPIResource):
 
               Applies to this request only.
 
+          run_config: RunConfig overrides the snapshot's run config for this sandbox: user and
+              work_dir replace the snapshot's, env_vars merge over it. The result is what the
+              sandbox boots with, and what a snapshot captured from it carries.
+
           snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
               resolves to name:latest.
 
@@ -142,6 +147,7 @@ class BoxesResource(SyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "run_config": run_config,
                     "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
@@ -201,6 +207,7 @@ class BoxesResource(SyncAPIResource):
         mem_bytes: int | Omit = omit,
         body_name: str | Omit = omit,
         proxy_config: box_update_params.ProxyConfig | Omit = omit,
+        run_config: box_update_params.RunConfig | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
         vcpus: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -218,6 +225,10 @@ class BoxesResource(SyncAPIResource):
         Args:
           mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
               sandbox is created; a resize enforces only the maximum of 64 GiB.
+
+          run_config: RunConfig changes what subsequent commands run with: user and work_dir replace
+              the current values, env_vars merge over them. Commands already running are
+              unaffected.
 
           extra_headers: Send extra headers
 
@@ -240,6 +251,7 @@ class BoxesResource(SyncAPIResource):
                     "mem_bytes": mem_bytes,
                     "body_name": body_name,
                     "proxy_config": proxy_config,
+                    "run_config": run_config,
                     "tag_value_ids": tag_value_ids,
                     "vcpus": vcpus,
                 },
@@ -387,6 +399,7 @@ class BoxesResource(SyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        run_config: box_create_snapshot_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -416,6 +429,10 @@ class BoxesResource(SyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          run_config: RunConfig overrides the runtime configuration the snapshot carries: for a
+              docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+              running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+
           tag: mutable Docker-style tag; defaults to "latest"
 
           extra_headers: Send extra headers
@@ -439,6 +456,7 @@ class BoxesResource(SyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
@@ -682,6 +700,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        run_config: box_create_params.RunConfig | Omit = omit,
         snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
@@ -729,6 +748,10 @@ class AsyncBoxesResource(AsyncAPIResource):
 
               Applies to this request only.
 
+          run_config: RunConfig overrides the snapshot's run config for this sandbox: user and
+              work_dir replace the snapshot's, env_vars merge over it. The result is what the
+              sandbox boots with, and what a snapshot captured from it carries.
+
           snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
               resolves to name:latest.
 
@@ -759,6 +782,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "run_config": run_config,
                     "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
@@ -818,6 +842,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         mem_bytes: int | Omit = omit,
         body_name: str | Omit = omit,
         proxy_config: box_update_params.ProxyConfig | Omit = omit,
+        run_config: box_update_params.RunConfig | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
         vcpus: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -835,6 +860,10 @@ class AsyncBoxesResource(AsyncAPIResource):
         Args:
           mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
               sandbox is created; a resize enforces only the maximum of 64 GiB.
+
+          run_config: RunConfig changes what subsequent commands run with: user and work_dir replace
+              the current values, env_vars merge over them. Commands already running are
+              unaffected.
 
           extra_headers: Send extra headers
 
@@ -857,6 +886,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "mem_bytes": mem_bytes,
                     "body_name": body_name,
                     "proxy_config": proxy_config,
+                    "run_config": run_config,
                     "tag_value_ids": tag_value_ids,
                     "vcpus": vcpus,
                 },
@@ -1004,6 +1034,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        run_config: box_create_snapshot_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -1033,6 +1064,10 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          run_config: RunConfig overrides the runtime configuration the snapshot carries: for a
+              docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+              running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+
           tag: mutable Docker-style tag; defaults to "latest"
 
           extra_headers: Send extra headers
@@ -1056,6 +1091,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,

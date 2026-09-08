@@ -56,6 +56,7 @@ __all__ = [
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
+    "RunConfig",
 ]
 
 
@@ -113,6 +114,13 @@ class BoxCreateParams(TypedDict, total=False):
     false → never: always cold-boot.
 
     Applies to this request only.
+    """
+
+    run_config: RunConfig
+    """
+    RunConfig overrides the snapshot's run config for this sandbox: user and
+    work_dir replace the snapshot's, env_vars merge over it. The result is what the
+    sandbox boots with, and what a snapshot captured from it carries.
     """
 
     snapshot: str
@@ -606,3 +614,17 @@ class ProxyConfig(TypedDict, total=False):
     no_proxy: SequenceNotStr[str]
 
     rules: Iterable[ProxyConfigRule]
+
+
+class RunConfig(TypedDict, total=False):
+    """
+    RunConfig overrides the snapshot's run config for this sandbox: user and
+    work_dir replace the snapshot's, env_vars merge over it. The result is
+    what the sandbox boots with, and what a snapshot captured from it carries.
+    """
+
+    env_vars: Dict[str, str]
+
+    user: str
+
+    work_dir: str

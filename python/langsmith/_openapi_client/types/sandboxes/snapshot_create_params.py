@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict
 from typing_extensions import Required, TypedDict
 
-__all__ = ["SnapshotCreateParams"]
+__all__ = ["SnapshotCreateParams", "RunConfig"]
 
 
 class SnapshotCreateParams(TypedDict, total=False):
@@ -29,5 +29,28 @@ class SnapshotCreateParams(TypedDict, total=False):
 
     registry_id: str
 
+    run_config: RunConfig
+    """
+    RunConfig overrides the runtime configuration taken from the Docker image. Every
+    sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+    its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+    the image's, and env_vars merge over it.
+    """
+
     tag: str
     """mutable Docker-style tag; defaults to "latest" """
+
+
+class RunConfig(TypedDict, total=False):
+    """
+    RunConfig overrides the runtime configuration taken from the Docker image.
+    Every sandbox created from the snapshot runs as the image's USER, in its
+    WORKDIR, with its ENV beneath the sandbox's own env_vars; user and
+    work_dir given here replace the image's, and env_vars merge over it.
+    """
+
+    env_vars: Dict[str, str]
+
+    user: str
+
+    work_dir: str

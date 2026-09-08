@@ -199,6 +199,13 @@ export interface BoxCreateParams {
   restore_memory?: boolean;
 
   /**
+   * RunConfig overrides the snapshot's run config for this sandbox: user and
+   * work_dir replace the snapshot's, env_vars merge over it. The result is what the
+   * sandbox boots with, and what a snapshot captured from it carries.
+   */
+  run_config?: BoxCreateParams.RunConfig;
+
+  /**
    * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
    * resolves to name:latest.
    */
@@ -722,6 +729,19 @@ export namespace BoxCreateParams {
       }
     }
   }
+
+  /**
+   * RunConfig overrides the snapshot's run config for this sandbox: user and
+   * work_dir replace the snapshot's, env_vars merge over it. The result is what the
+   * sandbox boots with, and what a snapshot captured from it carries.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface BoxUpdateParams {
@@ -742,6 +762,13 @@ export interface BoxUpdateParams {
   name?: string;
 
   proxy_config?: BoxUpdateParams.ProxyConfig;
+
+  /**
+   * RunConfig changes what subsequent commands run with: user and work_dir replace
+   * the current values, env_vars merge over them. Commands already running are
+   * unaffected.
+   */
+  run_config?: BoxUpdateParams.RunConfig;
 
   tag_value_ids?: Array<string>;
 
@@ -886,6 +913,19 @@ export namespace BoxUpdateParams {
       }
     }
   }
+
+  /**
+   * RunConfig changes what subsequent commands run with: user and work_dir replace
+   * the current values, env_vars merge over them. Commands already running are
+   * unaffected.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface BoxListParams extends ItemsCursorGetPaginationParams {
@@ -975,9 +1015,31 @@ export interface BoxCreateSnapshotParams {
   labels?: { [key: string]: string };
 
   /**
+   * RunConfig overrides the runtime configuration the snapshot carries: for a
+   * docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+   * running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+   */
+  run_config?: BoxCreateSnapshotParams.RunConfig;
+
+  /**
    * mutable Docker-style tag; defaults to "latest"
    */
   tag?: string;
+}
+
+export namespace BoxCreateSnapshotParams {
+  /**
+   * RunConfig overrides the runtime configuration the snapshot carries: for a
+   * docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+   * running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface BoxGenerateDownloadURLParams {

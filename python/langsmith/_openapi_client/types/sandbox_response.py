@@ -54,6 +54,7 @@ __all__ = [
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
+    "RunConfig",
 ]
 
 
@@ -531,6 +532,18 @@ class ProxyConfig(BaseModel):
     rules: Optional[List[ProxyConfigRule]] = None
 
 
+class RunConfig(BaseModel):
+    """
+    RunConfig is what the sandbox's commands run with: the user, working directory and base env beneath env_vars.
+    """
+
+    env_vars: Optional[Dict[str, str]] = None
+
+    user: Optional[str] = None
+
+    work_dir: Optional[str] = None
+
+
 class SandboxResponse(BaseModel):
     id: Optional[str] = None
 
@@ -559,6 +572,12 @@ class SandboxResponse(BaseModel):
     preserve_memory_on_stop: Optional[bool] = None
 
     proxy_config: Optional[ProxyConfig] = None
+
+    run_config: Optional[RunConfig] = None
+    """
+    RunConfig is what the sandbox's commands run with: the user, working directory
+    and base env beneath env_vars.
+    """
 
     size_class: Optional[str] = None
 
