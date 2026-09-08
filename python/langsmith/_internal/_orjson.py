@@ -3,6 +3,7 @@
 try:
     from orjson import (
         OPT_NON_STR_KEYS,
+        OPT_PASSTHROUGH_SUBCLASS,
         OPT_SERIALIZE_DATACLASS,
         OPT_SERIALIZE_NUMPY,
         OPT_SERIALIZE_UUID,
@@ -18,12 +19,15 @@ except ImportError:
     import uuid
     from typing import Any, Callable, Optional, Union
 
+    from langsmith.secret import _redact_secrets
+
     DefaultFunc = Optional[Callable[[Any], Any]]
 
     OPT_NON_STR_KEYS = 1
     OPT_SERIALIZE_DATACLASS = 2
     OPT_SERIALIZE_NUMPY = 4
     OPT_SERIALIZE_UUID = 8
+    OPT_PASSTHROUGH_SUBCLASS = 16
 
     class Fragment:  # type: ignore
         def __init__(self, payloadb: bytes):
@@ -47,6 +51,8 @@ except ImportError:
         enable_serialize_dataclass = bool(option & OPT_SERIALIZE_DATACLASS)
         enable_serialize_uuid = bool(option & OPT_SERIALIZE_UUID)
 
+        obj = _redact_secrets(obj)
+
         class CustomEncoder(json.JSONEncoder):  # type: ignore
             def encode(self, o: Any) -> str:
                 if isinstance(o, Fragment):
@@ -54,21 +60,24 @@ except ImportError:
                 return super().encode(o)
 
             def default(self, o: Any) -> Any:
+                resolved: Any
                 if enable_serialize_uuid and isinstance(o, uuid.UUID):
-                    return str(o)
-                if enable_serialize_numpy and hasattr(o, "tolist"):
+                    resolved = str(o)
+                elif enable_serialize_numpy and hasattr(o, "tolist"):
                     # even objects like np.uint16(15) have a .tolist() function
-                    return o.tolist()
-                if (
+                    resolved = o.tolist()
+                elif (
                     enable_serialize_dataclass
                     and dataclasses.is_dataclass(o)
                     and not isinstance(o, type)
                 ):
-                    return dataclasses.asdict(o)
-                if default is not None:
-                    return default(o)
-
-                return super().default(o)
+                    resolved = dataclasses.asdict(o)
+                elif default is not None:
+                    resolved = default(o)
+                else:
+                    return super().default(o)
+                # `resolved` is re-encoded natively, so it needs masking too.
+                return _redact_secrets(resolved)
 
         return json.dumps(obj, cls=CustomEncoder).encode("utf-8")
 
@@ -87,4 +96,5 @@ __all__ = [
     "OPT_SERIALIZE_DATACLASS",
     "OPT_SERIALIZE_UUID",
     "OPT_NON_STR_KEYS",
+    "OPT_PASSTHROUGH_SUBCLASS",
 ]
