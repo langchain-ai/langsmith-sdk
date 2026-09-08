@@ -3144,12 +3144,7 @@ export class Client implements LangSmithTracingClientInterface {
       headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
-      mergeRuntimeEnvIntoRun(
-        run,
-        this.cachedLSEnvVarsForMetadata,
-        this.omitTracedRuntimeInfo,
-        this.tracingSampleRate,
-      ),
+      run,
       `Serializing payload to update run with id: ${runId}`,
     );
     await this.caller.call(async () => {

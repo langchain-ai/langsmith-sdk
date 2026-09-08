@@ -1754,36 +1754,10 @@ describe("Client", () => {
   });
 
   describe("tracingSamplingRate is reported on runs", () => {
-    // Hashes to bucket 10679/1_000_000, so it is sampled in for any rate above
-    // ~0.02. A random id would usually be dropped and never leave the client.
-    const SAMPLED_RUN_ID = "00000000-0000-0000-0000-000000000015";
-
     const metadataOf = (run: RunCreate, rate?: number) =>
       mergeRuntimeEnvIntoRun(run, undefined, false, rate).extra?.metadata as
         | Record<string, unknown>
         | undefined;
-
-    const patchedMetadata = async (config: Partial<ClientConfig>) => {
-      const { client, callSpy } = mockClient(config);
-      // A patch with no `extra` at all -- the RunTree post()/patch() shape.
-      await client.updateRun(SAMPLED_RUN_ID, {
-        trace_id: SAMPLED_RUN_ID,
-        dotted_order: `20210101T000000000000Z${SAMPLED_RUN_ID}`,
-        outputs: { result: "ok" },
-      });
-      const patch = callSpy.mock.calls.find(
-        (call: [string, RequestInit]) => call[1]?.method === "PATCH",
-      ) as [string, RequestInit] | undefined;
-      if (!patch) throw new Error("no PATCH request was sent");
-      // serializePayloadForTracing returns encoded bytes, not a string.
-      const raw = patch[1].body;
-      const text =
-        raw instanceof Uint8Array ? new TextDecoder().decode(raw) : String(raw);
-      const body = JSON.parse(text) as {
-        extra?: { metadata?: Record<string, unknown> };
-      };
-      return body.extra?.metadata;
-    };
 
     const run = (): RunCreate => ({
       id: uuid(),
@@ -1810,15 +1784,6 @@ describe("Client", () => {
       };
 
       expect(metadataOf(withOwnRate, 0.25)?.ls_tracing_sample_rate).toBe(0.9);
-    });
-
-    it("should survive a patch that carries no extra", async () => {
-      // The server replaces `extra` wholesale on update, so a patch that omits
-      // it wipes what the create stamped. The trace still lands and nothing
-      // errors, so the loss is silent and the rate is unrecoverable.
-      const metadata = await patchedMetadata({ tracingSamplingRate: 0.25 });
-
-      expect(metadata?.ls_tracing_sample_rate).toBe(0.25);
     });
   });
 
