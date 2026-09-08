@@ -341,7 +341,7 @@ import { wrapOpenAI } from "langsmith/wrappers";
 const openai = wrapOpenAI(new OpenAI());
 
 await openai.chat.completions.create({
-  model: "gpt-3.5-turbo",
+  model: "gpt-5.4",
   messages: [{ content: "Hi there!", role: "user" }],
 });
 ```
@@ -359,7 +359,7 @@ const createCompletion = traceable(
 );
 
 await createCompletion({
-  model: "gpt-3.5-turbo",
+  model: "gpt-5.4",
   messages: [{ content: "Hi there!", role: "user" }],
 });
 ```
@@ -375,7 +375,7 @@ within other functions wrapped with `traceable`.
 ```ts
 const nestedTrace = traceable(async (text: string) => {
   const completion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
+    model: "gpt-5.4",
     messages: [{ content: text, role: "user" }],
   });
   return completion;
@@ -389,7 +389,7 @@ await nestedTrace("Why is the sky blue?");
   "id": "chatcmpl-8sPToJQLLVepJvyeTfzZMOMVIKjMo",
   "object": "chat.completion",
   "created": 1707978348,
-  "model": "gpt-3.5-turbo-0613",
+  "model": "gpt-5.4-0613",
   "choices": [
     {
       "index": 0,
@@ -435,14 +435,14 @@ const handler = traceable(
     const openai = wrapOpenAI(new OpenAI());
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-5.4",
       messages: [{ content: "Why is the sky blue?", role: "user" }],
     });
 
     const response1 = completion.choices[0].message.content;
 
     const completion2 = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-5.4",
       messages: [
         { content: "Why is the sky blue?", role: "user" },
         { content: response1, role: "assistant" },

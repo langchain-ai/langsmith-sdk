@@ -27,7 +27,7 @@ client = wrap_openai(openai.Client())
 def pipeline(user_input: str):
     result = client.chat.completions.create(
         messages=[{"role": "user", "content": user_input}],
-        model="gpt-3.5-turbo"
+        model="gpt-5.4"
     )
     return result.choices[0].message.content
 
@@ -323,7 +323,7 @@ client = wrap_openai(openai.Client())
 @traceable
 def argument_generator(query: str, additional_description: str = "") -> str:
     return client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-5.4",
         messages=[
             {"role": "system", "content": "You are a debater making an argument on a topic."
              f"{additional_description}"
@@ -523,7 +523,7 @@ Now, you can use the OpenAI client as you normally would, but now everything is 
 
 ```python
 client.chat.completions.create(
-    model="gpt-4",
+    model="gpt-5.4",
     messages=[{"role": "user", "content": "Say this is a test"}],
 )
 ```
@@ -538,7 +538,7 @@ from langsmith import traceable
 @traceable(name="Call OpenAI")
 def my_function(text: str):
     return client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-5.4",
         messages=[{"role": "user", "content": f"Say {text}"}],
     )
 
@@ -590,7 +590,7 @@ class UserDetail(BaseModel):
 
 
 user = client.chat.completions.create(
-    model="gpt-3.5-turbo",
+    model="gpt-5.4",
     response_model=UserDetail,
     messages=[
         {"role": "user", "content": "Extract Jason is 25 years old"},
@@ -606,7 +606,7 @@ See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_an
 @traceable()
 def my_function(text: str) -> UserDetail:
     return client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-5.4",
         response_model=UserDetail,
         messages=[
             {"role": "user", "content": f"Extract {text}"},
