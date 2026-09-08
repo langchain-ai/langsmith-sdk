@@ -3,12 +3,14 @@
 Each entry is ``(name, fn, input)``; ``fn(input)`` is the timed call.
 """
 
+from bench.create_compressed_run_tree import create_compressed_run_trees
 from bench.create_run_tree import create_run_trees
 from bench.dumps_json import (
     DeeplyNestedModel,
     DeeplyNestedModelV1,
     create_nested_instance,
 )
+from bench.hybrid_tracing import handle_hybrid_batches, make_batches
 from langsmith.client import _dumps_json
 
 
@@ -32,6 +34,26 @@ BENCHMARKS = (
         "create_20_000_run_trees",
         create_run_trees,
         20_000,
+    ),
+    (
+        "create_5_000_compressed_run_trees",
+        create_compressed_run_trees,
+        5_000,
+    ),
+    (
+        "create_10_000_compressed_run_trees",
+        create_compressed_run_trees,
+        10_000,
+    ),
+    (
+        "create_20_000_compressed_run_trees",
+        create_compressed_run_trees,
+        20_000,
+    ),
+    (
+        "hybrid_handle_200_batches_of_100",
+        handle_hybrid_batches,
+        make_batches(200, ops_per_batch=100),
     ),
     (
         "dumps_class_nested_py_branch_and_leaf_200x400",

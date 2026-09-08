@@ -7,6 +7,7 @@ import {
 
 const response = {
   statusCode: 503,
+  headers: {} as Record<string, string>,
   resume: jest.fn(),
 };
 const request = { destroy: jest.fn() };
@@ -38,6 +39,7 @@ async function rejectedUpgrade(statusCode: number): Promise<unknown> {
 
 describe("WebSocket upgrade rejection", () => {
   beforeEach(() => {
+    response.headers = {};
     response.resume.mockClear();
     request.destroy.mockClear();
   });
@@ -53,7 +55,31 @@ describe("WebSocket upgrade rejection", () => {
     },
   );
 
-  it.each([400, 401, 403, 404, 429, 505])(
+  it("treats HTTP 429 as retryable and preserves Retry-After", async () => {
+    response.headers = { "retry-after": "10" };
+
+    const error = await rejectedUpgrade(429).catch(
+      (rejection: unknown) => rejection,
+    );
+
+    expect(error).toBeInstanceOf(LangSmithSandboxRetryableConnectionError);
+    expect(error).toHaveProperty("retryAfterSeconds", 10);
+  });
+
+  it.each(["", "-1", "nan", "Infinity"])(
+    "ignores unusable Retry-After %p",
+    async (retryAfter) => {
+      response.headers = { "retry-after": retryAfter };
+
+      const error = await rejectedUpgrade(429).catch(
+        (rejection: unknown) => rejection,
+      );
+
+      expect(error).toHaveProperty("retryAfterSeconds", undefined);
+    },
+  );
+
+  it.each([400, 401, 403, 404, 505])(
     "keeps HTTP %i permanent",
     async (statusCode) => {
       const error = await rejectedUpgrade(statusCode).catch(

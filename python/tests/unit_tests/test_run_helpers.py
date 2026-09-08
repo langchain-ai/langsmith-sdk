@@ -32,6 +32,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._internal._multipart import RewindableMultipartBody
 from langsmith.run_helpers import (
     _attachment_args_cache,
     _cached_attachment_args,
@@ -85,8 +86,8 @@ def _get_multipart_data(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, byt
     datas = []
     for call_ in mock_calls:
         data = call_.kwargs.get("data")
-        if isinstance(data, MultipartEncoder):
-            fields = data.fields
+        if isinstance(data, (MultipartEncoder, RewindableMultipartBody)):
+            fields = data.fields if isinstance(data, MultipartEncoder) else data.parts
             for key, value in fields:
                 if isinstance(value, tuple):
                     _, file_content, content_type, _ = value
