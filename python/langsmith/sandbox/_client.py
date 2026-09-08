@@ -36,6 +36,7 @@ from langsmith.sandbox._models import (
     ResourceStatus,
     ServiceURL,
     Snapshot,
+    SnapshotTag,
 )
 from langsmith.sandbox._mounts import (
     SandboxMountConfig,
@@ -74,6 +75,17 @@ def _quote_path_segment(value: str) -> str:
     if not value:
         raise ValueError("URL path segment must be a non-empty string")
     return quote(value, safe="")
+
+
+def _quote_reference_segment(value: str) -> str:
+    """Quote a Docker-style ``name[:tag]`` reference as one URL path segment.
+
+    The colon is left literal: it is a legal path character and the server splits
+    the reference on it, so percent-encoding would hide the tag.
+    """
+    if not value:
+        raise ValueError("URL path segment must be a non-empty string")
+    return quote(value, safe=":")
 
 
 def _box_url(base_url: str, name: str, *segments: str) -> str:
@@ -359,6 +371,7 @@ class SandboxClient:
         self,
         snapshot_id: Optional[str] = None,
         *,
+        snapshot: Optional[str] = None,
         snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
@@ -388,10 +401,12 @@ class SandboxClient:
 
         Args:
             snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
-                with ``snapshot_name``.
-            snapshot_name: Snapshot name to boot from. Resolved server-side to a
-                snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``.
+                with ``snapshot`` and ``snapshot_name``.
+            snapshot: Snapshot to boot from, as a UUID, ``name:tag``, or a bare
+                ``name`` (which means ``name:latest``). Prefer this over
+                ``snapshot_id`` and ``snapshot_name``: it covers all three forms.
+            snapshot_name: Deprecated synonym for ``snapshot``, kept for callers
+                that predate it.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             idle_ttl_seconds: Idle timeout in seconds. The launcher
@@ -429,11 +444,12 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
-                ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if more than one of
+                ``snapshot_id``, ``snapshot`` and ``snapshot_name`` is provided.
         """
         sb = self.create_sandbox(
             snapshot_id,
+            snapshot=snapshot,
             snapshot_name=snapshot_name,
             name=name,
             timeout=timeout,
@@ -453,6 +469,7 @@ class SandboxClient:
         self,
         snapshot_id: Optional[str] = None,
         *,
+        snapshot: Optional[str] = None,
         snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
@@ -473,10 +490,12 @@ class SandboxClient:
 
         Args:
             snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
-                with ``snapshot_name``.
-            snapshot_name: Snapshot name to boot from. Resolved server-side to a
-                snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``.
+                with ``snapshot`` and ``snapshot_name``.
+            snapshot: Snapshot to boot from, as a UUID, ``name:tag``, or a bare
+                ``name`` (which means ``name:latest``). Prefer this over
+                ``snapshot_id`` and ``snapshot_name``: it covers all three forms.
+            snapshot_name: Deprecated synonym for ``snapshot``, kept for callers
+                that predate it.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -519,11 +538,16 @@ class SandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
-                ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if more than one of
+                ``snapshot_id``, ``snapshot`` and ``snapshot_name`` is provided.
         """
-        if snapshot_id and snapshot_name:
-            raise ValueError("At most one of snapshot_id or snapshot_name may be set")
+        reference = snapshot or snapshot_name
+        if snapshot and snapshot_name and snapshot != snapshot_name:
+            raise ValueError("snapshot and snapshot_name must not disagree")
+        if snapshot_id and reference:
+            raise ValueError(
+                "At most one of snapshot_id, snapshot or snapshot_name may be set"
+            )
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
@@ -534,7 +558,9 @@ class SandboxClient:
         }
         if snapshot_id:
             payload["snapshot_id"] = snapshot_id
-        if snapshot_name:
+        if snapshot:
+            payload["snapshot"] = snapshot
+        elif snapshot_name:
             payload["snapshot_name"] = snapshot_name
         if wait_for_ready:
             payload["timeout"] = timeout
@@ -986,6 +1012,7 @@ class SandboxClient:
         docker_image: str,
         fs_capacity_bytes: int,
         *,
+        tag: Optional[str] = None,
         registry_id: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
@@ -998,6 +1025,10 @@ class SandboxClient:
             name: Snapshot name.
             docker_image: Docker image to build from (e.g., "python:3.12-slim").
             fs_capacity_bytes: Filesystem capacity in bytes.
+            tag: Tag to publish the snapshot under, within ``name``. Re-using a
+                tag moves it to the new snapshot, leaving the previous one
+                addressable by id. Defaults server-side to the Docker image's
+                own tag, else ``latest``.
             registry_id: Private registry ID.
             timeout: Timeout in seconds when waiting for ready.
 
@@ -1016,6 +1047,8 @@ class SandboxClient:
             "docker_image": docker_image,
             "fs_capacity_bytes": fs_capacity_bytes,
         }
+        if tag is not None:
+            payload["tag"] = tag
         if registry_id is not None:
             payload["registry_id"] = registry_id
 
@@ -1130,6 +1163,7 @@ class SandboxClient:
         sandbox_name: str,
         name: str,
         *,
+        tag: Optional[str] = None,
         docker_image: Optional[str] = None,
         fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
@@ -1142,6 +1176,9 @@ class SandboxClient:
         Args:
             sandbox_name: Name of the sandbox to capture from.
             name: Snapshot name.
+            tag: Tag to publish the snapshot under, within ``name``. Re-using a
+                tag moves it to the new snapshot, leaving the previous one
+                addressable by id. Defaults server-side to ``latest``.
             docker_image: Optional Docker image tag inside the sandbox to export
                 into the snapshot instead of capturing the live root filesystem.
             fs_capacity_bytes: Filesystem capacity in bytes for Docker image export.
@@ -1159,6 +1196,8 @@ class SandboxClient:
         url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}
+        if tag is not None:
+            payload["tag"] = tag
         if docker_image is not None:
             payload["docker_image"] = docker_image
         if fs_capacity_bytes is not None:
@@ -1183,10 +1222,12 @@ class SandboxClient:
     def get_snapshot(
         self, snapshot_id: str, *, headers: RequestHeaders = None
     ) -> Snapshot:
-        """Get a snapshot by ID.
+        """Get a snapshot by ID or by a Docker-style reference.
 
         Args:
-            snapshot_id: Snapshot UUID.
+            snapshot_id: Snapshot UUID, ``name:tag``, or a bare ``name``. A bare
+                name means ``name:latest``, falling back to the newest ready
+                untagged snapshot of that name.
 
         Returns:
             Snapshot.
@@ -1195,7 +1236,7 @@ class SandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
+        url = f"{self._base_url}/snapshots/{_quote_reference_segment(snapshot_id)}"
 
         try:
             response = self._http.get(url, headers=self._request_headers(headers))
@@ -1205,6 +1246,38 @@ class SandboxClient:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
                     f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    def list_snapshot_tags(
+        self, name: str, *, headers: RequestHeaders = None
+    ) -> list[SnapshotTag]:
+        """List every tag published under a snapshot name.
+
+        Args:
+            name: Snapshot name, without a tag.
+
+        Returns:
+            Each tag under the name with the snapshot it resolves to. Empty when
+            the name exists but currently carries no tags.
+
+        Raises:
+            ResourceNotFoundError: If nobody has published under the name.
+            SandboxClientError: For other errors, including a name carrying a tag.
+        """
+        url = f"{self._base_url}/snapshots-by-name/{_quote_path_segment(name)}"
+
+        try:
+            response = self._http.get(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+            return [
+                SnapshotTag.from_dict(tag) for tag in response.json().get("tags") or []
+            ]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Snapshot name '{name}' not found", resource_type="snapshot"
                 ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
