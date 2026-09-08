@@ -3143,8 +3143,22 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.workspaceId !== undefined) {
       headers["x-tenant-id"] = options.workspaceId;
     }
+    // Stamp runtime on the non-batched patch too, mirroring `createRun`. The
+    // server replaces `extra` wholesale on update, so a patch that omits it
+    // wipes what the create stamped -- including ls_tracing_sample_rate, which
+    // is then unrecoverable for that run.
+    //
+    // `mergeRuntimeEnvIntoRun`, not `_mergeRuntimeEnvAndMaskMetadata`: caller
+    // metadata was already masked at the top of this method, and hideMetadata
+    // callbacks may be non-idempotent (hashing, prefixing), so a second pass
+    // would transform user keys twice. Same split as the batched path.
     const body = serializePayloadForTracing(
-      run,
+      mergeRuntimeEnvIntoRun(
+        run,
+        this.cachedLSEnvVarsForMetadata,
+        this.omitTracedRuntimeInfo,
+        this.tracingSampleRate,
+      ),
       `Serializing payload to update run with id: ${runId}`,
     );
     await this.caller.call(async () => {
