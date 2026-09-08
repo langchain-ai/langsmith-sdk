@@ -9,6 +9,7 @@ import ipaddress
 import json
 import pathlib
 import re
+import time
 from typing import Any, NamedTuple
 
 import pytest
@@ -353,3 +354,57 @@ def test_redact_secrets_masks_every_secret_in_place_of_the_stdlib_fallback():
     assert PLAINTEXT not in json.dumps(result), "stdlib json must not see it"
     # The caller's payload is untouched.
     assert payload["api_key"] == PLAINTEXT
+
+
+# --------------------------------------------------------------------------
+# Cycles. The walk tracks the path from the root, so a reference back into it
+# is a cycle, while a subobject reached twice is just walked twice.
+# --------------------------------------------------------------------------
+
+
+def test_self_referencing_dict_is_masked():
+    from langsmith.secret import _redact_secrets
+
+    node: dict = {"api_key": secret()}
+    node["me"] = node
+
+    result = str(_redact_secrets(node))
+    assert PLAINTEXT not in result
+    assert LANGSMITH_SECRET_MASK in result
+
+
+def test_branching_cycle_does_not_explode():
+    """A depth limit would visit 2**depth nodes here; the path set visits 3."""
+    from langsmith.secret import _redact_secrets
+
+    node: dict = {"api_key": secret()}
+    node["left"] = node
+    node["right"] = node
+
+    start = time.perf_counter()
+    result = str(_redact_secrets(node))
+    assert time.perf_counter() - start < 0.5, "cycle detection regressed"
+    assert PLAINTEXT not in result
+    assert LANGSMITH_SECRET_MASK in result
+
+
+def test_subobject_reached_twice_is_still_walked():
+    from langsmith.secret import _redact_secrets
+
+    shared = {"api_key": secret()}
+
+    assert _redact_secrets({"a": shared, "b": [shared, shared]}) == {
+        "a": {"api_key": LANGSMITH_SECRET_MASK},
+        "b": [{"api_key": LANGSMITH_SECRET_MASK}] * 2,
+    }
+
+
+def test_otel_attribute_survives_cyclic_metadata():
+    from langsmith._internal.otel._attribute_utils import otel_safe_attribute_value
+
+    node: dict = {"api_key": secret()}
+    node["me"] = node
+
+    attribute = otel_safe_attribute_value(node)
+    assert PLAINTEXT not in attribute
+    assert LANGSMITH_SECRET_MASK in attribute

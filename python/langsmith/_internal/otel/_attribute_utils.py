@@ -16,10 +16,7 @@ LANGSMITH_METADATA_PREFIX = "langsmith.metadata"
 def otel_safe_attribute_value(value: Any) -> Optional[Any]:
     """Convert a LangSmith metadata value for safe use in application OTel spans."""
     # OTel has no `default` hook, so mask secrets before they become attributes.
-    try:
-        value = _redact_secrets(value)
-    except RecursionError:
-        return str(value)
+    value = _redact_secrets(value)
     if value is None:
         return None
     if isinstance(value, (bool, bytes, int, float, str)):

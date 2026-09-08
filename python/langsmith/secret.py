@@ -184,23 +184,41 @@ def _coerce_builtin_subclass(obj: Any) -> Any:
     return _NOT_HANDLED
 
 
-def _redact_secrets(obj: Any) -> Any:
+def _redact_secrets(obj: Any, _path: set[int] | None = None) -> Any:
     """Return a copy of ``obj`` with every :class:`LangSmithSecret` masked.
 
     For the places no ``default`` hook can intercept a secret: the stdlib
     ``json`` fallback, which writes ``str`` subclasses natively, OpenTelemetry
     span attributes, and dict keys, which orjson never routes through it.
+
+    ``_path`` holds the ids of the containers between the root and ``obj``, so a
+    reference back into one of them is a cycle rather than a shared subobject.
     """
     if isinstance(obj, LangSmithSecret):
         return LANGSMITH_SECRET_MASK
+    if not isinstance(obj, (dict, list, tuple, collections.deque)):
+        return obj
+
+    if _path is None:
+        _path = set()
+    container_id = id(obj)
+    if container_id in _path:
+        # `__repr__` masks secrets, and Python renders the cycle itself as `...`.
+        return str(obj)
+
+    _path.add(container_id)
     if isinstance(obj, dict):
-        return {
-            _redact_secrets(key): _redact_secrets(value) for key, value in obj.items()
+        redacted: Any = {
+            _redact_secrets(key, _path): _redact_secrets(value, _path)
+            for key, value in obj.items()
         }
-    if isinstance(obj, list):
-        return [_redact_secrets(value) for value in obj]
-    if isinstance(obj, tuple):
-        return tuple(_redact_secrets(value) for value in obj)
-    if isinstance(obj, collections.deque):
-        return collections.deque(_redact_secrets(value) for value in obj)
-    return obj
+    elif isinstance(obj, list):
+        redacted = [_redact_secrets(value, _path) for value in obj]
+    elif isinstance(obj, tuple):
+        # NamedTuples become plain tuples, as they did before this walk existed.
+        redacted = tuple(_redact_secrets(value, _path) for value in obj)
+    else:
+        redacted = collections.deque(_redact_secrets(value, _path) for value in obj)
+    # Only the path is tracked, so a subobject reached twice is walked twice.
+    _path.discard(container_id)
+    return redacted
