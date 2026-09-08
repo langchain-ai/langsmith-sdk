@@ -389,7 +389,7 @@ await nestedTrace("Why is the sky blue?");
   "id": "chatcmpl-8sPToJQLLVepJvyeTfzZMOMVIKjMo",
   "object": "chat.completion",
   "created": 1707978348,
-  "model": "gpt-5.4-0613",
+  "model": "gpt-5.4",
   "choices": [
     {
       "index": 0,

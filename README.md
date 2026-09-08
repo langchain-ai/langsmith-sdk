@@ -69,7 +69,7 @@ await client.chat.completions.create({
   id: 'chatcmpl-8sOWEOYVyehDlyPcBiaDtTxWvr9v6',
   object: 'chat.completion',
   created: 1707974654,
-  model: 'gpt-5.4-0613',
+  model: 'gpt-5.4',
   choices: [
     {
       index: 0,
