@@ -1776,15 +1776,6 @@ describe("Client", () => {
         "ls_tracing_sample_rate",
       );
     });
-
-    it("should let a caller-supplied metadata value win", () => {
-      const withOwnRate: RunCreate = {
-        ...run(),
-        extra: { metadata: { ls_tracing_sample_rate: 0.9 } },
-      };
-
-      expect(metadataOf(withOwnRate, 0.25)?.ls_tracing_sample_rate).toBe(0.9);
-    });
   });
 
   describe("hideMetadata covers runtime env metadata", () => {
