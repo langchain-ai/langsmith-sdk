@@ -25,6 +25,7 @@ from langsmith.sandbox._models import (
 from langsmith.sandbox._tunnel import Tunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
+    _retry_delay,
     connect_deadline,
     open_timeout_for,
 )
@@ -436,7 +437,7 @@ class Sandbox:
             except (
                 _StreamEndedBeforeStarted,
                 SandboxRetryableConnectionError,
-            ):
+            ) as exc:
                 # Idempotent re-issue (same command_id): neither an early close
                 # nor a failed connect can have started a second command.
                 attempt += 1
@@ -446,6 +447,8 @@ class Sandbox:
                     CommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
                     CommandHandle._BACKOFF_MAX,
                 )
+                if isinstance(exc, SandboxRetryableConnectionError):
+                    backoff = _retry_delay(exc, backoff)
                 if deadline is not None:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:

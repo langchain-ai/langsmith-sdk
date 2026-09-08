@@ -12,6 +12,7 @@ import pytest
 from langsmith.sandbox._exceptions import (
     SandboxConnectionError,
     SandboxOperationError,
+    SandboxRetryableConnectionError,
     SandboxServerReloadError,
 )
 from langsmith.sandbox._models import (
@@ -790,6 +791,36 @@ class TestAsyncSandboxRunWs:
         assert isinstance(result, ExecutionResult)
         assert result.stdout == "output"
         assert result.exit_code == 0
+
+    @pytest.mark.asyncio
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
+    async def test_run_retries_rate_limited_handshake_after_retry_after(
+        self, mock_run_ws
+    ):
+        """Async execution waits for a 429 hint and reuses the command ID."""
+        rate_limited = SandboxRetryableConnectionError("HTTP 429", retry_after=10.0)
+
+        async def rejected_stream():
+            raise rate_limited
+            yield
+
+        mock_run_ws.side_effect = [
+            (rejected_stream(), _AsyncWSStreamControl()),
+            (
+                _make_async_stream([_started_msg(), _exit_msg(0)]),
+                _AsyncWSStreamControl(),
+            ),
+        ]
+        sandbox = self._make_sandbox()
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await sandbox.run("echo hello")
+
+        assert result.exit_code == 0
+        mock_sleep.assert_awaited_once_with(10.0)
+        first_id = mock_run_ws.call_args_list[0].kwargs["command_id"]
+        second_id = mock_run_ws.call_args_list[1].kwargs["command_id"]
+        assert first_id == second_id
 
     @pytest.mark.asyncio
     @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")

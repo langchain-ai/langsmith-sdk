@@ -25,13 +25,14 @@ from unittest import mock
 
 import pytest
 
+from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal._multipart import join_multipart_parts_and_context
 from langsmith._internal._operations import (
     SerializedRunOperation,
     serialized_run_operation_to_multipart_parts_and_context,
 )
-from langsmith.client import Client
+from langsmith.client import Client, _close_files
 
 
 class _Endpoint:
@@ -177,6 +178,17 @@ RETRY_MATRIX = [
 ]
 
 
+# Only rows where a retry actually happens: a one-shot status (200, 409, 401,
+# ...) never touches ``RewindableMultipartBody.seek()`` at all, so it can't
+# tell the streamed body apart from the buffered-to-bytes one below the
+# threshold -- those rows are already covered by ``test_multipart_retry_counts``.
+RETRYABLE_ROWS = [row for row in RETRY_MATRIX if row[2] > 1]
+
+
+def _one_example_payload():
+    return [ls_schemas.ExampleCreate(inputs={"x": "y"})]
+
+
 @pytest.mark.parametrize(
     "status,retry_after,expected_requests,retried_by",
     RETRY_MATRIX,
@@ -195,6 +207,106 @@ def test_multipart_retry_counts(
     assert endpoint.count == expected_requests, (
         f"HTTP {status} (Retry-After={retry_after}) produced {endpoint.count} "
         f"requests, expected {expected_requests} (retried by: {retried_by})"
+    )
+
+
+@pytest.mark.parametrize(
+    "status,retry_after,expected_requests,retried_by",
+    RETRYABLE_ROWS,
+    ids=[f"{s}{'+retry-after' if ra else ''}" for s, ra, _, _ in RETRYABLE_ROWS],
+)
+def test_multipart_retry_counts_streamed_body(
+    endpoint, no_sleep, status, retry_after, expected_requests, retried_by
+):
+    """Same matrix, but forced through the streamed ``RewindableMultipartBody``
+    branch instead of the buffered-to-bytes one.
+
+    Patching ``_MULTIPART_INLINE_MAX_BYTES`` down to 0 forces every body
+    through the streamed branch regardless of its actual size, so this needs
+    no real oversized payload to exercise it -- unlike ``bytes``, a streamed
+    body has no ``tell``/``seek`` unless the wrapper provides it, so urllib3
+    can't rewind it for a retry without that: it would resend a stale
+    ``Content-Length`` against an already-exhausted stream, and the server
+    would hang waiting for a body that never arrives.
+    """
+    endpoint.status = status
+    endpoint.retry_after = retry_after
+    client = _client(endpoint)
+
+    with mock.patch("langsmith.client._MULTIPART_INLINE_MAX_BYTES", 0):
+        client._send_multipart_req(_one_run_payload())
+
+    assert endpoint.count == expected_requests, (
+        f"HTTP {status} (Retry-After={retry_after}) via the streamed body "
+        f"produced {endpoint.count} requests, expected {expected_requests} "
+        f"(retried by: {retried_by})"
+    )
+
+
+# `_prepare_multipart_data` backs `upload_examples_multipart` /
+# `update_examples_multipart`. Unlike `_send_multipart_req` it makes a single
+# `request_with_retries` call with no app-level retry loop of its own, so
+# these counts are RETRYABLE_ROWS with the "+ app loop" rows (500, 408)
+# un-multiplied back down to urllib3's raw count -- everything here is
+# retried by urllib3 alone.
+PREPARE_MULTIPART_DATA_RETRY_MATRIX = [
+    (500, None, 4, "urllib3"),
+    (502, None, 4, "urllib3"),
+    (503, None, 4, "urllib3"),
+    (504, None, 4, "urllib3"),
+    (425, None, 4, "urllib3"),
+    (408, None, 4, "urllib3"),
+    (429, 1, 4, "urllib3 (Retry-After delay)"),
+    (429, None, 4, "urllib3 (backoff_factor delay)"),
+    (413, 1, 4, "urllib3 (Retry-After only)"),
+]
+
+
+@pytest.mark.parametrize(
+    "status,retry_after,expected_requests,retried_by",
+    PREPARE_MULTIPART_DATA_RETRY_MATRIX,
+    ids=[
+        f"{s}{'+retry-after' if ra else ''}"
+        for s, ra, _, _ in PREPARE_MULTIPART_DATA_RETRY_MATRIX
+    ],
+)
+def test_prepare_multipart_data_retry_counts_streamed_body(
+    endpoint, no_sleep, status, retry_after, expected_requests, retried_by
+):
+    """Same streamed-body bug as ``_send_multipart_req``, but no app-level
+    retry loop to paper over a failed rewind -- this call path (behind
+    ``upload_examples_multipart`` / ``update_examples_multipart``) relies
+    entirely on urllib3 being able to resend the body.
+
+    Every row here is a status that ultimately fails (there's no app loop to
+    exhaust first), so the call is always expected to raise once urllib3
+    gives up retrying.
+    """
+    endpoint.status = status
+    endpoint.retry_after = retry_after
+    client = _client(endpoint)
+
+    with mock.patch("langsmith.client._MULTIPART_INLINE_MAX_BYTES", 0):
+        body, data, opened_files_dict = client._prepare_multipart_data(
+            _one_example_payload(), include_dataset_id=False
+        )
+        try:
+            with pytest.raises(Exception):
+                client.request_with_retries(
+                    "POST",
+                    "/examples/multipart",
+                    request_kwargs={
+                        "data": data,
+                        "headers": {"Content-Type": body.content_type},
+                    },
+                )
+        finally:
+            _close_files(list(opened_files_dict.values()))
+
+    assert endpoint.count == expected_requests, (
+        f"HTTP {status} (Retry-After={retry_after}) via _prepare_multipart_data's "
+        f"streamed body produced {endpoint.count} requests, expected "
+        f"{expected_requests} (retried by: {retried_by})"
     )
 
 

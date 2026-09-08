@@ -38,7 +38,16 @@ export const WS_CONNECT_BUDGET = envTimeout(
   "SANDBOX_WS_TIMEOUT_CONNECT_BUDGET",
   120,
 );
-const RETRYABLE_HANDSHAKE_STATUS_CODES = new Set([500, 502, 503, 504]);
+const RETRYABLE_HANDSHAKE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+function retryAfterSeconds(
+  headers: Record<string, string | string[] | undefined> | undefined,
+): number | undefined {
+  const raw = headers?.["retry-after"];
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
 
 function nowSeconds(): number {
   return performance.now() / 1000;
@@ -256,22 +265,27 @@ async function connectWs(
       "unexpected-response",
       (
         req: { destroy?: () => void },
-        res: { statusCode?: number; resume?: () => void },
+        res: {
+          statusCode?: number;
+          headers?: Record<string, string | string[] | undefined>;
+          resume?: () => void;
+        },
       ) => {
         res.resume?.();
         req.destroy?.();
         if (settled) return;
         settled = true;
-        const ErrorType = RETRYABLE_HANDSHAKE_STATUS_CODES.has(
-          res.statusCode ?? 0,
-        )
-          ? LangSmithSandboxRetryableConnectionError
-          : LangSmithSandboxConnectionError;
-        reject(
-          new ErrorType(
-            `WebSocket upgrade to ${url} rejected by server (HTTP ${res.statusCode})`,
-          ),
-        );
+        const message = `WebSocket upgrade to ${url} rejected by server (HTTP ${res.statusCode})`;
+        if (RETRYABLE_HANDSHAKE_STATUS_CODES.has(res.statusCode ?? 0)) {
+          reject(
+            new LangSmithSandboxRetryableConnectionError(
+              message,
+              retryAfterSeconds(res.headers),
+            ),
+          );
+        } else {
+          reject(new LangSmithSandboxConnectionError(message));
+        }
       },
     );
 

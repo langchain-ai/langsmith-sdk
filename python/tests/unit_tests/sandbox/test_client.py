@@ -1144,6 +1144,125 @@ class TestSnapshotOperations:
         assert snapshot.status == "ready"
         assert snapshot.source_sandbox_id == "my-vm"
 
+    def test_capture_snapshot_publishes_the_requested_tag(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """A tag is a mutable pointer, so the caller picks which one to move."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-3",
+                "name": "my-env",
+                "status": "building",
+                "fs_capacity_bytes": 4294967296,
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-3",
+            json={
+                "id": "snap-3",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "tags": ["v2", "latest"],
+            },
+        )
+
+        snapshot = client.capture_snapshot("my-vm", "my-env", tag="v2")
+
+        assert snapshot.tags == ["v2", "latest"]
+        assert json.loads(httpx_mock.get_requests()[0].content) == {
+            "name": "my-env",
+            "tag": "v2",
+        }
+
+    def test_create_snapshot_publishes_the_requested_tag(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        import json
+
+        for status in ("building", "ready"):
+            httpx_mock.add_response(
+                method="POST" if status == "building" else "GET",
+                url=(
+                    "http://test-server:8080/snapshots"
+                    if status == "building"
+                    else "http://test-server:8080/snapshots/snap-4"
+                ),
+                json={
+                    "id": "snap-4",
+                    "name": "my-env",
+                    "status": status,
+                    "fs_capacity_bytes": 4294967296,
+                },
+                status_code=201 if status == "building" else 200,
+            )
+
+        client.create_snapshot("my-env", "python:3.12-slim", 4294967296, tag="v2")
+
+        assert json.loads(httpx_mock.get_requests()[0].content)["tag"] == "v2"
+
+    def test_get_snapshot_by_reference_keeps_the_tag_separator(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """A percent-encoded colon would hide the tag from the server."""
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/my-env:v2",
+            json={
+                "id": "snap-5",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "tags": ["v2"],
+            },
+        )
+
+        snapshot = client.get_snapshot("my-env:v2")
+
+        assert snapshot.id == "snap-5"
+        assert str(httpx_mock.get_requests()[0].url).endswith("/snapshots/my-env:v2")
+
+    def test_list_snapshot_tags_lists_every_tag(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots-by-name/my-env",
+            json={
+                "name": "my-env",
+                "tags": [
+                    {"tag": "latest", "snapshot_id": "snap-5"},
+                    {"tag": "v1", "snapshot_id": "snap-4"},
+                ],
+            },
+        )
+
+        tags = client.list_snapshot_tags("my-env")
+
+        assert [(tag.tag, tag.snapshot_id) for tag in tags] == [
+            ("latest", "snap-5"),
+            ("v1", "snap-4"),
+        ]
+
+    def test_list_snapshot_tags_raises_when_nobody_published(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots-by-name/nope",
+            json={"detail": "not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            client.list_snapshot_tags("nope")
+
     def test_capture_snapshot_from_docker_image(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
@@ -1620,6 +1739,36 @@ class TestStartStopOperations:
         assert "snapshot_id" not in body
         assert "template_name" not in body
 
+    def test_create_sandbox_boots_from_a_tagged_reference(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """`snapshot` carries all three forms: a UUID, `name:tag`, or a bare name."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes",
+            json={
+                "name": "my-vm",
+                "snapshot_id": "snap-1",
+                "status": "ready",
+                "dataplane_url": "https://dp.example.com/my-vm",
+            },
+            status_code=201,
+        )
+
+        client.create_sandbox(snapshot="my-snap:v2", name="my-vm")
+
+        body = json.loads(httpx_mock.get_request().content)
+        assert body["snapshot"] == "my-snap:v2"
+        assert "snapshot_name" not in body
+
+    def test_create_sandbox_rejects_a_disagreeing_snapshot_alias(
+        self, client: SandboxClient
+    ):
+        with pytest.raises(ValueError, match="must not disagree"):
+            client.create_sandbox(snapshot="a:v1", snapshot_name="b")
+
     def test_create_sandbox_omits_snapshot_id_when_absent(
         self, client: SandboxClient, httpx_mock: HTTPXMock
     ):
@@ -1653,7 +1802,7 @@ class TestStartStopOperations:
 
         with pytest.raises(
             ValueError,
-            match="At most one of snapshot_id or snapshot_name may be set",
+            match="At most one of snapshot_id, snapshot or snapshot_name may be set",
         ):
             client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
 
