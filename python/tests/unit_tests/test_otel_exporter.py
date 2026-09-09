@@ -6,6 +6,13 @@ import time
 import uuid
 from unittest.mock import MagicMock, patch
 
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
+
+from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal.otel._otel_exporter import OTELExporter
 from langsmith.integrations.otel import (
     otel_safe_attribute_value,
@@ -297,3 +304,154 @@ def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
         endpoint="https://api.smith.langchain.com/otel",
         headers={"x-api-key": "lsv2_pt_test123"},
     )
+
+
+# --- Tests for token usage promotion (extra.metadata.usage_metadata fallback) ---
+
+
+def _export_single_run(run_data: dict) -> "list":
+    """Serialize ``run_data`` as a 'post' op and export it through a real
+    OTELExporter backed by a real OTEL SDK TracerProvider, returning the
+    finished spans recorded by an in-memory span exporter.
+    """
+    in_memory_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(in_memory_exporter))
+
+    exporter = OTELExporter(tracer_provider=tracer_provider)
+    op = serialize_run_dict("post", dict(run_data))
+    exporter.export_batch([op], {})
+
+    return in_memory_exporter.get_finished_spans()
+
+
+def _base_llm_run(run_id: uuid.UUID, trace_id: uuid.UUID) -> dict:
+    return {
+        "id": run_id,
+        "trace_id": trace_id,
+        "dotted_order": f"20240101T000000000000Z{trace_id}.{run_id}",
+        "name": "example-turn",
+        "run_type": "llm",
+        "start_time": "2024-01-01T00:00:00+00:00",
+        "end_time": "2024-01-01T00:00:01+00:00",
+        "inputs": {"messages": [{"role": "user", "content": "hi"}]},
+    }
+
+
+def test_export_batch_promotes_usage_from_extra_metadata():
+    """Usage recorded only under extra.metadata.usage_metadata (the shape
+    written by integrations such as claude_agent_sdk, which capture real
+    per-turn usage there rather than in outputs) is still promoted to the
+    gen_ai.usage.* span attributes.
+    """
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run_data = _base_llm_run(run_id, trace_id)
+    run_data.update(
+        # A turn's real output content -- no usage anywhere inside it.
+        outputs={
+            "content": [{"type": "text", "text": "hello"}],
+            "role": "assistant",
+        },
+        # Usage is captured only here.
+        extra={
+            "metadata": {
+                "usage_metadata": {
+                    "input_tokens": 21400,
+                    "output_tokens": 7,
+                    "total_tokens": 21407,
+                }
+            }
+        },
+    )
+
+    spans = _export_single_run(run_data)
+
+    assert len(spans) == 1
+    attributes = spans[0].attributes
+    assert attributes["gen_ai.usage.input_tokens"] == 21400
+    assert attributes["gen_ai.usage.output_tokens"] == 7
+    assert attributes["gen_ai.usage.total_tokens"] == 21407
+
+
+def test_export_batch_promotes_usage_from_extra_metadata_without_outputs():
+    """The extra.metadata.usage_metadata fallback must not depend on
+    outputs being present -- a run/patch operation can carry usage there
+    while having no outputs at all (e.g. a patch that only updates usage).
+    """
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run_data = _base_llm_run(run_id, trace_id)
+    run_data.update(
+        extra={
+            "metadata": {
+                "usage_metadata": {
+                    "input_tokens": 21400,
+                    "output_tokens": 7,
+                    "total_tokens": 21407,
+                }
+            }
+        },
+    )
+    assert "outputs" not in run_data
+
+    spans = _export_single_run(run_data)
+
+    assert len(spans) == 1
+    attributes = spans[0].attributes
+    assert attributes["gen_ai.usage.input_tokens"] == 21400
+    assert attributes["gen_ai.usage.output_tokens"] == 7
+    assert attributes["gen_ai.usage.total_tokens"] == 21407
+
+
+def test_export_batch_outputs_usage_takes_precedence_over_extra_metadata():
+    """The extra.metadata.usage_metadata fallback must never override real
+    usage already present on run.outputs -- it is a last resort only.
+    """
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run_data = _base_llm_run(run_id, trace_id)
+    run_data.update(
+        outputs={
+            "usage_metadata": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "total_tokens": 120,
+            }
+        },
+        extra={
+            "metadata": {
+                "usage_metadata": {
+                    "input_tokens": 999,
+                    "output_tokens": 999,
+                    "total_tokens": 1998,
+                }
+            }
+        },
+    )
+
+    spans = _export_single_run(run_data)
+
+    assert len(spans) == 1
+    attributes = spans[0].attributes
+    assert attributes["gen_ai.usage.input_tokens"] == 100
+    assert attributes["gen_ai.usage.output_tokens"] == 20
+    assert attributes["gen_ai.usage.total_tokens"] == 120
+
+
+def test_export_batch_no_usage_anywhere_sets_no_usage_attributes():
+    """No usage source present -- no gen_ai.usage.* attributes are set."""
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run_data = _base_llm_run(run_id, trace_id)
+    run_data.update(
+        outputs={"content": [{"type": "text", "text": "hi"}], "role": "assistant"},
+    )
+
+    spans = _export_single_run(run_data)
+
+    assert len(spans) == 1
+    attributes = spans[0].attributes
+    assert "gen_ai.usage.input_tokens" not in attributes
+    assert "gen_ai.usage.output_tokens" not in attributes
+    assert "gen_ai.usage.total_tokens" not in attributes
