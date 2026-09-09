@@ -90,6 +90,11 @@ AEVALUATOR_T = Union[
     ],
 ]
 EXPERIMENT_T = Union[str, uuid.UUID, schemas.TracerSession]
+# Whether to upload a given run's trace + feedback to LangSmith. A bool applies
+# to every run in the call; a callable is invoked once per generated run
+# (once per repetition, for repeated examples) so it can sample or subset runs
+# while the aggregate/summary score is still computed over every run.
+UPLOAD_RESULTS_T = Union[bool, Callable[[schemas.Example], bool]]
 
 
 @overload
@@ -107,7 +112,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: bool = True,
+    upload_results: UPLOAD_RESULTS_T = True,
     **kwargs: Any,
 ) -> ExperimentResults: ...
 
@@ -127,7 +132,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: bool = True,
+    upload_results: UPLOAD_RESULTS_T = True,
     **kwargs: Any,
 ) -> ComparativeExperimentResults: ...
 
@@ -148,7 +153,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: bool = True,
+    upload_results: UPLOAD_RESULTS_T = True,
     error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
@@ -193,6 +198,14 @@ def evaluate(
             `'log'` will trace the runs with the error message as part of the
             experiment, `'ignore'` will not count the run as part of the experiment at
             all.
+        upload_results (bool | Callable[[Example], bool], default=True): Whether to
+            upload each run's trace and feedback to LangSmith.
+
+            Pass a callable to decide per run instead of for the whole call — it's
+            invoked once per generated run (once per repetition, for repeated
+            examples), so a stateful/random callable can sample a subset of runs.
+            Summary evaluator scores are still computed and uploaded over *all*
+            runs regardless of which individual runs were uploaded.
 
     Returns:
         ExperimentResults: If target is a function, `Runnable`, or existing experiment.
@@ -270,6 +283,20 @@ def evaluate(
         View the evaluation results for experiment:...
         >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
         ...     pass
+
+        Uploading only a sample of runs, while still scoring every run:
+
+        >>> import random
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ...     evaluators=[accuracy],
+        ...     summary_evaluators=[precision],
+        ...     num_repetitions=5,
+        ...     description="Only keep traces for 10% of runs.",
+        ...     upload_results=lambda example: random.random() < 0.1,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
 
 
 
@@ -1099,7 +1126,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-    upload_results: bool = True,
+    upload_results: UPLOAD_RESULTS_T = True,
     error_handling: Literal["log", "ignore"] = "log",
 ) -> ExperimentResults:
     # Initialize the experiment manager.
@@ -1393,9 +1420,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluator_keys: Optional[list[str]] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
-        upload_results: bool = True,
+        upload_results: UPLOAD_RESULTS_T = True,
         attachment_raw_data_dict: Optional[dict] = None,
         error_handling: Literal["log", "ignore"] = "log",
+        upload_decisions: Optional[dict[uuid.UUID, bool]] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -1420,6 +1448,19 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
+        # Per-run upload decisions, keyed by run id. Populated as predictions are
+        # made and read back when scoring, so a stochastic/subsetting
+        # `upload_results` callable is only ever resolved once per run. Shared
+        # (not copied) across `_copy()` calls so later stages of the pipeline
+        # (evaluators) see the same decision the prediction stage made.
+        self._upload_decisions: dict[uuid.UUID, bool] = (
+            upload_decisions if upload_decisions is not None else {}
+        )
+
+    def _resolve_upload(self, example: schemas.Example) -> bool:
+        if callable(self._upload_results):
+            return bool(self._upload_results(example))
+        return bool(self._upload_results)
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1624,35 +1665,43 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         if max_concurrency == 0:
             for example in self.examples:
-                yield _forward(
+                upload = self._resolve_upload(example)
+                result = _forward(
                     fn,
                     example,
                     self.experiment_name,
                     self._metadata,
                     self.client,
-                    self._upload_results,
+                    upload,
                     include_attachments,
                     self._error_handling,
                 )
+                self._upload_decisions[result["run"].id] = upload
+                yield result
 
         else:
             with ls_utils.ContextThreadPoolExecutor(max_concurrency) as executor:
-                futures = [
-                    executor.submit(
+                future_uploads = {}
+                futures = []
+                for example in self.examples:
+                    upload = self._resolve_upload(example)
+                    future = executor.submit(
                         _forward,
                         fn,
                         example,
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        self._upload_results,
+                        upload,
                         include_attachments,
                         self._error_handling,
                     )
-                    for example in self.examples
-                ]
+                    future_uploads[future] = upload
+                    futures.append(future)
                 for future in cf.as_completed(futures):
-                    yield future.result()
+                    result = future.result()
+                    self._upload_decisions[result["run"].id] = future_uploads[future]
+                    yield result
         # Close out the project.
         self._end()
 
@@ -1663,6 +1712,16 @@ class _ExperimentManager(_ExperimentManagerMixin):
         executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
+        # Whether *this specific run* was uploaded, not just whether uploads are
+        # enabled at all -- a run that wasn't uploaded has no trace on the server
+        # to attach feedback to. `dict.get`'s default is evaluated eagerly, so
+        # look the id up explicitly rather than re-invoking a (possibly
+        # stateful/random) `upload_results` callable a second time.
+        run_id = current_results["run"].id
+        if run_id in self._upload_decisions:
+            run_uploaded = self._upload_decisions[run_id]
+        else:
+            run_uploaded = self._resolve_upload(current_results["example"])
         metadata = {
             **(current_context["metadata"] or {}),
             **{
@@ -1676,7 +1735,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": "local" if not self._upload_results else True,
+                "enabled": "local" if not run_uploaded else True,
                 "client": self.client,
             }
         ):
@@ -1695,7 +1754,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     eval_results["results"].extend(
                         self.client._select_eval_results(evaluator_response)
                     )
-                    if self._upload_results:
+                    if run_uploaded:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response,
@@ -1721,7 +1780,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         eval_results["results"].extend(
                             self.client._select_eval_results(error_response)
                         )
-                        if self._upload_results:
+                        if run_uploaded:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response,
@@ -1904,6 +1963,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
             "upload_results": self._upload_results,
+            "upload_decisions": self._upload_decisions,
             "attachment_raw_data_dict": self._attachment_raw_data_dict,
             "error_handling": self._error_handling,
         }

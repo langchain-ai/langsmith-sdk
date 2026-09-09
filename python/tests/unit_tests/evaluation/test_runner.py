@@ -257,6 +257,86 @@ async def test_aevaluate_feedback_includes_experiment_id_and_start_time() -> Non
     assert feedback["start_time"] == run["start_time"]
 
 
+def test_evaluate_upload_results_callable_samples_runs_but_scores_all() -> None:
+    """`upload_results` as a callable controls which runs are persisted, but
+    summary evaluators must still see -- and score -- every run/repetition."""
+    NUM_EXAMPLES = 3
+    NUM_REPETITIONS = 4
+    example_responses = [_create_example(i) for i in range(NUM_EXAMPLES)]
+    examples = [e[0] for e in example_responses]
+    client, fake_request = _fake_client_for_examples(
+        [e[1] for e in example_responses],
+        "00886375-eb2a-4038-9032-efff60309896",
+        "my-dataset",
+    )
+
+    def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    summary_run_counts: List[int] = []
+
+    def summary_eval(runs_, examples_):
+        summary_run_counts.append(len(runs_))
+        return {"key": "count", "score": len(runs_)}
+
+    # Called once per generated run (once per repetition of each example), so a
+    # stateful predicate can sample independently across repetitions.
+    call_count = 0
+
+    def upload_every_other(example: ls_schemas.Example) -> bool:
+        nonlocal call_count
+        call_count += 1
+        return call_count % 2 == 1
+
+    results = evaluate(
+        predict,
+        client=client,
+        data=examples,
+        evaluators=[score],
+        summary_evaluators=[summary_eval],
+        num_repetitions=NUM_REPETITIONS,
+        upload_results=upload_every_other,
+        max_concurrency=0,
+    )
+    results_list = list(results)
+
+    total_runs = NUM_EXAMPLES * NUM_REPETITIONS
+    uploaded_runs = total_runs // 2
+    assert len(results_list) == total_runs
+    assert call_count == total_runs
+
+    # The experiment is still created even though only some runs are uploaded.
+    assert fake_request.created_session
+
+    # Only the sampled half of the target-fn runs -- and their matching
+    # per-row evaluator runs -- land on the server, plus one run for the
+    # summary evaluator itself (which always traces, since the aggregate is
+    # always uploaded).
+    expected_runs = uploaded_runs * 2 + 1
+    _wait_until(lambda: len(fake_request.runs) == expected_runs)
+    assert len(fake_request.runs) == expected_runs
+
+    # The summary evaluator saw every run, not just the uploaded ones.
+    assert summary_run_counts == [total_runs]
+
+    # Row-level feedback only exists for the runs that were actually uploaded,
+    # but the aggregate (project-level, run_id=None) feedback always reflects
+    # every run.
+    _wait_until(lambda: len(fake_request.feedbacks) == uploaded_runs + 1)
+    per_run_feedback = [
+        f for f in fake_request.feedbacks if f.get("run_id") is not None
+    ]
+    aggregate_feedback = [
+        f for f in fake_request.feedbacks if f.get("run_id") is None
+    ]
+    assert len(per_run_feedback) == uploaded_runs
+    assert len(aggregate_feedback) == 1
+    assert aggregate_feedback[0]["score"] == total_runs
+
+
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("as_runnable", [False, True])
