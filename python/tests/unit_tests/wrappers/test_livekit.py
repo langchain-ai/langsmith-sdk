@@ -17,9 +17,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from langsmith._internal.voice import set_thread_id
+from langsmith._internal.voice._helpers import (
+    build_assistant_tool_call_message,
+    build_messages_from_gen_ai,
+)
 from langsmith.integrations.livekit import configure_livekit
 from langsmith.integrations.livekit._helpers import (
-    build_assistant_tool_call_message,
     build_message_from_event,
     normalize_provider,
 )
@@ -1598,6 +1601,389 @@ class TestMessageFromEvent:
         )
         assert msg["tool_call_id"] == "call_1"
         assert msg["name"] == "lookup"
+
+
+class TestContentAttributeVersions:
+    @pytest.mark.parametrize("prefix", ["lk.", "lk.pii."])
+    def test_stt_and_tts(self, prefix):
+        proc = _processor()
+        proc.on_end(_make_span("user_turn", {f"{prefix}user_transcript": "Hello"}))
+        attrs = proc.downstream.on_end.call_args.args[0]._attributes
+        assert json.loads(attrs["gen_ai.completion"])["messages"] == [
+            {"role": "assistant", "content": "Hello"}
+        ]
+        assert attrs["langsmith.metadata.ls_message_view_exclude"] is True
+
+        proc.on_end(_make_span("tts_request", {f"{prefix}input_text": "Welcome"}))
+        attrs = proc.downstream.on_end.call_args.args[0]._attributes
+        assert json.loads(attrs["gen_ai.prompt"])["messages"] == [
+            {"role": "user", "content": "Welcome"}
+        ]
+
+    @pytest.mark.parametrize("prefix", ["lk.", "lk.pii."])
+    def test_turn_and_root_transcript(self, prefix):
+        proc = _processor()
+        proc.on_end(_make_span("job", parent=None))
+        proc.on_end(
+            _make_span(
+                "agent_turn",
+                {f"{prefix}user_input": "Hi", f"{prefix}response.text": "Hello"},
+                span_id=2,
+            )
+        )
+        attrs = proc.downstream.on_end.call_args.args[0]._attributes
+        assert json.loads(attrs["gen_ai.prompt"])["messages"][0]["content"] == "Hi"
+        assert (
+            json.loads(attrs["gen_ai.completion"])["messages"][0]["content"] == "Hello"
+        )
+        proc.on_end(_make_span("agent_session", span_id=3))
+        root = next(
+            call.args[0]._attributes
+            for call in proc.downstream.on_end.call_args_list
+            if call.args[0]._attributes.get("langsmith.root_span")
+        )
+        assert json.loads(root["gen_ai.prompt"])["messages"] == [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+        ]
+        assert not proc._state_by_trace
+
+    @pytest.mark.parametrize("prefix", ["lk.", "lk.pii."])
+    @pytest.mark.parametrize("output", ['{"temperature": 20}', "", 0, False])
+    def test_tool_payloads(self, prefix, output):
+        proc = _processor()
+        proc.on_end(
+            _make_span(
+                "function_tool",
+                {
+                    # LiveKit 1.7+ still uses this non-PII name.
+                    "lk.function_tool.name": "weather",
+                    f"{prefix}function_tool.arguments": '{"city": "Paris"}',
+                    f"{prefix}function_tool.output": output,
+                },
+            )
+        )
+        attrs = proc.downstream.on_end.call_args.args[0]._attributes
+        assert attrs["langsmith.metadata.tool_name"] == "weather"
+        assert json.loads(attrs["gen_ai.prompt"]) == {"city": "Paris"}
+        assert attrs["gen_ai.completion"] == (
+            output if isinstance(output, str) else json.dumps(output)
+        )
+
+    @pytest.mark.parametrize("value", ["current", ""])
+    @pytest.mark.parametrize(
+        "span_name,field,io_key",
+        [
+            ("user_turn", "user_transcript", "gen_ai.completion"),
+            ("tts_request", "input_text", "gen_ai.prompt"),
+            ("agent_turn", "user_input", "gen_ai.prompt"),
+            ("agent_turn", "response.text", "gen_ai.completion"),
+            ("function_tool", "function_tool.arguments", "gen_ai.prompt"),
+            ("function_tool", "function_tool.output", "gen_ai.completion"),
+        ],
+    )
+    def test_new_field_wins_even_when_empty(self, span_name, field, io_key, value):
+        proc = _processor()
+        proc.on_end(
+            _make_span(span_name, {f"lk.{field}": "stale", f"lk.pii.{field}": value})
+        )
+        attrs = proc.downstream.on_end.call_args.args[0]._attributes
+        assert "stale" not in attrs.get(io_key, "")
+        if value:
+            assert value in attrs[io_key]
+
+
+class TestGenAIMessageAttributes:
+    """Fixtures follow LiveKit 1.8 telemetry/gen_ai.py's serialized part shapes."""
+
+    @staticmethod
+    def _event(name, **attributes):
+        return SimpleNamespace(name=name, attributes=attributes)
+
+    def _export(self, attributes=None, events=()):
+        proc = _processor()
+        span = _make_span("llm_request", attributes)
+        span.events = list(events)
+        proc.on_end(span)
+        proc.downstream.on_end.assert_called_once()
+        return proc.downstream.on_end.call_args.args[0]
+
+    def test_legacy_event_conversation(self):
+        call = {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "weather", "arguments": '{"city":"Paris"}'},
+        }
+        events = [
+            self._event("gen_ai.system.message", content="Be helpful"),
+            self._event("gen_ai.user.message", content="Weather?"),
+            self._event("gen_ai.assistant.message", tool_calls=[json.dumps(call)]),
+            self._event("gen_ai.tool.message", content="Sunny", id="call_1"),
+            self._event("gen_ai.choice", content="It is sunny"),
+        ]
+        span = self._export(events=events)
+        prompt = json.loads(span._attributes["gen_ai.prompt"])["messages"]
+        assert [m["role"] for m in prompt] == ["system", "user", "assistant", "tool"]
+        assert prompt[2]["tool_calls"] == [call]
+        assert prompt[3]["tool_call_id"] == "call_1"
+        assert json.loads(span._attributes["gen_ai.completion"])["messages"] == [
+            {"role": "assistant", "content": "It is sunny"}
+        ]
+        assert not span.events
+
+    def test_part_based_conversation_and_tool_round_trip(self):
+        call = {
+            "type": "tool_call",
+            "id": "call_1",
+            "name": "weather",
+            "arguments": {"city": "Paris"},
+        }
+        inputs = [
+            {"role": "user", "parts": [{"type": "text", "content": "Weather?"}]},
+            {
+                "role": "assistant",
+                "parts": [{"type": "text", "content": "Checking"}, call],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool_call_response",
+                        "id": "call_1",
+                        "response": {"temp": 20},
+                    }
+                ],
+            },
+        ]
+        outputs = [
+            {
+                "role": "assistant",
+                "parts": [{"type": "text", "content": "20 degrees"}],
+                "finish_reason": "stop",
+            }
+        ]
+        attrs = {
+            "gen_ai.system_instructions": json.dumps(
+                [
+                    {"type": "text", "content": "Be helpful"},
+                    {"type": "text", "content": "Be brief"},
+                ]
+            ),
+            "gen_ai.input.messages": json.dumps(inputs),
+            "gen_ai.output.messages": json.dumps(outputs),
+            "lk.llm_metrics": json.dumps(
+                {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}
+            ),
+        }
+        span = self._export(attrs)
+        prompt = json.loads(span._attributes["gen_ai.prompt"])["messages"]
+        assert prompt[0] == {"role": "system", "content": "Be helpful\nBe brief"}
+        assert prompt[1] == {"role": "user", "content": "Weather?"}
+        assert prompt[2]["content"] == "Checking"
+        tool_call = prompt[2]["tool_calls"][0]
+        assert tool_call["id"] == "call_1"
+        assert tool_call["function"]["name"] == "weather"
+        assert json.loads(tool_call["function"]["arguments"]) == {"city": "Paris"}
+        assert prompt[3]["tool_call_id"] == "call_1"
+        assert json.loads(prompt[3]["content"]) == {"temp": 20}
+        assert json.loads(span._attributes["gen_ai.completion"])["messages"] == [
+            {"role": "assistant", "content": "20 degrees"}
+        ]
+        assert json.loads(span._attributes["langsmith.usage_metadata"]) == {
+            "input_tokens": 20,
+            "output_tokens": 5,
+            "total_tokens": 25,
+        }
+        assert attrs["gen_ai.input.messages"] == json.dumps(inputs)
+
+    @pytest.mark.parametrize(
+        "arguments", [{"city": "Paris"}, '{"city":"Paris"}', "partial{"]
+    )
+    def test_output_tool_calls(self, arguments):
+        span = self._export(
+            {
+                "gen_ai.output.messages": json.dumps(
+                    [
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {
+                                    "type": "tool_call",
+                                    "id": "a",
+                                    "name": "weather",
+                                    "arguments": arguments,
+                                },
+                                {
+                                    "type": "tool_call",
+                                    "id": "b",
+                                    "name": "time",
+                                    "arguments": {},
+                                },
+                            ],
+                        }
+                    ]
+                )
+            }
+        )
+        message = json.loads(span._attributes["gen_ai.completion"])["messages"][0]
+        assert message["content"] == ""
+        assert [c["id"] for c in message["tool_calls"]] == ["a", "b"]
+        assert message["tool_calls"][0]["function"]["arguments"] == (
+            arguments if isinstance(arguments, str) else json.dumps(arguments)
+        )
+
+    @pytest.mark.parametrize("raw", [None, "not json", "{}", "null", "123"])
+    def test_missing_or_malformed_fields_fall_back_independently(self, raw):
+        span = self._export(
+            {
+                "gen_ai.input.messages": raw,
+                "gen_ai.output.messages": json.dumps(
+                    [
+                        {
+                            "role": "assistant",
+                            "parts": [{"type": "text", "content": "New answer"}],
+                        }
+                    ]
+                ),
+            },
+            [
+                self._event("gen_ai.user.message", content="Old prompt"),
+                self._event("gen_ai.choice", content="Old answer"),
+            ],
+        )
+        assert (
+            json.loads(span._attributes["gen_ai.prompt"])["messages"][0]["content"]
+            == "Old prompt"
+        )
+        assert (
+            json.loads(span._attributes["gen_ai.completion"])["messages"][0]["content"]
+            == "New answer"
+        )
+
+    def test_new_fields_prevent_duplicates_and_empty_arrays_are_authoritative(self):
+        diagnostic = self._event("diagnostic", detail="kept")
+        span = self._export(
+            {
+                "gen_ai.input.messages": "[]",
+                "gen_ai.output.messages": "[]",
+                "gen_ai.system_instructions": json.dumps(
+                    [{"type": "text", "content": "New instructions"}]
+                ),
+            },
+            [
+                self._event("gen_ai.system.message", content="Old instructions"),
+                self._event("gen_ai.user.message", content="Old prompt"),
+                self._event("gen_ai.choice", content="Old answer"),
+                diagnostic,
+            ],
+        )
+        assert json.loads(span._attributes["gen_ai.prompt"])["messages"] == [
+            {"role": "system", "content": "New instructions"}
+        ]
+        assert json.loads(span._attributes["gen_ai.completion"])["messages"] == []
+        assert list(span.events) == [diagnostic]
+
+    def test_instructions_only_and_legacy_output(self):
+        span = self._export(
+            {
+                "gen_ai.system_instructions": json.dumps(
+                    [{"type": "text", "content": "New instructions"}]
+                )
+            },
+            [
+                self._event("gen_ai.system.message", content="Old instructions"),
+                self._event("gen_ai.user.message", content="Hi"),
+                self._event("gen_ai.choice", content="Hello"),
+            ],
+        )
+        assert json.loads(span._attributes["gen_ai.prompt"])["messages"] == [
+            {"role": "system", "content": "New instructions"},
+            {"role": "user", "content": "Hi"},
+        ]
+        assert (
+            json.loads(span._attributes["gen_ai.completion"])["messages"][0]["content"]
+            == "Hello"
+        )
+
+    def test_omitted_content_does_not_fabricate_messages(self):
+        attrs = self._export()._attributes
+        assert "gen_ai.prompt" not in attrs
+        assert "gen_ai.completion" not in attrs
+
+    def test_multimodal_and_malformed_parts(self):
+        messages = build_messages_from_gen_ai(
+            json.dumps(
+                [
+                    None,
+                    123,
+                    {"role": [], "parts": []},
+                    {"role": "user", "parts": {}},
+                    {
+                        "role": "user",
+                        "parts": [
+                            None,
+                            "bad",
+                            {"type": "text", "content": {}},
+                            {"type": "unknown"},
+                            {
+                                "type": "blob",
+                                "modality": "audio",
+                                "content": "",
+                                "transcript": "Look here",
+                            },
+                            {
+                                "type": "uri",
+                                "modality": "image",
+                                "uri": "https://example.com/image.png",
+                            },
+                            {"type": "uri", "modality": "image", "uri": ""},
+                        ],
+                    },
+                ]
+            )
+        )
+        assert messages == [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Look here"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://example.com/image.png"},
+                    },
+                ],
+            }
+        ]
+
+    @pytest.mark.parametrize(
+        "response", ["plain text", {"temp": 20}, [1, 2], None, False, 0, ""]
+    )
+    def test_tool_response_values(self, response):
+        messages = build_messages_from_gen_ai(
+            json.dumps(
+                [
+                    {
+                        "role": "tool",
+                        "parts": [
+                            {
+                                "type": "tool_call_response",
+                                "id": "call_1",
+                                "response": response,
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
+        assert messages == [
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": response
+                if isinstance(response, str)
+                else json.dumps(response),
+            }
+        ]
 
 
 class TestProviderAttribution:
