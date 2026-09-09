@@ -17,11 +17,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from langsmith._internal.voice import set_thread_id
+from langsmith._internal.voice._helpers import (
+    build_assistant_tool_call_message,
+    build_messages_from_gen_ai,
+)
 from langsmith.integrations.livekit import configure_livekit
 from langsmith.integrations.livekit._helpers import (
-    build_assistant_tool_call_message,
     build_message_from_event,
-    build_messages_from_gen_ai,
     normalize_provider,
 )
 from langsmith.integrations.livekit.processor import (

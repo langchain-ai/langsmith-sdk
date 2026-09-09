@@ -26,6 +26,8 @@ from opentelemetry.sdk.trace import Span, SpanProcessor
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice._helpers import (
     build_assistant_message,
+    build_messages_from_gen_ai,
+    build_system_messages_from_gen_ai,
     build_user_message,
     try_parse_json_object,
 )
@@ -37,8 +39,6 @@ from langsmith._internal.voice.base_span_processor import (
 from ._helpers import (
     build_message_from_event,
     build_messages_from_chat_history,
-    build_messages_from_gen_ai,
-    build_system_messages_from_gen_ai,
     extract_llm_usage,
     extract_model_from_lk_metrics,
     extract_provider_from_lk_metrics,
