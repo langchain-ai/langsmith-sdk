@@ -32,6 +32,15 @@ def build_tool_message(
     return message
 
 
+def build_tool_call(call_id: str, name: str, arguments: str) -> dict[str, object]:
+    """Build one OpenAI-shaped function tool call."""
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
+
+
 def build_assistant_tool_call_message(
     call_id: str, name: str, arguments: str
 ) -> dict[str, object]:
@@ -39,13 +48,7 @@ def build_assistant_tool_call_message(
     return {
         "role": "assistant",
         "content": "",
-        "tool_calls": [
-            {
-                "id": call_id,
-                "type": "function",
-                "function": {"name": name, "arguments": arguments},
-            }
-        ],
+        "tool_calls": [build_tool_call(call_id, name, arguments)],
     }
 
 
@@ -104,14 +107,11 @@ def _message_from_gen_ai_parts(
             and isinstance(tool_name, str)
         ):
             tool_calls.append(
-                {
-                    "id": call_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": _json_text(part.get("arguments", {})),
-                    },
-                }
+                build_tool_call(
+                    call_id,
+                    tool_name,
+                    _json_text(part.get("arguments", {})),
+                )
             )
         elif (
             kind == "tool_call_response"
