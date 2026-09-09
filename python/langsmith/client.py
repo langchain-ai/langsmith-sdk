@@ -2483,7 +2483,7 @@ class Client:
             metadata: dict = run_extra.setdefault("metadata", {})
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
             added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
-            if sample_rate is not None and "ls_tracing_sample_rate" not in metadata:
+            if sample_rate is not None:
                 added["ls_tracing_sample_rate"] = sample_rate
             if added:
                 metadata.update(self._hide_run_metadata(added))

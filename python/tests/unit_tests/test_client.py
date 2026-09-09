@@ -2912,6 +2912,53 @@ def test_sampling_and_batching():
     assert [post["id"] for post in batch_data.get("post", [])] == [str(SAMPLED_RUN_ID)]
 
 
+def test_sample_rate_is_reported_on_created_runs() -> None:
+    """The configured rate has to ride out on the run, not just gate it.
+
+    Without it the sampled subset cannot be scaled back up to the customer's
+    total trace potential, and nothing anywhere reports the omission.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, tracing_sampling_rate=0.5)
+
+    client.create_run(
+        "sampled_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=SAMPLED_RUN_ID,
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    metadata = (payload.get("extra") or {}).get("metadata") or {}
+    assert metadata["ls_tracing_sample_rate"] == 0.5
+
+
+def test_sample_rate_overrides_an_inherited_value() -> None:
+    """The client's own rate wins over one already on the run.
+
+    ``RunTree.create_child`` copies the parent's metadata onto every child, so a
+    run traced by a client at one rate can arrive carrying another's -- and a
+    caller can set the key directly. Either way the reported rate has to be the
+    rate this client actually sampled at, or the extrapolation is wrong rather
+    than merely missing.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, tracing_sampling_rate=0.5)
+
+    client.create_run(
+        "sampled_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=SAMPLED_RUN_ID,
+        extra={"metadata": {"ls_tracing_sample_rate": 0.9, "user": "x"}},
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    metadata = payload["extra"]["metadata"]
+    assert metadata["ls_tracing_sample_rate"] == 0.5
+    assert metadata["user"] == "x"
+
+
 # Golden decisions at rate 0.5. The JS SDK asserts this exact table in
 # js/src/tests/client.test.ts: both must agree, or a trace sampled in by one
 # SDK is dropped by the other. Regenerate both sides together, never one.
