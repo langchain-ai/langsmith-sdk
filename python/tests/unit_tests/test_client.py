@@ -4761,7 +4761,9 @@ def test_sample_rate_survives_zstd_compression(mock_session_cls: mock.Mock) -> N
         for call_obj in mock_session.request.mock_calls
         if call_obj.args and call_obj.args[0] == "POST"
     ]
-    assert len(post_calls) >= 1, "Expected at least one POST to the compression endpoint"
+    assert len(post_calls) >= 1, (
+        "Expected at least one POST to the compression endpoint"
+    )
 
     call_data = post_calls[0][2]["data"]
     if hasattr(call_data, "read"):
