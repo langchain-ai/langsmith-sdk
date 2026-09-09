@@ -337,6 +337,29 @@ def test_evaluate_upload_results_callable_samples_runs_but_scores_all() -> None:
     assert aggregate_feedback[0]["score"] == total_runs
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "00886375-eb2a-4038-9032-efff60309896",
+        (
+            "00886375-eb2a-4038-9032-efff60309896",
+            "11886375-eb2a-4038-9032-efff60309896",
+        ),
+    ],
+)
+def test_evaluate_rejects_callable_upload_results_for_experiment_targets(
+    target: Any,
+) -> None:
+    """A per-run callable only makes sense when new runs are being created.
+
+    Re-evaluating an existing experiment, or comparing two existing
+    experiments, doesn't create any new runs, so a callable `upload_results`
+    must be rejected rather than silently ignored.
+    """
+    with pytest.raises(ValueError, match="upload_results"):
+        evaluate(target, upload_results=lambda example: True)
+
+
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("as_runnable", [False, True])

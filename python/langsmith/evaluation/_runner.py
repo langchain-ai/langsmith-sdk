@@ -99,7 +99,7 @@ UPLOAD_RESULTS_T = Union[bool, Callable[[schemas.Example], bool]]
 
 @overload
 def evaluate(
-    target: Union[TARGET_T, Runnable, EXPERIMENT_T],
+    target: Union[TARGET_T, Runnable],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -119,6 +119,29 @@ def evaluate(
 
 @overload
 def evaluate(
+    target: EXPERIMENT_T,
+    /,
+    data: Optional[DATA_T] = None,
+    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: Optional[int] = 0,
+    num_repetitions: int = 1,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+    experiment: Optional[EXPERIMENT_T] = None,
+    # No new runs are created when re-evaluating an existing experiment, so
+    # there's nothing for a per-run callable to decide -- only a plain bool
+    # is accepted here.
+    upload_results: bool = True,
+    **kwargs: Any,
+) -> ExperimentResults: ...
+
+
+@overload
+def evaluate(
     target: Union[tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
@@ -132,7 +155,10 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: UPLOAD_RESULTS_T = True,
+    # No new runs are created when comparing two existing experiments, so
+    # there's nothing for a per-run callable to decide -- only a plain bool
+    # is accepted here.
+    upload_results: bool = True,
     **kwargs: Any,
 ) -> ComparativeExperimentResults: ...
 
@@ -206,6 +232,11 @@ def evaluate(
             examples), so a stateful/random callable can sample a subset of runs.
             Summary evaluator scores are still computed and uploaded over *all*
             runs regardless of which individual runs were uploaded.
+
+            Only a plain bool is accepted when `target` is an existing experiment
+            or a pair of experiments to compare — those paths don't create new
+            runs, so there's nothing for a per-run callable to decide, and one
+            is rejected with a `ValueError`.
 
     Returns:
         ExperimentResults: If target is a function, `Runnable`, or existing experiment.
@@ -327,7 +358,10 @@ def evaluate(
         invalid_args = {
             "num_repetitions": num_repetitions > 1,
             "experiment": bool(experiment),
-            "upload_results": not upload_results,
+            # A per-run callable only makes sense when new runs are being
+            # created; re-evaluating/comparing existing experiments doesn't
+            # create any, so only a plain, truthy bool is accepted here.
+            "upload_results": not upload_results or callable(upload_results),
             "experiment_prefix": bool(experiment_prefix),
             "data": bool(data),
         }
@@ -354,7 +388,10 @@ def evaluate(
         invalid_args = {
             "num_repetitions": num_repetitions > 1,
             "experiment": bool(experiment),
-            "upload_results": not upload_results,
+            # A per-run callable only makes sense when new runs are being
+            # created; re-evaluating/comparing existing experiments doesn't
+            # create any, so only a plain, truthy bool is accepted here.
+            "upload_results": not upload_results or callable(upload_results),
             "summary_evaluators": bool(summary_evaluators),
             "data": bool(data),
         }
