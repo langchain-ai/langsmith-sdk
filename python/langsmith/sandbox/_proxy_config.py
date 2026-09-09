@@ -99,7 +99,6 @@ def _validate_proxy_provider_rule(rule: SandboxProxyRule) -> None:
 def proxy_config(
     *,
     rules: Sequence[SandboxProxyRule] | None = None,
-    no_proxy: Sequence[str] | None = None,
     access_control: dict[str, Any] | None = None,
 ) -> SandboxProxyConfig:
     """Build a sandbox proxy config from one or more proxy rules.
@@ -108,8 +107,6 @@ def proxy_config(
     when a sandbox needs multiple auth flows.
     """
     config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
-    if no_proxy is not None:
-        config["no_proxy"] = _require_non_empty_string_list(no_proxy, "no_proxy")
     if access_control is not None:
         if not isinstance(access_control, dict):
             raise ValueError("access_control must be a dictionary")

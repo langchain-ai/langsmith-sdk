@@ -311,7 +311,7 @@ class AsyncSandboxClient:
                 conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
-                ``{"rules": [...], "no_proxy": [...], "access_control":
+                ``{"rules": [...], "access_control":
                 {"allow_list": [...]}}`` or ``{"access_control":
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
@@ -404,7 +404,7 @@ class AsyncSandboxClient:
                 conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
-                ``{"rules": [...], "no_proxy": [...], "access_control":
+                ``{"rules": [...], "access_control":
                 {"allow_list": [...]}}`` or ``{"access_control":
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact

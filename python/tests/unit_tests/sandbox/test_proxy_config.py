@@ -143,11 +143,9 @@ def test_proxy_config_composes_multiple_provider_rules() -> None:
 
     assert proxy_config(
         rules=[aws_rule, gcp_rule],
-        no_proxy=["metadata.google.internal"],
         access_control={"allow_list": ["*.googleapis.com", "*.amazonaws.com"]},
     ) == {
         "rules": [aws_rule, gcp_rule],
-        "no_proxy": ["metadata.google.internal"],
         "access_control": {"allow_list": ["*.googleapis.com", "*.amazonaws.com"]},
     }
 
@@ -512,7 +510,6 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
     )
     extra_proxy_config = proxy_config(
         rules=[extra_rule],
-        no_proxy=["metadata.google.internal"],
         access_control={"allow_list": ["github.com", "*.amazonaws.com"]},
     )
 
@@ -527,7 +524,6 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
     assert "mounts" not in body
     assert body["proxy_config"] == {
         "rules": [extra_rule],
-        "no_proxy": ["metadata.google.internal"],
         "access_control": {"allow_list": ["github.com", "*.amazonaws.com"]},
     }
     client.close()

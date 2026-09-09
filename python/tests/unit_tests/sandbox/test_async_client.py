@@ -304,7 +304,6 @@ class TestAsyncSandboxOperations:
         )
         extra_proxy_config = proxy_config(
             rules=[extra_rule],
-            no_proxy=["metadata.google.internal"],
             access_control={"allow_list": ["github.com", "*.amazonaws.com"]},
         )
 
@@ -319,7 +318,6 @@ class TestAsyncSandboxOperations:
         assert "mounts" not in body
         assert body["proxy_config"] == {
             "rules": [extra_rule],
-            "no_proxy": ["metadata.google.internal"],
             "access_control": {"allow_list": ["github.com", "*.amazonaws.com"]},
         }
 
