@@ -575,7 +575,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             normalize_provider(tspan.attributes.get("gen_ai.provider.name"))
         )
 
-        transcript = get_content_attribute(tspan.attributes, "user_transcript")
+        transcript = get_content_attribute(tspan, "user_transcript")
         if transcript:
             tspan.set_messages(
                 prompt=[build_user_message(f'Audio for: "{transcript}"')]
@@ -635,11 +635,11 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_kind("llm")
         tspan.exclude_from_message_view()
 
-        text = get_content_attribute(tspan.attributes, "input_text")
+        text = get_content_attribute(tspan, "input_text")
         if text is None:
-            text = get_content_attribute(tspan.attributes, "request.text")
+            text = get_content_attribute(tspan, "request.text")
         if text is None:
-            text = get_content_attribute(tspan.attributes, "text")
+            text = get_content_attribute(tspan, "text")
         if text is None:
             text = ""
         tspan.set_messages(
@@ -666,8 +666,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             "llm" if "lk.realtime_model_metrics" in tspan.attributes else "chain"
         )
 
-        user_input = get_content_attribute(tspan.attributes, "user_input")
-        response = get_content_attribute(tspan.attributes, "response.text")
+        user_input = get_content_attribute(tspan, "user_input")
+        response = get_content_attribute(tspan, "response.text")
         trace_id = tspan.span.context.trace_id
         start = tspan.span.start_time
         if user_input:
@@ -755,13 +755,13 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _handle_tool(self, tspan: TranslatedSpan) -> None:
         tspan.set_kind("tool")
-        tool_name = get_content_attribute(tspan.attributes, "function_tool.name")
+        tool_name = get_content_attribute(tspan, "function_tool.name")
         if tool_name:
             tspan.set_metadata("tool_name", str(tool_name))
-        args = get_content_attribute(tspan.attributes, "function_tool.arguments")
+        args = get_content_attribute(tspan, "function_tool.arguments")
         if args is not None:
             tspan.set_tool_input(args)
-        output = get_content_attribute(tspan.attributes, "function_tool.output")
+        output = get_content_attribute(tspan, "function_tool.output")
         if output is not None:
             tspan.set_tool_output(output)
 

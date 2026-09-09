@@ -12,7 +12,10 @@ import logging
 from collections.abc import Mapping
 from typing import Any, Optional
 
+from opentelemetry.util.types import AttributeValue
+
 from langsmith._internal.voice._helpers import try_parse_json_object
+from langsmith._internal.voice.translated_span import TranslatedSpan
 
 logger = logging.getLogger(__name__)
 
@@ -32,19 +35,19 @@ _PROVIDER_ALIASES = (
 )
 
 
-def get_content_attribute(attributes: Mapping[str, Any], name: str) -> Any:
+def get_content_attribute(tspan: TranslatedSpan, name: str) -> Optional[AttributeValue]:
     """Read a LiveKit content field across the 1.7 ``lk.pii.*`` rename.
 
     A present new key is authoritative, even when empty: do not replace withheld
     content with an older value. ``name`` is the suffix without ``lk.``.
     """
     pii_key = f"lk.pii.{name}"
-    if pii_key in attributes:
-        return attributes[pii_key]
-    return attributes.get(f"lk.{name}")
+    if pii_key in tspan.attributes:
+        return tspan.attributes[pii_key]
+    return tspan.attributes.get(f"lk.{name}")
 
 
-def _json_list(raw: Any) -> Optional[list]:
+def _json_list(raw: object) -> Optional[list[object]]:
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -53,45 +56,55 @@ def _json_list(raw: Any) -> Optional[list]:
     return raw if isinstance(raw, list) else None
 
 
-def _json_text(value: Any) -> str:
+def _json_text(value: object) -> str:
     return value if isinstance(value, str) else json.dumps(value)
 
 
-def _message_from_parts(role: str, parts: list) -> list[dict]:
-    content: list[dict] = []
-    tool_calls: list[dict] = []
-    tool_results: list[dict] = []
-    for part in parts:
-        if not isinstance(part, dict):
+def _message_from_parts(role: str, parts: list[object]) -> list[dict[str, object]]:
+    content: list[dict[str, object]] = []
+    text_parts: list[str] = []
+    tool_calls: list[dict[str, object]] = []
+    tool_results: list[dict[str, object]] = []
+    for raw_part in parts:
+        if not isinstance(raw_part, Mapping):
             continue
+        part: Mapping[object, object] = raw_part
         kind = part.get("type")
-        if kind == "text" and isinstance(part.get("content"), str):
-            content.append({"type": "text", "text": part["content"]})
+        part_content = part.get("content")
+        transcript = part.get("transcript")
+        uri = part.get("uri")
+        call_id = part.get("id")
+        tool_name = part.get("name")
+        if kind == "text" and isinstance(part_content, str):
+            text = part_content
+            content.append({"type": "text", "text": text})
+            text_parts.append(text)
         elif (
             kind == "blob"
             and part.get("modality") == "audio"
-            and isinstance(part.get("transcript"), str)
+            and isinstance(transcript, str)
         ):
-            content.append({"type": "text", "text": part["transcript"]})
+            content.append({"type": "text", "text": transcript})
+            text_parts.append(transcript)
         elif (
             kind == "uri"
             and part.get("modality") == "image"
-            and isinstance(part.get("uri"), str)
-            and part["uri"]
+            and isinstance(uri, str)
+            and uri
         ):
-            content.append({"type": "image_url", "image_url": {"url": part["uri"]}})
+            content.append({"type": "image_url", "image_url": {"url": uri}})
         elif (
             kind == "tool_call"
             and role == "assistant"
-            and isinstance(part.get("id"), str)
-            and isinstance(part.get("name"), str)
+            and isinstance(call_id, str)
+            and isinstance(tool_name, str)
         ):
             tool_calls.append(
                 {
-                    "id": part["id"],
+                    "id": call_id,
                     "type": "function",
                     "function": {
-                        "name": part["name"],
+                        "name": tool_name,
                         "arguments": _json_text(part.get("arguments", {})),
                     },
                 }
@@ -99,21 +112,17 @@ def _message_from_parts(role: str, parts: list) -> list[dict]:
         elif (
             kind == "tool_call_response"
             and role == "tool"
-            and isinstance(part.get("id"), str)
+            and isinstance(call_id, str)
             and "response" in part
         ):
             tool_results.append(
-                build_tool_message(
-                    _json_text(part["response"]), tool_call_id=part["id"]
-                )
+                build_tool_message(_json_text(part["response"]), tool_call_id=call_id)
             )
-    messages: list[dict] = []
+    messages: list[dict[str, object]] = []
     if content or tool_calls:
-        message: dict = {"role": role}
+        message: dict[str, object] = {"role": role}
         message["content"] = (
-            "\n".join(p["text"] for p in content)
-            if all(p["type"] == "text" for p in content)
-            else content
+            "\n".join(text_parts) if len(text_parts) == len(content) else content
         )
         if tool_calls:
             message["tool_calls"] = tool_calls
@@ -121,7 +130,7 @@ def _message_from_parts(role: str, parts: list) -> list[dict]:
     return messages + tool_results
 
 
-def build_messages_from_gen_ai(raw: Any) -> Optional[list[dict]]:
+def build_messages_from_gen_ai(raw: object) -> Optional[list[dict[str, object]]]:
     """Convert LiveKit 1.8+ GenAI message parts to OpenAI-shaped messages.
 
     ``None`` means missing/malformed input, allowing legacy event fallback;
@@ -131,20 +140,29 @@ def build_messages_from_gen_ai(raw: Any) -> Optional[list[dict]]:
     items = _json_list(raw)
     if items is None:
         return None
-    messages: list[dict] = []
-    for item in items:
-        if not isinstance(item, dict):
+    messages: list[dict[str, object]] = []
+    for raw_item in items:
+        if not isinstance(raw_item, Mapping):
             continue
+        item: Mapping[object, object] = raw_item
         role = item.get("role")
         parts = item.get("parts")
-        if role not in ("system", "developer", "user", "assistant", "tool"):
+        if not isinstance(role, str) or role not in (
+            "system",
+            "developer",
+            "user",
+            "assistant",
+            "tool",
+        ):
             continue
         if isinstance(parts, list):
             messages.extend(_message_from_parts(role, parts))
     return messages
 
 
-def build_system_messages_from_gen_ai(raw: Any) -> Optional[list[dict]]:
+def build_system_messages_from_gen_ai(
+    raw: object,
+) -> Optional[list[dict[str, object]]]:
     """Read the separate ``gen_ai.system_instructions`` text-part array."""
     parts = _json_list(raw)
     if parts is None:
@@ -307,9 +325,9 @@ def build_tool_message(
     *,
     tool_call_id: Optional[str] = None,
     name: Optional[str] = None,
-) -> dict:
+) -> dict[str, object]:
     """Build a ``tool`` result message, with its call id / name when present."""
-    msg: dict = {"role": "tool", "content": content}
+    msg: dict[str, object] = {"role": "tool", "content": content}
     if tool_call_id:
         msg["tool_call_id"] = str(tool_call_id)
     if name:
@@ -317,7 +335,9 @@ def build_tool_message(
     return msg
 
 
-def build_assistant_tool_call_message(call_id: str, name: str, arguments: str) -> dict:
+def build_assistant_tool_call_message(
+    call_id: str, name: str, arguments: str
+) -> dict[str, object]:
     """Build an assistant message containing one tool call."""
     return {
         "role": "assistant",
