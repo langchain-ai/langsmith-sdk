@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any, Optional
 
 from langsmith._internal.voice._helpers import try_parse_json_object
@@ -29,6 +30,126 @@ _PROVIDER_ALIASES = (
     "mistral",
     "groq",
 )
+
+
+def get_content_attribute(attributes: Mapping[str, Any], name: str) -> Any:
+    """Read a LiveKit content field across the 1.7 ``lk.pii.*`` rename.
+
+    A present new key is authoritative, even when empty: do not replace withheld
+    content with an older value. ``name`` is the suffix without ``lk.``.
+    """
+    pii_key = f"lk.pii.{name}"
+    if pii_key in attributes:
+        return attributes[pii_key]
+    return attributes.get(f"lk.{name}")
+
+
+def _json_list(raw: Any) -> Optional[list]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, RecursionError):
+            return None
+    return raw if isinstance(raw, list) else None
+
+
+def _json_text(value: Any) -> str:
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _message_from_parts(role: str, parts: list) -> list[dict]:
+    content: list[dict] = []
+    tool_calls: list[dict] = []
+    tool_results: list[dict] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        kind = part.get("type")
+        if kind == "text" and isinstance(part.get("content"), str):
+            content.append({"type": "text", "text": part["content"]})
+        elif (
+            kind == "blob"
+            and part.get("modality") == "audio"
+            and isinstance(part.get("transcript"), str)
+        ):
+            content.append({"type": "text", "text": part["transcript"]})
+        elif (
+            kind == "uri"
+            and part.get("modality") == "image"
+            and isinstance(part.get("uri"), str)
+            and part["uri"]
+        ):
+            content.append({"type": "image_url", "image_url": {"url": part["uri"]}})
+        elif (
+            kind == "tool_call"
+            and role == "assistant"
+            and isinstance(part.get("id"), str)
+            and isinstance(part.get("name"), str)
+        ):
+            tool_calls.append(
+                {
+                    "id": part["id"],
+                    "type": "function",
+                    "function": {
+                        "name": part["name"],
+                        "arguments": _json_text(part.get("arguments", {})),
+                    },
+                }
+            )
+        elif (
+            kind == "tool_call_response"
+            and role == "tool"
+            and isinstance(part.get("id"), str)
+            and "response" in part
+        ):
+            tool_results.append(
+                build_tool_message(
+                    _json_text(part["response"]), tool_call_id=part["id"]
+                )
+            )
+    messages: list[dict] = []
+    if content or tool_calls:
+        message: dict = {"role": role}
+        message["content"] = (
+            "\n".join(p["text"] for p in content)
+            if all(p["type"] == "text" for p in content)
+            else content
+        )
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+        messages.append(message)
+    return messages + tool_results
+
+
+def build_messages_from_gen_ai(raw: Any) -> Optional[list[dict]]:
+    """Convert LiveKit 1.8+ GenAI message parts to OpenAI-shaped messages.
+
+    ``None`` means missing/malformed input, allowing legacy event fallback;
+    an empty list is authoritative. Unknown parts are skipped, without fetching
+    media or logging conversation content.
+    """
+    items = _json_list(raw)
+    if items is None:
+        return None
+    messages: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        parts = item.get("parts")
+        if role not in ("system", "developer", "user", "assistant", "tool"):
+            continue
+        if isinstance(parts, list):
+            messages.extend(_message_from_parts(role, parts))
+    return messages
+
+
+def build_system_messages_from_gen_ai(raw: Any) -> Optional[list[dict]]:
+    """Read the separate ``gen_ai.system_instructions`` text-part array."""
+    parts = _json_list(raw)
+    if parts is None:
+        return None
+    return _message_from_parts("system", parts)
 
 
 def normalize_provider(raw: Any) -> Optional[str]:
