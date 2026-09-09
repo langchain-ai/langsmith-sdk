@@ -7895,3 +7895,57 @@ def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         monkeypatch.undo()
         _reload()
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_runs_clamps_limit_to_100(mock_session_cls: mock.Mock) -> None:
+    """list_runs(limit=N) must not pass N > 100 as the page size to /runs/query.
+
+    The server enforces a hard cap of 100 on the ``limit`` field.  Passing a
+    larger value results in HTTP 400.  The client should clamp the page size
+    while still honouring the caller's total-count cap via the client-side
+    break condition (i + 1 >= limit).
+    """
+    import json
+
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+    # Return an empty run list to stop pagination immediately.
+    mock_session.request.return_value.json.return_value = {"runs": []}
+    mock_session.request.return_value.raise_for_status.return_value = None
+
+    client = Client(api_key="test-key", api_url="http://localhost")
+
+    with pytest.warns(DeprecationWarning):
+        list(client.list_runs(project_id=uuid.uuid4(), limit=200))
+
+    # Inspect the POST body sent to /runs/query.
+    call_args = mock_session.request.call_args
+    sent_data = call_args.kwargs.get("data") or call_args[1].get("data") or b""
+    body = json.loads(sent_data)
+    assert body["limit"] == 100, (
+        f"Expected page-size limit=100 to be sent to server, got {body['limit']}"
+    )
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_runs_passes_small_limit_unchanged(mock_session_cls: mock.Mock) -> None:
+    """list_runs(limit=N) for N <= 100 should pass N as-is to the server."""
+    import json
+
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+    mock_session.request.return_value.json.return_value = {"runs": []}
+    mock_session.request.return_value.raise_for_status.return_value = None
+
+    client = Client(api_key="test-key", api_url="http://localhost")
+
+    with pytest.warns(DeprecationWarning):
+        list(client.list_runs(project_id=uuid.uuid4(), limit=42))
+
+    call_args = mock_session.request.call_args
+    sent_data = call_args.kwargs.get("data") or call_args[1].get("data") or b""
+    body = json.loads(sent_data)
+    assert body["limit"] == 42, (
+        f"Expected page-size limit=42 to be sent to server, got {body['limit']}"
+    )
