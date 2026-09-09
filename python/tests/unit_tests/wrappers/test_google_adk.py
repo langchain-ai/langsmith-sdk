@@ -425,3 +425,67 @@ def test_wrap_tool_run_async_sets_tool_as_active_context(mock_ls_client: Client)
         f"Expected active context inside tool to be the tool span "
         f"({tool_run['id']}), got {captured_run_id}"
     )
+
+
+def _tool_call_request(*ids: str | None):
+    """Build an LlmRequest alternating one tool call and its response per id."""
+    from google.adk.models.llm_request import LlmRequest
+    from google.genai import types
+
+    contents = []
+    for call_id in ids:
+        contents.append(
+            types.Content(
+                role="model",
+                parts=[
+                    types.Part(
+                        function_call=types.FunctionCall(
+                            id=call_id, name="get_weather", args={"city": "Haifa"}
+                        )
+                    )
+                ],
+            )
+        )
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=call_id, name="get_weather", response={"c": 29}
+                        )
+                    )
+                ],
+            )
+        )
+    return LlmRequest(contents=contents)
+
+
+def test_tool_messages_pair_with_the_ids_adk_assigned():
+    """A tool message carries the id of the call it answers, per ADK."""
+    from langsmith.integrations.google_adk._messages import (
+        convert_llm_request_to_messages,
+    )
+
+    messages = convert_llm_request_to_messages(
+        _tool_call_request("adk-1111", "adk-2222")
+    )
+    calls = [m["tool_calls"][0]["id"] for m in messages if m.get("tool_calls")]
+    results = [m["tool_call_id"] for m in messages if m["role"] == "tool"]
+
+    assert calls == ["adk-1111", "adk-2222"]
+    assert results == ["adk-1111", "adk-2222"]
+
+
+def test_synthesised_tool_call_ids_stay_unique_across_turns():
+    """Without ADK ids, turns must not all reuse the same synthesised id."""
+    from langsmith.integrations.google_adk._messages import (
+        convert_llm_request_to_messages,
+    )
+
+    messages = convert_llm_request_to_messages(_tool_call_request(None, None))
+    calls = [m["tool_calls"][0]["id"] for m in messages if m.get("tool_calls")]
+    results = [m["tool_call_id"] for m in messages if m["role"] == "tool"]
+
+    assert len(set(calls)) == 2, calls
+    assert results == calls

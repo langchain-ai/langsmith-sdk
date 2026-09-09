@@ -421,16 +421,17 @@ async def wrap_flow_call_llm_async(
             and content_source.content
         ):
             parts = getattr(content_source.content, "parts", None) or []
-            text_parts, tool_calls = [], []
+            text_parts: list[str] = []
+            tool_calls: list[dict[str, Any]] = []
 
-            for i, part in enumerate(parts):
+            for part in parts:
                 if hasattr(part, "text") and part.text:
                     text_parts.append(str(part.text))
                 elif hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
                     tool_calls.append(
                         {
-                            "id": f"call_{i}",
+                            "id": getattr(fc, "id", None) or f"call_{len(tool_calls)}",
                             "type": "function",
                             "function": {
                                 "name": getattr(fc, "name", ""),

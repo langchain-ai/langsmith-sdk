@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import itertools
 import json
+from collections import defaultdict, deque
 from typing import Any
 
 
@@ -47,6 +49,7 @@ def _serialize_part(part: Any) -> dict[str, Any]:
         fc = part.function_call
         return {
             "type": "tool_use",
+            "id": getattr(fc, "id", None),
             "name": getattr(fc, "name", "unknown"),
             "input": dict(getattr(fc, "args", None) or {}),
         }
@@ -55,6 +58,7 @@ def _serialize_part(part: Any) -> dict[str, Any]:
         fr = part.function_response
         return {
             "type": "tool_result",
+            "id": getattr(fr, "id", None),
             "name": getattr(fr, "name", "unknown"),
             "content": _safe_serialize(getattr(fr, "response", None)),
         }
@@ -107,6 +111,33 @@ def _safe_serialize(obj: Any) -> Any:
     return str(obj)
 
 
+def _tool_call_id(
+    tool_call: dict[str, Any],
+    fallback_ids: itertools.count,
+    unanswered: dict[str, deque[str]],
+) -> str:
+    """Return the id of an assistant tool call, preferring the one ADK set."""
+    call_id = tool_call.get("id")
+    if call_id:
+        return str(call_id)
+    call_id = f"call_{next(fallback_ids)}"
+    unanswered[tool_call.get("name", "")].append(call_id)
+    return call_id
+
+
+def _tool_result_id(
+    tool_result: dict[str, Any],
+    fallback_ids: itertools.count,
+    unanswered: dict[str, deque[str]],
+) -> str:
+    """Return the id of the call a tool result answers, preferring ADK's own."""
+    result_id = tool_result.get("id")
+    if result_id:
+        return str(result_id)
+    pending = unanswered[tool_result.get("name", "")]
+    return pending.popleft() if pending else f"call_{next(fallback_ids)}"
+
+
 def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
     """Convert LlmRequest to OpenAI-compatible message format."""
     messages: list[dict[str, Any]] = []
@@ -121,6 +152,10 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
     contents = getattr(llm_request, "contents", None)
     if not contents:
         return messages
+
+    # ADK sets a matching id on every FunctionCall and its FunctionResponse.
+    fallback_ids = itertools.count()
+    unanswered: dict[str, deque[str]] = defaultdict(deque)
 
     for content in contents:
         role = getattr(content, "role", "user")
@@ -148,14 +183,14 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
                     "content": " ".join(text_parts) if text_parts else None,
                     "tool_calls": [
                         {
-                            "id": f"call_{i}",
+                            "id": _tool_call_id(tc, fallback_ids, unanswered),
                             "type": "function",
                             "function": {
                                 "name": tc.get("name", ""),
                                 "arguments": json.dumps(tc.get("input", {})),
                             },
                         }
-                        for i, tc in enumerate(tool_calls)
+                        for tc in tool_calls
                     ],
                 }
             )
@@ -165,6 +200,7 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
                 messages.append(
                     {
                         "role": "tool",
+                        "tool_call_id": _tool_result_id(tr, fallback_ids, unanswered),
                         "name": tr.get("name", ""),
                         "content": (
                             json.dumps(c) if isinstance(c, dict) else str(c or "")
