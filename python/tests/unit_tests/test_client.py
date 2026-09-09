@@ -2959,6 +2959,55 @@ def test_sample_rate_overrides_an_inherited_value() -> None:
     assert metadata["user"] == "x"
 
 
+def test_sample_rate_survives_multipart_batching() -> None:
+    """The rate must ride out through the multipart batch path too.
+
+    ``test_sample_rate_is_reported_on_created_runs`` covers the single-run POST
+    path (``auto_batch_tracing=False``). This covers the other one: runs queued
+    through the auto-batcher and flushed to ``/runs/multipart`` as separate
+    multipart parts must carry the rate on each posted run, not just on the
+    dict handed to ``create_run``.
+    """
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_sampling_rate=1.0,
+        session=mock_session,
+    )
+
+    run_ids = [uuid.uuid4() for _ in range(2)]
+    for run_id in run_ids:
+        client.create_run(
+            **_sampling_run(run_id),
+            extra={"metadata": {"user_id": f"user-{run_id}"}},
+        )
+    client.flush()
+
+    post_calls = [
+        call
+        for call in mock_session.request.mock_calls
+        if call.args
+        and call.args[0] == "POST"
+        and call.args[1].endswith("/runs/multipart")
+    ]
+    assert len(post_calls) == 1
+    data = post_calls[0].kwargs["data"]
+    if isinstance(data, bytes):
+        data = data.decode("utf-8")
+    batch_data = parse_request_data(data)
+    posted = batch_data.get("post", [])
+    assert {post["id"] for post in posted} == {str(run_id) for run_id in run_ids}
+    for post in posted:
+        metadata = post["extra"]["metadata"]
+        assert metadata["ls_tracing_sample_rate"] == 1.0
+        assert metadata["user_id"] == f"user-{post['id']}"
+
+
 # Golden decisions at rate 0.5. The JS SDK asserts this exact table in
 # js/src/tests/client.test.ts: both must agree, or a trace sampled in by one
 # SDK is dropped by the other. Regenerate both sides together, never one.
@@ -4647,6 +4696,86 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
         "Expected the request body to start with zstd magic bytes; "
         "it appears runs were not compressed."
     )
+
+
+@patch("langsmith.client.requests.Session")
+def test_sample_rate_survives_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """The compression path must carry the sampling rate like any other send path.
+
+    ``_insert_runtime_env`` stamps ``ls_tracing_sample_rate`` into ``extra.metadata``
+    before the run is handed to the compressor. Decompress the exact bytes posted
+    over the wire and parse the multipart body to prove the rate survives the
+    zstd round trip, not just the pre-compression dict.
+    """
+    import zstandard
+
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+            tracing_sampling_rate=1.0,
+        )
+
+        run_id = uuid.uuid4()
+        client.create_run(
+            name="my_test_run",
+            run_type="llm",
+            inputs={"some_key": "some_val" * 1000},
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=str(run_id),
+            extra={"metadata": {"user_id": "user-123"}},
+        )
+
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    time.sleep(0.1)
+
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) >= 1, "Expected at least one POST to the compression endpoint"
+
+    call_data = post_calls[0][2]["data"]
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    decompressed = zstandard.ZstdDecompressor().decompress(
+        call_data, max_output_size=10_000_000
+    )
+    batch_data = parse_request_data(decompressed)
+    posted = [run for run in batch_data.get("post", []) if run.get("id") == str(run_id)]
+    assert len(posted) == 1
+    metadata = posted[0]["extra"]["metadata"]
+    assert metadata["ls_tracing_sample_rate"] == 1.0
+    assert metadata["user_id"] == "user-123"
 
 
 @patch("langsmith.client.requests.Session")
