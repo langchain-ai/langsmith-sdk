@@ -111,6 +111,7 @@ test("telemetry generateText with tools", async () => {
       }),
     },
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
     telemetry: {
       integrations: [LangSmithTelemetry({ client, tracingEnabled: true })],
     },
@@ -244,6 +245,7 @@ test("telemetry streamText", async () => {
       }),
     },
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
   });
 
   let total = "";
