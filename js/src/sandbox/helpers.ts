@@ -78,10 +78,14 @@ export async function parseErrorResponse(
 
     // Standardized format: {"detail": {"error": "...", "message": "..."}}
     if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const message =
+        detail.message || `HTTP ${response.status}: ${response.statusText}`;
       return {
         errorType: detail.error,
         message:
-          detail.message || `HTTP ${response.status}: ${response.statusText}`,
+          typeof detail.error_id === "string" && detail.error_id
+            ? `${message} (error_id=${detail.error_id})`
+            : message,
       };
     }
 
@@ -205,6 +209,31 @@ export async function handleSandboxCreationError(
   }
   // Fall through to generic handling — pass clone since body is already consumed
   return handleClientHttpError(clonedResponse);
+}
+
+/**
+ * Throw `LangSmithSandboxNotReadyError` when the API rejected a proxy-config
+ * update because the sandbox is not `ready`.
+ *
+ * That status check is the sole source of `InvalidRequest` on the update
+ * endpoint for the fields this client sends, so a typed error lets callers
+ * start the sandbox and retry instead of matching on status codes. Reads a
+ * clone so the caller's own error handling can still consume the body.
+ */
+export async function throwIfNotReady(
+  response: Response,
+  name: string,
+): Promise<void> {
+  if (response.status !== 400) {
+    return;
+  }
+  const data = await parseErrorResponse(response.clone());
+  if (data.errorType !== "InvalidRequest") {
+    return;
+  }
+  throw new LangSmithSandboxNotReadyError(
+    data.message || `Sandbox '${name}' is not ready`,
+  );
 }
 
 /**

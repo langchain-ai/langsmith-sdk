@@ -96,6 +96,12 @@ def validate_ttl(value: Optional[int], name: str) -> None:
 # =============================================================================
 
 
+def _message_with_error_id(message: str, error_id: Any) -> str:
+    if isinstance(error_id, str) and error_id:
+        return f"{message} (error_id={error_id})"
+    return message
+
+
 def parse_error_response(error: httpx.HTTPStatusError) -> dict[str, Any]:
     """Parse standardized error response.
 
@@ -113,7 +119,9 @@ def parse_error_response(error: httpx.HTTPStatusError) -> dict[str, Any]:
         if isinstance(detail, dict):
             return {
                 "error_type": detail.get("error"),
-                "message": detail.get("message", str(error)),
+                "message": _message_with_error_id(
+                    detail.get("message", str(error)), detail.get("error_id")
+                ),
             }
 
         # Pydantic validation error format: {"detail": [{"loc": [...], "msg": "..."}]}
@@ -144,7 +152,9 @@ def parse_error_response_simple(error: httpx.HTTPStatusError) -> dict[str, Any]:
         if isinstance(detail, dict):
             return {
                 "error_type": detail.get("error"),
-                "message": detail.get("message", str(error)),
+                "message": _message_with_error_id(
+                    detail.get("message", str(error)), detail.get("error_id")
+                ),
             }
 
         return {"error_type": None, "message": detail or str(error)}
@@ -262,6 +272,24 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
     else:
         # Fall through to generic handling
         handle_client_http_error(error)
+
+
+def raise_if_not_ready(error: httpx.HTTPStatusError, name: str) -> None:
+    """Raise ``SandboxNotReadyError`` when the API rejected a proxy-config update.
+
+    A proxy config can only be written to a ``ready`` sandbox, and that status
+    check is the sole source of ``InvalidRequest`` on the update endpoint for the
+    fields this client sends — a typed error lets callers start the sandbox and
+    retry instead of matching on status codes.
+    """
+    if error.response.status_code != 400:
+        return
+    data = parse_error_response(error)
+    if data.get("error_type") != "InvalidRequest":
+        return
+    raise SandboxNotReadyError(
+        data["message"] or f"Sandbox '{name}' is not ready"
+    ) from error
 
 
 def handle_client_http_error(error: httpx.HTTPStatusError) -> None:

@@ -37,6 +37,7 @@ import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxNotReadyError,
   LangSmithStreamEndedBeforeStartedError,
 } from "../sandbox/errors.js";
 import type {
@@ -1274,6 +1275,57 @@ describe("SandboxClient - updateSandbox", () => {
     expect(url).toContain("/boxes/sb-1");
     expect(init.method).toBeUndefined();
     expect(sb.name).toBe("sb-1");
+  });
+
+  it("should PATCH proxy_config when provided in options", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        status: "ready",
+      }),
+    } as Response);
+
+    const config = proxyConfig({
+      rules: [
+        {
+          name: "github",
+          match_hosts: ["github.com"],
+          headers: [
+            { name: "Authorization", type: "opaque", value: "Basic rotated" },
+          ],
+        },
+      ],
+    });
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", { proxyConfig: config });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ proxy_config: config });
+  });
+
+  it("should throw NotReady when proxy config is set on a stopped sandbox", async () => {
+    const body = {
+      detail: {
+        error: "InvalidRequest",
+        message:
+          'sandbox "sb-1" is in "stopped" state, must be "ready" to update proxy config',
+      },
+    };
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => body,
+      clone: () => ({ status: 400, json: async () => body }),
+    } as unknown as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.updateSandbox("sb-1", { proxyConfig: { rules: [] } }),
+    ).rejects.toThrow(LangSmithSandboxNotReadyError);
   });
 });
 
