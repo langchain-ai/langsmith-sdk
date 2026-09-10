@@ -74,6 +74,12 @@ export {
   type OnlineEvaluatorSpendParams,
   type OnlineEvaluatorsOffsetPaginationOnlineEvaluators,
 } from './online-evaluators.js';
+export {
+  ProductFeedback,
+  type ProductFeedbackCreateResponse,
+  type ProductFeedbackRetrieveResponse,
+  type ProductFeedbackCreateParams,
+} from './product-feedback.js';
 export { Public } from './public/public.js';
 export {
   Runs,

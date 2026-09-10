@@ -78,6 +78,12 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
+  ProductFeedback,
+  ProductFeedbackCreateParams,
+  ProductFeedbackCreateResponse,
+  ProductFeedbackRetrieveResponse,
+} from './resources/product-feedback.js';
+import {
   Trace,
   TraceAggregates,
   TraceListRunsParams,
@@ -931,6 +937,7 @@ export class Langsmith {
 
   static toFile = Uploads.toFile;
 
+  productFeedback: API.ProductFeedback = new API.ProductFeedback(this);
   fleet: API.Fleet = new API.Fleet(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
@@ -944,6 +951,7 @@ export class Langsmith {
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
+Langsmith.ProductFeedback = ProductFeedback;
 Langsmith.Fleet = Fleet;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
@@ -1011,6 +1019,13 @@ export declare namespace Langsmith {
   export {
     type ItemsCursorGetPaginationParams as ItemsCursorGetPaginationParams,
     type ItemsCursorGetPaginationResponse as ItemsCursorGetPaginationResponse,
+  };
+
+  export {
+    ProductFeedback as ProductFeedback,
+    type ProductFeedbackCreateResponse as ProductFeedbackCreateResponse,
+    type ProductFeedbackRetrieveResponse as ProductFeedbackRetrieveResponse,
+    type ProductFeedbackCreateParams as ProductFeedbackCreateParams,
   };
 
   export { Fleet as Fleet };

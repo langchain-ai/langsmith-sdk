@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         threads,
         datasets,
         sandboxes,
+        product_feedback,
         annotation_queues,
         online_evaluators,
     )
@@ -55,6 +56,7 @@ if TYPE_CHECKING:
     from .resources.fleet.fleet import FleetResource, AsyncFleetResource
     from .resources.public.public import PublicResource, AsyncPublicResource
     from .resources.threads.threads import ThreadsResource, AsyncThreadsResource
+    from .resources.product_feedback import ProductFeedbackResource, AsyncProductFeedbackResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
     from .resources.online_evaluators import OnlineEvaluatorsResource, AsyncOnlineEvaluatorsResource
     from .resources.sandboxes.sandboxes import SandboxesResource, AsyncSandboxesResource
@@ -139,6 +141,12 @@ class Langsmith(SyncAPIClient):
             custom_query=default_query,
             _strict_response_validation=_strict_response_validation,
         )
+
+    @cached_property
+    def product_feedback(self) -> ProductFeedbackResource:
+        from .resources.product_feedback import ProductFeedbackResource
+
+        return ProductFeedbackResource(self)
 
     @cached_property
     def fleet(self) -> FleetResource:
@@ -415,6 +423,12 @@ class AsyncLangsmith(AsyncAPIClient):
         )
 
     @cached_property
+    def product_feedback(self) -> AsyncProductFeedbackResource:
+        from .resources.product_feedback import AsyncProductFeedbackResource
+
+        return AsyncProductFeedbackResource(self)
+
+    @cached_property
     def fleet(self) -> AsyncFleetResource:
         from .resources.fleet import AsyncFleetResource
 
@@ -627,6 +641,12 @@ class LangsmithWithRawResponse:
         self._client = client
 
     @cached_property
+    def product_feedback(self) -> product_feedback.ProductFeedbackResourceWithRawResponse:
+        from .resources.product_feedback import ProductFeedbackResourceWithRawResponse
+
+        return ProductFeedbackResourceWithRawResponse(self._client.product_feedback)
+
+    @cached_property
     def fleet(self) -> fleet.FleetResourceWithRawResponse:
         from .resources.fleet import FleetResourceWithRawResponse
 
@@ -698,6 +718,12 @@ class AsyncLangsmithWithRawResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
+
+    @cached_property
+    def product_feedback(self) -> product_feedback.AsyncProductFeedbackResourceWithRawResponse:
+        from .resources.product_feedback import AsyncProductFeedbackResourceWithRawResponse
+
+        return AsyncProductFeedbackResourceWithRawResponse(self._client.product_feedback)
 
     @cached_property
     def fleet(self) -> fleet.AsyncFleetResourceWithRawResponse:
@@ -773,6 +799,12 @@ class LangsmithWithStreamedResponse:
         self._client = client
 
     @cached_property
+    def product_feedback(self) -> product_feedback.ProductFeedbackResourceWithStreamingResponse:
+        from .resources.product_feedback import ProductFeedbackResourceWithStreamingResponse
+
+        return ProductFeedbackResourceWithStreamingResponse(self._client.product_feedback)
+
+    @cached_property
     def fleet(self) -> fleet.FleetResourceWithStreamingResponse:
         from .resources.fleet import FleetResourceWithStreamingResponse
 
@@ -844,6 +876,12 @@ class AsyncLangsmithWithStreamedResponse:
 
     def __init__(self, client: AsyncLangsmith) -> None:
         self._client = client
+
+    @cached_property
+    def product_feedback(self) -> product_feedback.AsyncProductFeedbackResourceWithStreamingResponse:
+        from .resources.product_feedback import AsyncProductFeedbackResourceWithStreamingResponse
+
+        return AsyncProductFeedbackResourceWithStreamingResponse(self._client.product_feedback)
 
     @cached_property
     def fleet(self) -> fleet.AsyncFleetResourceWithStreamingResponse:

@@ -72,6 +72,14 @@ from .sandboxes import (
     SandboxesResourceWithStreamingResponse,
     AsyncSandboxesResourceWithStreamingResponse,
 )
+from .product_feedback import (
+    ProductFeedbackResource,
+    AsyncProductFeedbackResource,
+    ProductFeedbackResourceWithRawResponse,
+    AsyncProductFeedbackResourceWithRawResponse,
+    ProductFeedbackResourceWithStreamingResponse,
+    AsyncProductFeedbackResourceWithStreamingResponse,
+)
 from .annotation_queues import (
     AnnotationQueuesResource,
     AsyncAnnotationQueuesResource,
@@ -90,6 +98,12 @@ from .online_evaluators import (
 )
 
 __all__ = [
+    "ProductFeedbackResource",
+    "AsyncProductFeedbackResource",
+    "ProductFeedbackResourceWithRawResponse",
+    "AsyncProductFeedbackResourceWithRawResponse",
+    "ProductFeedbackResourceWithStreamingResponse",
+    "AsyncProductFeedbackResourceWithStreamingResponse",
     "FleetResource",
     "AsyncFleetResource",
     "FleetResourceWithRawResponse",
