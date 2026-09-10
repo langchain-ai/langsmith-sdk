@@ -92,6 +92,31 @@ class LangSmithProjectNameTest(unittest.TestCase):
                     self.assertEqual(project, case.expected_project_name)
 
 
+@pytest.mark.parametrize(
+    ("envvars", "expected"),
+    [
+        ({}, None),
+        ({"LANGSMITH_ENVIRONMENT": "production"}, "production"),
+        ({"LANGCHAIN_ENVIRONMENT": "production"}, "production"),
+        # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
+        (
+            {
+                "LANGSMITH_ENVIRONMENT": "production",
+                "LANGCHAIN_ENVIRONMENT": "staging",
+            },
+            "production",
+        ),
+        # Blank is treated as unset, same as every other LangSmith env var.
+        ({"LANGSMITH_ENVIRONMENT": ""}, None),
+    ],
+)
+def test_get_tracer_environment(envvars: dict, expected: Optional[str]) -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_environment.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        assert ls_utils.get_tracer_environment() == expected
+
+
 def test_tracing_enabled():
     ls_utils.get_env_var.cache_clear()
     with patch.dict(

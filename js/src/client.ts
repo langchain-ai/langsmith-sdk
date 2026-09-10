@@ -89,6 +89,7 @@ import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
+import { getDefaultAgentEnvironment } from "./utils/project.js";
 import {
   raiseForStatus,
   isLangSmithNotFoundError,
@@ -533,6 +534,7 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  agent_environment?: string;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -2506,6 +2508,8 @@ export class Client implements LangSmithTracingClientInterface {
     const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
+      // If no environment is provided, fall back to `LANGSMITH_ENVIRONMENT`.
+      agent_environment: run.agent_environment ?? getDefaultAgentEnvironment(),
       start_time: run.start_time ?? Date.now(),
     } as RunCreate);
     if (

@@ -109,6 +109,9 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGCHAIN_TRACING_V2",
     "LANGCHAIN_PROJECT",
     "LANGCHAIN_SESSION",
+    // Ingested as the run's `agent_environment`, so don't duplicate it here.
+    "LANGCHAIN_ENVIRONMENT",
+    "LANGSMITH_ENVIRONMENT",
     "LANGSMITH_API_KEY",
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_TRACING_V2",

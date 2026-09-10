@@ -756,3 +756,77 @@ describe("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", () => {
     expect(updateSpy.mock.calls[1][1].inputs).toEqual({ a: 1 });
   });
 });
+
+describe("LANGSMITH_ENVIRONMENT", () => {
+  const originalLangSmithValue = process.env.LANGSMITH_ENVIRONMENT;
+  const originalLangChainValue = process.env.LANGCHAIN_ENVIRONMENT;
+
+  beforeEach(() => {
+    delete process.env.LANGSMITH_ENVIRONMENT;
+    delete process.env.LANGCHAIN_ENVIRONMENT;
+  });
+
+  afterEach(() => {
+    if (originalLangSmithValue === undefined) {
+      delete process.env.LANGSMITH_ENVIRONMENT;
+    } else {
+      process.env.LANGSMITH_ENVIRONMENT = originalLangSmithValue;
+    }
+    if (originalLangChainValue === undefined) {
+      delete process.env.LANGCHAIN_ENVIRONMENT;
+    } else {
+      process.env.LANGCHAIN_ENVIRONMENT = originalLangChainValue;
+    }
+  });
+
+  const parseBody = (call: unknown[]) => {
+    const { body } = call.slice(-1)[0] as { body: string | Uint8Array };
+    return JSON.parse(
+      typeof body === "string" ? body : new TextDecoder().decode(body),
+    );
+  };
+
+  const postedRun = async (config: { agent_environment?: string } = {}) => {
+    const { client, callSpy } = mockClient();
+    const runTree = new RunTree({
+      name: "test-run",
+      inputs: { a: 1 },
+      client,
+      ...config,
+    });
+    await runTree.postRun();
+    return parseBody(callSpy.mock.calls[0]);
+  };
+
+  test("is ingested as the run's agent_environment", async () => {
+    process.env.LANGSMITH_ENVIRONMENT = "staging";
+    expect(await postedRun()).toMatchObject({ agent_environment: "staging" });
+  });
+
+  test("falls back to the legacy LANGCHAIN_ namespace", async () => {
+    process.env.LANGCHAIN_ENVIRONMENT = "staging";
+    expect(await postedRun()).toMatchObject({ agent_environment: "staging" });
+  });
+
+  test("is omitted from the payload when unset", async () => {
+    expect(await postedRun()).not.toHaveProperty("agent_environment");
+  });
+
+  test("is overridden by an explicit agent_environment", async () => {
+    process.env.LANGSMITH_ENVIRONMENT = "staging";
+    expect(await postedRun({ agent_environment: "production" })).toMatchObject({
+      agent_environment: "production",
+    });
+  });
+
+  test("is inherited by child runs", async () => {
+    process.env.LANGSMITH_ENVIRONMENT = "staging";
+    const { client, callSpy } = mockClient();
+    const parent = new RunTree({ name: "parent", inputs: {}, client });
+    const child = parent.createChild({ name: "child" });
+    await child.postRun();
+    expect(parseBody(callSpy.mock.calls[0])).toMatchObject({
+      agent_environment: "staging",
+    });
+  });
+});

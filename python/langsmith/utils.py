@@ -462,6 +462,19 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def get_tracer_environment() -> Optional[str]:
+    """Get the agent environment for a LangSmith tracer.
+
+    Read from ``LANGSMITH_ENVIRONMENT``. Unlike the project, this has no default:
+    when unset the run is ingested without an environment and the server picks
+    one.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    return get_env_var("ENVIRONMENT")
+
+
 class FilterPoolFullWarning(logging.Filter):
     """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 

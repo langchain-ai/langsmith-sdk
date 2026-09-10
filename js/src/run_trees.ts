@@ -21,7 +21,10 @@ import {
   getEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
-import { getDefaultProjectName } from "./utils/project.js";
+import {
+  getDefaultAgentEnvironment,
+  getDefaultProjectName,
+} from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import {
@@ -84,6 +87,12 @@ export interface RunTreeConfig {
   run_type?: string;
   id?: string;
   project_name?: string;
+  /**
+   * The agent environment to ingest this run into.
+   *
+   * Defaults to the `LANGSMITH_ENVIRONMENT` environment variable.
+   */
+  agent_environment?: string;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -278,6 +287,7 @@ export class RunTree implements BaseRun {
   name: RunTreeConfig["name"];
   run_type: string;
   project_name: string;
+  agent_environment?: string;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -399,6 +409,7 @@ export class RunTree implements BaseRun {
     return {
       run_type: "chain",
       project_name: getDefaultProjectName(),
+      agent_environment: getDefaultAgentEnvironment(),
       child_runs: [],
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
@@ -434,6 +445,7 @@ export class RunTree implements BaseRun {
       ...config,
       parent_run: this,
       project_name: this.project_name,
+      agent_environment: this.agent_environment,
       replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
@@ -563,6 +575,7 @@ export class RunTree implements BaseRun {
       inputs: run.inputs,
       outputs: run.outputs,
       session_name: run.project_name,
+      agent_environment: run.agent_environment,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
       trace_id: run.trace_id,
