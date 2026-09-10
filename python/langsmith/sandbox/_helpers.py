@@ -96,6 +96,12 @@ def validate_ttl(value: Optional[int], name: str) -> None:
 # =============================================================================
 
 
+def _message_with_error_id(message: str, error_id: Any) -> str:
+    if isinstance(error_id, str) and error_id:
+        return f"{message} (error_id={error_id})"
+    return message
+
+
 def parse_error_response(error: httpx.HTTPStatusError) -> dict[str, Any]:
     """Parse standardized error response.
 
@@ -113,7 +119,9 @@ def parse_error_response(error: httpx.HTTPStatusError) -> dict[str, Any]:
         if isinstance(detail, dict):
             return {
                 "error_type": detail.get("error"),
-                "message": detail.get("message", str(error)),
+                "message": _message_with_error_id(
+                    detail.get("message", str(error)), detail.get("error_id")
+                ),
             }
 
         # Pydantic validation error format: {"detail": [{"loc": [...], "msg": "..."}]}
@@ -144,7 +152,9 @@ def parse_error_response_simple(error: httpx.HTTPStatusError) -> dict[str, Any]:
         if isinstance(detail, dict):
             return {
                 "error_type": detail.get("error"),
-                "message": detail.get("message", str(error)),
+                "message": _message_with_error_id(
+                    detail.get("message", str(error)), detail.get("error_id")
+                ),
             }
 
         return {"error_type": None, "message": detail or str(error)}

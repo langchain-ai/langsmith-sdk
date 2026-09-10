@@ -78,10 +78,14 @@ export async function parseErrorResponse(
 
     // Standardized format: {"detail": {"error": "...", "message": "..."}}
     if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const message =
+        detail.message || `HTTP ${response.status}: ${response.statusText}`;
       return {
         errorType: detail.error,
         message:
-          detail.message || `HTTP ${response.status}: ${response.statusText}`,
+          typeof detail.error_id === "string" && detail.error_id
+            ? `${message} (error_id=${detail.error_id})`
+            : message,
       };
     }
 
