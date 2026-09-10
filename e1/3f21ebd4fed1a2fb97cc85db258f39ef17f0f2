@@ -1,0 +1,58 @@
+python/langsmith/schemas.py
+  s_76e5463aa11eb1::t_8f3a82ce6e65ef 561
+js/src/schemas.ts
+  s_76e5463aa11eb1::t_5eb3b14d26a81d 220-221
+js/src/index.ts
+  s_76e5463aa11eb1::t_1d3a1ee618e13b 21-24
+python/langsmith/async_client.py
+  s_76e5463aa11eb1::t_293e7b47abd98c 620-624
+python/tests/unit_tests/test_client.py
+  s_76e5463aa11eb1::t_b6ef084cf0cfac 1174-1251
+python/langsmith/env/_runtime_env.py
+  s_76e5463aa11eb1::t_01802d5822aaf0 193-195
+js/src/client.ts
+  s_76e5463aa11eb1::t_0ed07a8ee7dbb6 92
+  s_76e5463aa11eb1::t_e0dbb7bbae3b8d 2492
+  s_76e5463aa11eb1::t_1efd305a9da03b 2493
+  s_76e5463aa11eb1::t_ab66f41558331f 536
+python/langsmith/utils.py
+  s_76e5463aa11eb1::t_cf8b6e8bd8274b 465-477
+python/tests/unit_tests/test_utils.py
+  s_76e5463aa11eb1::t_5fcd20c91b7eaa 95-119
+js/src/run_trees.ts
+  s_76e5463aa11eb1::t_0a6372170cb404 448
+  s_76e5463aa11eb1::t_5b56a0a1511e93 90-95
+  s_76e5463aa11eb1::t_b361f134dc656a 24-27
+  s_76e5463aa11eb1::t_5c93687bad36b7 290
+  s_76e5463aa11eb1::t_7087b6deadcc6f 412
+  s_76e5463aa11eb1::t_8ec624d5783034 578
+python/langsmith/client.py
+  s_76e5463aa11eb1::t_4e7d1b2b88929a 2460,2462-2465
+  s_76e5463aa11eb1::t_1ae01a8b5c4ac9 2461
+js/src/tests/run_trees.test.ts
+  s_76e5463aa11eb1::t_b80e600f8e8269 759-781,789-797,799-827,829-832
+  s_76e5463aa11eb1::t_b914e558c76a8d 782-788,798,828
+js/src/utils/env.ts
+  s_76e5463aa11eb1::t_79b95ae82afe6b 112-114
+python/langsmith/run_trees.py
+  s_76e5463aa11eb1::t_24f2323d96405a 708
+  s_76e5463aa11eb1::t_f8d92c6782a5e8 370-373
+js/src/utils/project.ts
+  s_76e5463aa11eb1::t_aceb6bd7a66ed9 13-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e13f21ebd4fed1a2fb97cc85db258f39ef17f0f2",
+  "prompts": {},
+  "sessions": {
+    "s_76e5463aa11eb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7abee47a-0317-401b-a505-a1ee9bd36d09",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
