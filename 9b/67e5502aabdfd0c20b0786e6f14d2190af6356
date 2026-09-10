@@ -1,0 +1,16 @@
+python/langsmith/run_trees.py
+  h_f1ecc43c8f43eb 144-157,539-542,841,846-849,851-852
+python/tests/unit_tests/test_run_trees.py
+  h_f1ecc43c8f43eb 17,748-848
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9b67e5502aabdfd0c20b0786e6f14d2190af6356",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

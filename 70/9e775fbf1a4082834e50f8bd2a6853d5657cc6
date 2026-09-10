@@ -1,0 +1,16 @@
+python/langsmith/_internal/voice/helpers.py
+  h_f1ecc43c8f43eb 5-8,18-19,28-53,73-75,84
+python/tests/unit_tests/wrappers/test_voice_helpers.py
+  h_f1ecc43c8f43eb 12-13,17,58-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "709e775fbf1a4082834e50f8bd2a6853d5657cc6",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

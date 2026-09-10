@@ -1,0 +1,14 @@
+python/tests/unit_tests/test_client.py
+  h_f1ecc43c8f43eb 2426-2439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ece7e7eaf7d4c764c5a7058bfd746de1b62693c0",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

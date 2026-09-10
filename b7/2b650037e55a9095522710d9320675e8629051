@@ -1,0 +1,22 @@
+js/src/tests/run_trees.uuid.test.ts
+  s_9ad5e82eb23414::t_b2e47bad0806ab 232,241,266,296
+  s_9ad5e82eb23414::t_c0cf29bb7f030d 115-118,122,214-231,233-240,242-265,267-295
+js/src/utils/_uuid.ts
+  s_9ad5e82eb23414::t_be071b8d62489d 130-133,135-137,176-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "b72b650037e55a9095522710d9320675e8629051",
+  "prompts": {},
+  "sessions": {
+    "s_9ad5e82eb23414": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fef8e316-c17e-404e-94bb-5301e96209e7",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

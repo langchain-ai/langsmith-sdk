@@ -1,0 +1,20 @@
+python/tests/unit_tests/test_client.py
+  s_39a11d0044d84e::t_28cb60dc1022ee 2223-2226
+  s_39a11d0044d84e::t_1fef7ce9b42759 2240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c1fa667dc73173ae6eccb94ff7b75be71c106293",
+  "prompts": {},
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}

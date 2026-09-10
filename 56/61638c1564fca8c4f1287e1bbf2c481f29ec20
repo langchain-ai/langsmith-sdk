@@ -1,0 +1,16 @@
+python/langsmith/run_helpers.py
+  h_f1ecc43c8f43eb 183-185,286-287,1526,1534
+python/tests/unit_tests/test_run_helpers.py
+  h_f1ecc43c8f43eb 9,2591-2631
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "5661638c1564fca8c4f1287e1bbf2c481f29ec20",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

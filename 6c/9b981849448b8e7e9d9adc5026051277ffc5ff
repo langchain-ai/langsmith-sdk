@@ -1,0 +1,16 @@
+js/src/experimental/anthropic/index.ts
+  h_f1ecc43c8f43eb 9-18,105,121-126
+js/src/tests/claude_agent_sdk_secrets.test.ts
+  h_f1ecc43c8f43eb 1-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6c9b981849448b8e7e9d9adc5026051277ffc5ff",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

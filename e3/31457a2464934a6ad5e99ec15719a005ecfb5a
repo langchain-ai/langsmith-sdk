@@ -1,0 +1,22 @@
+js/src/tests/wrapped_anthropic_mcp.test.ts
+  h_f1ecc43c8f43eb 51-54,61-71,78-81,152-153,154-207
+js/src/utils/redaction.ts
+  h_f1ecc43c8f43eb 1-3,5-10,12-20,22-35,38-61,64-78
+js/src/wrappers/anthropic.ts
+  h_f1ecc43c8f43eb 13,29,33-40,372,382-387,413-416
+js/src/tests/wrapped_openai_mcp.test.ts
+  h_f1ecc43c8f43eb 1-192
+js/src/wrappers/openai.ts
+  h_f1ecc43c8f43eb 12-81,194-196,328,533,646,705,728,751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e331457a2464934a6ad5e99ec15719a005ecfb5a",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+python/tests/unit_tests/test_client.py
+  s_39a11d0044d84e::t_d6347dd09ec769 2431,2440-2441
+  s_39a11d0044d84e::t_02b832c04044fb 2423-2430,2432-2439,2442-2478
+  s_39a11d0044d84e::t_608ab47bf51b67 21,44
+python/langsmith/_internal/_serde.py
+  s_39a11d0044d84e::t_b80a9cf4936531 261,264
+  s_39a11d0044d84e::t_0580bf21bfb284 169
+  s_39a11d0044d84e::t_557ca91985263c 93,98-99,104,105,108,124,129,134-135
+  s_39a11d0044d84e::t_e9e2a3408bab9c 36
+  s_39a11d0044d84e::t_f6389e7b63db65 96-103
+  s_39a11d0044d84e::t_dd2ab79da817e6 131
+  s_39a11d0044d84e::t_363c8f9ae5934e 15-16
+  s_39a11d0044d84e::t_ad38e53526eafe 106-107,112,118-127,130,132-133
+  s_39a11d0044d84e::t_752e8cde8eab12 108-110
+  s_39a11d0044d84e::t_31f315af3e0fc7 34-35
+  h_f1ecc43c8f43eb 113-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "06cbab8dd7786491603e365917c16f87295f2af5",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_39a11d0044d84e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c598fa34-8fe3-480f-8e45-7dc9ab09d16c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

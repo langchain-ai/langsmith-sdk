@@ -1,0 +1,21 @@
+python/.bumpversion.cfg
+  s_0fddb520e83532::t_3de4c7c6e190fb 2
+python/langsmith/__init__.py
+  s_0fddb520e83532::t_7142cf5d990cd5 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0958b2e5e5937341e8bec65914d1cd4a4d8ef530",
+  "prompts": {},
+  "sessions": {
+    "s_0fddb520e83532": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "226ae20d-60e4-49c7-872e-a2ca97ab7400",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

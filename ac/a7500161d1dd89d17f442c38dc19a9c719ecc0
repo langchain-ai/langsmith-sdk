@@ -1,0 +1,22 @@
+python/langsmith/run_trees.py
+  s_73887f456157df::t_deffb27ac1b4e5 358-362
+python/tests/unit_tests/test_replica_serialization.py
+  s_73887f456157df::t_86243175e52757 33-55
+  s_73887f456157df::t_7cd3fdcc98674b 1-32,56-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "aca7500161d1dd89d17f442c38dc19a9c719ecc0",
+  "prompts": {},
+  "sessions": {
+    "s_73887f456157df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7bc5641-04a3-4891-8196-698a39626070",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
