@@ -2457,6 +2457,12 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+        if not update and run_create.get("agent_environment") is None:
+            # If no environment is provided, fall back to `LANGSMITH_ENVIRONMENT`.
+            if agent_environment := ls_utils.get_tracer_environment():
+                run_create["agent_environment"] = agent_environment
+            else:
+                run_create.pop("agent_environment", None)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:

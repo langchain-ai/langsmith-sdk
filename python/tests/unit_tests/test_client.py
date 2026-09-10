@@ -1171,6 +1171,84 @@ def test_create_run_mutate(
         assert outputs == {"messages": ["hi", "there"]}
 
 
+@pytest.mark.parametrize(
+    ("env_value", "explicit_value", "expected"),
+    [
+        (None, None, None),
+        ("staging", None, "staging"),
+        # An explicit value wins over the environment variable.
+        ("staging", "production", "production"),
+        (None, "production", "production"),
+    ],
+)
+def test_create_run_agent_environment(
+    env_value: Optional[str],
+    explicit_value: Optional[str],
+    expected: Optional[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`LANGSMITH_ENVIRONMENT` is ingested as the run's `agent_environment`."""
+    if env_value is None:
+        monkeypatch.delenv("LANGSMITH_ENVIRONMENT", raising=False)
+        monkeypatch.delenv("LANGCHAIN_ENVIRONMENT", raising=False)
+    else:
+        monkeypatch.setenv("LANGSMITH_ENVIRONMENT", env_value)
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_environment.cache_clear()
+
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    id_ = uuid.uuid4()
+    run_dict: dict = dict(
+        id=id_,
+        name="my_run",
+        inputs={"messages": ["hi"]},
+        run_type="llm",
+        trace_id=id_,
+        dotted_order=run_trees._create_current_dotted_order(
+            datetime.now(timezone.utc), id_
+        ),
+    )
+    if explicit_value is not None:
+        run_dict["agent_environment"] = explicit_value
+    client.create_run(**run_dict)
+
+    for _ in range(10):
+        time.sleep(0.1)  # Give the background thread time to flush
+        payloads = [
+            (call[2]["headers"], call[2]["data"])
+            for call in session.request.mock_calls
+            if call.args and call.args[1].endswith("runs/multipart")
+        ]
+        if payloads:
+            break
+    else:
+        assert False, "No payloads found"
+
+    parts: List[MultipartPart] = []
+    for headers, data in payloads:
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        parts.extend(MultipartParser(io.BytesIO(data), boundary).parts())
+
+    run_parsed = json.loads(next(p for p in parts if p.name == f"post.{id_}").value)
+    assert run_parsed.get("agent_environment") == expected
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     """Test that upsert_examples_multipart sends correct multipart data."""
