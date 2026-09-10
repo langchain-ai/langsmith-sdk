@@ -168,6 +168,11 @@ class _WSStreamControl:
         if self._ws and not self._closed:
             self._ws.send(json.dumps({"type": "input", "data": data}))
 
+    def send_close_stdin(self) -> None:
+        """Half-close the command's stdin so it reads EOF."""
+        if self._ws and not self._closed:
+            self._ws.send(json.dumps({"type": "close_stdin"}))
+
 
 class _AsyncWSStreamControl:
     """Async equivalent of _WSStreamControl."""
@@ -204,6 +209,10 @@ class _AsyncWSStreamControl:
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
             await self._ws.send(json.dumps({"type": "input", "data": data}))
+
+    async def send_close_stdin(self) -> None:
+        if self._ws and not self._closed:
+            await self._ws.send(json.dumps({"type": "close_stdin"}))
 
 
 # =============================================================================
@@ -340,6 +349,8 @@ def run_ws_stream(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[dict[str, Any]] = None,
+    close_stdin: bool = False,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -397,6 +408,10 @@ def run_ws_stream(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
+                if close_stdin:
+                    payload["close_stdin"] = True
                 if pty:
                     payload["pty"] = True
                 ws.send(json.dumps(payload))
@@ -547,6 +562,8 @@ async def run_ws_stream_async(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[dict[str, Any]] = None,
+    close_stdin: bool = False,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -593,6 +610,10 @@ async def run_ws_stream_async(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
+                if close_stdin:
+                    payload["close_stdin"] = True
                 if pty:
                     payload["pty"] = True
                 await ws.send(json.dumps(payload))

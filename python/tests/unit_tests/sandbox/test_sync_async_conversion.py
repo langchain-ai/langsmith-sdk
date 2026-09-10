@@ -7,6 +7,7 @@ import pytest
 from langsmith.sandbox import (
     AsyncSandbox,
     AsyncSandboxClient,
+    RunConfig,
     Sandbox,
     SandboxClient,
 )
@@ -26,6 +27,7 @@ SANDBOX_DATA = {
     "vcpus": 2,
     "mem_bytes": 1024**3,
     "fs_capacity_bytes": 10 * 1024**3,
+    "run_config": RunConfig(user="app", work_dir="/workspace", env_vars={"A": "1"}),
 }
 
 DATA_FIELDS = list(SANDBOX_DATA)

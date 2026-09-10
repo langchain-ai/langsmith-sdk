@@ -652,6 +652,7 @@ class TestCommandHandle:
             "cmd-123",
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
+            stdin_closed=handle._stdin_closed,
         )
 
     def test_reconnect_with_explicit_command_id(self):
@@ -878,6 +879,7 @@ class TestSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 
