@@ -153,6 +153,11 @@ export async function raiseForStatus(
           "This API key is org-scoped and requires workspace specification. " +
           "Please provide 'workspaceId' parameter, " +
           "or set LANGSMITH_WORKSPACE_ID environment variable.";
+      } else {
+        // Preserve the reason the server returned. response.json() above has
+        // already consumed the body, so the response.text() fallback below
+        // would read a spent stream and yield "" — dropping the cause.
+        errorBody = JSON.stringify(errorData);
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (_e: any) {
