@@ -1,0 +1,24 @@
+python/Makefile
+  s_9b0a090a06147a::t_1277df61daa8b8 1
+  s_9b0a090a06147a::t_9c5929fbe0b83b 22,25-26
+.github/workflows/py-bench-datadog.yml
+  s_9b0a090a06147a::t_1277df61daa8b8 62
+python/pyproject.toml
+  s_9b0a090a06147a::t_4d71d2bac726ec 181-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "10bf8d96bbf106e48f43c3b5483f461c53c1dee7",
+  "prompts": {},
+  "sessions": {
+    "s_9b0a090a06147a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7fbf8000-9abe-47f5-851c-5af15a74a584",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

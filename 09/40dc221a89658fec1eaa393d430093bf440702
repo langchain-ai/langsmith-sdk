@@ -1,0 +1,45 @@
+python/langsmith/_internal/_compressed_traces.py
+  s_9ad5e82eb23414::t_953d0c71083d0d 61
+  s_9ad5e82eb23414::t_d1cf07f47482b2 54,60,64-66
+  s_9ad5e82eb23414::t_213ef81aa02728 52-53,62-63,68
+python/tests/unit_tests/test_replica_compression.py
+  s_9ad5e82eb23414::t_63ca8f5b7d9b25 1-50,54-55,64-66,68-149,153-271,281-283,289-372,375-376,381,388-390,394-416,419-428,433-453
+  s_9ad5e82eb23414::t_8c9aba2c1b9955 51-53,57-61,67
+  s_9ad5e82eb23414::t_fa74a6089f980e 56,62-63,150-152,272-280,284-286,288,378-379,391-393,417-418,429-432
+  s_9ad5e82eb23414::t_8333efad23ad7e 373-374,377,380,382-387
+  s_9ad5e82eb23414::t_2329b2bb81ba0f 287
+python/langsmith/_internal/_background_thread.py
+  s_9ad5e82eb23414::t_3c6e03e33374e1 794,804,811,820,832,840,858,874,887
+  s_9ad5e82eb23414::t_d825fc2fe279e2 186-187,190,208,225,230
+  s_9ad5e82eb23414::t_bf4d5f004e7842 240
+python/langsmith/client.py
+  s_9ad5e82eb23414::t_e1cabab514a112 2671-2693,2699-2733,11873-11878
+  s_9ad5e82eb23414::t_89a8d82d05913e 11881-11891,11893-11896
+  s_9ad5e82eb23414::t_7b42f90648f463 2734-2736,2740-2754
+  s_9ad5e82eb23414::t_b678ea57cd38a9 8434-8442,8448-8450
+  s_9ad5e82eb23414::t_61e86c647c37fb 3951-3958,3961,3963,3976,3978-3979,3981,3988
+  s_9ad5e82eb23414::t_a87e2551a68a61 2694-2698,2737-2739,2784,3677-3679,3962,8432-8433,11892
+  s_9ad5e82eb23414::t_347c13db970ed1 4084,4097,4104-4107
+  s_9ad5e82eb23414::t_188aa6c079eeab 3674,3680,3682-3685,3687-3688,3695-3699
+  s_9ad5e82eb23414::t_de08a8fb514f07 49
+  s_9ad5e82eb23414::t_acb85a63b80479 2771-2778,2783,2785,2799,2801-2802,2804,2812
+  s_9ad5e82eb23414::t_064d7dd249f24c 11879-11880
+python/langsmith/run_trees.py
+  s_9ad5e82eb23414::t_c93a7fdb3538ab 14,25-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "0940dc221a89658fec1eaa393d430093bf440702",
+  "prompts": {},
+  "sessions": {
+    "s_9ad5e82eb23414": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fef8e316-c17e-404e-94bb-5301e96209e7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

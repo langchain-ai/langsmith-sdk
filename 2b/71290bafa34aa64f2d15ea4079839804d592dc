@@ -1,0 +1,24 @@
+python/langsmith/_internal/_compressed_traces.py
+  s_9ad5e82eb23414::t_668ea2fd24e7f3 52-54,69-70
+python/tests/unit_tests/test_replica_compression.py
+  s_9ad5e82eb23414::t_550a57926e2bae 178-184
+  s_9ad5e82eb23414::t_c36f3b58a8e273 200
+  s_9ad5e82eb23414::t_e030e1f8ea4712 206,210-211,213-214,219-243
+  s_9ad5e82eb23414::t_1610cbec839342 244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2b71290bafa34aa64f2d15ea4079839804d592dc",
+  "prompts": {},
+  "sessions": {
+    "s_9ad5e82eb23414": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fef8e316-c17e-404e-94bb-5301e96209e7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}
