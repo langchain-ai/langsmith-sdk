@@ -212,6 +212,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
+        ls_utils.validate_agent_addressing_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -608,15 +609,27 @@ class AsyncClient:
         **kwargs: Any,
     ) -> None:
         """Create a run."""
+        if (
+            project_name is None
+            and kwargs.get("session_name") is None
+            and kwargs.get("session_id") is None
+            and (kwargs.get("agent_id") or ls_utils.get_tracer_agent_id())
+        ):
+            # Agent-addressed: don't default a project in, or the run would be
+            # addressed twice. An explicit project still wins.
+            session_name = None
+        else:
+            session_name = project_name or ls_utils.get_tracer_project()
         run_create = {
             "name": name,
             "id": kwargs.get("id") or uuid.uuid4(),
             "inputs": inputs,
             "run_type": run_type,
-            "session_name": project_name or ls_utils.get_tracer_project(),
+            "session_name": session_name,
             "revision_id": revision_id,
             **kwargs,
         }
+        ls_client.Client._apply_agent_addressing(run_create)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )
@@ -628,6 +641,7 @@ class AsyncClient:
     ) -> None:
         """Update a run."""
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
+        ls_client.Client._apply_agent_addressing(data)
         await self._arequest_with_retries(
             "PATCH",
             f"/runs/{ls_client._as_uuid(run_id)}",

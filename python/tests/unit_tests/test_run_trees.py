@@ -849,3 +849,277 @@ def test_patch_exclude_inputs_flag_is_cached(monkeypatch, _reset_exclude_inputs_
     _reset_exclude_inputs_cache()
     run_tree.patch()
     assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}
+
+
+@pytest.fixture
+def _reset_agent_addressing_cache():
+    """Reset the memoized agent addressing env lookups."""
+
+    def _clear():
+        ls_utils.get_env_var.cache_clear()
+        ls_utils.get_tracer_agent_id.cache_clear()
+        ls_utils.get_tracer_agent_environment.cache_clear()
+        ls_utils.get_tracer_project.cache_clear()
+
+    _clear()
+    yield _clear
+    _clear()
+
+
+def _agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    """Set up a clean LangSmith env with only `values` present."""
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGCHAIN_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGCHAIN_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+
+class TestRunTreeAgentAddressing:
+    """A run tree carries one addressing mode: project or agent, never both."""
+
+    def test_agent_env_replaces_the_default_project(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        assert run.agent_id == "my-agent"
+        assert run.agent_environment == "staging"
+        assert run.session_name is None
+
+    def test_explicit_project_wins_over_the_agent_env(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", project_name="explicit", ls_client=_get_mock_client())
+        assert run.session_name == "explicit"
+        assert run.agent_id is None
+        assert run.agent_environment is None
+
+    def test_explicit_project_id_wins_too(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+        _reset_agent_addressing_cache()
+        session_id = UUID("00000000-0000-0000-0000-00000000beef")
+        run = RunTree(name="foo", project_id=session_id, ls_client=_get_mock_client())
+        assert run.session_id == session_id
+        assert run.agent_id is None
+
+    def test_no_agent_env_keeps_the_default_project(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        assert run.session_name == "default"
+        assert run.agent_id is None
+
+    def test_agent_environment_alone_is_dropped(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        """An environment without an agent addresses nothing."""
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        assert run.agent_environment is None
+        assert run.session_name == "default"
+
+    def test_explicit_agent_id_without_env_var(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", agent_id="passed-in", ls_client=_get_mock_client())
+        assert run.agent_id == "passed-in"
+        assert run.session_name is None
+
+    def test_children_inherit_agent_addressing(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        _reset_agent_addressing_cache()
+        parent = RunTree(name="parent", ls_client=_get_mock_client())
+        child = parent.create_child(name="child")
+        assert child.agent_id == "my-agent"
+        assert child.agent_environment == "staging"
+        assert child.session_name is None
+
+    def test_children_of_a_project_run_stay_project_addressed(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+        _reset_agent_addressing_cache()
+        parent = RunTree(
+            name="parent", project_name="explicit", ls_client=_get_mock_client()
+        )
+        child = parent.create_child(name="child")
+        assert child.session_name == "explicit"
+        assert child.agent_id is None
+
+
+class TestReplicaAgentAddressing:
+    """Addressing precedence applies per replica."""
+
+    def test_replica_project_beats_replica_agent(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        project, agent_id, agent_environment = run._replica_addressing(
+            {"project_name": "proj", "agent_id": "ignored"}
+        )
+        assert (project, agent_id, agent_environment) == ("proj", None, None)
+
+    def test_replica_agent_is_used_when_it_names_no_project(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        assert run._replica_addressing(
+            {"agent_id": "replica-agent", "agent_environment": "staging"}
+        ) == (None, "replica-agent", "staging")
+
+    def test_replica_naming_neither_inherits_the_run_tree(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        assert run._replica_addressing({}) == (None, "my-agent", None)
+
+    def test_agent_addressed_replicas_get_distinct_run_ids(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        """Two agents are two destinations, so the derived IDs must differ."""
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        run = RunTree(name="foo", ls_client=_get_mock_client())
+        first = run._remap_for_project(None, agent_id="agent-a")
+        second = run._remap_for_project(None, agent_id="agent-b")
+        assert first["id"] != second["id"]
+        assert first["agent_id"] == "agent-a"
+        assert second["agent_id"] == "agent-b"
+        assert first["session_name"] is None
+
+    def test_agent_fields_survive_baggage_headers(self) -> None:
+        """A distributed child needs its parent's routing, like `project_name`."""
+        filtered = run_trees._filter_replica_for_headers(
+            {
+                "project_name": None,
+                "agent_id": "my-agent",
+                "agent_environment": "staging",
+                "api_key": "secret",
+            }
+        )
+        assert filtered["agent_id"] == "my-agent"
+        assert filtered["agent_environment"] == "staging"
+        assert "api_key" not in filtered
+
+
+class TestBaggageAgentAddressing:
+    """Agent addressing survives a distributed hop, like the project does."""
+
+    def test_round_trips_through_baggage(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        _reset_agent_addressing_cache()
+        parent = RunTree(name="parent", ls_client=_get_mock_client())
+        headers = parent.to_headers()
+
+        # The child process has no agent env of its own.
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        child = RunTree.from_headers(headers, name="child")
+        assert child is not None
+        assert child.agent_id == "my-agent"
+        assert child.agent_environment == "staging"
+        assert child.session_name is None
+
+    def test_baggage_project_still_wins(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        baggage = ",".join(
+            [
+                f"{run_trees.LANGSMITH_PROJECT}=from-header",
+                f"{run_trees.LANGSMITH_AGENT_ID}=agent-from-header",
+            ]
+        )
+        child = RunTree.from_headers({"baggage": baggage}, name="child")
+        assert child is not None
+        assert child.session_name == "from-header"
+        assert child.agent_id is None
+
+    def test_project_addressed_parent_sends_no_agent_keys(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        parent = RunTree(
+            name="parent", project_name="proj", ls_client=_get_mock_client()
+        )
+        baggage = parent.to_headers()["baggage"]
+        assert run_trees.LANGSMITH_AGENT_ID not in baggage
+        assert run_trees.LANGSMITH_AGENT_ENVIRONMENT not in baggage
+
+    def test_agent_addressed_replica_survives_the_hop(self) -> None:
+        """Replicas used to be dropped unless they named a project."""
+        replicas_json = json.dumps(
+            [{"agent_id": "replica-agent", "agent_environment": "staging"}]
+        )
+        baggage = f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas_json)}"
+        parsed = run_trees._Baggage.from_header(baggage)
+        assert parsed.replicas is not None
+        assert len(parsed.replicas) == 1
+        assert parsed.replicas[0]["agent_id"] == "replica-agent"
+
+    def test_replica_naming_no_destination_is_still_dropped(self) -> None:
+        replicas_json = json.dumps([{"updates": {"reroot": True}}])
+        baggage = f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas_json)}"
+        parsed = run_trees._Baggage.from_header(baggage)
+        assert parsed.replicas == []
+
+    def test_replica_credentials_are_still_stripped(self) -> None:
+        replicas_json = json.dumps(
+            [{"agent_id": "replica-agent", "api_key": "secret", "api_url": "http://x"}]
+        )
+        baggage = f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas_json)}"
+        parsed = run_trees._Baggage.from_header(baggage)
+        assert parsed.replicas is not None
+        replica = parsed.replicas[0]
+        assert "api_key" not in replica
+        assert "api_url" not in replica
+
+    def test_quoting_survives_special_characters(self) -> None:
+        baggage = run_trees._Baggage(
+            agent_id="agent, with=chars", agent_environment="env/one"
+        ).to_header()
+        parsed = run_trees._Baggage.from_header(baggage)
+        assert parsed.agent_id == "agent, with=chars"
+        assert parsed.agent_environment == "env/one"

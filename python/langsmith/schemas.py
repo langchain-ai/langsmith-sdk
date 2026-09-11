@@ -558,6 +558,8 @@ class RunLikeDict(TypedDict, total=False):
     id: Optional[UUID]
     session_id: Optional[UUID]
     session_name: Optional[str]
+    agent_environment: Optional[str]
+    agent_id: Optional[str]
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]

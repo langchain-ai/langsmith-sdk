@@ -90,6 +90,10 @@ import { warnOnce } from "./utils/warn.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
+  getDefaultAgentEnvironment,
+  getDefaultAgentId,
+} from "./utils/project.js";
+import {
   raiseForStatus,
   isLangSmithNotFoundError,
   isLangSmithConflictError,
@@ -532,6 +536,8 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  agent_environment?: string;
+  agent_id?: string;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -2487,6 +2493,10 @@ export class Client implements LangSmithTracingClientInterface {
     const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
+      // Fall back to `LANGSMITH_AGENT_ENVIRONMENT` when none is provided.
+      agent_environment: run.agent_environment ?? getDefaultAgentEnvironment(),
+      // If no agent ID is provided, fall back to `LANGSMITH_AGENT_ID`.
+      agent_id: run.agent_id ?? getDefaultAgentId(),
       start_time: run.start_time ?? Date.now(),
     } as RunCreate);
     if (

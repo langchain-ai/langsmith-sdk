@@ -92,6 +92,43 @@ class LangSmithProjectNameTest(unittest.TestCase):
                     self.assertEqual(project, case.expected_project_name)
 
 
+@pytest.mark.parametrize(
+    ("getter_name", "suffix"),
+    [
+        ("get_tracer_agent_environment", "AGENT_ENVIRONMENT"),
+        ("get_tracer_agent_id", "AGENT_ID"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("namespaces", "expected"),
+    [
+        ({}, None),
+        ({"LANGSMITH": "from-langsmith"}, "from-langsmith"),
+        ({"LANGCHAIN": "from-langchain"}, "from-langchain"),
+        # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
+        (
+            {"LANGSMITH": "from-langsmith", "LANGCHAIN": "from-langchain"},
+            "from-langsmith",
+        ),
+        # Blank is treated as unset, same as every other LangSmith env var.
+        ({"LANGSMITH": ""}, None),
+    ],
+)
+def test_get_tracer_agent_env_vars(
+    getter_name: str,
+    suffix: str,
+    namespaces: dict,
+    expected: Optional[str],
+) -> None:
+    """`LANGSMITH_AGENT_ENVIRONMENT` / `LANGSMITH_AGENT_ID` resolution."""
+    getter = getattr(ls_utils, getter_name)
+    envvars = {f"{ns}_{suffix}": value for ns, value in namespaces.items()}
+    ls_utils.get_env_var.cache_clear()
+    getter.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        assert getter() == expected
+
+
 def test_tracing_enabled():
     ls_utils.get_env_var.cache_clear()
     with patch.dict(

@@ -1027,6 +1027,25 @@ describe("Client", () => {
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
     });
+
+    it.each([
+      "LANGSMITH_AGENT_ENVIRONMENT",
+      "LANGCHAIN_AGENT_ENVIRONMENT",
+      "LANGSMITH_AGENT_ID",
+      "LANGCHAIN_AGENT_ID",
+    ])("should keep %s out of run metadata", (agentVar) => {
+      // Agent addressing is a first-class run field, so it must not be swept
+      // into metadata too. Neither name is caught by the sensitive-substring
+      // filter, so this only holds while they're excluded explicitly.
+      // eslint-disable-next-line no-process-env
+      process.env[agentVar] = "some-value";
+      try {
+        expect(getLangSmithEnvVarsMetadata()).not.toHaveProperty(agentVar);
+      } finally {
+        // eslint-disable-next-line no-process-env
+        delete process.env[agentVar];
+      }
+    });
   });
 
   describe("parseHubIdentifier", () => {
