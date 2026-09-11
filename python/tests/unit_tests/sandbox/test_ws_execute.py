@@ -654,6 +654,24 @@ class TestCommandHandle:
             stderr_offset=handle.last_stderr_offset,
         )
 
+    def test_manual_reconnect_keeps_stdin_closed(self):
+        """A reconnected handle still refuses send_input() once stdin is closed."""
+        sandbox = self._make_sandbox_mock()
+        sandbox.reconnect.return_value = CommandHandle(
+            _make_stream([_exit_msg(0)]), None, sandbox, command_id="cmd-123"
+        )
+        handle = CommandHandle(
+            _make_stream([_started_msg(), _exit_msg(0)]),
+            None,
+            sandbox,
+            stdin_closed=True,
+        )
+        list(handle)
+
+        new_handle = handle.reconnect()
+        with pytest.raises(ValueError, match="close_input=False"):
+            new_handle.send_input("hi\n")
+
     def test_reconnect_with_explicit_command_id(self):
         """Reconnection handle with pre-set command_id."""
         stream = _make_stream(

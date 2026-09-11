@@ -822,11 +822,14 @@ class CommandHandle:
             SandboxConnectionError: If connection to sandbox fails.
         """
         assert self._command_id is not None
-        return self._sandbox.reconnect(
+        handle = self._sandbox.reconnect(
             self._command_id,
             stdout_offset=self._last_stdout_offset,
             stderr_offset=self._last_stderr_offset,
         )
+        handle._stdin_closed = self._stdin_closed
+        handle._pty = self._pty
+        return handle
 
 
 class AsyncCommandHandle:
@@ -1091,8 +1094,11 @@ class AsyncCommandHandle:
     async def reconnect(self) -> AsyncCommandHandle:
         """Reconnect to this command from the last known offsets."""
         assert self._command_id is not None
-        return await self._sandbox.reconnect(
+        handle = await self._sandbox.reconnect(
             self._command_id,
             stdout_offset=self._last_stdout_offset,
             stderr_offset=self._last_stderr_offset,
         )
+        handle._stdin_closed = self._stdin_closed
+        handle._pty = self._pty
+        return handle

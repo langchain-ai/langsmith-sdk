@@ -1963,6 +1963,25 @@ describe("CommandHandle", () => {
       expect(() => handle.closeInput()).toThrow(/EOT/);
     });
 
+    it("should keep stdin closed across a manual reconnect", async () => {
+      const sandbox = createMockSandbox();
+      const handle = new CommandHandle(createMockStream([]), null, sandbox, {
+        commandId: "cmd-123",
+        stdinClosed: true,
+      });
+      (sandbox.reconnect as any).mockResolvedValue(
+        new CommandHandle(createMockStream([]), null, sandbox, {
+          commandId: "cmd-123",
+        }),
+      );
+
+      const reconnected = await handle.reconnect();
+
+      expect(() => reconnected.sendInput("more\n")).toThrow(
+        /closeInput: false/,
+      );
+    });
+
     it("should throw when the command was run with stdin closed", () => {
       const stream = createMockStream([]);
       const handle = new CommandHandle(stream, null, createMockSandbox(), {
@@ -1970,9 +1989,7 @@ describe("CommandHandle", () => {
         stdinClosed: true,
       });
 
-      expect(() => handle.sendInput("test input")).toThrow(
-        /closeInput: false/,
-      );
+      expect(() => handle.sendInput("test input")).toThrow(/closeInput: false/);
     });
   });
 });

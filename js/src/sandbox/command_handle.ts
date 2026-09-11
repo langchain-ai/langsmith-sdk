@@ -363,9 +363,12 @@ export class CommandHandle {
         "reconnect",
       );
     }
-    return this._sandbox.reconnect(this._commandId, {
+    const handle = await this._sandbox.reconnect(this._commandId, {
       stdoutOffset: this._lastStdoutOffset,
       stderrOffset: this._lastStderrOffset,
     });
+    handle._stdinClosed = this._stdinClosed;
+    handle._pty = this._pty;
+    return handle;
   }
 }
