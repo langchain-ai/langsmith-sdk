@@ -1172,29 +1172,39 @@ def test_create_run_mutate(
 
 
 @pytest.mark.parametrize(
+    ("env_var", "field"),
+    [
+        ("LANGSMITH_ENVIRONMENT", "agent_environment"),
+        ("LANGSMITH_AGENT_KEY", "agent_key"),
+    ],
+)
+@pytest.mark.parametrize(
     ("env_value", "explicit_value", "expected"),
     [
         (None, None, None),
-        ("staging", None, "staging"),
+        ("from-env", None, "from-env"),
         # An explicit value wins over the environment variable.
-        ("staging", "production", "production"),
-        (None, "production", "production"),
+        ("from-env", "explicit", "explicit"),
+        (None, "explicit", "explicit"),
     ],
 )
-def test_create_run_agent_environment(
+def test_create_run_agent_addressing(
+    env_var: str,
+    field: str,
     env_value: Optional[str],
     explicit_value: Optional[str],
     expected: Optional[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`LANGSMITH_ENVIRONMENT` is ingested as the run's `agent_environment`."""
+    """`LANGSMITH_ENVIRONMENT` / `LANGSMITH_AGENT_KEY` are ingested on the run."""
     if env_value is None:
-        monkeypatch.delenv("LANGSMITH_ENVIRONMENT", raising=False)
-        monkeypatch.delenv("LANGCHAIN_ENVIRONMENT", raising=False)
+        monkeypatch.delenv(env_var, raising=False)
+        monkeypatch.delenv(env_var.replace("LANGSMITH_", "LANGCHAIN_"), raising=False)
     else:
-        monkeypatch.setenv("LANGSMITH_ENVIRONMENT", env_value)
+        monkeypatch.setenv(env_var, env_value)
     ls_utils.get_env_var.cache_clear()
     ls_utils.get_tracer_environment.cache_clear()
+    ls_utils.get_tracer_agent_key.cache_clear()
 
     session = mock.Mock()
     session.request = mock.Mock()
@@ -1225,7 +1235,7 @@ def test_create_run_agent_environment(
         ),
     )
     if explicit_value is not None:
-        run_dict["agent_environment"] = explicit_value
+        run_dict[field] = explicit_value
     client.create_run(**run_dict)
 
     for _ in range(10):
@@ -1246,7 +1256,7 @@ def test_create_run_agent_environment(
         parts.extend(MultipartParser(io.BytesIO(data), boundary).parts())
 
     run_parsed = json.loads(next(p for p in parts if p.name == f"post.{id_}").value)
-    assert run_parsed.get("agent_environment") == expected
+    assert run_parsed.get(field) == expected
 
 
 @mock.patch("langsmith.client.requests.Session")

@@ -2463,6 +2463,12 @@ class Client:
                 run_create["agent_environment"] = agent_environment
             else:
                 run_create.pop("agent_environment", None)
+        if not update and run_create.get("agent_key") is None:
+            # If no agent key is provided, fall back to `LANGSMITH_AGENT_KEY`.
+            if agent_key := ls_utils.get_tracer_agent_key():
+                run_create["agent_key"] = agent_key
+            else:
+                run_create.pop("agent_key", None)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:

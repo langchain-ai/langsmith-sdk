@@ -622,6 +622,11 @@ class AsyncClient:
                 run_create["agent_environment"] = agent_environment
             else:
                 run_create.pop("agent_environment", None)
+        if run_create.get("agent_key") is None:
+            if agent_key := ls_utils.get_tracer_agent_key():
+                run_create["agent_key"] = agent_key
+            else:
+                run_create.pop("agent_key", None)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )

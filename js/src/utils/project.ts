@@ -20,3 +20,15 @@ export const getDefaultProjectName = () => {
 export const getDefaultAgentEnvironment = () => {
   return getLangSmithEnvironmentVariable("ENVIRONMENT");
 };
+
+/**
+ * The key of the agent to ingest runs into, read from `LANGSMITH_AGENT_KEY`.
+ *
+ * This is an agent identifier, not a credential: the server resolves the agent
+ * by this key and creates one if it doesn't exist yet. Like the environment, it
+ * has no default: when unset the run is ingested without an agent key and
+ * addressed by project instead.
+ */
+export const getDefaultAgentKey = () => {
+  return getLangSmithEnvironmentVariable("AGENT_KEY");
+};

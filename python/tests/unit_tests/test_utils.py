@@ -117,6 +117,31 @@ def test_get_tracer_environment(envvars: dict, expected: Optional[str]) -> None:
         assert ls_utils.get_tracer_environment() == expected
 
 
+@pytest.mark.parametrize(
+    ("envvars", "expected"),
+    [
+        ({}, None),
+        ({"LANGSMITH_AGENT_KEY": "my-agent"}, "my-agent"),
+        ({"LANGCHAIN_AGENT_KEY": "my-agent"}, "my-agent"),
+        # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
+        (
+            {
+                "LANGSMITH_AGENT_KEY": "my-agent",
+                "LANGCHAIN_AGENT_KEY": "other-agent",
+            },
+            "my-agent",
+        ),
+        # Blank is treated as unset, same as every other LangSmith env var.
+        ({"LANGSMITH_AGENT_KEY": ""}, None),
+    ],
+)
+def test_get_tracer_agent_key(envvars: dict, expected: Optional[str]) -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_agent_key.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        assert ls_utils.get_tracer_agent_key() == expected
+
+
 def test_tracing_enabled():
     ls_utils.get_env_var.cache_clear()
     with patch.dict(

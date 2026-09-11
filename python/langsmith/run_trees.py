@@ -371,6 +371,10 @@ class RunTree(ls_schemas.RunBase):
         default_factory=utils.get_tracer_environment,
         description="The agent environment to ingest this run into.",
     )
+    agent_key: Optional[str] = Field(
+        default_factory=utils.get_tracer_agent_key,
+        description="The key of the agent to ingest this run into.",
+    )
     extra: dict = Field(default_factory=dict)
     tags: Optional[list[str]] = Field(default_factory=list)
     events: list[dict] = Field(default_factory=list)
@@ -706,6 +710,7 @@ class RunTree(ls_schemas.RunBase):
             parent_run=self,
             project_name=self.session_name,
             agent_environment=self.agent_environment,
+            agent_key=self.agent_key,
             replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,
