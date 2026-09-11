@@ -12,7 +12,12 @@ import {
 
 class LangSmithEvalReporter extends DefaultReporter {
   async onFinished(files: RunnerTestFile[], errors: unknown[]) {
-    super.onFinished(files, errors);
+    const onFinished = (
+      DefaultReporter.prototype as unknown as {
+        onFinished?: (files: RunnerTestFile[], errors: unknown[]) => void;
+      }
+    ).onFinished;
+    onFinished?.call(this, files, errors);
     await printVitestReporterTable(files, this.ctx);
   }
 
