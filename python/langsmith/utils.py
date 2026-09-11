@@ -475,6 +475,20 @@ def get_tracer_environment() -> Optional[str]:
     return get_env_var("ENVIRONMENT")
 
 
+@functools.lru_cache(maxsize=1)
+def get_tracer_agent_key() -> Optional[str]:
+    """Get the agent key for a LangSmith tracer.
+
+    Read from ``LANGSMITH_AGENT_KEY``. This is an agent identifier, not a
+    credential: the server resolves the agent by this key and creates one if it
+    doesn't exist yet. Like the environment, it has no default: when unset the
+    run is ingested without an agent key and addressed by project instead.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    return get_env_var("AGENT_KEY")
+
+
 class FilterPoolFullWarning(logging.Filter):
     """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 
