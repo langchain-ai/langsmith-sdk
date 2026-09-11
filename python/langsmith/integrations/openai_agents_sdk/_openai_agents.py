@@ -104,7 +104,14 @@ if HAVE_AGENTS:
         parent_run: "rt.RunTree",
         existing_tag: Optional[str],
     ) -> Optional[str]:
-        # If the user already set a more specific type, keep it.
+        """Pick an ls_agent_type for a span, or None to leave it as is.
+
+        A more specific type already on the run wins; then guardrails are
+        middleware; then an agent running under any tool is a subagent. The
+        tool can be one the SDK created or one the user wrapped themselves.
+        """
+        # Keep a more specific type if one is already set. An inherited "root"
+        # is not kept, so it can be replaced below.
         if existing_tag in NON_ROOT_LS_AGENT_TYPES:
             return None
         if isinstance(span.span_data, tracing.GuardrailSpanData):
@@ -338,8 +345,9 @@ if HAVE_AGENTS:
                     else None,
                 )
 
-                # Agents reached by a handoff take over the conversation rather
-                # than run as a tool, so they are left untagged.
+                # An agent reached by a handoff stays in whatever conversation
+                # it was handed off within: untagged at the top level, subagent
+                # if it is running inside a tool.
                 metadata = child_run.extra.setdefault("metadata", {})
                 structural_tag = _resolve_openai_agents_ls_agent_type(
                     span, parent_run, metadata.get("ls_agent_type")

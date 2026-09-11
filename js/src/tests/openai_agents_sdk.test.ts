@@ -874,7 +874,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
       }
     });
 
-    test("subagent detection walks past an intermediate chain run to find a tool ancestor", async () => {
+    test("tags an agent as a subagent when the tool is further above it", async () => {
       // When an agent runs as a tool, an extra run sits between the tool and
       // the agent.
       const outerTrace = createMockTrace("trace-nested-outer", "Outer");
@@ -918,13 +918,71 @@ describe("OpenAIAgentsTracingProcessor", () => {
       }
     });
 
+    test("tags an agent handed off to inside a tool as a subagent", async () => {
+      // A handoff opens a new agent run beside the one it replaced, so the
+      // tool is still above it.
+      const outerTrace = createMockTrace("trace-handoff-sub", "Outer");
+      const functionSpan = createMockSpan(
+        "trace-handoff-sub",
+        "span-fn-handoff-sub",
+        null,
+        {
+          type: "function",
+          name: "invoke_subagent",
+          input: "{}",
+          output: "{}",
+        },
+      );
+      const innerTrace = createMockTrace("trace-handoff-sub-inner", "Inner");
+      const firstAgentSpan = createMockSpan(
+        "trace-handoff-sub-inner",
+        "span-agent-first",
+        null,
+        { type: "agent", name: "FirstAgent" },
+      );
+      const handedOffAgentSpan = createMockSpan(
+        "trace-handoff-sub-inner",
+        "span-agent-handed-off",
+        null,
+        { type: "agent", name: "HandedOffAgent" },
+      );
+
+      await processor.onTraceStart(outerTrace);
+      await processor.onSpanStart(functionSpan);
+      await processor.onTraceStart(innerTrace);
+      await processor.onSpanStart(firstAgentSpan);
+      await processor.onSpanEnd(firstAgentSpan);
+      await processor.onSpanStart(handedOffAgentSpan);
+      await processor.onSpanEnd(handedOffAgentSpan);
+      await processor.onTraceEnd(innerTrace);
+      await processor.onSpanEnd(functionSpan);
+      await processor.onTraceEnd(outerTrace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const handedOffNode = tree.nodes.find((n) =>
+        n.includes("HandedOffAgent"),
+      );
+      expect(handedOffNode).toBeDefined();
+      if (handedOffNode) {
+        expect(tree.data[handedOffNode].extra?.metadata?.ls_agent_type).toBe(
+          "subagent",
+        );
+      }
+    });
+
     test("stamps guardrail spans as middleware", async () => {
       const trace = createMockTrace("trace-guard-1", "Test Agent");
-      const guardrailSpan = createMockSpan("trace-guard-1", "span-guard", null, {
-        type: "guardrail",
-        name: "entry_guardrail",
-        triggered: false,
-      });
+      const guardrailSpan = createMockSpan(
+        "trace-guard-1",
+        "span-guard",
+        null,
+        {
+          type: "guardrail",
+          name: "entry_guardrail",
+          triggered: false,
+        },
+      );
 
       await processor.onTraceStart(trace);
       await processor.onSpanStart(guardrailSpan);
@@ -946,11 +1004,16 @@ describe("OpenAIAgentsTracingProcessor", () => {
       const trace = createMockTrace("trace-guard-2", "Test Agent", {
         metadata: { ls_agent_type: "root" },
       });
-      const guardrailSpan = createMockSpan("trace-guard-2", "span-guard-2", null, {
-        type: "guardrail",
-        name: "exit_guardrail",
-        triggered: false,
-      });
+      const guardrailSpan = createMockSpan(
+        "trace-guard-2",
+        "span-guard-2",
+        null,
+        {
+          type: "guardrail",
+          name: "exit_guardrail",
+          triggered: false,
+        },
+      );
 
       await processor.onTraceStart(trace);
       await processor.onSpanStart(guardrailSpan);
@@ -960,6 +1023,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
 
       const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
       const guardNode = tree.nodes.find((n) => n.includes("exit_guardrail"));
+      expect(guardNode).toBeDefined();
       if (guardNode) {
         expect(tree.data[guardNode].extra?.metadata?.ls_agent_type).toBe(
           "middleware",
@@ -968,11 +1032,15 @@ describe("OpenAIAgentsTracingProcessor", () => {
     });
 
     test.each(["middleware", "subagent", "compaction"] as const)(
-      "guardrail preserves user-supplied '%s' narrowing tag",
+      "guardrail keeps a user-supplied '%s' tag",
       async (userTag) => {
-        const trace = createMockTrace(`trace-guard-3-${userTag}`, "Test Agent", {
-          metadata: { ls_agent_type: userTag },
-        });
+        const trace = createMockTrace(
+          `trace-guard-3-${userTag}`,
+          "Test Agent",
+          {
+            metadata: { ls_agent_type: userTag },
+          },
+        );
         const guardrailSpan = createMockSpan(
           `trace-guard-3-${userTag}`,
           `span-guard-3-${userTag}`,
@@ -994,6 +1062,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
         const guardNode = tree.nodes.find((n) =>
           n.includes(`named_guardrail_${userTag}`),
         );
+        expect(guardNode).toBeDefined();
         if (guardNode) {
           expect(tree.data[guardNode].extra?.metadata?.ls_agent_type).toBe(
             userTag,

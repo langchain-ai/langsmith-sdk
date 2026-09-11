@@ -490,12 +490,20 @@ function createResponsesUsageMetadata(
   return result;
 }
 
+/**
+ * Pick an ls_agent_type for a span, or undefined to leave it as is.
+ *
+ * A more specific type already on the run wins; then guardrails are
+ * middleware; then an agent running under any tool is a subagent. The tool can
+ * be one the SDK created or one the user wrapped themselves.
+ */
 function _resolveOpenAIAgentsLsAgentType(
   spanData: SpanData,
   parentRun: RunTree,
   existingTag: unknown,
 ): "middleware" | "subagent" | undefined {
-  // If the user already set a more specific type, keep it.
+  // Keep a more specific type if one is already set. An inherited "root" is
+  // not kept, so it can be replaced below.
   if (
     typeof existingTag === "string" &&
     NON_ROOT_LS_AGENT_TYPES.has(existingTag)
@@ -792,8 +800,8 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       return;
     }
 
-    // Agents reached by a handoff take over the conversation rather than run
-    // as a tool, so they are left untagged.
+    // An agent reached by a handoff stays in whatever conversation it was
+    // handed off within: untagged at the top level, subagent inside a tool.
     if (!childRun.extra) childRun.extra = {};
     if (!childRun.extra.metadata) childRun.extra.metadata = {};
     const meta = childRun.extra.metadata as Record<string, unknown>;

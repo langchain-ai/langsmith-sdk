@@ -179,7 +179,7 @@ def test_subagent_stamps_when_agent_parent_is_tool():
     assert _run_span_stamp(_agent_span_data(), tool_run) == "subagent"
 
 
-def test_subagent_stamps_when_tool_is_ancestor_via_intermediate_chain():
+def test_subagent_stamps_when_the_tool_is_further_above():
     # When an agent runs as a tool, an extra run sits between the tool and
     # the agent.
     tool_run = _make_run("tool")
@@ -187,11 +187,17 @@ def test_subagent_stamps_when_tool_is_ancestor_via_intermediate_chain():
     assert _run_span_stamp(_agent_span_data(), chain_run) == "subagent"
 
 
-def test_agent_without_tool_ancestor_is_not_tagged():
-    # Agents reached by a handoff have no tool above them, so they are left
-    # untagged.
+def test_agent_with_no_tool_above_it_is_not_tagged():
     root_chain = _make_run("chain")
     assert _run_span_stamp(_agent_span_data(), root_chain) is None
+
+
+def test_handoff_agent_inside_a_tool_is_tagged_subagent():
+    # A handoff opens a new agent run beside the one it replaced, so an agent
+    # handed off to inside a tool still has that tool above it.
+    tool_run = _make_run("tool")
+    chain_run = _make_run("chain", parent_run=tool_run)
+    assert _run_span_stamp(_agent_span_data(), chain_run) == "subagent"
 
 
 def test_subagent_overrides_inherited_root():
@@ -200,12 +206,11 @@ def test_subagent_overrides_inherited_root():
     assert tag == "subagent"
 
 
-@pytest.mark.parametrize("narrowing_tag", ["middleware", "compaction", "subagent"])
-def test_subagent_preserves_user_narrowing_tag(narrowing_tag):
+@pytest.mark.parametrize("user_tag", ["middleware", "compaction", "subagent"])
+def test_subagent_keeps_user_supplied_tag(user_tag):
     tool_run = _make_run("tool")
     assert (
-        _run_span_stamp(_agent_span_data(), tool_run, existing_tag=narrowing_tag)
-        == narrowing_tag
+        _run_span_stamp(_agent_span_data(), tool_run, existing_tag=user_tag) == user_tag
     )
 
 
@@ -225,10 +230,10 @@ def test_guardrail_overrides_inherited_root():
     )
 
 
-@pytest.mark.parametrize("narrowing_tag", ["middleware", "subagent", "compaction"])
-def test_guardrail_preserves_user_narrowing_tag(narrowing_tag):
+@pytest.mark.parametrize("user_tag", ["middleware", "subagent", "compaction"])
+def test_guardrail_keeps_user_supplied_tag(user_tag):
     root_chain = _make_run("chain")
     assert (
-        _run_span_stamp(_guardrail_span_data(), root_chain, existing_tag=narrowing_tag)
-        == narrowing_tag
+        _run_span_stamp(_guardrail_span_data(), root_chain, existing_tag=user_tag)
+        == user_tag
     )
