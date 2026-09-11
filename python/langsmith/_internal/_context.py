@@ -12,6 +12,10 @@ else:
     RunTree = Any  # type: ignore[assignment]
 
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
+_AGENT_ID = contextvars.ContextVar[Optional[str]]("_AGENT_ID", default=None)
+_AGENT_ENVIRONMENT = contextvars.ContextVar[Optional[str]](
+    "_AGENT_ENVIRONMENT", default=None
+)
 _TAGS = contextvars.ContextVar[Optional[list[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[dict[str, Any]]]("_METADATA", default=None)
 
