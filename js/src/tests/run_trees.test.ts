@@ -758,8 +758,8 @@ describe("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", () => {
 });
 
 describe.each([
-  ["LANGSMITH_ENVIRONMENT", "agent_environment"],
-  ["LANGSMITH_AGENT_KEY", "agent_key"],
+  ["LANGSMITH_AGENT_ENVIRONMENT", "agent_environment"],
+  ["LANGSMITH_AGENT_ID", "agent_id"],
 ])("%s", (langSmithVar, field) => {
   const langChainVar = langSmithVar.replace("LANGSMITH_", "LANGCHAIN_");
   const originalLangSmithValue = process.env[langSmithVar];

@@ -463,30 +463,30 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def get_tracer_environment() -> Optional[str]:
+def get_tracer_agent_environment() -> Optional[str]:
     """Get the agent environment for a LangSmith tracer.
 
-    Read from ``LANGSMITH_ENVIRONMENT``. Unlike the project, this has no default:
-    when unset the run is ingested without an environment and the server picks
-    one.
+    Read from ``LANGSMITH_AGENT_ENVIRONMENT``. Unlike the project, this has no
+    default: when unset the run is ingested without an environment and the
+    server picks one.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return get_env_var("ENVIRONMENT")
+    return get_env_var("AGENT_ENVIRONMENT")
 
 
 @functools.lru_cache(maxsize=1)
-def get_tracer_agent_key() -> Optional[str]:
-    """Get the agent key for a LangSmith tracer.
+def get_tracer_agent_id() -> Optional[str]:
+    """Get the agent ID for a LangSmith tracer.
 
-    Read from ``LANGSMITH_AGENT_KEY``. This is an agent identifier, not a
-    credential: the server resolves the agent by this key and creates one if it
+    Read from ``LANGSMITH_AGENT_ID``. This is an agent identifier, not a
+    credential: the server resolves the agent by this ID and creates one if it
     doesn't exist yet. Like the environment, it has no default: when unset the
-    run is ingested without an agent key and addressed by project instead.
+    run is ingested without an agent ID and addressed by project instead.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return get_env_var("AGENT_KEY")
+    return get_env_var("AGENT_ID")
 
 
 class FilterPoolFullWarning(logging.Filter):
