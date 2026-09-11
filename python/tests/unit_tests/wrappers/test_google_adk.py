@@ -530,8 +530,14 @@ def _raw_part_ids(llm_request):
             ["ls-adk-0", "call_0"],
             ["ls-adk-0", "call_0"],
         ),
+        # An answered call must not be re-paired with a later stripped result.
+        (
+            [("adk-1", "adk-1"), (None, None)],
+            ["adk-1", "ls-adk-0"],
+            ["adk-1", "ls-adk-0"],
+        ),
     ],
-    ids=["call-id-only", "result-id-only", "no-collision"],
+    ids=["call-id-only", "result-id-only", "no-collision", "mixed-history"],
 )
 def test_partial_tool_call_ids(ids, expected_calls, expected_results):
     """An id present on one side only must not mis-pair the other."""

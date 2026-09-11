@@ -132,7 +132,15 @@ class ToolIdState:
         """Return the id of the call a tool result answers, or "" if unknown."""
         pending = self._unanswered[tool_result.get("name", "")]
         own_id = tool_result.get("tool_use_id")
-        return str(own_id or (pending.popleft() if pending else ""))
+        if own_id:
+            # Drop the call this answers, so a later result whose id ADK stripped
+            # cannot re-pair with it.
+            try:
+                pending.remove(str(own_id))
+            except ValueError:
+                pass
+            return str(own_id)
+        return str(pending.popleft() if pending else "")
 
 
 def convert_llm_request_to_messages(
