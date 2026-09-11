@@ -67,7 +67,7 @@ export interface Issue {
 
   fix_prompt?: string;
 
-  fix_verification?: unknown;
+  fix_verification?: Issue.FixVerification;
 
   last_seen_at?: string;
 
@@ -105,10 +105,28 @@ export interface Issue {
 
   updated_at?: string;
 
+  validation_result?: Issue.ValidationResult;
+
   watching_since?: string;
 }
 
 export namespace Issue {
+  export interface FixVerification {
+    attempt?: number;
+
+    parent_deployment_id?: string;
+
+    preview_deployment_id?: string;
+
+    reason?: string;
+
+    root_trace_ids?: Array<string>;
+
+    status?: 'awaiting_preview' | 'verifying' | 'passed' | 'failed' | 'inconclusive' | 'timeout' | 'error';
+
+    updated_at?: string;
+  }
+
   export interface LinearContext {
     github_pr_urls?: Array<string>;
 
@@ -131,6 +149,20 @@ export namespace Issue {
     state?: 'pending' | 'synced' | 'failed' | 'auth_required' | 'paused';
 
     url?: string;
+  }
+
+  export interface ValidationResult {
+    active_revision_id?: string;
+
+    completed_at?: string;
+
+    deployment_id?: string;
+
+    outcome?: 'reproduced' | 'not_reproduced' | 'inconclusive' | 'error';
+
+    reason?: string;
+
+    root_trace_ids?: Array<string>;
   }
 }
 
