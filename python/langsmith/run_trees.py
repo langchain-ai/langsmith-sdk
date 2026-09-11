@@ -204,6 +204,8 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
+LANGSMITH_AGENT_ID = sys.intern(f"{LANGSMITH_PREFIX}agent-id")
+LANGSMITH_AGENT_ENVIRONMENT = sys.intern(f"{LANGSMITH_PREFIX}agent-environment")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -1287,6 +1289,10 @@ class RunTree(ls_schemas.RunBase):
             init_args["tags"] = tags
         if baggage.project_name:
             init_args["project_name"] = baggage.project_name
+        elif baggage.agent_id:
+            # One mode survives the hop, and the project still wins.
+            init_args["agent_id"] = baggage.agent_id
+            init_args["agent_environment"] = baggage.agent_environment
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
@@ -1307,6 +1313,8 @@ class RunTree(ls_schemas.RunBase):
             tags=self.tags,
             project_name=self.session_name,
             replicas=self.replicas,
+            agent_id=self.agent_id,
+            agent_environment=self.agent_environment,
         )
         headers["baggage"] = baggage.to_header()
         return headers
@@ -1328,12 +1336,16 @@ class _Baggage:
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
+        agent_id: Optional[str] = None,
+        agent_environment: Optional[str] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
         self.project_name = project_name
         self.replicas = replicas or []
+        self.agent_id = agent_id
+        self.agent_environment = agent_environment
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -1343,6 +1355,8 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
+        agent_id = None
+        agent_environment = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1353,6 +1367,10 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
+                elif key == LANGSMITH_AGENT_ID:
+                    agent_id = urllib.parse.unquote(value)
+                elif key == LANGSMITH_AGENT_ENVIRONMENT:
+                    agent_environment = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1373,7 +1391,12 @@ class _Baggage:
                             filtered_replica = _filter_replica_for_headers(
                                 cast(WriteReplica, replica_item)
                             )
-                            if filtered_replica.get("project_name"):
+                            # A replica has to name a destination, but either
+                            # mode counts -- requiring a project would silently
+                            # drop agent-addressed replicas.
+                            if filtered_replica.get("project_name") or (
+                                filtered_replica.get("agent_id")
+                            ):
                                 parsed_replicas.append(filtered_replica)
                         else:
                             logger.warning(
@@ -1385,7 +1408,12 @@ class _Baggage:
             logger.warning(f"Error parsing baggage header: {e}")
 
         return cls(
-            metadata=metadata, tags=tags, project_name=project_name, replicas=replicas
+            metadata=metadata,
+            tags=tags,
+            project_name=project_name,
+            replicas=replicas,
+            agent_id=agent_id,
+            agent_environment=agent_environment,
         )
 
     @classmethod
@@ -1413,6 +1441,13 @@ class _Baggage:
         if self.project_name:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
+            )
+        if self.agent_id:
+            items.append(f"{LANGSMITH_AGENT_ID}={urllib.parse.quote(self.agent_id)}")
+        if self.agent_environment:
+            items.append(
+                f"{LANGSMITH_AGENT_ENVIRONMENT}="
+                f"{urllib.parse.quote(self.agent_environment)}"
             )
         return ",".join(items)
 
