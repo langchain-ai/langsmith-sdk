@@ -14,7 +14,11 @@ from langsmith._internal._package_version import get_package_version
 from langsmith.run_helpers import get_current_run_tree, set_tracing_parent, trace
 
 from ._config import get_tracing_config
-from ._messages import convert_llm_request_to_messages, has_function_calls
+from ._messages import (
+    ToolIdState,
+    convert_llm_request_to_messages,
+    has_function_calls,
+)
 from ._usage import extract_model_name, extract_usage_from_response
 
 _LS_PROVIDER_VERTEXAI = "google_vertexai"
@@ -353,6 +357,7 @@ async def wrap_flow_call_llm_async(
     )
 
     posted = False
+    id_state = ToolIdState()
 
     def _capture_inputs_and_post() -> None:
         """Capture the final llm_request state and post the run (idempotent)."""
@@ -361,7 +366,11 @@ async def wrap_flow_call_llm_async(
             return
 
         model_name = extract_model_name(llm_request) if llm_request else None
-        messages = convert_llm_request_to_messages(llm_request) if llm_request else None
+        messages = (
+            convert_llm_request_to_messages(llm_request, id_state)
+            if llm_request
+            else None
+        )
         tools = extract_tools_from_llm_request(llm_request) if llm_request else []
 
         if messages:
@@ -421,16 +430,22 @@ async def wrap_flow_call_llm_async(
             and content_source.content
         ):
             parts = getattr(content_source.content, "parts", None) or []
-            text_parts, tool_calls = [], []
+            text_parts: list[str] = []
+            tool_calls: list[dict[str, Any]] = []
 
-            for i, part in enumerate(parts):
+            for part in parts:
                 if hasattr(part, "text") and part.text:
                     text_parts.append(str(part.text))
                 elif hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
                     tool_calls.append(
                         {
-                            "id": f"call_{i}",
+                            "id": id_state.call_id(
+                                {
+                                    "id": getattr(fc, "id", None),
+                                    "name": getattr(fc, "name", ""),
+                                }
+                            ),
                             "type": "function",
                             "function": {
                                 "name": getattr(fc, "name", ""),
