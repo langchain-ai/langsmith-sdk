@@ -180,17 +180,16 @@ def test_subagent_stamps_when_agent_parent_is_tool():
 
 
 def test_subagent_stamps_when_tool_is_ancestor_via_intermediate_chain():
-    # openai-agents wraps Runner.run's nested trace in a chain run between the
-    # as_tool function span and the inner AgentSpanData. Ancestry walk must
-    # still detect the tool ancestor.
+    # as_tool topology: the agent's immediate parent is the nested trace's
+    # chain run, not the tool itself.
     tool_run = _make_run("tool")
     chain_run = _make_run("chain", parent_run=tool_run)
     assert _run_span_stamp(_agent_span_data(), chain_run) == "subagent"
 
 
 def test_agent_without_tool_ancestor_is_not_tagged():
-    # Handoff agents live directly under the trace root chain; no tool ancestor
-    # means no structural tag (they inherit root via createChild propagation).
+    # Handoff agents sit under the trace root chain, so there is no tool
+    # ancestor and no structural tag.
     root_chain = _make_run("chain")
     assert _run_span_stamp(_agent_span_data(), root_chain) is None
 
@@ -214,7 +213,6 @@ def test_subagent_preserves_user_narrowing_tag(narrowing_tag):
 
 
 def test_guardrail_stamps_middleware():
-    # Outer trace root is a chain; the guardrail span is stamped directly.
     root_chain = _make_run("chain")
     assert _run_span_stamp(_guardrail_span_data(), root_chain) == "middleware"
 

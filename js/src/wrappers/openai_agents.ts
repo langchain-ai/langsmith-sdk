@@ -490,6 +490,31 @@ function createResponsesUsageMetadata(
   return result;
 }
 
+function _resolveOpenAIAgentsLsAgentType(
+  spanData: SpanData,
+  parentRun: RunTree,
+  existingTag: unknown,
+): "middleware" | "subagent" | undefined {
+  // A user-supplied narrowing tag wins over structural detection.
+  if (
+    typeof existingTag === "string" &&
+    NON_ROOT_LS_AGENT_TYPES.has(existingTag)
+  ) {
+    return undefined;
+  }
+  if (spanData.type === "guardrail") return "middleware";
+  // Walk the ancestor chain, not just the immediate parent: asTool()
+  // inserts a chain run between the tool and the agent it wraps.
+  if (spanData.type === "agent") {
+    let cursor: RunTree | undefined = parentRun;
+    while (cursor !== undefined) {
+      if (cursor.run_type === "tool") return "subagent";
+      cursor = cursor.parent_run;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Tracing processor for the [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/).
  *
@@ -534,34 +559,6 @@ function createResponsesUsageMetadata(
  * console.log(result.finalOutput);
  * ```
  */
-
-// Structural ls_agent_type resolver: GuardrailSpanData -> middleware,
-// AgentSpanData under a tool-typed ancestor -> subagent. Walks the LangSmith
-// parent chain (rather than checking only the immediate parent) to tolerate
-// the intermediate chain run that openai-agents inserts when Runner.run is
-// invoked from asTool. User-supplied narrowing tags (middleware, subagent,
-// compaction) are preserved.
-function _resolveOpenAIAgentsLsAgentType(
-  spanData: SpanData,
-  parentRun: RunTree,
-  existingTag: unknown,
-): "middleware" | "subagent" | undefined {
-  if (
-    typeof existingTag === "string" &&
-    NON_ROOT_LS_AGENT_TYPES.has(existingTag)
-  ) {
-    return undefined;
-  }
-  if (spanData.type === "guardrail") return "middleware";
-  if (spanData.type === "agent") {
-    let cursor: RunTree | undefined = parentRun;
-    while (cursor !== undefined) {
-      if (cursor.run_type === "tool") return "subagent";
-      cursor = cursor.parent_run;
-    }
-  }
-  return undefined;
-}
 
 export class OpenAIAgentsTracingProcessor implements TracingProcessor {
   private client: Client;
@@ -795,10 +792,8 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       return;
     }
 
-    // Structural ls_agent_type stamping: guardrail -> middleware, agent under
-    // a tool-typed ancestor -> subagent. Handoff agents are not tagged (they
-    // take over the conversation rather than being called as tools, so their
-    // agent span has no tool ancestor and the resolver returns undefined).
+    // Handoff agents take over the conversation instead of being called as
+    // tools, so they have no tool ancestor and stay untagged.
     if (!childRun.extra) childRun.extra = {};
     if (!childRun.extra.metadata) childRun.extra.metadata = {};
     const meta = childRun.extra.metadata as Record<string, unknown>;

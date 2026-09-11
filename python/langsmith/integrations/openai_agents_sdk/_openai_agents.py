@@ -104,15 +104,13 @@ if HAVE_AGENTS:
         parent_run: "rt.RunTree",
         existing_tag: Optional[str],
     ) -> Optional[str]:
-        # User-supplied narrowing tag wins over structural detection.
+        # A user-supplied narrowing tag wins over structural detection.
         if existing_tag in NON_ROOT_LS_AGENT_TYPES:
             return None
         if isinstance(span.span_data, tracing.GuardrailSpanData):
             return "middleware"
-        # Agent-as-tool: any tool-typed ancestor in the LangSmith run tree marks
-        # this as a subagent. Walking the chain (rather than checking only the
-        # immediate parent) tolerates the intermediate chain run that
-        # openai-agents inserts when Runner.run is invoked from as_tool.
+        # Walk the ancestor chain, not just the immediate parent: as_tool()
+        # inserts a chain run between the tool and the agent it wraps.
         if isinstance(span.span_data, tracing.AgentSpanData):
             cursor: Optional[rt.RunTree] = parent_run
             while cursor is not None:
@@ -340,11 +338,8 @@ if HAVE_AGENTS:
                     else None,
                 )
 
-                # Structural ls_agent_type stamping: GuardrailSpanData -> middleware,
-                # AgentSpanData under a tool-typed ancestor -> subagent. Handoff
-                # agents are not tagged (they take over the conversation rather
-                # than being called as tools, so their AgentSpanData has no
-                # tool ancestor and the resolver returns None).
+                # Handoff agents take over the conversation instead of being
+                # called as tools, so they have no tool ancestor and stay untagged.
                 metadata = child_run.extra.setdefault("metadata", {})
                 structural_tag = _resolve_openai_agents_ls_agent_type(
                     span, parent_run, metadata.get("ls_agent_type")

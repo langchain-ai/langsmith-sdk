@@ -875,11 +875,8 @@ describe("OpenAIAgentsTracingProcessor", () => {
     });
 
     test("subagent detection walks past an intermediate chain run to find a tool ancestor", async () => {
-      // Emulates the openai-agents topology when Runner.run is invoked from
-      // inside an asTool wrapper: outer function span -> nested inner trace
-      // (chain in LangSmith) -> agent span. The agent span's immediate parent
-      // is the chain, not the tool, so the resolver must walk the ancestor
-      // chain to catch the tool.
+      // asTool topology: function span -> nested trace (chain) -> agent span.
+      // The agent's immediate parent is the chain, not the tool.
       const outerTrace = createMockTrace("trace-nested-outer", "Outer");
       const functionSpan = createMockSpan(
         "trace-nested-outer",
@@ -902,8 +899,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
 
       await processor.onTraceStart(outerTrace);
       await processor.onSpanStart(functionSpan);
-      // Nested trace inherits the tool ALS context set by onSpanStart(function),
-      // so its trace root is created via createChild on the tool run.
+      // The nested trace root is created via createChild on the tool run.
       await processor.onTraceStart(innerTrace);
       await processor.onSpanStart(subagentSpan);
       await processor.onSpanEnd(subagentSpan);
