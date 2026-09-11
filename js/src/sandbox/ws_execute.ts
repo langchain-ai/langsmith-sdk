@@ -421,6 +421,7 @@ export async function runWsStream(
     timeout = 60,
     env,
     cwd,
+    runConfig,
     shell = "/bin/bash",
     onStdout,
     onStderr,
@@ -455,6 +456,7 @@ export async function runWsStream(
       };
       if (env) payload.env = env;
       if (cwd) payload.cwd = cwd;
+      if (runConfig) payload.run_config = runConfig;
       if (commandId) payload.command_id = commandId;
       if (pty) payload.pty = true;
 

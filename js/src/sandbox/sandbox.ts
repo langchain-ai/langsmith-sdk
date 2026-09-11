@@ -10,6 +10,7 @@ import type {
   GenerateDownloadURLOptions,
   RunOptions,
   SandboxData,
+  SandboxRunConfig,
   Snapshot,
   StartSandboxOptions,
 } from "./types.js";
@@ -19,7 +20,7 @@ import {
   LangSmithSandboxRetryableConnectionError,
   LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
-import { handleSandboxHttpError } from "./helpers.js";
+import { handleSandboxHttpError, validateCommandRunConfig } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
 import {
   connectDeadline,
@@ -89,6 +90,12 @@ export class Sandbox {
   readonly mem_bytes?: number;
   /** Root filesystem capacity in bytes. */
   readonly fs_capacity_bytes?: number;
+  /**
+   * What commands run with — the snapshot's run config, with any create or
+   * update override merged in. Absent on sandboxes created before run
+   * configs were recorded.
+   */
+  readonly run_config?: SandboxRunConfig;
 
   private _client: SandboxClient;
 
@@ -108,6 +115,7 @@ export class Sandbox {
     this.vCpus = data.vcpus;
     this.mem_bytes = data.mem_bytes;
     this.fs_capacity_bytes = data.fs_capacity_bytes;
+    this.run_config = data.run_config;
     this._client = client;
   }
 
@@ -191,6 +199,11 @@ export class Sandbox {
       ...restOptions
     } = options;
     const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
+    validateCommandRunConfig(
+      restOptions.runConfig,
+      restOptions.env,
+      restOptions.cwd,
+    );
 
     if (!wait || hasCallbacks) {
       // WebSocket required for streaming / non-blocking
@@ -247,6 +260,7 @@ export class Sandbox {
       timeout = 60,
       env,
       cwd,
+      runConfig,
       shell = "/bin/bash",
       onStdout,
       onStderr,
@@ -278,6 +292,7 @@ export class Sandbox {
           timeout,
           env,
           cwd,
+          runConfig,
           shell,
           commandId: execCommandId,
           idleTimeout,
@@ -344,7 +359,7 @@ export class Sandbox {
     command: string,
     options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {},
   ): Promise<ExecutionResult> {
-    const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
+    const { timeout = 60, env, cwd, runConfig, shell = "/bin/bash" } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/execute`;
 
@@ -358,6 +373,9 @@ export class Sandbox {
     }
     if (cwd !== undefined) {
       payload.cwd = cwd;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._client._fetch(url, {

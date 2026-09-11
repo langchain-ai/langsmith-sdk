@@ -26,6 +26,7 @@ SANDBOX_DATA = {
     "vcpus": 2,
     "mem_bytes": 1024**3,
     "fs_capacity_bytes": 10 * 1024**3,
+    "run_config": {"user": "app", "work_dir": "/srv"},
 }
 
 DATA_FIELDS = list(SANDBOX_DATA)

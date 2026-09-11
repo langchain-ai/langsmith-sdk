@@ -22,6 +22,10 @@ from langsmith.sandbox._models import (
     Snapshot,
     _StreamEndedBeforeStarted,
 )
+from langsmith.sandbox._run_config import (
+    SandboxRunConfig,
+    validate_command_run_config,
+)
 from langsmith.sandbox._tunnel import Tunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
@@ -74,6 +78,10 @@ class Sandbox:
         vcpus: Number of vCPUs allocated.
         mem_bytes: Memory allocation in bytes.
         fs_capacity_bytes: Root filesystem capacity in bytes.
+        run_config: What commands run with, as ``{"user": ..., "work_dir":
+            ..., "env_vars": {...}}`` — the snapshot's, with any create or
+            update override merged in. ``None`` on sandboxes created before
+            run configs were recorded.
 
     Example:
         with client.sandbox(snapshot_id="<snapshot-uuid>") as sandbox:
@@ -96,6 +104,7 @@ class Sandbox:
     vcpus: Optional[int] = None
     mem_bytes: Optional[int] = None
     fs_capacity_bytes: Optional[int] = None
+    run_config: Optional[SandboxRunConfig] = None
 
     # Internal fields (not from API)
     _client: SandboxClient = field(repr=False, default=None)  # type: ignore
@@ -133,6 +142,7 @@ class Sandbox:
             vcpus=data.get("vcpus"),
             mem_bytes=data.get("mem_bytes"),
             fs_capacity_bytes=data.get("fs_capacity_bytes"),
+            run_config=data.get("run_config"),
             _client=client,
             _auto_delete=auto_delete,
         )
@@ -169,6 +179,7 @@ class Sandbox:
             vcpus=self.vcpus,
             mem_bytes=self.mem_bytes,
             fs_capacity_bytes=self.fs_capacity_bytes,
+            run_config=self.run_config,
             _client=client if client is not None else self._client.to_async(),
             _auto_delete=False,
         )
@@ -220,6 +231,7 @@ class Sandbox:
         timeout: int = ...,
         env: Optional[dict[str, str]] = ...,
         cwd: Optional[str] = ...,
+        run_config: Optional[SandboxRunConfig] = ...,
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
@@ -239,6 +251,7 @@ class Sandbox:
         timeout: int = ...,
         env: Optional[dict[str, str]] = ...,
         cwd: Optional[str] = ...,
+        run_config: Optional[SandboxRunConfig] = ...,
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
@@ -257,6 +270,7 @@ class Sandbox:
         timeout: int = 60,
         env: Optional[dict[str, str]] = None,
         cwd: Optional[str] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         shell: str = "/bin/bash",
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
@@ -272,8 +286,14 @@ class Sandbox:
         Args:
             command: Shell command to execute.
             timeout: Command timeout in seconds.
-            env: Environment variables to set for the command.
-            cwd: Working directory for command execution. If None, uses sandbox default.
+            env: Deprecated, use ``run_config["env_vars"]``. Environment
+                variables to set for the command.
+            cwd: Deprecated, use ``run_config["work_dir"]``. Working directory
+                for command execution. If None, uses the sandbox's.
+            run_config: What this one command runs with, as ``{"user": ...,
+                "work_dir": ..., "env_vars": {...}}``, layered over the
+                sandbox's own run config. Cannot be combined with the
+                deprecated ``env`` and ``cwd``.
             shell: Shell to use for command execution. Defaults to "/bin/bash".
             on_stdout: Callback invoked with each stdout chunk as it arrives.
                 Blocks until the command completes and returns ExecutionResult.
@@ -319,6 +339,7 @@ class Sandbox:
                 "Cannot combine wait=False with on_stdout/on_stderr callbacks. "
                 "Use wait=False and iterate the CommandHandle, or use callbacks."
             )
+        validate_command_run_config(run_config, env, cwd)
 
         self._require_dataplane_url()
 
@@ -330,6 +351,7 @@ class Sandbox:
                 timeout=timeout,
                 env=env,
                 cwd=cwd,
+                run_config=run_config,
                 shell=shell,
                 wait=wait,
                 on_stdout=on_stdout,
@@ -349,6 +371,7 @@ class Sandbox:
                 timeout=timeout,
                 env=env,
                 cwd=cwd,
+                run_config=run_config,
                 shell=shell,
                 wait=True,
                 on_stdout=None,
@@ -364,6 +387,7 @@ class Sandbox:
             timeout=timeout,
             env=env,
             cwd=cwd,
+            run_config=run_config,
             shell=shell,
             headers=headers,
         )
@@ -375,6 +399,7 @@ class Sandbox:
         timeout: int,
         env: Optional[dict[str, str]],
         cwd: Optional[str],
+        run_config: Optional[SandboxRunConfig],
         shell: str,
         wait: bool,
         on_stdout: Optional[Callable[[str], Any]],
@@ -405,6 +430,7 @@ class Sandbox:
             "timeout": timeout,
             "env": env,
             "cwd": cwd,
+            "run_config": run_config,
             "shell": shell,
             "idle_timeout": idle_timeout,
             "kill_on_disconnect": kill_on_disconnect,
@@ -468,6 +494,7 @@ class Sandbox:
         timeout: int,
         env: Optional[dict[str, str]],
         cwd: Optional[str],
+        run_config: Optional[SandboxRunConfig],
         shell: str,
         headers: RequestHeaders,
     ) -> ExecutionResult:
@@ -483,6 +510,8 @@ class Sandbox:
             payload["env"] = env
         if cwd is not None:
             payload["cwd"] = cwd
+        if run_config is not None:
+            payload["run_config"] = run_config
 
         try:
             response = self._client._http.post(

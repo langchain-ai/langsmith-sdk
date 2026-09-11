@@ -18,6 +18,7 @@ import {
   LangSmithSandboxOperationError,
   LangSmithValidationError,
 } from "./errors.js";
+import type { SandboxRunConfig } from "./types.js";
 
 // =============================================================================
 // Input validation
@@ -46,6 +47,104 @@ export function validateTtl(value: number | undefined, name: string): void {
       name,
     );
   }
+}
+
+const RUN_CONFIG_KEYS = ["user", "work_dir", "env_vars"];
+
+/**
+ * Validate a run config's shape.
+ *
+ * @param runConfig - Run config to check (`undefined` passes).
+ * @param field - Parameter name for error messages.
+ * @throws LangSmithValidationError if a key, `work_dir` or `env_vars` is invalid.
+ */
+export function validateRunConfig(
+  runConfig: SandboxRunConfig | undefined,
+  field = "runConfig",
+): void {
+  if (runConfig === undefined) {
+    return;
+  }
+  if (typeof runConfig !== "object" || Array.isArray(runConfig)) {
+    throw new LangSmithValidationError(`${field} must be an object`, field);
+  }
+  const unknown = Object.keys(runConfig).filter(
+    (key) => !RUN_CONFIG_KEYS.includes(key),
+  );
+  if (unknown.length > 0) {
+    throw new LangSmithValidationError(
+      `${field} has unsupported keys: ${unknown.sort().join(", ")}. ` +
+        `Supported: ${RUN_CONFIG_KEYS.join(", ")}`,
+      field,
+    );
+  }
+  const { user, work_dir: workDir, env_vars: envVars } = runConfig;
+  if (user !== undefined && (typeof user !== "string" || user.trim() === "")) {
+    throw new LangSmithValidationError(
+      `${field}.user must be a non-empty string`,
+      field,
+    );
+  }
+  if (workDir !== undefined) {
+    if (typeof workDir !== "string" || workDir.trim() === "") {
+      throw new LangSmithValidationError(
+        `${field}.work_dir must be a non-empty string`,
+        field,
+      );
+    }
+    if (!workDir.startsWith("/")) {
+      throw new LangSmithValidationError(
+        `${field}.work_dir must be an absolute path`,
+        field,
+      );
+    }
+  }
+  if (envVars !== undefined) {
+    if (typeof envVars !== "object" || Array.isArray(envVars)) {
+      throw new LangSmithValidationError(
+        `${field}.env_vars must be an object`,
+        field,
+      );
+    }
+    for (const [name, value] of Object.entries(envVars)) {
+      if (typeof value !== "string") {
+        throw new LangSmithValidationError(
+          `${field}.env_vars.${name} must be a string`,
+          field,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Validate a per-command run config against the deprecated `env` and `cwd`.
+ *
+ * The server rejects a request carrying both spellings, so reject it here
+ * with a message that names the replacement.
+ *
+ * @param runConfig - Per-command run config.
+ * @param env - Deprecated per-command environment.
+ * @param cwd - Deprecated per-command working directory.
+ * @throws LangSmithValidationError if combined, or if the run config is invalid.
+ */
+export function validateCommandRunConfig(
+  runConfig: SandboxRunConfig | undefined,
+  env: Record<string, string> | undefined,
+  cwd: string | undefined,
+): void {
+  if (runConfig !== undefined && (env !== undefined || cwd !== undefined)) {
+    const combined = [
+      ...(env !== undefined ? ["env"] : []),
+      ...(cwd !== undefined ? ["cwd"] : []),
+    ].join(" and ");
+    throw new LangSmithValidationError(
+      `runConfig cannot be combined with ${combined}; env is deprecated in ` +
+        "favour of runConfig.env_vars and cwd in favour of runConfig.work_dir",
+      "runConfig",
+    );
+  }
+  validateRunConfig(runConfig);
 }
 
 // =============================================================================
