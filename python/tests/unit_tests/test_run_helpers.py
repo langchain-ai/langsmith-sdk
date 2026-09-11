@@ -3,12 +3,15 @@ import functools
 import gc
 import inspect
 import json
+import logging
 import os
 import sys
 import time
 import uuid
 import warnings
 import weakref
+from contextlib import closing
+from datetime import datetime, timezone
 from typing import (
     Any,
     AsyncGenerator,
@@ -24,6 +27,7 @@ from typing import (
 from unittest.mock import MagicMock, patch
 
 import pytest
+from openai import AsyncOpenAI
 from requests_toolbelt import MultipartEncoder
 from typing_extensions import Annotated, Literal
 
@@ -47,7 +51,8 @@ from langsmith.run_helpers import (
     tracing_context,
 )
 from langsmith.run_trees import RunTree
-from tests.unit_tests.conftest import parse_request_data
+from langsmith.wrappers import wrap_openai
+from tests.unit_tests.conftest import HttpEndpoint, parse_request_data
 
 
 def _get_calls(
@@ -802,6 +807,67 @@ def test_traceable_stream_records_success_when_context_suppresses(
 
     assert len(ended_runs) == 1
     assert ended_runs[0].error is None
+
+
+@pytest.mark.allow_hosts(["127.0.0.1"])
+async def test_openai_stream_records_error_after_exhaustion(
+    endpoint: HttpEndpoint,
+) -> None:
+    chunk: dict[str, Any] = {
+        "id": "chatcmpl-local",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "local",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": "hello"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    endpoint.responses["/v1/chat/completions"] = (
+        "text/event-stream",
+        f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode(),
+    )
+    with (
+        closing(
+            Client(api_url=endpoint.url, api_key="test", auto_batch_tracing=False)
+        ) as client,
+        tracing_context(enabled=True),
+    ):
+        async with AsyncOpenAI(
+            base_url=f"{endpoint.url}/v1", api_key="test", max_retries=0, timeout=5
+        ) as provider:
+            wrap_openai(provider, tracing_extra={"client": client})
+            stream = await provider.chat.completions.create(
+                model="local",
+                messages=[{"role": "user", "content": "Say hello."}],
+                stream=True,
+            )
+            with pytest.raises(RuntimeError, match="consumer failed after exhaustion"):
+                async with stream:
+                    assert [part.choices[0].delta.content async for part in stream] == [
+                        "hello"
+                    ]
+                    failed_at: datetime = datetime.now(timezone.utc)
+                    raise RuntimeError("consumer failed after exhaustion")
+
+    [run] = [
+        json.loads(body) for method, _, body in endpoint.requests if method == "PATCH"
+    ]
+    error: Optional[str] = run.get("error")
+    logging.getLogger(__name__).info(
+        "Collected stream run: error=%r end_time=%s body_error_at=%s output=%r",
+        error,
+        run["end_time"],
+        failed_at.isoformat(),
+        run["outputs"]["choices"][0]["message"]["content"],
+    )
+    assert error is not None
+    assert "RuntimeError('consumer failed after exhaustion')" in error
+    assert datetime.fromisoformat(run["end_time"]) >= failed_at
+    assert run["outputs"]["choices"][0]["message"]["content"] == "hello"
 
 
 @patch("langsmith.run_trees.Client", autospec=True)

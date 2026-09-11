@@ -4,7 +4,76 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+from collections.abc import Iterator
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List
+
+import pytest
+
+
+class HttpEndpoint:
+    def __init__(self) -> None:
+        self.count = 0
+        self.status: int = HTTPStatus.OK
+        self.retry_after: int | None = None
+        self.url = ""
+        self.responses: dict[str, tuple[str, bytes]] = {}
+        self.requests: list[tuple[str, str, bytes]] = []
+
+
+@pytest.fixture
+def endpoint() -> Iterator[HttpEndpoint]:
+    ep = HttpEndpoint()
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self) -> None:  # noqa: N802
+            # Drain the body first, otherwise the client sees a reset rather
+            # than the status code we are trying to exercise.
+            request_body = b""
+            length = int(self.headers.get("Content-Length") or 0)
+            if length:
+                request_body = self.rfile.read(length)
+            elif self.headers.get("Transfer-Encoding") == "chunked":
+                while True:
+                    size = int(self.rfile.readline().strip() or b"0", 16)
+                    request_body += self.rfile.read(size)
+                    self.rfile.read(2)
+                    if size == 0:
+                        break
+            ep.count += 1
+            ep.requests.append((self.command, self.path, request_body))
+            content_type, body = ep.responses.get(
+                self.path, ("application/json", b"{}")
+            )
+            self.send_response(ep.status)
+            if ep.retry_after is not None:
+                self.send_header("Retry-After", str(ep.retry_after))
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        do_PATCH = do_POST
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(
+        server_address=("127.0.0.1", 0), RequestHandlerClass=Handler
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    ep.url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        yield ep
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def parse_multipart_data(data: bytes) -> Dict[str, Any]:

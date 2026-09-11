@@ -18,9 +18,7 @@ local HTTP server through the real adapter and count sockets hit.
 import json
 import logging
 import re
-import threading
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
 import pytest
@@ -33,55 +31,7 @@ from langsmith._internal._operations import (
 )
 from langsmith.client import Client
 
-
-class _Endpoint:
-    """A stand-in /runs/multipart that returns a canned status and counts hits."""
-
-    def __init__(self):
-        self.count = 0
-        self.status = 200
-        self.retry_after = None
-        self.url = ""
-
-
-@pytest.fixture
-def endpoint(socket_enabled):
-    ep = _Endpoint()
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
-
-        def do_POST(self):  # noqa: N802
-            # Drain the body first, otherwise the client sees a reset rather
-            # than the status code we are trying to exercise.
-            length = int(self.headers.get("Content-Length") or 0)
-            if length:
-                self.rfile.read(length)
-            elif self.headers.get("Transfer-Encoding") == "chunked":
-                while True:
-                    size = int(self.rfile.readline().strip() or b"0", 16)
-                    self.rfile.read(size + 2)
-                    if size == 0:
-                        break
-            ep.count += 1
-            body = b"{}"
-            self.send_response(ep.status)
-            if ep.retry_after is not None:
-                self.send_header("Retry-After", str(ep.retry_after))
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *args):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    ep.url = f"http://127.0.0.1:{server.server_address[1]}"
-    yield ep
-    server.shutdown()
-    server.server_close()
+pytestmark = pytest.mark.allow_hosts(["127.0.0.1"])
 
 
 @pytest.fixture
