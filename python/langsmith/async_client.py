@@ -618,15 +618,15 @@ class AsyncClient:
             **kwargs,
         }
         if run_create.get("agent_environment") is None:
-            if agent_environment := ls_utils.get_tracer_environment():
+            if agent_environment := ls_utils.get_tracer_agent_environment():
                 run_create["agent_environment"] = agent_environment
             else:
                 run_create.pop("agent_environment", None)
-        if run_create.get("agent_key") is None:
-            if agent_key := ls_utils.get_tracer_agent_key():
-                run_create["agent_key"] = agent_key
+        if run_create.get("agent_id") is None:
+            if agent_id := ls_utils.get_tracer_agent_id():
+                run_create["agent_id"] = agent_id
             else:
-                run_create.pop("agent_key", None)
+                run_create.pop("agent_id", None)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )

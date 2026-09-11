@@ -20,7 +20,7 @@ export { overrideFetchImplementation } from "./singletons/fetch.js";
 
 export {
   getDefaultAgentEnvironment,
-  getDefaultAgentKey,
+  getDefaultAgentId,
   getDefaultProjectName,
 } from "./utils/project.js";
 

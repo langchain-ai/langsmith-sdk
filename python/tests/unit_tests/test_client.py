@@ -1174,8 +1174,8 @@ def test_create_run_mutate(
 @pytest.mark.parametrize(
     ("env_var", "field"),
     [
-        ("LANGSMITH_ENVIRONMENT", "agent_environment"),
-        ("LANGSMITH_AGENT_KEY", "agent_key"),
+        ("LANGSMITH_AGENT_ENVIRONMENT", "agent_environment"),
+        ("LANGSMITH_AGENT_ID", "agent_id"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1196,15 +1196,15 @@ def test_create_run_agent_addressing(
     expected: Optional[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`LANGSMITH_ENVIRONMENT` / `LANGSMITH_AGENT_KEY` are ingested on the run."""
+    """`LANGSMITH_AGENT_ENVIRONMENT` / `LANGSMITH_AGENT_ID` land on the run."""
     if env_value is None:
         monkeypatch.delenv(env_var, raising=False)
         monkeypatch.delenv(env_var.replace("LANGSMITH_", "LANGCHAIN_"), raising=False)
     else:
         monkeypatch.setenv(env_var, env_value)
     ls_utils.get_env_var.cache_clear()
-    ls_utils.get_tracer_environment.cache_clear()
-    ls_utils.get_tracer_agent_key.cache_clear()
+    ls_utils.get_tracer_agent_environment.cache_clear()
+    ls_utils.get_tracer_agent_id.cache_clear()
 
     session = mock.Mock()
     session.request = mock.Mock()

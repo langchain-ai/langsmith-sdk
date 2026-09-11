@@ -2458,17 +2458,17 @@ class Client:
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         if not update and run_create.get("agent_environment") is None:
-            # If no environment is provided, fall back to `LANGSMITH_ENVIRONMENT`.
-            if agent_environment := ls_utils.get_tracer_environment():
+            # Fall back to `LANGSMITH_AGENT_ENVIRONMENT` when none is provided.
+            if agent_environment := ls_utils.get_tracer_agent_environment():
                 run_create["agent_environment"] = agent_environment
             else:
                 run_create.pop("agent_environment", None)
-        if not update and run_create.get("agent_key") is None:
-            # If no agent key is provided, fall back to `LANGSMITH_AGENT_KEY`.
-            if agent_key := ls_utils.get_tracer_agent_key():
-                run_create["agent_key"] = agent_key
+        if not update and run_create.get("agent_id") is None:
+            # If no agent ID is provided, fall back to `LANGSMITH_AGENT_ID`.
+            if agent_id := ls_utils.get_tracer_agent_id():
+                run_create["agent_id"] = agent_id
             else:
-                run_create.pop("agent_key", None)
+                run_create.pop("agent_id", None)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:

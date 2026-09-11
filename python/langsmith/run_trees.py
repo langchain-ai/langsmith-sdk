@@ -368,12 +368,12 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     agent_environment: Optional[str] = Field(
-        default_factory=utils.get_tracer_environment,
+        default_factory=utils.get_tracer_agent_environment,
         description="The agent environment to ingest this run into.",
     )
-    agent_key: Optional[str] = Field(
-        default_factory=utils.get_tracer_agent_key,
-        description="The key of the agent to ingest this run into.",
+    agent_id: Optional[str] = Field(
+        default_factory=utils.get_tracer_agent_id,
+        description="The ID of the agent to ingest this run into.",
     )
     extra: dict = Field(default_factory=dict)
     tags: Optional[list[str]] = Field(default_factory=list)
@@ -710,7 +710,7 @@ class RunTree(ls_schemas.RunBase):
             parent_run=self,
             project_name=self.session_name,
             agent_environment=self.agent_environment,
-            agent_key=self.agent_key,
+            agent_id=self.agent_id,
             replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,

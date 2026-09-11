@@ -93,53 +93,40 @@ class LangSmithProjectNameTest(unittest.TestCase):
 
 
 @pytest.mark.parametrize(
-    ("envvars", "expected"),
+    ("getter_name", "suffix"),
     [
-        ({}, None),
-        ({"LANGSMITH_ENVIRONMENT": "production"}, "production"),
-        ({"LANGCHAIN_ENVIRONMENT": "production"}, "production"),
-        # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
-        (
-            {
-                "LANGSMITH_ENVIRONMENT": "production",
-                "LANGCHAIN_ENVIRONMENT": "staging",
-            },
-            "production",
-        ),
-        # Blank is treated as unset, same as every other LangSmith env var.
-        ({"LANGSMITH_ENVIRONMENT": ""}, None),
+        ("get_tracer_agent_environment", "AGENT_ENVIRONMENT"),
+        ("get_tracer_agent_id", "AGENT_ID"),
     ],
 )
-def test_get_tracer_environment(envvars: dict, expected: Optional[str]) -> None:
-    ls_utils.get_env_var.cache_clear()
-    ls_utils.get_tracer_environment.cache_clear()
-    with patch.dict("os.environ", envvars, clear=True):
-        assert ls_utils.get_tracer_environment() == expected
-
-
 @pytest.mark.parametrize(
-    ("envvars", "expected"),
+    ("namespaces", "expected"),
     [
         ({}, None),
-        ({"LANGSMITH_AGENT_KEY": "my-agent"}, "my-agent"),
-        ({"LANGCHAIN_AGENT_KEY": "my-agent"}, "my-agent"),
+        ({"LANGSMITH": "from-langsmith"}, "from-langsmith"),
+        ({"LANGCHAIN": "from-langchain"}, "from-langchain"),
         # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
         (
-            {
-                "LANGSMITH_AGENT_KEY": "my-agent",
-                "LANGCHAIN_AGENT_KEY": "other-agent",
-            },
-            "my-agent",
+            {"LANGSMITH": "from-langsmith", "LANGCHAIN": "from-langchain"},
+            "from-langsmith",
         ),
         # Blank is treated as unset, same as every other LangSmith env var.
-        ({"LANGSMITH_AGENT_KEY": ""}, None),
+        ({"LANGSMITH": ""}, None),
     ],
 )
-def test_get_tracer_agent_key(envvars: dict, expected: Optional[str]) -> None:
+def test_get_tracer_agent_env_vars(
+    getter_name: str,
+    suffix: str,
+    namespaces: dict,
+    expected: Optional[str],
+) -> None:
+    """`LANGSMITH_AGENT_ENVIRONMENT` / `LANGSMITH_AGENT_ID` resolution."""
+    getter = getattr(ls_utils, getter_name)
+    envvars = {f"{ns}_{suffix}": value for ns, value in namespaces.items()}
     ls_utils.get_env_var.cache_clear()
-    ls_utils.get_tracer_agent_key.cache_clear()
+    getter.cache_clear()
     with patch.dict("os.environ", envvars, clear=True):
-        assert ls_utils.get_tracer_agent_key() == expected
+        assert getter() == expected
 
 
 def test_tracing_enabled():

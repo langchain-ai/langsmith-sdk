@@ -219,8 +219,8 @@ export interface RunCreate extends BaseRun {
   session_name?: string;
   /** The agent environment to ingest this run into. */
   agent_environment?: string;
-  /** The key of the agent to ingest this run into. */
-  agent_key?: string;
+  /** The ID of the agent to ingest this run into. */
+  agent_id?: string;
 }
 
 export interface RunUpdate {

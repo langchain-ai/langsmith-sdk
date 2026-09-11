@@ -91,7 +91,7 @@ import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
   getDefaultAgentEnvironment,
-  getDefaultAgentKey,
+  getDefaultAgentId,
 } from "./utils/project.js";
 import {
   raiseForStatus,
@@ -537,7 +537,7 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   agent_environment?: string;
-  agent_key?: string;
+  agent_id?: string;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -2493,10 +2493,10 @@ export class Client implements LangSmithTracingClientInterface {
     const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
-      // If no environment is provided, fall back to `LANGSMITH_ENVIRONMENT`.
+      // Fall back to `LANGSMITH_AGENT_ENVIRONMENT` when none is provided.
       agent_environment: run.agent_environment ?? getDefaultAgentEnvironment(),
-      // If no agent key is provided, fall back to `LANGSMITH_AGENT_KEY`.
-      agent_key: run.agent_key ?? getDefaultAgentKey(),
+      // If no agent ID is provided, fall back to `LANGSMITH_AGENT_ID`.
+      agent_id: run.agent_id ?? getDefaultAgentId(),
       start_time: run.start_time ?? Date.now(),
     } as RunCreate);
     if (
