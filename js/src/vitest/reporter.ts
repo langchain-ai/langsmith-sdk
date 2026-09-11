@@ -1,30 +1,14 @@
 /* eslint-disable import/no-extraneous-dependencies */
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore Import throws an error in internal CJS build, but seems to work fine after build
-import { DefaultReporter } from "vitest/reporters";
+import { DefaultReporter } from "vitest/node";
 
-import { RunnerTestFile } from "vitest";
-import {
-  printVitestReporterTable,
-  printVitestTestModulesReporterTable,
-  type VitestTestModule,
-} from "./utils/reporter.js";
+import { printVitestTestModulesReporterTable } from "./utils/reporter.js";
 
 class LangSmithEvalReporter extends DefaultReporter {
-  async onFinished(files: RunnerTestFile[], errors: unknown[]) {
-    super.onFinished(files, errors);
-    await printVitestReporterTable(files, this.ctx);
-  }
-
-  // @ts-expect-error Vitest 4.x introduces a new `onTestRunEnd` method
-  async onTestRunEnd(
-    testModules: VitestTestModule[],
-    unhandledErrors: unknown[],
-    reason: "passed" | "interrupted" | "failed",
-  ) {
-    // @ts-expect-error Vitest 4.x introduces a new `onTestRunEnd` method
-    super.onTestRunEnd(testModules, unhandledErrors, reason);
-    await printVitestTestModulesReporterTable(testModules);
+  async onTestRunEnd(...args: Parameters<DefaultReporter["onTestRunEnd"]>) {
+    super.onTestRunEnd(...args);
+    await printVitestTestModulesReporterTable(args[0]);
   }
 }
 

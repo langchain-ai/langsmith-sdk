@@ -23,7 +23,12 @@ ls.describe("wrapped vitest", () => {
         return referenceOutputs;
       };
       const res = myApp();
-      await ls.expect(res).evaluatedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      const assertion = ls
+        .expect(res)
+        .evaluatedBy(myEvaluator)
+        .toBeGreaterThanOrEqual(0.5);
+      vitest.expectTypeOf(assertion).toEqualTypeOf<Promise<void>>();
+      await assertion;
     },
   );
 

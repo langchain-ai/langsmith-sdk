@@ -57,15 +57,11 @@ interface CustomMatchers<R = unknown> {
    * });
    * ```
    */
-  evaluatedBy(evaluator: SimpleEvaluator): Assertion<Promise<R>> & {
-    not: Assertion<Promise<R>>;
-    resolves: Assertion<Promise<R>>;
-    rejects: Assertion<Promise<R>>;
-  };
+  evaluatedBy(evaluator: SimpleEvaluator): Assertion["resolves"];
 }
 
 declare module "vitest" {
-  interface Assertion<T = any> extends CustomMatchers<T> {}
+  interface Assertion extends CustomMatchers<void> {}
   interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
 

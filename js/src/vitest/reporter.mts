@@ -7,8 +7,10 @@ import {
 } from "./utils/reporter.js";
 import { importVitestModule } from "./utils/esm.mjs";
 
-const vitestReporters = await importVitestModule("reporters");
-const DefaultReporter = vitestReporters.DefaultReporter;
+const vitestNode = await importVitestModule("node");
+const DefaultReporter =
+  vitestNode.DefaultReporter ??
+  (await importVitestModule("reporters")).DefaultReporter;
 
 class LangSmithEvalReporter extends DefaultReporter {
   private skipOnFinished = false;
@@ -24,8 +26,8 @@ class LangSmithEvalReporter extends DefaultReporter {
 
   // `onFinished` is removed in Vitest 4.x, so we use `onTestRunEnd` instead.
   async onTestRunEnd(
-    testModules: VitestTestModule[],
-    unhandledErrors: { message: string; name?: string }[],
+    testModules: readonly VitestTestModule[],
+    unhandledErrors: readonly { message: string; name?: string }[],
     reason: "passed" | "interrupted" | "failed",
   ) {
     super.onTestRunEnd(testModules, unhandledErrors, reason);
