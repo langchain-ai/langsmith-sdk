@@ -427,20 +427,20 @@ def test_wrap_tool_run_async_sets_tool_as_active_context(mock_ls_client: Client)
     )
 
 
-def _tool_call_request(*ids: str | None):
-    """Build an LlmRequest alternating one tool call and its response per id."""
+def _tool_call_request(*calls: tuple[str | None, str | None], name: str = "weather"):
+    """Build an LlmRequest of one tool call and its response per (call, result) id."""
     from google.adk.models.llm_request import LlmRequest
     from google.genai import types
 
     contents = []
-    for call_id in ids:
+    for call_id, result_id in calls:
         contents.append(
             types.Content(
                 role="model",
                 parts=[
                     types.Part(
                         function_call=types.FunctionCall(
-                            id=call_id, name="get_weather", args={"city": "Haifa"}
+                            id=call_id, name=name, args={"city": "Haifa"}
                         )
                     )
                 ],
@@ -452,7 +452,7 @@ def _tool_call_request(*ids: str | None):
                 parts=[
                     types.Part(
                         function_response=types.FunctionResponse(
-                            id=call_id, name="get_weather", response={"c": 29}
+                            id=result_id, name=name, response={"c": 29}
                         )
                     )
                 ],
@@ -461,31 +461,92 @@ def _tool_call_request(*ids: str | None):
     return LlmRequest(contents=contents)
 
 
-def test_tool_messages_pair_with_the_ids_adk_assigned():
-    """A tool message carries the id of the call it answers, per ADK."""
+def _call_and_result_ids(llm_request):
     from langsmith.integrations.google_adk._messages import (
         convert_llm_request_to_messages,
     )
 
-    messages = convert_llm_request_to_messages(
-        _tool_call_request("adk-1111", "adk-2222")
+    messages = convert_llm_request_to_messages(llm_request)
+    return (
+        [m["tool_calls"][0]["id"] for m in messages if m.get("tool_calls")],
+        [m.get("tool_call_id") for m in messages if m["role"] == "tool"],
     )
-    calls = [m["tool_calls"][0]["id"] for m in messages if m.get("tool_calls")]
-    results = [m["tool_call_id"] for m in messages if m["role"] == "tool"]
+
+
+def test_tool_messages_pair_with_the_ids_adk_assigned():
+    """When ADK keeps its ids, a tool message carries the id of the call it answers."""
+    calls, results = _call_and_result_ids(
+        _tool_call_request(("adk-1111", "adk-1111"), ("adk-2222", "adk-2222"))
+    )
 
     assert calls == ["adk-1111", "adk-2222"]
-    assert results == ["adk-1111", "adk-2222"]
+    assert results == calls
 
 
-def test_synthesised_tool_call_ids_stay_unique_across_turns():
-    """Without ADK ids, turns must not all reuse the same synthesised id."""
-    from langsmith.integrations.google_adk._messages import (
-        convert_llm_request_to_messages,
+def test_tool_messages_pair_when_adk_strips_its_ids():
+    """The default Gemini path: ADK strips every ``adk-`` id before the request.
+
+    Pinned to ADK's own stripping rather than a hand-built request, because this,
+    not the branch above, is what a plain ``Gemini`` agent produces.
+    """
+    from google.adk.flows.llm_flows.functions import (
+        generate_client_function_call_id,
+        remove_client_function_call_id,
     )
 
-    messages = convert_llm_request_to_messages(_tool_call_request(None, None))
-    calls = [m["tool_calls"][0]["id"] for m in messages if m.get("tool_calls")]
-    results = [m["tool_call_id"] for m in messages if m["role"] == "tool"]
+    minted = [generate_client_function_call_id() for _ in range(2)]
+    llm_request = _tool_call_request(*((call_id, call_id) for call_id in minted))
+    for content in llm_request.contents:
+        remove_client_function_call_id(content)
 
+    calls, results = _call_and_result_ids(llm_request)
+
+    assert all(call_id is None for call_id in _raw_part_ids(llm_request)), (
+        "ADK no longer strips its ids; the fallback is no longer the primary path"
+    )
     assert len(set(calls)) == 2, calls
     assert results == calls
+
+
+def _raw_part_ids(llm_request):
+    ids = []
+    for content in llm_request.contents:
+        for part in content.parts:
+            fc, fr = part.function_call, part.function_response
+            ids.append(fc.id if fc else fr.id)
+    return ids
+
+
+@pytest.mark.parametrize(
+    "ids, expected_calls, expected_results",
+    [
+        # A provider id on one side is carried over to the other.
+        ([("call_abc", None)], ["call_abc"], ["call_abc"]),
+        # Except the other way round: nothing links the two, so they stay apart.
+        ([(None, "call_abc")], ["ls-adk-0"], ["call_abc"]),
+        # A synthesised id must not collide with a real one.
+        (
+            [(None, None), ("call_0", "call_0")],
+            ["ls-adk-0", "call_0"],
+            ["ls-adk-0", "call_0"],
+        ),
+    ],
+    ids=["call-id-only", "result-id-only", "no-collision"],
+)
+def test_partial_tool_call_ids(ids, expected_calls, expected_results):
+    """An id present on one side only must not mis-pair the other."""
+    calls, results = _call_and_result_ids(_tool_call_request(*ids))
+
+    assert calls == expected_calls
+    assert results == expected_results
+
+
+def test_orphan_tool_result_gets_no_id():
+    """A result with no call to answer gets no id rather than an invented one."""
+    llm_request = _tool_call_request((None, None))
+    llm_request.contents = [c for c in llm_request.contents if c.role != "model"]
+
+    calls, results = _call_and_result_ids(llm_request)
+
+    assert calls == []
+    assert results == [None]
