@@ -7983,3 +7983,213 @@ def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         monkeypatch.undo()
         _reload()
+
+
+def _clear_agent_addressing_caches() -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_agent_id.cache_clear()
+    ls_utils.get_tracer_agent_environment.cache_clear()
+    ls_utils.get_tracer_project.cache_clear()
+
+
+def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGCHAIN_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGCHAIN_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    _clear_agent_addressing_caches()
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        # A project on the payload addresses the run on its own.
+        (
+            {"session_name": "proj", "agent_id": "a", "agent_environment": "e"},
+            {"session_name": "proj"},
+        ),
+        (
+            {"session_id": "sid", "agent_id": "a"},
+            {"session_id": "sid"},
+        ),
+        # No project: the agent addresses it, and the null project keys go.
+        (
+            {"session_name": None, "agent_id": "a", "agent_environment": "e"},
+            {"agent_id": "a", "agent_environment": "e"},
+        ),
+        # An environment without an agent addresses nothing.
+        (
+            {"session_name": None, "agent_environment": "e"},
+            {"session_name": None},
+        ),
+        # Neither mode: left alone for the server-side fallback.
+        ({"session_name": None}, {"session_name": None}),
+    ],
+)
+def test_apply_agent_addressing(
+    payload: dict,
+    expected: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exactly one addressing mode survives, with no nulls for the other."""
+    _clean_agent_env(monkeypatch)
+    Client._apply_agent_addressing(payload)
+    assert payload == expected
+
+
+def test_apply_agent_addressing_fills_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clean_agent_env(
+        monkeypatch,
+        LANGSMITH_AGENT_ID="my-agent",
+        LANGSMITH_AGENT_ENVIRONMENT="staging",
+    )
+    payload: dict = {"session_name": None}
+    Client._apply_agent_addressing(payload)
+    assert payload == {"agent_id": "my-agent", "agent_environment": "staging"}
+
+
+def test_apply_agent_addressing_keeps_explicit_project_over_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+    payload: dict = {"session_name": "explicit"}
+    Client._apply_agent_addressing(payload)
+    assert payload == {"session_name": "explicit"}
+
+
+def _multipart_parts(session: mock.Mock) -> dict:
+    """Collect the `post.<id>` / `patch.<id>` JSON parts sent so far, by kind."""
+    parts: dict = {}
+    for call in session.request.mock_calls:
+        if not (call.args and call.args[1].endswith("runs/multipart")):
+            continue
+        headers, data = call[2]["headers"], call[2]["data"]
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        for part in MultipartParser(io.BytesIO(data), boundary).parts():
+            kind, _, rest = part.name.partition(".")
+            if kind in ("post", "patch") and "." not in rest:
+                parts[kind] = json.loads(part.value)
+    return parts
+
+
+def _wait_for_part(session: mock.Mock, kind: str, attempts: int = 50) -> dict:
+    """Wait for a `post`/`patch` part to be flushed by the background thread.
+
+    A patch queued before its post has flushed is merged into the post part, so
+    tests that need both have to wait for the first before sending the second.
+    """
+    for _ in range(attempts):
+        time.sleep(0.1)
+        if (part := _multipart_parts(session).get(kind)) is not None:
+            return part
+    raise AssertionError(f"No {kind} part found")
+
+
+def _multipart_client(session: mock.Mock) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit_bytes=None,
+                size_limit=1,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+
+def test_agent_addressed_run_sends_no_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point: agent-addressed payloads carry no session at all.
+
+    Both parts have to agree -- a patch addressed by project while its post
+    went to the agent would land the two halves of one run in two places.
+    """
+    _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    run = run_trees.RunTree(name="my_run", inputs={"a": 1}, ls_client=client)
+    run.post()
+    post_body = _wait_for_part(session, "post")
+    run.end(outputs={"b": 2})
+    run.patch()
+    patch_body = _wait_for_part(session, "patch")
+
+    for kind, body in (("post", post_body), ("patch", patch_body)):
+        assert body.get("agent_id") == "my-agent", kind
+        assert "session_name" not in body, kind
+        assert "session_id" not in body, kind
+
+
+def test_project_addressed_run_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The legacy path keeps sending a project and no agent fields."""
+    _clean_agent_env(monkeypatch)
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    run = run_trees.RunTree(name="my_run", inputs={"a": 1}, ls_client=client)
+    run.post()
+
+    body = _wait_for_part(session, "post")
+    assert body.get("session_name") == "default"
+    assert "agent_id" not in body
+    assert "agent_environment" not in body
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"LANGSMITH_AGENT_ID": "a", "LANGSMITH_PROJECT": "p"},
+        {"LANGSMITH_AGENT_ID": "a", "LANGCHAIN_PROJECT": "p"},
+        {"LANGSMITH_AGENT_ID": "a", "LANGCHAIN_SESSION": "p"},
+        {"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
+    ],
+)
+def test_ambiguous_agent_env_raises_at_init(
+    client_cls: type,
+    env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail locally, not as a server-side rejection of every ingest batch."""
+    _clean_agent_env(monkeypatch, **env)
+    with pytest.raises(ls_utils.LangSmithUserError):
+        client_cls(api_url="http://localhost:1984", api_key="123")
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"LANGSMITH_AGENT_ID": "a"},
+        {"LANGSMITH_AGENT_ID": "a", "LANGSMITH_AGENT_ENVIRONMENT": "staging"},
+        {"LANGSMITH_PROJECT": "p"},
+    ],
+)
+def test_unambiguous_agent_env_is_accepted(
+    client_cls: type,
+    env: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clean_agent_env(monkeypatch, **env)
+    client_cls(api_url="http://localhost:1984", api_key="123")

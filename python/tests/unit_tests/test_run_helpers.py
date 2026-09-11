@@ -2746,3 +2746,101 @@ def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str
     assert seen["nested_replicas"] == replicas
     # No reroot: the downstream root still points at the real upstream run id.
     assert seen["parent_run_id"] == upstream.id
+
+
+def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGCHAIN_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGCHAIN_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_agent_id.cache_clear()
+    ls_utils.get_tracer_agent_environment.cache_clear()
+    ls_utils.get_tracer_project.cache_clear()
+
+
+class TestTracingContextAgentAddressing:
+    """`tracing_context` can address runs by agent instead of project."""
+
+    def test_agent_id_addresses_the_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        with tracing_context(
+            enabled=True, agent_id="ctx-agent", agent_environment="staging"
+        ):
+            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+                assert run.agent_id == "ctx-agent"
+                assert run.agent_environment == "staging"
+                assert run.session_name is None
+
+    def test_project_in_the_same_context_wins(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        with tracing_context(
+            enabled=True, project_name="explicit", agent_id="ctx-agent"
+        ):
+            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+                assert run.session_name == "explicit"
+                assert run.agent_id is None
+
+    def test_context_agent_overrides_the_env_var(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(monkeypatch, LANGSMITH_AGENT_ID="env-agent")
+        mock_client = _get_mock_client()
+        with tracing_context(enabled=True, agent_id="ctx-agent"):
+            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+                assert run.agent_id == "ctx-agent"
+
+    def test_traceable_is_agent_addressed_from_the_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The decorator path has to honor it too, not just `trace`."""
+        _clean_agent_addressing_env(monkeypatch, LANGSMITH_AGENT_ID="env-agent")
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo(a: int) -> int:
+            run = get_current_run_tree()
+            seen["agent_id"] = run.agent_id if run else None
+            seen["session_name"] = run.session_name if run else None
+            return a
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo(1)
+
+        assert seen == {"agent_id": "env-agent", "session_name": None}
+
+    def test_nested_traceables_inherit_agent_addressing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def child(a: int) -> int:
+            run = get_current_run_tree()
+            seen["child_agent_id"] = run.agent_id if run else None
+            seen["child_session_name"] = run.session_name if run else None
+            return a
+
+        @traceable
+        def parent(a: int) -> int:
+            return child(a)
+
+        with tracing_context(enabled=True, client=mock_client, agent_id="ctx-agent"):
+            parent(1)
+
+        assert seen == {"child_agent_id": "ctx-agent", "child_session_name": None}

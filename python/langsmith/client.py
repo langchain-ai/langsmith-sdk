@@ -2635,19 +2635,22 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        explicit_project = project_name or kwargs.pop("session_name", None)
-        if (
-            explicit_project is None
-            and kwargs.get("session_id") is None
-            and (kwargs.get("agent_id") or ls_utils.get_tracer_agent_id())
+        if project_name:
+            pass
+        elif "session_name" in kwargs:
+            # Passed through, even as None: callers that say "no project" get
+            # no project, exactly as before.
+            project_name = kwargs.pop("session_name")
+        elif kwargs.get("session_id") is None and (
+            kwargs.get("agent_id") or ls_utils.get_tracer_agent_id()
         ):
             # Agent-addressed: the backend resolves the project from the agent,
             # so don't default one in -- a project here would address the run
-            # twice. An explicitly provided project still wins, below.
+            # twice. An explicitly provided project still wins, above.
             project_name = None
         else:
             # if the project is not provided, use the environment's project
-            project_name = explicit_project or ls_utils.get_tracer_project()
+            project_name = ls_utils.get_tracer_project()
         run_create = {
             **kwargs,
             "session_name": project_name,
