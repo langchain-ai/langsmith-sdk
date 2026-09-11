@@ -1,6 +1,6 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from typing import List, Optional
+from typing import Optional
 from typing_extensions import Literal
 
 from .._models import BaseModel
@@ -9,6 +9,8 @@ __all__ = ["OnlineCodeEvaluator"]
 
 
 class OnlineCodeEvaluator(BaseModel):
+    advanced_features_enabled: Optional[bool] = None
+
     code: Optional[str] = None
 
     dependencies: Optional[str] = None
@@ -21,5 +23,3 @@ class OnlineCodeEvaluator(BaseModel):
 
     language: Optional[str] = None
     """Default: "python" """
-
-    workspace_secrets_keys: Optional[List[str]] = None

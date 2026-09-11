@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Optional
 from typing_extensions import TypedDict
-
-from .._types import SequenceNotStr
 
 __all__ = ["CreateOnlineCodeEvaluatorRequestParam"]
 
 
 class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
+    advanced_features_enabled: bool
+
     code: str
 
-    dependencies: str
+    dependencies: Optional[str]
 
     language: str
     """Default: "python" """
-
-    workspace_secrets_keys: SequenceNotStr[str]

@@ -122,16 +122,16 @@ export interface BulkDeleteEvaluatorsResponse {
 }
 
 export interface CreateOnlineCodeEvaluatorRequest {
+  advanced_features_enabled?: boolean;
+
   code?: string;
 
-  dependencies?: string;
+  dependencies?: string | null;
 
   /**
    * Default: "python"
    */
   language?: string;
-
-  workspace_secrets_keys?: Array<string>;
 }
 
 export interface CreateOnlineEvaluatorRequest {
@@ -170,6 +170,8 @@ export interface GetOnlineEvaluatorSpendResponse {
 }
 
 export interface OnlineCodeEvaluator {
+  advanced_features_enabled?: boolean;
+
   code?: string;
 
   dependencies?: string;
@@ -184,8 +186,6 @@ export interface OnlineCodeEvaluator {
    * Default: "python"
    */
   language?: string;
-
-  workspace_secrets_keys?: Array<string>;
 }
 
 export interface OnlineEvaluator {
@@ -332,13 +332,13 @@ export interface OnlineSpendLimit {
 }
 
 export interface UpdateOnlineCodeEvaluatorRequest {
+  advanced_features_enabled?: boolean;
+
   code?: string;
 
-  dependencies?: string;
+  dependencies?: string | null;
 
   language?: string;
-
-  workspace_secrets_keys?: Array<string>;
 }
 
 export interface UpdateOnlineEvaluatorRequest {
