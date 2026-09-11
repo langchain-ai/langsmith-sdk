@@ -875,8 +875,8 @@ describe("OpenAIAgentsTracingProcessor", () => {
     });
 
     test("subagent detection walks past an intermediate chain run to find a tool ancestor", async () => {
-      // asTool topology: function span -> nested trace (chain) -> agent span.
-      // The agent's immediate parent is the chain, not the tool.
+      // When an agent runs as a tool, an extra run sits between the tool and
+      // the agent.
       const outerTrace = createMockTrace("trace-nested-outer", "Outer");
       const functionSpan = createMockSpan(
         "trace-nested-outer",
@@ -899,7 +899,7 @@ describe("OpenAIAgentsTracingProcessor", () => {
 
       await processor.onTraceStart(outerTrace);
       await processor.onSpanStart(functionSpan);
-      // The nested trace root is created via createChild on the tool run.
+      // The nested run is created as a child of the tool run.
       await processor.onTraceStart(innerTrace);
       await processor.onSpanStart(subagentSpan);
       await processor.onSpanEnd(subagentSpan);

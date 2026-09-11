@@ -495,7 +495,7 @@ function _resolveOpenAIAgentsLsAgentType(
   parentRun: RunTree,
   existingTag: unknown,
 ): "middleware" | "subagent" | undefined {
-  // A user-supplied narrowing tag wins over structural detection.
+  // If the user already set a more specific type, keep it.
   if (
     typeof existingTag === "string" &&
     NON_ROOT_LS_AGENT_TYPES.has(existingTag)
@@ -503,8 +503,8 @@ function _resolveOpenAIAgentsLsAgentType(
     return undefined;
   }
   if (spanData.type === "guardrail") return "middleware";
-  // Walk the ancestor chain, not just the immediate parent: asTool()
-  // inserts a chain run between the tool and the agent it wraps.
+  // Look at every run above this one, not just the direct parent: when an
+  // agent runs as a tool, an extra run sits between the two.
   if (spanData.type === "agent") {
     let cursor: RunTree | undefined = parentRun;
     while (cursor !== undefined) {
@@ -792,8 +792,8 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       return;
     }
 
-    // Handoff agents take over the conversation instead of being called as
-    // tools, so they have no tool ancestor and stay untagged.
+    // Agents reached by a handoff take over the conversation rather than run
+    // as a tool, so they are left untagged.
     if (!childRun.extra) childRun.extra = {};
     if (!childRun.extra.metadata) childRun.extra.metadata = {};
     const meta = childRun.extra.metadata as Record<string, unknown>;

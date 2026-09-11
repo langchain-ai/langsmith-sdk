@@ -120,7 +120,7 @@ def test_trace_metadata_wins_over_processor_metadata():
 
 
 # ---------------------------------------------------------------------------
-# Structural ls_agent_type detection (on_span_start)
+# ls_agent_type detection (on_span_start)
 # ---------------------------------------------------------------------------
 
 
@@ -171,7 +171,7 @@ def _guardrail_span_data():
     return span_data
 
 
-# ---- Subagent (agent-as-tool) ----
+# ---- Subagent (agent run as a tool) ----
 
 
 def test_subagent_stamps_when_agent_parent_is_tool():
@@ -180,16 +180,16 @@ def test_subagent_stamps_when_agent_parent_is_tool():
 
 
 def test_subagent_stamps_when_tool_is_ancestor_via_intermediate_chain():
-    # as_tool topology: the agent's immediate parent is the nested trace's
-    # chain run, not the tool itself.
+    # When an agent runs as a tool, an extra run sits between the tool and
+    # the agent.
     tool_run = _make_run("tool")
     chain_run = _make_run("chain", parent_run=tool_run)
     assert _run_span_stamp(_agent_span_data(), chain_run) == "subagent"
 
 
 def test_agent_without_tool_ancestor_is_not_tagged():
-    # Handoff agents sit under the trace root chain, so there is no tool
-    # ancestor and no structural tag.
+    # Agents reached by a handoff have no tool above them, so they are left
+    # untagged.
     root_chain = _make_run("chain")
     assert _run_span_stamp(_agent_span_data(), root_chain) is None
 
@@ -209,7 +209,7 @@ def test_subagent_preserves_user_narrowing_tag(narrowing_tag):
     )
 
 
-# ---- Guardrail (structural middleware) ----
+# ---- Guardrail ----
 
 
 def test_guardrail_stamps_middleware():
