@@ -50,6 +50,16 @@ export {
 // Types
 export type {
   ExecutionResult,
+  FileChunk,
+  FileInfo,
+  FileStat,
+  GlobOptions,
+  GlobResult,
+  GrepMatch,
+  GrepOptions,
+  GrepResult,
+  ReadRangeOptions,
+  RunConfig,
   OutputChunk,
   WsMessage,
   WsRunOptions,

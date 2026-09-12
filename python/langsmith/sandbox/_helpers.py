@@ -23,6 +23,7 @@ from langsmith.sandbox._exceptions import (
     SandboxOperationError,
     ValidationError,
 )
+from langsmith.sandbox._models import FileChunk, FileStat, _run_config_payload
 
 # =============================================================================
 # Header Utilities
@@ -50,6 +51,130 @@ def merge_headers(
 # =============================================================================
 # Input Validation
 # =============================================================================
+
+
+def resolve_command_run_config(
+    run_config: Any, *, env: Optional[dict[str, str]], cwd: Optional[str]
+) -> Optional[dict[str, Any]]:
+    """Normalize a per-command run_config, rejecting the deprecated pairing.
+
+    The server answers 400 for a request carrying both spellings rather than
+    letting one silently win, so refuse it here where the message can name
+    the replacement.
+    """
+    if run_config is None:
+        return None
+    if env is not None or cwd is not None:
+        raise ValueError(
+            "Cannot combine run_config with the deprecated env/cwd arguments. "
+            "Use run_config.env_vars and run_config.work_dir instead."
+        )
+    return _run_config_payload(run_config)
+
+
+def resolve_close_input(close_input: Optional[bool], *, pty: bool) -> bool:
+    """Whether to half-close stdin at spawn.
+
+    Defaults on for a non-PTY command: a command that reads stdin otherwise
+    blocks on a pipe nobody writes to until the timeout kills it. A PTY has
+    no separate write end to close, so the server ignores the flag there.
+    """
+    if pty:
+        return False
+    if close_input is None:
+        return True
+    return close_input
+
+
+def build_range_header(
+    *, start: Optional[int], end: Optional[int], suffix_bytes: Optional[int]
+) -> str:
+    """Render a byte range as an RFC 9110 ``Range`` header value."""
+    if suffix_bytes is not None:
+        if start is not None or end is not None:
+            raise ValueError("Cannot combine suffix_bytes with start/end.")
+        if suffix_bytes <= 0:
+            raise ValueError("suffix_bytes must be positive.")
+        return f"bytes=-{suffix_bytes}"
+    if start is None:
+        raise ValueError("Provide start (with optional end), or suffix_bytes.")
+    if start < 0:
+        raise ValueError("start must not be negative.")
+    if end is None:
+        return f"bytes={start}-"
+    if end < start:
+        raise ValueError("end must not precede start.")
+    return f"bytes={start}-{end}"
+
+
+def _parse_content_range(value: Optional[str]) -> tuple[int, Optional[int]]:
+    """Read the first byte offset and total size out of ``Content-Range``."""
+    if not value or not value.startswith("bytes "):
+        return 0, None
+    spec = value[len("bytes ") :].strip()
+    range_part, _, total_part = spec.partition("/")
+    start = 0
+    first, _, _ = range_part.partition("-")
+    if first.strip().isdigit():
+        start = int(first)
+    total = int(total_part) if total_part.strip().isdigit() else None
+    return start, total
+
+
+def file_stat_from_response(response: httpx.Response) -> FileStat:
+    """Build a FileStat from a HEAD response's headers."""
+    length = response.headers.get("content-length")
+    return FileStat(
+        size_bytes=int(length) if length and length.isdigit() else 0,
+        etag=response.headers.get("etag"),
+        last_modified=response.headers.get("last-modified"),
+        content_type=response.headers.get("content-type"),
+    )
+
+
+def file_chunk_from_response(response: httpx.Response) -> FileChunk:
+    """Build a FileChunk from a ranged download response."""
+    if response.status_code == 304:
+        return FileChunk(
+            content=b"",
+            etag=response.headers.get("etag"),
+            unchanged=True,
+            last_modified=response.headers.get("last-modified"),
+        )
+    partial = response.status_code == 206
+    start, total = _parse_content_range(response.headers.get("content-range"))
+    content = response.content
+    if not partial:
+        # A stale If-Range answers 200 with the whole file; the caller has to
+        # restart rather than append, so report it from byte zero.
+        start = 0
+        total = len(content)
+    return FileChunk(
+        content=content,
+        etag=response.headers.get("etag"),
+        total_bytes=total,
+        start=start,
+        partial=partial,
+        last_modified=response.headers.get("last-modified"),
+    )
+
+
+def raise_file_http_error(
+    error: httpx.HTTPStatusError, *, path: str, sandbox_name: str
+) -> None:
+    """Map a file-operation HTTP error, including the non-JSON 416."""
+    status = error.response.status_code
+    if status == 404:
+        raise ResourceNotFoundError(
+            f"File '{path}' not found in sandbox '{sandbox_name}'",
+            resource_type="file",
+        ) from error
+    if status == 416:
+        raise SandboxOperationError(
+            f"Requested range for '{path}' starts past the end of the file "
+            f"({error.response.headers.get('content-range', 'unknown size')})."
+        ) from error
+    handle_sandbox_http_error(error)
 
 
 def validate_service_params(port: int, expires_in_seconds: int) -> None:

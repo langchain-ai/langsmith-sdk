@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import (
@@ -24,6 +24,12 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+_STDIN_CLOSED_MESSAGE = (
+    "stdin is closed for this command. Non-PTY commands close stdin by "
+    "default so a command that reads it sees EOF instead of hanging; pass "
+    "close_input=False to run() to stream input into it."
+)
 
 
 def _acknowledges_reconnect(msg: dict, command_id: Optional[str]) -> bool:
@@ -92,6 +98,230 @@ class ResourceStatus:
 
 
 @dataclass
+class RunConfig:
+    """The user, working directory and environment commands run with.
+
+    Mirrors ``docker run -u / -w / -e``: ``user`` and ``work_dir`` replace the
+    layer below, ``env_vars`` merge into it key by key. It applies at three
+    points, each layered over the one before -- the snapshot, the sandbox, and
+    a single command.
+
+    Attributes:
+        user: Account to run as: ``name``, ``uid``, ``name:group`` or
+            ``uid:gid``. Defaults to the Docker image's ``USER``.
+        work_dir: Absolute working directory. Defaults to the image's
+            ``WORKDIR``. A relative path is rejected by the server.
+        env_vars: Environment variables, merged over the layer below.
+    """
+
+    user: Optional[str] = None
+    work_dir: Optional[str] = None
+    env_vars: Optional[dict[str, str]] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RunConfig:
+        """Create a RunConfig from API response dict."""
+        env_vars = data.get("env_vars")
+        return cls(
+            user=data.get("user"),
+            work_dir=data.get("work_dir"),
+            env_vars=dict(env_vars) if env_vars else None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        """Render as a request body fragment, omitting unset fields."""
+        payload: dict[str, Any] = {}
+        if self.user is not None:
+            payload["user"] = self.user
+        if self.work_dir is not None:
+            payload["work_dir"] = self.work_dir
+        if self.env_vars is not None:
+            payload["env_vars"] = dict(self.env_vars)
+        return payload
+
+
+def _run_config_payload(
+    run_config: Optional[Union[RunConfig, dict[str, Any]]],
+) -> Optional[dict[str, Any]]:
+    """Normalize a run_config argument to a request body fragment."""
+    if run_config is None:
+        return None
+    if isinstance(run_config, RunConfig):
+        return run_config.to_payload()
+    return dict(run_config)
+
+
+def _run_config_from_dict(data: Optional[dict[str, Any]]) -> Optional[RunConfig]:
+    """Parse a run_config response field, absent on older servers."""
+    if not isinstance(data, dict):
+        return None
+    return RunConfig.from_dict(data)
+
+
+@dataclass
+class FileInfo:
+    """One filesystem entry returned by :meth:`Sandbox.glob`.
+
+    Attributes:
+        path: Absolute path of the entry.
+        is_dir: True for a directory.
+        size_bytes: Size in bytes.
+        modified_at: RFC 3339 modification timestamp.
+    """
+
+    path: str
+    is_dir: bool = False
+    size_bytes: int = 0
+    modified_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FileInfo:
+        """Create a FileInfo from API response dict."""
+        return cls(
+            path=data.get("path", ""),
+            is_dir=bool(data.get("is_dir", False)),
+            size_bytes=data.get("size_bytes") or 0,
+            modified_at=data.get("modified_at"),
+        )
+
+
+@dataclass
+class GlobResult:
+    """Entries matching a glob pattern.
+
+    Attributes:
+        matches: Matching files and directories.
+        truncated: True when the server hit its result cap or deadline, so
+            the search is a partial answer worth refining.
+    """
+
+    matches: list[FileInfo] = field(default_factory=list)
+    truncated: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GlobResult:
+        """Create a GlobResult from API response dict."""
+        return cls(
+            matches=[FileInfo.from_dict(m) for m in data.get("matches") or []],
+            truncated=bool(data.get("truncated", False)),
+        )
+
+    def __iter__(self) -> Iterator[FileInfo]:
+        """Iterate the matches directly."""
+        return iter(self.matches)
+
+    def __len__(self) -> int:
+        """Return the number of matches."""
+        return len(self.matches)
+
+
+@dataclass
+class GrepMatch:
+    """One matching line found by :meth:`Sandbox.grep`.
+
+    Attributes:
+        path: Absolute path of the file the match was found in.
+        line: 1-based line number.
+        text: The matching line's text.
+    """
+
+    path: str
+    line: int
+    text: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GrepMatch:
+        """Create a GrepMatch from API response dict."""
+        return cls(
+            path=data.get("path", ""),
+            line=data.get("line") or 0,
+            text=data.get("text", ""),
+        )
+
+
+@dataclass
+class GrepResult:
+    """Lines matching a literal search.
+
+    Attributes:
+        matches: Matching lines, in the order the server found them.
+        truncated: True when the server hit its result cap or deadline.
+    """
+
+    matches: list[GrepMatch] = field(default_factory=list)
+    truncated: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GrepResult:
+        """Create a GrepResult from API response dict."""
+        return cls(
+            matches=[GrepMatch.from_dict(m) for m in data.get("matches") or []],
+            truncated=bool(data.get("truncated", False)),
+        )
+
+    def __iter__(self) -> Iterator[GrepMatch]:
+        """Iterate the matches directly."""
+        return iter(self.matches)
+
+    def __len__(self) -> int:
+        """Return the number of matches."""
+        return len(self.matches)
+
+
+@dataclass
+class FileStat:
+    """What a ``HEAD`` on a sandbox file reports, without transferring it.
+
+    Attributes:
+        size_bytes: The file's size.
+        etag: Strong validator for the current contents. Opaque -- compare
+            it, never parse it. Pass it back as ``if_range`` to resume a
+            download safely, or as ``if_none_match`` to poll for a change.
+        last_modified: HTTP-date of the last modification, second-resolution.
+        content_type: The server's content type for the file.
+    """
+
+    size_bytes: int
+    etag: Optional[str] = None
+    last_modified: Optional[str] = None
+    content_type: Optional[str] = None
+
+
+@dataclass
+class FileChunk:
+    """Bytes returned by a ranged read, and where they sit in the file.
+
+    Attributes:
+        content: The bytes returned. Empty when ``unchanged`` is True.
+        etag: Validator for the version these bytes came from. Pass it as
+            ``if_range`` on the next chunk so a rewrite restarts the read
+            instead of splicing two versions together.
+        total_bytes: The file's full size, or None when the server did not
+            report it.
+        start: Offset of the first byte returned.
+        partial: True when the server answered 206 with only part of the
+            file. A False here after a ranged request means the file
+            changed and the server sent it whole -- restart from zero.
+        unchanged: True when the caller passed ``if_none_match`` and the
+            file still matches it. No bytes are returned.
+        last_modified: HTTP-date of the last modification.
+    """
+
+    content: bytes
+    etag: Optional[str] = None
+    total_bytes: Optional[int] = None
+    start: int = 0
+    partial: bool = False
+    unchanged: bool = False
+    last_modified: Optional[str] = None
+
+    @property
+    def end(self) -> int:
+        """Offset just past the last byte returned."""
+        return self.start + len(self.content)
+
+
+@dataclass
 class Snapshot:
     """Represents a sandbox snapshot.
 
@@ -114,6 +344,10 @@ class Snapshot:
         updated_at: Timestamp when the snapshot was last updated.
         tags: Tags currently resolving to this snapshot, under its name. Empty
             means the snapshot is dangling — reachable only by id.
+        run_config: User, working directory and environment sandboxes built
+            from this snapshot boot with, resolved from the Docker image at
+            build time. None on snapshots built before the server recorded it,
+            which boot as root with no image environment.
     """
 
     id: str
@@ -131,6 +365,7 @@ class Snapshot:
     updated_at: Optional[str] = None
     # Appended last so existing positional constructions keep their meaning.
     tags: list[str] = field(default_factory=list)
+    run_config: Optional[RunConfig] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Snapshot:
@@ -150,6 +385,7 @@ class Snapshot:
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
             tags=list(data.get("tags") or []),
+            run_config=_run_config_from_dict(data.get("run_config")),
         )
 
 
@@ -592,12 +828,16 @@ class CommandHandle:
         stderr_offset: int = 0,
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
+        stdin_closed: bool = False,
+        pty: bool = False,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
+        self._stdin_closed = stdin_closed
+        self._pty = pty
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -774,11 +1014,31 @@ class CommandHandle:
         Args:
             data: String data to write to stdin.
 
+        Raises:
+            SandboxOperationError: If stdin has been closed, either by
+                ``close_input()`` or by the ``close_input=True`` default on
+                a non-PTY ``run()``.
+
         Has no effect if the command has already exited or the
         WebSocket connection is closed.
         """
+        if self._stdin_closed:
+            raise SandboxOperationError(_STDIN_CLOSED_MESSAGE)
         if self._control:
             self._control.send_input(data)
+
+    def close_input(self) -> None:
+        """Half-close stdin so the command reads EOF.
+
+        Idempotent, and a no-op under a PTY, where input and output share
+        one terminal file descriptor and there is no write end to close --
+        send an EOT byte (``0x04``) with :meth:`send_input` instead.
+        """
+        if self._pty or self._stdin_closed:
+            return
+        self._stdin_closed = True
+        if self._control:
+            self._control.send_close_stdin()
 
     @property
     def last_stdout_offset(self) -> int:
@@ -810,6 +1070,7 @@ class CommandHandle:
             self._command_id,
             stdout_offset=self._last_stdout_offset,
             stderr_offset=self._last_stderr_offset,
+            stdin_closed=self._stdin_closed,
         )
 
 
@@ -860,12 +1121,16 @@ class AsyncCommandHandle:
         stderr_offset: int = 0,
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
+        stdin_closed: bool = False,
+        pty: bool = False,
     ) -> None:
         self._stream = message_stream
         self._control = control
         self._sandbox = sandbox
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
+        self._stdin_closed = stdin_closed
+        self._pty = pty
         self._command_id: Optional[str] = None
         self._pid: Optional[int] = None
         self._result: Optional[ExecutionResult] = None
@@ -1019,9 +1284,30 @@ class AsyncCommandHandle:
             await self._control.send_kill()
 
     async def send_input(self, data: str) -> None:
-        """Write data to the command's stdin."""
+        """Write data to the command's stdin.
+
+        Raises:
+            SandboxOperationError: If stdin has been closed, either by
+                ``close_input()`` or by the ``close_input=True`` default on
+                a non-PTY ``run()``.
+        """
+        if self._stdin_closed:
+            raise SandboxOperationError(_STDIN_CLOSED_MESSAGE)
         if self._control:
             await self._control.send_input(data)
+
+    async def close_input(self) -> None:
+        """Half-close stdin so the command reads EOF.
+
+        Idempotent, and a no-op under a PTY, where input and output share
+        one terminal file descriptor and there is no write end to close --
+        send an EOT byte (``0x04``) with :meth:`send_input` instead.
+        """
+        if self._pty or self._stdin_closed:
+            return
+        self._stdin_closed = True
+        if self._control:
+            await self._control.send_close_stdin()
 
     @property
     def last_stdout_offset(self) -> int:
@@ -1040,4 +1326,5 @@ class AsyncCommandHandle:
             self._command_id,
             stdout_offset=self._last_stdout_offset,
             stderr_offset=self._last_stderr_offset,
+            stdin_closed=self._stdin_closed,
         )
