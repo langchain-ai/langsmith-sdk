@@ -341,6 +341,33 @@ export interface SandboxProxyConfig {
   no_proxy?: string[];
   /** Allow/deny list enforced at the proxy sidecar. */
   access_control?: SandboxAccessControl;
+  /** Dynamic credential lookups, consulted when no rule matches the host. */
+  callbacks?: SandboxProxyCallback[];
+}
+
+/** Header attached to the proxy's request to a callback endpoint. */
+export interface SandboxProxyCallbackHeader {
+  name: string;
+  /** `workspace_secret` is not accepted on callback request headers. */
+  type: "plaintext" | "opaque";
+  value: string;
+}
+
+/**
+ * Callback the proxy POSTs to for credentials on matched hosts. Mirrors the
+ * server's `Callback` type.
+ */
+export interface SandboxProxyCallback {
+  /** Host patterns this callback handles; same syntax as rule `match_hosts`. */
+  match_hosts: string[];
+  /** Endpoint the proxy calls; must be an http(s) URL. */
+  url: string;
+  /** Headers attached verbatim to the proxy → callback request. */
+  request_headers?: SandboxProxyCallbackHeader[];
+  /** Cache lifetime for resolved headers, 60–3600 seconds. */
+  ttl_seconds: number;
+  /** Invoke the callback on every request with a request snapshot; disables caching. */
+  full_request?: boolean;
 }
 
 /** Optional per-mount cache configuration supported by bucket mounts. */
