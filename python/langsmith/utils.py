@@ -633,9 +633,13 @@ def with_optional_cache(
         yield
 
 
-def _format_exc() -> str:
+def _format_exc(error: BaseException | None = None) -> str:
     # Used internally to format exceptions without cluttering the traceback
-    tb_lines = traceback.format_exception(*sys.exc_info())
+    tb_lines = (
+        traceback.format_exception(type(error), error, error.__traceback__)
+        if error is not None
+        else traceback.format_exception(*sys.exc_info())
+    )
     filtered_lines = [line for line in tb_lines if "langsmith/" not in line]
     return "".join(filtered_lines)
 
