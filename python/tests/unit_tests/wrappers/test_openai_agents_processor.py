@@ -120,20 +120,24 @@ def test_trace_metadata_wins_over_processor_metadata():
 
 
 # ---------------------------------------------------------------------------
-# Subagent structural detection (agent-as-tool)
+# ls_agent_type detection (on_span_start)
 # ---------------------------------------------------------------------------
 
 
-def _run_subagent_stamp(existing_tag):
+def _make_run(run_type, parent_run=None):
+    run = mock.MagicMock()
+    run.run_type = run_type
+    run.parent_run = parent_run
+    return run
+
+
+def _run_span_stamp(span_data, parent_run, existing_tag=None):
+    """Fire on_span_start against a hand-built parent run and return the tag."""
     client = mock.MagicMock(spec=Client)
     processor = OpenAIAgentsTracingProcessor(client=client)
 
-    parent_span_id = "parent-fn"
-    child_span_id = "child-agent"
-    processor._span_data_types[parent_span_id] = tracing.FunctionSpanData
-
-    parent_run = mock.MagicMock()
-    parent_run.id = "parent-run"
+    parent_span_id = "parent-span"
+    child_span_id = "child-span"
     processor._runs[parent_span_id] = parent_run
 
     child_run = mock.MagicMock()
@@ -146,28 +150,90 @@ def _run_subagent_stamp(existing_tag):
         parent_id=parent_span_id,
         trace_id="trace-1",
         started_at=None,
-        span_data=mock.MagicMock(spec=tracing.AgentSpanData),
+        span_data=span_data,
     )
-    child_span.span_data.export = mock.MagicMock(return_value={})
-    child_span.span_data.name = "Some Subagent"
 
     processor.on_span_start(child_span)
     return child_run.extra["metadata"].get("ls_agent_type")
 
 
-def test_subagent_stamps_when_child_untagged():
-    assert _run_subagent_stamp(None) == "subagent"
+def _agent_span_data():
+    span_data = mock.MagicMock(spec=tracing.AgentSpanData)
+    span_data.export = mock.MagicMock(return_value={})
+    span_data.name = "Some Agent"
+    return span_data
+
+
+def _guardrail_span_data():
+    span_data = mock.MagicMock(spec=tracing.GuardrailSpanData)
+    span_data.export = mock.MagicMock(return_value={})
+    span_data.name = "entry_guardrail"
+    return span_data
+
+
+# ---- Subagent (agent run as a tool) ----
+
+
+def test_subagent_stamps_when_agent_parent_is_tool():
+    tool_run = _make_run("tool")
+    assert _run_span_stamp(_agent_span_data(), tool_run) == "subagent"
+
+
+def test_subagent_stamps_when_the_tool_is_further_above():
+    # When an agent runs as a tool, an extra run sits between the tool and
+    # the agent.
+    tool_run = _make_run("tool")
+    chain_run = _make_run("chain", parent_run=tool_run)
+    assert _run_span_stamp(_agent_span_data(), chain_run) == "subagent"
+
+
+def test_agent_with_no_tool_above_it_is_not_tagged():
+    root_chain = _make_run("chain")
+    assert _run_span_stamp(_agent_span_data(), root_chain) is None
+
+
+def test_handoff_agent_inside_a_tool_is_tagged_subagent():
+    # A handoff opens a new agent run beside the one it replaced, so an agent
+    # handed off to inside a tool still has that tool above it.
+    tool_run = _make_run("tool")
+    chain_run = _make_run("chain", parent_run=tool_run)
+    assert _run_span_stamp(_agent_span_data(), chain_run) == "subagent"
 
 
 def test_subagent_overrides_inherited_root():
-    # Structural detection overrides propagated root at agent-as-tool spans.
-    assert _run_subagent_stamp("root") == "subagent"
+    tool_run = _make_run("tool")
+    tag = _run_span_stamp(_agent_span_data(), tool_run, existing_tag="root")
+    assert tag == "subagent"
 
 
-@pytest.mark.parametrize("narrowing_tag", ["middleware", "compaction"])
-def test_subagent_preserves_user_narrowing_tag(narrowing_tag):
-    assert _run_subagent_stamp(narrowing_tag) == narrowing_tag
+@pytest.mark.parametrize("user_tag", ["middleware", "compaction", "subagent"])
+def test_subagent_keeps_user_supplied_tag(user_tag):
+    tool_run = _make_run("tool")
+    assert (
+        _run_span_stamp(_agent_span_data(), tool_run, existing_tag=user_tag) == user_tag
+    )
 
 
-def test_subagent_preserves_existing_subagent_tag():
-    assert _run_subagent_stamp("subagent") == "subagent"
+# ---- Guardrail ----
+
+
+def test_guardrail_stamps_middleware():
+    root_chain = _make_run("chain")
+    assert _run_span_stamp(_guardrail_span_data(), root_chain) == "middleware"
+
+
+def test_guardrail_overrides_inherited_root():
+    root_chain = _make_run("chain")
+    assert (
+        _run_span_stamp(_guardrail_span_data(), root_chain, existing_tag="root")
+        == "middleware"
+    )
+
+
+@pytest.mark.parametrize("user_tag", ["middleware", "subagent", "compaction"])
+def test_guardrail_keeps_user_supplied_tag(user_tag):
+    root_chain = _make_run("chain")
+    assert (
+        _run_span_stamp(_guardrail_span_data(), root_chain, existing_tag=user_tag)
+        == user_tag
+    )

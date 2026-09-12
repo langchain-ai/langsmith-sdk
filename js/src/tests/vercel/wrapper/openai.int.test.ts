@@ -45,6 +45,7 @@ test("wrap generateText", async () => {
       }),
     },
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
   });
   expect(result.text).toBeDefined();
   expect(result.text.length).toBeGreaterThan(0);
@@ -86,6 +87,7 @@ test("wrap generateText with tool class", async () => {
       ),
     },
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
   });
   expect(result.text).toBeDefined();
   expect(result.text.length).toBeGreaterThan(0);
@@ -164,6 +166,7 @@ test("wrap streamText", async () => {
       }),
     },
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
   });
   let total = "";
   for await (const chunk of result.textStream) {
@@ -356,6 +359,7 @@ test("should reuse tool def without double wrapping tool traces", async () => {
     ],
     tools: toolDef,
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
   });
   expect(result.text).toBeDefined();
   expect(result.text.length).toBeGreaterThan(0);
@@ -371,6 +375,7 @@ test("should reuse tool def without double wrapping tool traces", async () => {
     ],
     tools: toolDef,
     stopWhen: stepCountIs(10),
+    providerOptions: { openai: { store: false } },
   });
   expect(result2.text).toBeDefined();
   expect(result2.text.length).toBeGreaterThan(0);

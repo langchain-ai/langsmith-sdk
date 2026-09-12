@@ -19,6 +19,7 @@ from langsmith.sandbox._client import (
     _make_docker_context_tar,
     _make_dockerfile_build_command,
     _quote_path_segment,
+    _quote_reference_segment,
     _resolve_dockerfile_context,
 )
 from langsmith.sandbox._exceptions import (
@@ -32,6 +33,7 @@ from langsmith.sandbox._helpers import (
     handle_client_http_error,
     handle_sandbox_creation_error,
     merge_headers,
+    raise_if_not_ready,
     validate_service_params,
     validate_ttl,
 )
@@ -41,6 +43,7 @@ from langsmith.sandbox._models import (
     DownloadURL,
     ResourceStatus,
     Snapshot,
+    SnapshotTag,
 )
 from langsmith.sandbox._mounts import (
     SandboxMountConfig,
@@ -251,6 +254,7 @@ class AsyncSandboxClient:
         self,
         snapshot_id: Optional[str] = None,
         *,
+        snapshot: Optional[str] = None,
         snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
@@ -280,10 +284,12 @@ class AsyncSandboxClient:
 
         Args:
             snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
-                with ``snapshot_name``.
-            snapshot_name: Snapshot name to boot from. Resolved server-side to a
-                snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``.
+                with ``snapshot`` and ``snapshot_name``.
+            snapshot: Snapshot to boot from, as a UUID, ``name:tag``, or a bare
+                ``name`` (which means ``name:latest``). Prefer this over
+                ``snapshot_id`` and ``snapshot_name``: it covers all three forms.
+            snapshot_name: Deprecated synonym for ``snapshot``, kept for callers
+                that predate it.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
             idle_ttl_seconds: Idle timeout in seconds. The launcher
@@ -321,11 +327,12 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If timeout waiting for sandbox to be ready.
             ResourceCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
-            ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
-                ``snapshot_name`` are provided.
+            ValueError: If TTL values are invalid, or if more than one of
+                ``snapshot_id``, ``snapshot`` and ``snapshot_name`` is provided.
         """
         sb = await self.create_sandbox(
             snapshot_id,
+            snapshot=snapshot,
             snapshot_name=snapshot_name,
             name=name,
             timeout=timeout,
@@ -345,6 +352,7 @@ class AsyncSandboxClient:
         self,
         snapshot_id: Optional[str] = None,
         *,
+        snapshot: Optional[str] = None,
         snapshot_name: Optional[str] = None,
         name: Optional[str] = None,
         timeout: int = 30,
@@ -365,10 +373,12 @@ class AsyncSandboxClient:
 
         Args:
             snapshot_id: Optional snapshot ID to boot from. Mutually exclusive
-                with ``snapshot_name``.
-            snapshot_name: Snapshot name to boot from. Resolved server-side to a
-                snapshot owned by the caller's tenant. Mutually exclusive with
-                ``snapshot_id``.
+                with ``snapshot`` and ``snapshot_name``.
+            snapshot: Snapshot to boot from, as a UUID, ``name:tag``, or a bare
+                ``name`` (which means ``name:latest``). Prefer this over
+                ``snapshot_id`` and ``snapshot_name``: it covers all three forms.
+            snapshot_name: Deprecated synonym for ``snapshot``, kept for callers
+                that predate it.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready (only used when
                 wait_for_ready=True).
@@ -414,8 +424,13 @@ class AsyncSandboxClient:
             ValueError: If TTL values are invalid, or if both ``snapshot_id`` and
                 ``snapshot_name`` are provided.
         """
-        if snapshot_id and snapshot_name:
-            raise ValueError("At most one of snapshot_id or snapshot_name may be set")
+        reference = snapshot or snapshot_name
+        if snapshot and snapshot_name and snapshot != snapshot_name:
+            raise ValueError("snapshot and snapshot_name must not disagree")
+        if snapshot_id and reference:
+            raise ValueError(
+                "At most one of snapshot_id, snapshot or snapshot_name may be set"
+            )
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
@@ -426,7 +441,9 @@ class AsyncSandboxClient:
         }
         if snapshot_id:
             payload["snapshot_id"] = snapshot_id
-        if snapshot_name:
+        if snapshot:
+            payload["snapshot"] = snapshot
+        elif snapshot_name:
             payload["snapshot_name"] = snapshot_name
         if wait_for_ready:
             payload["timeout"] = timeout
@@ -532,6 +549,7 @@ class AsyncSandboxClient:
         new_name: Optional[str] = None,
         idle_ttl_seconds: Optional[int] = None,
         delete_after_stop_seconds: Optional[int] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Update a sandbox's properties.
@@ -546,6 +564,13 @@ class AsyncSandboxClient:
                 before deletion. Must be a multiple of 60. ``0`` disables
                 stop-anchored deletion. ``None`` leaves the existing value
                 unchanged.
+            proxy_config: Replacement proxy configuration, forwarded to the
+                server as-is (same shape as ``create_sandbox``). Rules replace
+                the existing set rather than merging into it, so include every
+                rule the sandbox should keep. Opaque header values carry over
+                from the current config, so rotating one credential does not
+                mean re-supplying secrets that can no longer be read. The
+                sandbox must be ``ready``; start a stopped one first.
 
         Returns:
             Updated AsyncSandbox.
@@ -553,6 +578,8 @@ class AsyncSandboxClient:
         Raises:
             ResourceNotFoundError: If sandbox not found.
             ResourceNameConflictError: If new_name is already in use.
+            SandboxNotReadyError: If ``proxy_config`` was given and the sandbox
+                is not ``ready``.
             SandboxClientError: For other errors.
             ValueError: If TTL values are invalid.
         """
@@ -567,6 +594,8 @@ class AsyncSandboxClient:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
         if delete_after_stop_seconds is not None:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
+        if proxy_config is not None:
+            payload["proxy_config"] = proxy_config
 
         try:
             response = await self._http.patch(
@@ -586,6 +615,8 @@ class AsyncSandboxClient:
                     f"Sandbox name '{new_name}' already in use",
                     resource_type="sandbox",
                 ) from e
+            if proxy_config is not None:
+                raise_if_not_ready(e, name)
             handle_client_http_error(e)
             raise  # pragma: no cover
 
@@ -893,6 +924,7 @@ class AsyncSandboxClient:
         docker_image: str,
         fs_capacity_bytes: int,
         *,
+        tag: Optional[str] = None,
         registry_id: Optional[str] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
@@ -923,6 +955,8 @@ class AsyncSandboxClient:
             "docker_image": docker_image,
             "fs_capacity_bytes": fs_capacity_bytes,
         }
+        if tag is not None:
+            payload["tag"] = tag
         if registry_id is not None:
             payload["registry_id"] = registry_id
 
@@ -1039,6 +1073,7 @@ class AsyncSandboxClient:
         sandbox_name: str,
         name: str,
         *,
+        tag: Optional[str] = None,
         docker_image: Optional[str] = None,
         fs_capacity_bytes: Optional[int] = None,
         timeout: int = 60,
@@ -1051,6 +1086,9 @@ class AsyncSandboxClient:
         Args:
             sandbox_name: Name of the sandbox to capture from.
             name: Snapshot name.
+            tag: Tag to publish the snapshot under, within ``name``. Re-using a
+                tag moves it to the new snapshot, leaving the previous one
+                addressable by id. Defaults server-side to ``latest``.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -1065,6 +1103,8 @@ class AsyncSandboxClient:
         url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}
+        if tag is not None:
+            payload["tag"] = tag
         if docker_image is not None:
             payload["docker_image"] = docker_image
         if fs_capacity_bytes is not None:
@@ -1091,10 +1131,12 @@ class AsyncSandboxClient:
     async def get_snapshot(
         self, snapshot_id: str, *, headers: RequestHeaders = None
     ) -> Snapshot:
-        """Get a snapshot by ID.
+        """Get a snapshot by ID or by a Docker-style reference.
 
         Args:
-            snapshot_id: Snapshot UUID.
+            snapshot_id: Snapshot UUID, ``name:tag``, or a bare ``name``. A bare
+                name means ``name:latest``, falling back to the newest ready
+                untagged snapshot of that name.
 
         Returns:
             Snapshot.
@@ -1103,7 +1145,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
+        url = f"{self._base_url}/snapshots/{_quote_reference_segment(snapshot_id)}"
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
@@ -1113,6 +1155,38 @@ class AsyncSandboxClient:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
                     f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
+                ) from e
+            handle_client_http_error(e)
+            raise  # pragma: no cover
+
+    async def list_snapshot_tags(
+        self, name: str, *, headers: RequestHeaders = None
+    ) -> list[SnapshotTag]:
+        """List every tag published under a snapshot name.
+
+        Args:
+            name: Snapshot name, without a tag.
+
+        Returns:
+            Each tag under the name with the snapshot it resolves to. Empty when
+            the name exists but currently carries no tags.
+
+        Raises:
+            ResourceNotFoundError: If nobody has published under the name.
+            SandboxClientError: For other errors, including a name carrying a tag.
+        """
+        url = f"{self._base_url}/snapshots-by-name/{_quote_path_segment(name)}"
+
+        try:
+            response = await self._http.get(url, headers=self._request_headers(headers))
+            response.raise_for_status()
+            return [
+                SnapshotTag.from_dict(tag) for tag in response.json().get("tags") or []
+            ]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"Snapshot name '{name}' not found", resource_type="snapshot"
                 ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover

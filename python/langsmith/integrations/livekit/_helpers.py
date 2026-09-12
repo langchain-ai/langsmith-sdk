@@ -11,7 +11,14 @@ import json
 import logging
 from typing import Any, Optional
 
-from langsmith._internal.voice._helpers import try_parse_json_object
+from opentelemetry.util.types import AttributeValue
+
+from langsmith._internal.voice._helpers import (
+    build_assistant_tool_call_message,
+    build_tool_message,
+    try_parse_json_object,
+)
+from langsmith._internal.voice.translated_span import TranslatedSpan
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,18 @@ _PROVIDER_ALIASES = (
     "mistral",
     "groq",
 )
+
+
+def get_content_attribute(tspan: TranslatedSpan, name: str) -> Optional[AttributeValue]:
+    """Read a LiveKit content field across the 1.7 ``lk.pii.*`` rename.
+
+    A present new key is authoritative, even when empty: do not replace withheld
+    content with an older value. ``name`` is the suffix without ``lk.``.
+    """
+    pii_key = f"lk.pii.{name}"
+    if pii_key in tspan.attributes:
+        return tspan.attributes[pii_key]
+    return tspan.attributes.get(f"lk.{name}")
 
 
 def normalize_provider(raw: Any) -> Optional[str]:
@@ -179,36 +198,6 @@ def flatten_lk_attributes_to_ls_metadata(
         ):
             flat[name] = list(v)
     return flat
-
-
-def build_tool_message(
-    content: str,
-    *,
-    tool_call_id: Optional[str] = None,
-    name: Optional[str] = None,
-) -> dict:
-    """Build a ``tool`` result message, with its call id / name when present."""
-    msg: dict = {"role": "tool", "content": content}
-    if tool_call_id:
-        msg["tool_call_id"] = str(tool_call_id)
-    if name:
-        msg["name"] = str(name)
-    return msg
-
-
-def build_assistant_tool_call_message(call_id: str, name: str, arguments: str) -> dict:
-    """Build an assistant message containing one tool call."""
-    return {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [
-            {
-                "id": call_id,
-                "type": "function",
-                "function": {"name": name, "arguments": arguments},
-            }
-        ],
-    }
 
 
 def build_message_from_event(role: str, event: Any) -> dict:
