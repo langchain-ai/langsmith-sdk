@@ -496,9 +496,7 @@ function createResponsesUsageMetadata(
  * If the run already has middleware/subagent/compaction, keep it. Otherwise
  * guardrails become middleware and agents under any tool become subagents.
  *
- * Openai-agents structural counterpart to resolveVercelLsAgentType. Added
- * to fix guardrails inheriting root and to catch subagents past the
- * intermediate chain run that as_tool insertion produces.
+ * Openai-agents structural counterpart to resolveVercelLsAgentType.
  */
 function _resolveOpenAIAgentsLsAgentType(
   spanData: SpanData,
