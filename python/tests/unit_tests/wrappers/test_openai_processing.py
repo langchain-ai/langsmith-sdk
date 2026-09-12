@@ -1,12 +1,25 @@
 """Unit tests for OpenAI wrapper processing functions."""
 
+import warnings
 from types import SimpleNamespace
 
 import pytest
+from openai.lib._parsing import parse_chat_completion
+from openai.lib._parsing._responses import parse_response
+from openai.types.chat import ChatCompletion, ChatCompletionMessage
+from openai.types.chat.chat_completion import Choice
+from openai.types.responses import (
+    Response,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
+from pydantic import BaseModel
 
 from langsmith import run_helpers
 from langsmith.wrappers._openai import (
     _infer_invocation_params,
+    _process_chat_completion,
+    _process_responses_api_output,
     _traceable_kwargs_with_ls_agent_type,
 )
 
@@ -187,3 +200,142 @@ def test_nested_none_opt_out_overrides_propagated_tag():
     )
     assert "ls_agent_type" in result["child_metadata"]
     assert result["child_metadata"]["ls_agent_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# Serializer warnings from `.parse()` responses (issue #3490)
+#
+# `ParsedChatCompletion` / `ParsedResponse` are generic over the caller's
+# response format and the SDK builds them with the type variable left
+# unsubstituted, so Pydantic resolves it to `None` and reports the caller's own
+# model as unexpected. One warning per traced `parse()` call, on a payload that
+# is nonetheless correct. The Anthropic wrapper already suppresses the same
+# warning for `ParsedBetaMessage` (issue #2737).
+# ---------------------------------------------------------------------------
+
+
+class _WeatherResponse(BaseModel):
+    city: str
+    temp: str
+
+
+_WEATHER_JSON = '{"city":"San Francisco","temp":"18C"}'
+
+
+def _chat_completion() -> ChatCompletion:
+    return ChatCompletion(
+        id="chatcmpl-1",
+        created=0,
+        model="gpt-4o-mini",
+        object="chat.completion",
+        choices=[
+            Choice(
+                finish_reason="stop",
+                index=0,
+                message=ChatCompletionMessage(role="assistant", content=_WEATHER_JSON),
+            )
+        ],
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    )
+
+
+def _response() -> Response:
+    return Response(
+        id="resp-1",
+        created_at=0,
+        model="gpt-4o-mini",
+        object="response",
+        output=[
+            ResponseOutputMessage(
+                id="msg-1",
+                role="assistant",
+                status="completed",
+                type="message",
+                content=[
+                    ResponseOutputText(
+                        type="output_text", text=_WEATHER_JSON, annotations=[]
+                    )
+                ],
+            )
+        ],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        tools=[],
+    )
+
+
+def _caught(process, response) -> list[warnings.WarningMessage]:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        process(response)
+    return list(caught)
+
+
+def test_parsed_chat_completion_emits_no_serializer_warning():
+    """`beta.chat.completions.parse()` traces without warning, and still traces
+    the parsed model."""
+    parsed = parse_chat_completion(
+        response_format=_WeatherResponse,
+        input_tools=[],
+        chat_completion=_chat_completion(),
+    )
+    # The unsubstituted type variable is what provokes the warning; if a future
+    # SDK resolves it, this case stops proving anything and should be revisited.
+    assert "~ResponseFormatT" in type(parsed).__name__
+
+    caught = _caught(_process_chat_completion, parsed)
+    assert caught == [], [str(w.message) for w in caught]
+
+    payload = _process_chat_completion(parsed)
+    assert payload["choices"][0]["message"]["parsed"] == {
+        "city": "San Francisco",
+        "temp": "18C",
+    }
+    assert payload["usage_metadata"]["input_tokens"] == 10
+
+
+def test_parsed_response_emits_no_serializer_warning():
+    """`responses.parse()` has the same defect and the same fix - the Anthropic
+    counterpart was fixed on one path only, which is how this one survived."""
+    parsed = parse_response(
+        text_format=_WeatherResponse, input_tools=[], response=_response()
+    )
+    assert "~TextFormatT" in type(parsed).__name__
+
+    caught = _caught(_process_responses_api_output, parsed)
+    assert caught == [], [str(w.message) for w in caught]
+
+    # `ParsedResponse.output_parsed` is a property rather than a field, so the
+    # parsed model reaches the trace through the text block it was parsed from.
+    payload = _process_responses_api_output(parsed)
+    assert payload["output"][0]["content"][0]["parsed"] == {
+        "city": "San Francisco",
+        "temp": "18C",
+    }
+
+
+@pytest.mark.parametrize(
+    ("process", "response"),
+    [
+        (_process_chat_completion, _chat_completion()),
+        (_process_responses_api_output, _response()),
+    ],
+)
+def test_unparsed_responses_are_unchanged(process, response):
+    """The `create()` paths were already silent and must stay untouched."""
+    assert _caught(process, response) == []
+
+
+def test_other_serializer_warnings_still_surface():
+    """Suppression is matched on the Pydantic serializer message, so an
+    unrelated warning raised during the same dump is not swallowed."""
+
+    class _Noisy:
+        choices = [SimpleNamespace(message=SimpleNamespace(parsed={"a": 1}))]
+
+        def model_dump(self, **_kwargs):
+            warnings.warn("something else entirely", UserWarning, stacklevel=2)
+            return {"choices": [], "usage": None}
+
+    caught = _caught(_process_chat_completion, _Noisy())
+    assert [str(w.message) for w in caught] == ["something else entirely"]
