@@ -109,6 +109,9 @@ if HAVE_AGENTS:
         If the run already has middleware/subagent/compaction, keep it.
         Otherwise guardrails become middleware and agents under any tool
         become subagents.
+
+        Added to fix guardrails inheriting root and to catch subagents past
+        the intermediate chain run that ``as_tool`` insertion produces.
         """
         if existing_tag in NON_ROOT_LS_AGENT_TYPES:
             return None
