@@ -2269,3 +2269,155 @@ describe.each(ENDPOINT_TYPES)(
     });
   },
 );
+
+describe("sample rate and caller metadata survive batching and compression", () => {
+  let testClients: Client[] = [];
+
+  afterEach(async () => {
+    for (const client of testClients) {
+      try {
+        await client.awaitPendingTraceBatches();
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    testClients = [];
+    jest.clearAllMocks();
+  });
+
+  interface CapturedRequestInit {
+    headers: Record<string, string>;
+    body: string | Uint8Array | ReadableStream;
+  }
+
+  interface ParsedRun {
+    id: string;
+    extra: { metadata: Record<string, unknown> };
+  }
+
+  interface ParsedBatchBody {
+    post: ParsedRun[];
+    patch: ParsedRun[];
+  }
+
+  const createMockFetch = (
+    callsArray: Array<[string, CapturedRequestInit]>,
+  ): jest.MockedFunction<typeof fetch> =>
+    jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : "url" in input
+            ? input.url
+            : input.toString();
+      if (url.includes("/runs/") && init) {
+        // `_sendMultipartRequest` always passes a plain `Record<string,string>`
+        // headers object and a string/Uint8Array/ReadableStream body; narrow the
+        // library-supplied `RequestInit` to the shape read below.
+        callsArray.push([url, init as unknown as CapturedRequestInit]);
+      }
+      return { ok: true, text: () => Promise.resolve("") } as Response;
+    }) as jest.MockedFunction<typeof fetch>;
+
+  const createSampledClient = (
+    mockFetch: jest.MockedFunction<typeof fetch>,
+    gzipBodyEnabled: boolean,
+  ) => {
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+      tracingSamplingRate: 1,
+      fetchImplementation: mockFetch,
+    });
+    testClients.push(client);
+    // `_ensureServerInfo` is private; the cast below narrows just enough to spy on it.
+    jest
+      .spyOn(
+        client as unknown as { _ensureServerInfo: () => Promise<unknown> },
+        "_ensureServerInfo",
+      )
+      .mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { use_multipart_endpoint: true },
+        instance_flags: { gzip_body_enabled: gzipBodyEnabled },
+      });
+    return client;
+  };
+
+  const postSampledRun = async (
+    client: Client,
+    userId: string,
+  ): Promise<string> => {
+    const runId = uuidv4();
+    const { dottedOrder } = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId,
+    );
+    await client.createRun({
+      id: runId,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+      extra: { metadata: { user_id: userId } },
+    });
+    return runId;
+  };
+
+  const expectSampleRateAndUserId = (
+    reqBody: ParsedBatchBody,
+    runIdA: string,
+    runIdB: string,
+  ) => {
+    const byId = Object.fromEntries(reqBody.post.map((run) => [run.id, run]));
+    expect(byId[runIdA].extra.metadata.ls_tracing_sample_rate).toBe(1);
+    expect(byId[runIdA].extra.metadata.user_id).toBe("user-a");
+    expect(byId[runIdB].extra.metadata.ls_tracing_sample_rate).toBe(1);
+    expect(byId[runIdB].extra.metadata.user_id).toBe("user-b");
+  };
+
+  it("should report the sample rate and caller metadata through the uncompressed multipart batch path", async () => {
+    const calls: Array<[string, CapturedRequestInit]> = [];
+    const mockFetch = createMockFetch(calls);
+    const client = createSampledClient(mockFetch, false);
+
+    const runIdA = await postSampledRun(client, "user-a");
+    const runIdB = await postSampledRun(client, "user-b");
+
+    await client.awaitPendingTraceBatches();
+
+    expect(calls.length).toBe(1);
+    const requestParam = calls[0][1];
+    expect(requestParam.headers["Content-Encoding"]).toBeUndefined();
+
+    // `parseMockRequestBody` is untyped; the shape asserted here is what it
+    // reconstructs from the multipart body (see helper at the top of this file).
+    const reqBody = (await parseMockRequestBody(
+      requestParam.body,
+    )) as unknown as ParsedBatchBody;
+    expectSampleRateAndUserId(reqBody, runIdA, runIdB);
+  });
+
+  it("should report the sample rate and caller metadata through the gzip-compressed multipart batch path", async () => {
+    const calls: Array<[string, CapturedRequestInit]> = [];
+    const mockFetch = createMockFetch(calls);
+    const client = createSampledClient(mockFetch, true);
+
+    const runIdA = await postSampledRun(client, "user-a");
+    const runIdB = await postSampledRun(client, "user-b");
+
+    await client.awaitPendingTraceBatches();
+
+    expect(calls.length).toBe(1);
+    const requestParam = calls[0][1];
+    // Proves the request actually went through CompressionStream("gzip"),
+    // not just that the parser's decompress-or-fall-back branch happened to work.
+    expect(requestParam.headers["Content-Encoding"]).toBe("gzip");
+
+    const reqBody = (await parseMockRequestBody(
+      requestParam.body,
+    )) as unknown as ParsedBatchBody;
+    expectSampleRateAndUserId(reqBody, runIdA, runIdB);
+  });
+});

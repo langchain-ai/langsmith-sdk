@@ -682,6 +682,7 @@ export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
   cachedEnvVars?: Record<string, string>,
   omitTracedRuntimeInfo?: boolean,
+  tracingSampleRate?: number,
 ): T {
   if (omitTracedRuntimeInfo) {
     return run;
@@ -706,6 +707,9 @@ export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
           }
         : {}),
       ...metadata,
+      ...(tracingSampleRate !== undefined
+        ? { ls_tracing_sample_rate: tracingSampleRate }
+        : {}),
     },
   };
   return run;
@@ -2305,6 +2309,7 @@ export class Client implements LangSmithTracingClientInterface {
       run,
       this.cachedLSEnvVarsForMetadata,
       this.omitTracedRuntimeInfo,
+      this.tracingSampleRate,
     );
     if (this.omitTracedRuntimeInfo) {
       return merged;
@@ -2319,6 +2324,7 @@ export class Client implements LangSmithTracingClientInterface {
       item.item as RunCreate,
       this.cachedLSEnvVarsForMetadata,
       this.omitTracedRuntimeInfo,
+      this.tracingSampleRate,
     );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
@@ -3138,7 +3144,14 @@ export class Client implements LangSmithTracingClientInterface {
       headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
-      run,
+      run.extra
+        ? mergeRuntimeEnvIntoRun(
+            run,
+            this.cachedLSEnvVarsForMetadata,
+            this.omitTracedRuntimeInfo,
+            this.tracingSampleRate,
+          )
+        : run,
       `Serializing payload to update run with id: ${runId}`,
     );
     await this.caller.call(async () => {

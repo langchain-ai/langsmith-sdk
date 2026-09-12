@@ -2473,6 +2473,7 @@ class Client:
         if self._omit_traced_runtime_info:
             return
         runtime_env = ls_env.get_runtime_environment()
+        sample_rate = self.tracing_sample_rate
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
@@ -2482,6 +2483,8 @@ class Client:
             metadata: dict = run_extra.setdefault("metadata", {})
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
             added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            if sample_rate is not None:
+                added["ls_tracing_sample_rate"] = sample_rate
             if added:
                 metadata.update(self._hide_run_metadata(added))
 
