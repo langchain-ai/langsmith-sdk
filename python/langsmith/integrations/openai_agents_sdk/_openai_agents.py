@@ -104,20 +104,18 @@ if HAVE_AGENTS:
         parent_run: "rt.RunTree",
         existing_tag: Optional[str],
     ) -> Optional[str]:
-        """Pick an ls_agent_type for a span, or None to leave it as is.
+        """Return an ls_agent_type for the span, or None to leave it alone.
 
-        A more specific type already on the run wins; then guardrails are
-        middleware; then an agent running under any tool is a subagent. The
-        tool can be one the SDK created or one the user wrapped themselves.
+        If the run already has middleware/subagent/compaction, keep it.
+        Otherwise guardrails become middleware and agents under any tool
+        become subagents.
         """
-        # Keep a more specific type if one is already set. An inherited "root"
-        # is not kept, so it can be replaced below.
         if existing_tag in NON_ROOT_LS_AGENT_TYPES:
             return None
         if isinstance(span.span_data, tracing.GuardrailSpanData):
             return "middleware"
-        # Look at every run above this one, not just the direct parent: when
-        # an agent runs as a tool, an extra run sits between the two.
+        # Walk the full parent chain, not just the direct parent: as_tool
+        # inserts a chain run between the tool and the inner agent span.
         if isinstance(span.span_data, tracing.AgentSpanData):
             cursor: Optional[rt.RunTree] = parent_run
             while cursor is not None:
@@ -345,9 +343,9 @@ if HAVE_AGENTS:
                     else None,
                 )
 
-                # An agent reached by a handoff stays in whatever conversation
-                # it was handed off within: untagged at the top level, subagent
-                # if it is running inside a tool.
+                # Handoffs replace the caller rather than run as a tool, so
+                # a handoff agent has no tool ancestor and correctly stays
+                # untagged here.
                 metadata = child_run.extra.setdefault("metadata", {})
                 structural_tag = _resolve_openai_agents_ls_agent_type(
                     span, parent_run, metadata.get("ls_agent_type")

@@ -491,19 +491,16 @@ function createResponsesUsageMetadata(
 }
 
 /**
- * Pick an ls_agent_type for a span, or undefined to leave it as is.
+ * Return an ls_agent_type for the span, or undefined to leave it alone.
  *
- * A more specific type already on the run wins; then guardrails are
- * middleware; then an agent running under any tool is a subagent. The tool can
- * be one the SDK created or one the user wrapped themselves.
+ * If the run already has middleware/subagent/compaction, keep it. Otherwise
+ * guardrails become middleware and agents under any tool become subagents.
  */
 function _resolveOpenAIAgentsLsAgentType(
   spanData: SpanData,
   parentRun: RunTree,
   existingTag: unknown,
 ): "middleware" | "subagent" | undefined {
-  // Keep a more specific type if one is already set. An inherited "root" is
-  // not kept, so it can be replaced below.
   if (
     typeof existingTag === "string" &&
     NON_ROOT_LS_AGENT_TYPES.has(existingTag)
@@ -511,8 +508,8 @@ function _resolveOpenAIAgentsLsAgentType(
     return undefined;
   }
   if (spanData.type === "guardrail") return "middleware";
-  // Look at every run above this one, not just the direct parent: when an
-  // agent runs as a tool, an extra run sits between the two.
+  // Walk the full parent chain, not just the direct parent: asTool inserts
+  // a chain run between the tool and the inner agent span.
   if (spanData.type === "agent") {
     let cursor: RunTree | undefined = parentRun;
     while (cursor !== undefined) {
@@ -800,8 +797,8 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       return;
     }
 
-    // An agent reached by a handoff stays in whatever conversation it was
-    // handed off within: untagged at the top level, subagent inside a tool.
+    // Handoffs replace the caller rather than run as a tool, so a handoff
+    // agent has no tool ancestor and correctly stays untagged here.
     if (!childRun.extra) childRun.extra = {};
     if (!childRun.extra.metadata) childRun.extra.metadata = {};
     const meta = childRun.extra.metadata as Record<string, unknown>;
