@@ -16,6 +16,14 @@ from .runs import (
     RunsResourceWithStreamingResponse,
     AsyncRunsResourceWithStreamingResponse,
 )
+from .fleet import (
+    FleetResource,
+    AsyncFleetResource,
+    FleetResourceWithRawResponse,
+    AsyncFleetResourceWithRawResponse,
+    FleetResourceWithStreamingResponse,
+    AsyncFleetResourceWithStreamingResponse,
+)
 from .issues import (
     IssuesResource,
     AsyncIssuesResource,
@@ -64,6 +72,14 @@ from .sandboxes import (
     SandboxesResourceWithStreamingResponse,
     AsyncSandboxesResourceWithStreamingResponse,
 )
+from .product_feedback import (
+    ProductFeedbackResource,
+    AsyncProductFeedbackResource,
+    ProductFeedbackResourceWithRawResponse,
+    AsyncProductFeedbackResourceWithRawResponse,
+    ProductFeedbackResourceWithStreamingResponse,
+    AsyncProductFeedbackResourceWithStreamingResponse,
+)
 from .annotation_queues import (
     AnnotationQueuesResource,
     AsyncAnnotationQueuesResource,
@@ -82,6 +98,18 @@ from .online_evaluators import (
 )
 
 __all__ = [
+    "ProductFeedbackResource",
+    "AsyncProductFeedbackResource",
+    "ProductFeedbackResourceWithRawResponse",
+    "AsyncProductFeedbackResourceWithRawResponse",
+    "ProductFeedbackResourceWithStreamingResponse",
+    "AsyncProductFeedbackResourceWithStreamingResponse",
+    "FleetResource",
+    "AsyncFleetResource",
+    "FleetResourceWithRawResponse",
+    "AsyncFleetResourceWithRawResponse",
+    "FleetResourceWithStreamingResponse",
+    "AsyncFleetResourceWithStreamingResponse",
     "DatasetsResource",
     "AsyncDatasetsResource",
     "DatasetsResourceWithRawResponse",

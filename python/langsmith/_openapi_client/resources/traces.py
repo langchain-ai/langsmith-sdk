@@ -98,6 +98,7 @@ class TracesResource(SyncAPIResource):
                 "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
+                "LS_USER_ID",
             ]
         ]
         | Omit = omit,
@@ -338,6 +339,7 @@ class AsyncTracesResource(AsyncAPIResource):
                 "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
+                "LS_USER_ID",
             ]
         ]
         | Omit = omit,

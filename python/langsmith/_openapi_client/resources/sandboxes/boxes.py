@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, List
+from typing_extensions import Literal
 
 from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, SequenceNotStr, omit, not_given
@@ -65,6 +66,7 @@ class BoxesResource(SyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        run_config: box_create_params.RunConfig | Omit = omit,
         snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
@@ -112,6 +114,10 @@ class BoxesResource(SyncAPIResource):
 
               Applies to this request only.
 
+          run_config: RunConfig overrides the snapshot's run config for this sandbox: user and
+              work_dir replace the snapshot's, env_vars merge over it. The result is what the
+              sandbox boots with, and what a snapshot captured from it carries.
+
           snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
               resolves to name:latest.
 
@@ -142,6 +148,7 @@ class BoxesResource(SyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "run_config": run_config,
                     "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
@@ -201,6 +208,7 @@ class BoxesResource(SyncAPIResource):
         mem_bytes: int | Omit = omit,
         body_name: str | Omit = omit,
         proxy_config: box_update_params.ProxyConfig | Omit = omit,
+        run_config: box_update_params.RunConfig | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
         vcpus: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -218,6 +226,10 @@ class BoxesResource(SyncAPIResource):
         Args:
           mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
               sandbox is created; a resize enforces only the maximum of 64 GiB.
+
+          run_config: RunConfig changes what subsequent commands run with: user and work_dir replace
+              the current values, env_vars merge over them. Commands already running are
+              unaffected.
 
           extra_headers: Send extra headers
 
@@ -240,6 +252,7 @@ class BoxesResource(SyncAPIResource):
                     "mem_bytes": mem_bytes,
                     "body_name": body_name,
                     "proxy_config": proxy_config,
+                    "run_config": run_config,
                     "tag_value_ids": tag_value_ids,
                     "vcpus": vcpus,
                 },
@@ -382,10 +395,12 @@ class BoxesResource(SyncAPIResource):
         *,
         body_name: str,
         checkpoint: str | Omit = omit,
+        description: str | Omit = omit,
         docker_image: str | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        run_config: box_create_snapshot_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -401,6 +416,9 @@ class BoxesResource(SyncAPIResource):
         Args:
           checkpoint: if omitted, creates a fresh checkpoint from the running VM
 
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           docker_image: sandbox-local Docker image to export
 
           fs_capacity_bytes: required for Docker image export unless the sandbox has a capacity
@@ -411,6 +429,10 @@ class BoxesResource(SyncAPIResource):
               snapshots small unless memory restore is explicitly desired.
 
           labels: Labels seed the captured snapshot's labels.
+
+          run_config: RunConfig overrides the runtime configuration the snapshot carries: for a
+              docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+              running VM, the sandbox's own. user and work_dir replace, env_vars merge.
 
           tag: mutable Docker-style tag; defaults to "latest"
 
@@ -430,10 +452,12 @@ class BoxesResource(SyncAPIResource):
                 {
                     "body_name": body_name,
                     "checkpoint": checkpoint,
+                    "description": description,
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
@@ -451,6 +475,21 @@ class BoxesResource(SyncAPIResource):
         path: str,
         content_disposition: str | Omit = omit,
         content_type: str | Omit = omit,
+        csp_sandbox_flags: List[
+            Literal[
+                "allow-downloads",
+                "allow-forms",
+                "allow-modals",
+                "allow-orientation-lock",
+                "allow-pointer-lock",
+                "allow-popups",
+                "allow-presentation",
+                "allow-scripts",
+                "allow-top-navigation-by-user-activation",
+            ]
+        ]
+        | Omit = omit,
+        csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none"]] | Omit = omit,
         expires_in_seconds: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -463,11 +502,29 @@ class BoxesResource(SyncAPIResource):
         Generate a tokenized link that downloads a single file from a sandbox with no
         further authentication. This mints a token rather than creating an addressable
         resource, so it returns 200 with no Location header. The token pins the sandbox,
-        the file path, and the response content type and disposition, so a link cannot
-        be repointed at another file. Links never expire unless expires_in_seconds is
-        set. The link is served from the sandbox service domain, not the API host.
+        the file path, the response content type and disposition, and the sandbox flags,
+        so a link cannot be repointed at another file or served under a weaker policy.
+        The file is always served with a Content-Security-Policy: a sandbox directive,
+        plus a default-src holding every fetch to the sandbox's own download host and a
+        set of pre-approved third-party origins. csp_sandbox_flags may loosen the
+        sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+        allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
+        allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
+        served file never shares an origin with anything. csp_source_bundles selects the
+        third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
+        when the field is omitted, and 'none' holds the file to the sandbox alone.
+        Because every file of one sandbox is served from the same host, a page can load
+        sibling files it has links for, but only by their own link URLs. Links never
+        expire unless expires_in_seconds is set. The link is served from the sandbox
+        service domain, not the API host.
 
         Args:
+          csp_sandbox_flags: CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
+              most restrictive policy.
+
+          csp_source_bundles: CSPSourceBundles allow the served file to fetch from named third-party origins;
+              omit to send no fetch directive.
+
           expires_in_seconds: ExpiresInSeconds is optional; a link with no expiry never expires.
 
           extra_headers: Send extra headers
@@ -487,6 +544,8 @@ class BoxesResource(SyncAPIResource):
                     "path": path,
                     "content_disposition": content_disposition,
                     "content_type": content_type,
+                    "csp_sandbox_flags": csp_sandbox_flags,
+                    "csp_source_bundles": csp_source_bundles,
                     "expires_in_seconds": expires_in_seconds,
                 },
                 box_generate_download_url_params.BoxGenerateDownloadURLParams,
@@ -677,6 +736,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        run_config: box_create_params.RunConfig | Omit = omit,
         snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
@@ -724,6 +784,10 @@ class AsyncBoxesResource(AsyncAPIResource):
 
               Applies to this request only.
 
+          run_config: RunConfig overrides the snapshot's run config for this sandbox: user and
+              work_dir replace the snapshot's, env_vars merge over it. The result is what the
+              sandbox boots with, and what a snapshot captured from it carries.
+
           snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
               resolves to name:latest.
 
@@ -754,6 +818,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "run_config": run_config,
                     "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
@@ -813,6 +878,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         mem_bytes: int | Omit = omit,
         body_name: str | Omit = omit,
         proxy_config: box_update_params.ProxyConfig | Omit = omit,
+        run_config: box_update_params.RunConfig | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
         vcpus: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -830,6 +896,10 @@ class AsyncBoxesResource(AsyncAPIResource):
         Args:
           mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
               sandbox is created; a resize enforces only the maximum of 64 GiB.
+
+          run_config: RunConfig changes what subsequent commands run with: user and work_dir replace
+              the current values, env_vars merge over them. Commands already running are
+              unaffected.
 
           extra_headers: Send extra headers
 
@@ -852,6 +922,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "mem_bytes": mem_bytes,
                     "body_name": body_name,
                     "proxy_config": proxy_config,
+                    "run_config": run_config,
                     "tag_value_ids": tag_value_ids,
                     "vcpus": vcpus,
                 },
@@ -994,10 +1065,12 @@ class AsyncBoxesResource(AsyncAPIResource):
         *,
         body_name: str,
         checkpoint: str | Omit = omit,
+        description: str | Omit = omit,
         docker_image: str | Omit = omit,
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        run_config: box_create_snapshot_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -1013,6 +1086,9 @@ class AsyncBoxesResource(AsyncAPIResource):
         Args:
           checkpoint: if omitted, creates a fresh checkpoint from the running VM
 
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           docker_image: sandbox-local Docker image to export
 
           fs_capacity_bytes: required for Docker image export unless the sandbox has a capacity
@@ -1023,6 +1099,10 @@ class AsyncBoxesResource(AsyncAPIResource):
               snapshots small unless memory restore is explicitly desired.
 
           labels: Labels seed the captured snapshot's labels.
+
+          run_config: RunConfig overrides the runtime configuration the snapshot carries: for a
+              docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+              running VM, the sandbox's own. user and work_dir replace, env_vars merge.
 
           tag: mutable Docker-style tag; defaults to "latest"
 
@@ -1042,10 +1122,12 @@ class AsyncBoxesResource(AsyncAPIResource):
                 {
                     "body_name": body_name,
                     "checkpoint": checkpoint,
+                    "description": description,
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
@@ -1063,6 +1145,21 @@ class AsyncBoxesResource(AsyncAPIResource):
         path: str,
         content_disposition: str | Omit = omit,
         content_type: str | Omit = omit,
+        csp_sandbox_flags: List[
+            Literal[
+                "allow-downloads",
+                "allow-forms",
+                "allow-modals",
+                "allow-orientation-lock",
+                "allow-pointer-lock",
+                "allow-popups",
+                "allow-presentation",
+                "allow-scripts",
+                "allow-top-navigation-by-user-activation",
+            ]
+        ]
+        | Omit = omit,
+        csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none"]] | Omit = omit,
         expires_in_seconds: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -1075,11 +1172,29 @@ class AsyncBoxesResource(AsyncAPIResource):
         Generate a tokenized link that downloads a single file from a sandbox with no
         further authentication. This mints a token rather than creating an addressable
         resource, so it returns 200 with no Location header. The token pins the sandbox,
-        the file path, and the response content type and disposition, so a link cannot
-        be repointed at another file. Links never expire unless expires_in_seconds is
-        set. The link is served from the sandbox service domain, not the API host.
+        the file path, the response content type and disposition, and the sandbox flags,
+        so a link cannot be repointed at another file or served under a weaker policy.
+        The file is always served with a Content-Security-Policy: a sandbox directive,
+        plus a default-src holding every fetch to the sandbox's own download host and a
+        set of pre-approved third-party origins. csp_sandbox_flags may loosen the
+        sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+        allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
+        allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
+        served file never shares an origin with anything. csp_source_bundles selects the
+        third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
+        when the field is omitted, and 'none' holds the file to the sandbox alone.
+        Because every file of one sandbox is served from the same host, a page can load
+        sibling files it has links for, but only by their own link URLs. Links never
+        expire unless expires_in_seconds is set. The link is served from the sandbox
+        service domain, not the API host.
 
         Args:
+          csp_sandbox_flags: CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
+              most restrictive policy.
+
+          csp_source_bundles: CSPSourceBundles allow the served file to fetch from named third-party origins;
+              omit to send no fetch directive.
+
           expires_in_seconds: ExpiresInSeconds is optional; a link with no expiry never expires.
 
           extra_headers: Send extra headers
@@ -1099,6 +1214,8 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "path": path,
                     "content_disposition": content_disposition,
                     "content_type": content_type,
+                    "csp_sandbox_flags": csp_sandbox_flags,
+                    "csp_source_bundles": csp_source_bundles,
                     "expires_in_seconds": expires_in_seconds,
                 },
                 box_generate_download_url_params.BoxGenerateDownloadURLParams,

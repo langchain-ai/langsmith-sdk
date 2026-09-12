@@ -7,7 +7,7 @@ from typing_extensions import Required, Annotated, TypedDict
 
 from ..._utils import PropertyInfo
 
-__all__ = ["BoxCreateSnapshotParams"]
+__all__ = ["BoxCreateSnapshotParams", "RunConfig"]
 
 
 class BoxCreateSnapshotParams(TypedDict, total=False):
@@ -15,6 +15,12 @@ class BoxCreateSnapshotParams(TypedDict, total=False):
 
     checkpoint: str
     """if omitted, creates a fresh checkpoint from the running VM"""
+
+    description: str
+    """
+    Description says what this snapshot's image can do, so a caller can hand it to
+    an agent as a capability summary. At most 1024 characters.
+    """
 
     docker_image: str
     """sandbox-local Docker image to export"""
@@ -33,5 +39,27 @@ class BoxCreateSnapshotParams(TypedDict, total=False):
     labels: Dict[str, str]
     """Labels seed the captured snapshot's labels."""
 
+    run_config: RunConfig
+    """
+    RunConfig overrides the runtime configuration the snapshot carries: for a
+    docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+    running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+    """
+
     tag: str
     """mutable Docker-style tag; defaults to "latest" """
+
+
+class RunConfig(TypedDict, total=False):
+    """
+    RunConfig overrides the runtime configuration the snapshot carries: for a
+    docker_image export, the image's USER, WORKDIR and ENV; for a capture of
+    the running VM, the sandbox's own. user and work_dir replace, env_vars
+    merge.
+    """
+
+    env_vars: Dict[str, str]
+
+    user: str
+
+    work_dir: str

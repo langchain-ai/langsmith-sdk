@@ -90,9 +90,21 @@ export class Boxes extends APIResource {
    * Generate a tokenized link that downloads a single file from a sandbox with no
    * further authentication. This mints a token rather than creating an addressable
    * resource, so it returns 200 with no Location header. The token pins the sandbox,
-   * the file path, and the response content type and disposition, so a link cannot
-   * be repointed at another file. Links never expire unless expires_in_seconds is
-   * set. The link is served from the sandbox service domain, not the API host.
+   * the file path, the response content type and disposition, and the sandbox flags,
+   * so a link cannot be repointed at another file or served under a weaker policy.
+   * The file is always served with a Content-Security-Policy: a sandbox directive,
+   * plus a default-src holding every fetch to the sandbox's own download host and a
+   * set of pre-approved third-party origins. csp_sandbox_flags may loosen the
+   * sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+   * allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
+   * allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
+   * served file never shares an origin with anything. csp_source_bundles selects the
+   * third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
+   * when the field is omitted, and 'none' holds the file to the sandbox alone.
+   * Because every file of one sandbox is served from the same host, a page can load
+   * sibling files it has links for, but only by their own link URLs. Links never
+   * expire unless expires_in_seconds is set. The link is served from the sandbox
+   * service domain, not the API host.
    */
   generateDownloadURL(
     name: string,
@@ -197,6 +209,13 @@ export interface BoxCreateParams {
    * Applies to this request only.
    */
   restore_memory?: boolean;
+
+  /**
+   * RunConfig overrides the snapshot's run config for this sandbox: user and
+   * work_dir replace the snapshot's, env_vars merge over it. The result is what the
+   * sandbox boots with, and what a snapshot captured from it carries.
+   */
+  run_config?: BoxCreateParams.RunConfig;
 
   /**
    * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
@@ -590,6 +609,12 @@ export namespace BoxCreateParams {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -630,6 +655,12 @@ export namespace BoxCreateParams {
       name: string;
 
       aws?: Rule.Aws;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -709,6 +740,19 @@ export namespace BoxCreateParams {
         value?: string;
       }
     }
+  }
+
+  /**
+   * RunConfig overrides the snapshot's run config for this sandbox: user and
+   * work_dir replace the snapshot's, env_vars merge over it. The result is what the
+   * sandbox boots with, and what a snapshot captured from it carries.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
   }
 }
 
@@ -731,6 +775,13 @@ export interface BoxUpdateParams {
 
   proxy_config?: BoxUpdateParams.ProxyConfig;
 
+  /**
+   * RunConfig changes what subsequent commands run with: user and work_dir replace
+   * the current values, env_vars merge over them. Commands already running are
+   * unaffected.
+   */
+  run_config?: BoxUpdateParams.RunConfig;
+
   tag_value_ids?: Array<string>;
 
   vcpus?: number;
@@ -741,6 +792,12 @@ export namespace BoxUpdateParams {
     access_control?: ProxyConfig.AccessControl;
 
     callbacks?: Array<ProxyConfig.Callback>;
+
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
 
     no_proxy?: Array<string>;
 
@@ -782,6 +839,12 @@ export namespace BoxUpdateParams {
       name: string;
 
       aws?: Rule.Aws;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -861,6 +924,19 @@ export namespace BoxUpdateParams {
         value?: string;
       }
     }
+  }
+
+  /**
+   * RunConfig changes what subsequent commands run with: user and work_dir replace
+   * the current values, env_vars merge over them. Commands already running are
+   * unaffected.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
   }
 }
 
@@ -922,6 +998,12 @@ export interface BoxCreateSnapshotParams {
   checkpoint?: string;
 
   /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary. At most 1024 characters.
+   */
+  description?: string;
+
+  /**
    * sandbox-local Docker image to export
    */
   docker_image?: string;
@@ -945,9 +1027,31 @@ export interface BoxCreateSnapshotParams {
   labels?: { [key: string]: string };
 
   /**
+   * RunConfig overrides the runtime configuration the snapshot carries: for a
+   * docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+   * running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+   */
+  run_config?: BoxCreateSnapshotParams.RunConfig;
+
+  /**
    * mutable Docker-style tag; defaults to "latest"
    */
   tag?: string;
+}
+
+export namespace BoxCreateSnapshotParams {
+  /**
+   * RunConfig overrides the runtime configuration the snapshot carries: for a
+   * docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+   * running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface BoxGenerateDownloadURLParams {
@@ -956,6 +1060,28 @@ export interface BoxGenerateDownloadURLParams {
   content_disposition?: string;
 
   content_type?: string;
+
+  /**
+   * CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
+   * most restrictive policy.
+   */
+  csp_sandbox_flags?: Array<
+    | 'allow-downloads'
+    | 'allow-forms'
+    | 'allow-modals'
+    | 'allow-orientation-lock'
+    | 'allow-pointer-lock'
+    | 'allow-popups'
+    | 'allow-presentation'
+    | 'allow-scripts'
+    | 'allow-top-navigation-by-user-activation'
+  >;
+
+  /**
+   * CSPSourceBundles allow the served file to fetch from named third-party origins;
+   * omit to send no fetch directive.
+   */
+  csp_source_bundles?: Array<'cdnjs' | 'google-fonts' | 'jsdelivr' | 'unpkg' | 'none'>;
 
   /**
    * ExpiresInSeconds is optional; a link with no expiry never expires.

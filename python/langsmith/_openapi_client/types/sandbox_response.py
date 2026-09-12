@@ -54,6 +54,7 @@ __all__ = [
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
+    "RunConfig",
 ]
 
 
@@ -482,6 +483,12 @@ class ProxyConfigRule(BaseModel):
 
     aws: Optional[ProxyConfigRuleAws] = None
 
+    description: Optional[str] = None
+    """
+    Description says what this rule lets the sandbox reach, so an agent driving the
+    sandbox can be told its capabilities. At most 1024 characters.
+    """
+
     enabled: Optional[bool] = None
 
     env_vars: Optional[Dict[str, str]] = None
@@ -514,9 +521,27 @@ class ProxyConfig(BaseModel):
 
     callbacks: Optional[List[ProxyConfigCallback]] = None
 
+    description: Optional[str] = None
+    """
+    Description says what this configuration as a whole lets the sandbox reach,
+    complementing the per-rule descriptions. At most 1024 characters.
+    """
+
     no_proxy: Optional[List[str]] = None
 
     rules: Optional[List[ProxyConfigRule]] = None
+
+
+class RunConfig(BaseModel):
+    """
+    RunConfig is what the sandbox's commands run with: the user, working directory and base env beneath env_vars.
+    """
+
+    env_vars: Optional[Dict[str, str]] = None
+
+    user: Optional[str] = None
+
+    work_dir: Optional[str] = None
 
 
 class SandboxResponse(BaseModel):
@@ -547,6 +572,12 @@ class SandboxResponse(BaseModel):
     preserve_memory_on_stop: Optional[bool] = None
 
     proxy_config: Optional[ProxyConfig] = None
+
+    run_config: Optional[RunConfig] = None
+    """
+    RunConfig is what the sandbox's commands run with: the user, working directory
+    and base env beneath env_vars.
+    """
 
     size_class: Optional[str] = None
 

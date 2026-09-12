@@ -6,7 +6,31 @@ from typing_extensions import Literal
 
 from .._models import BaseModel
 
-__all__ = ["Issue", "LinearSync"]
+__all__ = ["Issue", "FixVerification", "LinearContext", "LinearSync", "ValidationResult"]
+
+
+class FixVerification(BaseModel):
+    attempt: Optional[int] = None
+
+    parent_deployment_id: Optional[str] = None
+
+    preview_deployment_id: Optional[str] = None
+
+    reason: Optional[str] = None
+
+    root_trace_ids: Optional[List[str]] = None
+
+    status: Optional[
+        Literal["awaiting_preview", "verifying", "passed", "failed", "inconclusive", "timeout", "error"]
+    ] = None
+
+    updated_at: Optional[datetime] = None
+
+
+class LinearContext(BaseModel):
+    github_pr_urls: Optional[List[str]] = None
+
+    workflow_state: Optional[str] = None
 
 
 class LinearSync(BaseModel):
@@ -25,6 +49,20 @@ class LinearSync(BaseModel):
     state: Optional[Literal["pending", "synced", "failed", "auth_required", "paused"]] = None
 
     url: Optional[str] = None
+
+
+class ValidationResult(BaseModel):
+    active_revision_id: Optional[str] = None
+
+    completed_at: Optional[datetime] = None
+
+    deployment_id: Optional[str] = None
+
+    outcome: Optional[Literal["reproduced", "not_reproduced", "inconclusive", "error"]] = None
+
+    reason: Optional[str] = None
+
+    root_trace_ids: Optional[List[str]] = None
 
 
 class Issue(BaseModel):
@@ -54,9 +92,11 @@ class Issue(BaseModel):
 
     fix_prompt: Optional[str] = None
 
-    fix_verification: Optional[object] = None
+    fix_verification: Optional[FixVerification] = None
 
     last_seen_at: Optional[str] = None
+
+    linear_context: Optional[LinearContext] = None
 
     linear_sync: Optional[LinearSync] = None
 
@@ -89,5 +129,7 @@ class Issue(BaseModel):
     traces: Optional[object] = None
 
     updated_at: Optional[str] = None
+
+    validation_result: Optional[ValidationResult] = None
 
     watching_since: Optional[str] = None

@@ -91,6 +91,12 @@ export interface SnapshotCreateParams {
   name: string;
 
   /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary. At most 1024 characters.
+   */
+  description?: string;
+
+  /**
    * Labels seed the snapshot's labels, overriding any label of the same key derived
    * from the Docker image.
    */
@@ -99,9 +105,33 @@ export interface SnapshotCreateParams {
   registry_id?: string;
 
   /**
+   * RunConfig overrides the runtime configuration taken from the Docker image. Every
+   * sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+   * its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+   * the image's, and env_vars merge over it.
+   */
+  run_config?: SnapshotCreateParams.RunConfig;
+
+  /**
    * mutable Docker-style tag; defaults to "latest"
    */
   tag?: string;
+}
+
+export namespace SnapshotCreateParams {
+  /**
+   * RunConfig overrides the runtime configuration taken from the Docker image. Every
+   * sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+   * its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+   * the image's, and env_vars merge over it.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface SnapshotListParams extends ItemsCursorGetPaginationParams {

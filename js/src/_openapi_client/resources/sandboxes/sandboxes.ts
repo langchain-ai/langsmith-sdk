@@ -104,6 +104,12 @@ export interface SandboxResponse {
 
   proxy_config?: SandboxResponse.ProxyConfig;
 
+  /**
+   * RunConfig is what the sandbox's commands run with: the user, working directory
+   * and base env beneath env_vars.
+   */
+  run_config?: SandboxResponse.RunConfig;
+
   size_class?: string;
 
   snapshot_id?: string;
@@ -494,6 +500,12 @@ export namespace SandboxResponse {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -534,6 +546,12 @@ export namespace SandboxResponse {
       name: string;
 
       aws?: Rule.Aws;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -614,6 +632,18 @@ export namespace SandboxResponse {
       }
     }
   }
+
+  /**
+   * RunConfig is what the sandbox's commands run with: the user, working directory
+   * and base env beneath env_vars.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface SandboxStatusResponse {
@@ -663,6 +693,12 @@ export interface SnapshotResponse {
 
   created_by?: string;
 
+  /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary.
+   */
+  description?: string;
+
   docker_image?: string;
 
   fs_capacity_bytes?: number;
@@ -684,6 +720,12 @@ export interface SnapshotResponse {
 
   registry_id?: string;
 
+  /**
+   * RunConfig is what sandboxes from this snapshot boot with. Absent on snapshots
+   * built before it was recorded, which run as root with their own env.
+   */
+  run_config?: SnapshotResponse.RunConfig;
+
   source_sandbox_id?: string;
 
   status?: string;
@@ -697,6 +739,20 @@ export interface SnapshotResponse {
   tags?: Array<string>;
 
   updated_at?: string;
+}
+
+export namespace SnapshotResponse {
+  /**
+   * RunConfig is what sandboxes from this snapshot boot with. Absent on snapshots
+   * built before it was recorded, which run as root with their own env.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 Sandboxes.Boxes = Boxes;
