@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -302,7 +303,8 @@ class TestSubagentFlow:
         )
         subagent_run = _hooks_module._default_session.subagent_runs["agent_123"]
 
-        # Subagent stop — run should be stashed, not ended yet
+        # Subagent stop — end_time recorded now (actual subagent completion);
+        # patch deferred so PostToolUse can attach outputs.
         asyncio.run(
             subagent_stop_hook(
                 {"agent_id": "agent_123", "agent_type": "foo"},
@@ -316,9 +318,10 @@ class TestSubagentFlow:
         assert (
             _hooks_module._default_session.ended_subagent_runs["tool_1"] is subagent_run
         )
-        assert subagent_run.end_time is None
+        stop_end_time = subagent_run.end_time
+        assert stop_end_time is not None
 
-        # PostToolUse for Agent — sets outputs on subagent but doesn't end it
+        # PostToolUse for Agent — sets outputs on subagent; must not move end_time
         asyncio.run(
             post_tool_use_hook(
                 {
@@ -333,17 +336,68 @@ class TestSubagentFlow:
         # Agent tool run should be ended
         assert "tool_1" not in _hooks_module._default_session.active_tool_runs
 
-        # Subagent outputs should be set but run not yet ended
+        # Subagent outputs should be set; end_time unchanged
         assert subagent_run.outputs == {"output": "bar"}
-        assert subagent_run.end_time is None
+        assert subagent_run.end_time == stop_end_time
 
         # Subagent can still be found for LLM nesting
         assert get_subagent_run_by_tool_id("tool_1") is subagent_run
 
-        # clear_active_tool_runs finalises everything
+        # clear_active_tool_runs patches but preserves end_time
         clear_active_tool_runs()
-        assert subagent_run.end_time is not None
+        assert subagent_run.end_time == stop_end_time
         assert len(_hooks_module._default_session.ended_subagent_runs) == 0
+
+    def test_subagent_end_time_recorded_at_stop_not_conversation_end(self):
+        """``end_time`` must reflect actual subagent completion.
+
+        Regression test: when multiple subagents run in a session, deferring
+        ``RunTree.end()`` to ``clear_active_tool_runs`` caused every subagent's
+        ``end_time`` to be stamped at conversation-termination time instead of
+        its real completion time, making child chain spans visually outlast
+        their parent ``Agent`` tool spans.
+        """
+        asyncio.run(
+            pre_tool_use_hook(
+                {"tool_name": "Agent", "tool_input": {"agent": "foo"}},
+                "tool_x",
+                MagicMock(),
+            )
+        )
+        asyncio.run(
+            subagent_start_hook(
+                {"agent_id": "agent_x", "agent_type": "foo"},
+                "sdk_session_id",
+                MagicMock(),
+            )
+        )
+        subagent_run = _hooks_module._default_session.subagent_runs["agent_x"]
+
+        asyncio.run(
+            subagent_stop_hook(
+                {"agent_id": "agent_x", "agent_type": "foo"},
+                "sdk_session_id",
+                MagicMock(),
+            )
+        )
+        stop_end_time = subagent_run.end_time
+        assert stop_end_time is not None
+
+        # Simulate the gap before PostToolUse fires for the Agent tool.
+        time.sleep(0.05)
+        asyncio.run(
+            post_tool_use_hook(
+                {"tool_name": "Agent", "tool_response": {"output": "bar"}},
+                "tool_x",
+                MagicMock(),
+            )
+        )
+        assert subagent_run.end_time == stop_end_time
+
+        # Simulate further delay before the conversation actually ends.
+        time.sleep(0.05)
+        clear_active_tool_runs()
+        assert subagent_run.end_time == stop_end_time
 
 
 class TestTranscriptPathCapture:

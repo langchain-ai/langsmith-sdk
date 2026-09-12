@@ -498,13 +498,15 @@ async def subagent_stop_hook(
         if transcript_path:
             session.subagent_transcript_paths.append((transcript_path, subagent_run))
 
-        # Move to ended state so PostToolUse can set outputs.
+        # Record end_time now so the run reflects actual subagent completion
+        # rather than the cleanup time in ``clear_active_tool_runs``. ``.patch()``
+        # is deferred so ``PostToolUse`` can still attach outputs.
+        subagent_run.end()
         agent_tool_id = session.agent_to_tool_mapping.pop(agent_id, None)
         if agent_tool_id:
             session.ended_subagent_runs[agent_tool_id] = subagent_run
         else:
-            # No matching Agent tool — just end it now
-            subagent_run.end()
+            # No matching Agent tool — patch it now
             try:
                 subagent_run.patch()
             except Exception as e:
@@ -537,10 +539,10 @@ def clear_active_tool_runs(session: Optional[SessionState] = None) -> None:
         except Exception as e:
             logger.debug(f"Failed to clean up orphaned subagent run {agent_id}: {e}")
 
-    # 2. Finalise ended subagent runs (outputs already set by PostToolUse)
+    # 2. Patch ended subagent runs (``end_time`` already set by
+    # ``subagent_stop_hook``; outputs already set by ``PostToolUse``)
     for tool_use_id, subagent_run in session.ended_subagent_runs.items():
         try:
-            subagent_run.end()
             subagent_run.patch()
         except Exception as e:
             logger.debug(f"Failed to finalise ended subagent run {tool_use_id}: {e}")
