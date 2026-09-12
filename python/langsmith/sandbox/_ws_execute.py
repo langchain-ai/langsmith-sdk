@@ -9,6 +9,7 @@ import random
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any, Callable, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from langsmith import utils as ls_utils
 from langsmith.sandbox._exceptions import (
@@ -101,8 +102,10 @@ def _ensure_websockets_async():
 
 def _build_ws_url(dataplane_url: str) -> str:
     """Convert dataplane HTTP URL to WebSocket URL for /execute/ws."""
-    ws_url = dataplane_url.replace("https://", "wss://").replace("http://", "ws://")
-    return f"{ws_url}/execute/ws"
+    parsed = urlsplit(dataplane_url)
+    scheme = {"http": "ws", "https": "wss"}.get(parsed.scheme, parsed.scheme)
+    path = f"{parsed.path.rstrip('/')}/execute/ws"
+    return urlunsplit((scheme, parsed.netloc, path, parsed.query, parsed.fragment))
 
 
 def _build_auth_headers(
