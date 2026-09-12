@@ -29,6 +29,22 @@ export interface ResourceStatus {
  * Snapshots are built from Docker images or captured from running sandboxes.
  * They are used to create new sandboxes.
  */
+/**
+ * What a sandbox's commands run with.
+ *
+ * Mirrors `docker run -u/-w/-e`: `user` and `work_dir` replace the value
+ * inherited from the layer below (the image, then the snapshot, then the
+ * sandbox), while `env_vars` merge over it key by key.
+ */
+export interface SandboxRunConfig {
+  /** Account commands run as: `name`, `uid`, `name:group` or `uid:gid`. */
+  user?: string;
+  /** Absolute working directory. */
+  work_dir?: string;
+  /** Environment variables, merged over the layer below. */
+  env_vars?: Record<string, string>;
+}
+
 export interface Snapshot {
   id: string;
   name: string;
@@ -44,6 +60,12 @@ export interface Snapshot {
   registry_id?: string;
   created_at?: string;
   updated_at?: string;
+  /**
+   * What sandboxes created from this snapshot boot with. Absent on snapshots
+   * built before run configs were recorded: those boot as root with only the
+   * sandbox's own environment.
+   */
+  run_config?: SandboxRunConfig;
 }
 
 /**
@@ -83,6 +105,12 @@ export interface SandboxData {
   mem_bytes?: number;
   /** Root filesystem capacity in bytes. */
   fs_capacity_bytes?: number;
+  /**
+   * What commands run with — the snapshot's run config, with any create or
+   * update override merged in. Absent on sandboxes created before run
+   * configs were recorded.
+   */
+  run_config?: SandboxRunConfig;
 }
 
 /**
@@ -153,10 +181,21 @@ export interface WsRunOptions {
    * run() passes the remainder of its overall connect budget. @internal
    */
   openTimeout?: number;
-  /** Environment variables to set for the command. */
+  /**
+   * Environment variables to set for the command.
+   * @deprecated Use `runConfig.env_vars`.
+   */
   env?: Record<string, string>;
-  /** Working directory for command execution. */
+  /**
+   * Working directory for command execution.
+   * @deprecated Use `runConfig.work_dir`.
+   */
   cwd?: string;
+  /**
+   * What this one command runs with, layered over the sandbox's own run
+   * config. Cannot be combined with the deprecated `env` and `cwd`.
+   */
+  runConfig?: SandboxRunConfig;
   /** Shell to use. Default: "/bin/bash". */
   shell?: string;
   /** Callback invoked with each stdout chunk. */
@@ -200,12 +239,19 @@ export interface RunOptions {
   timeout?: number;
   /**
    * Environment variables to set for the command.
+   * @deprecated Use `runConfig.env_vars`.
    */
   env?: Record<string, string>;
   /**
    * Working directory for command execution.
+   * @deprecated Use `runConfig.work_dir`.
    */
   cwd?: string;
+  /**
+   * What this one command runs with, layered over the sandbox's own run
+   * config. Cannot be combined with the deprecated `env` and `cwd`.
+   */
+  runConfig?: SandboxRunConfig;
   /**
    * Shell to use for command execution. Defaults to "/bin/bash".
    */
@@ -552,6 +598,12 @@ export interface CreateSandboxOptions {
    * auth.
    */
   proxyConfig?: SandboxProxyConfig;
+  /**
+   * Overrides the snapshot's run config: `user` and `work_dir` replace the
+   * snapshot's, `env_vars` merge over them. The result is stored on the
+   * sandbox and is what it boots with.
+   */
+  runConfig?: SandboxRunConfig;
 }
 
 /**
@@ -560,6 +612,12 @@ export interface CreateSandboxOptions {
 export interface CreateSnapshotOptions {
   /** Private registry ID. */
   registryId?: string;
+  /**
+   * Overrides the image's own `USER`, `WORKDIR` and `ENV`, which the snapshot
+   * otherwise records and every sandbox created from it adopts. `user` and
+   * `work_dir` replace the image's, `env_vars` merge over its `ENV`.
+   */
+  runConfig?: SandboxRunConfig;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */
@@ -587,6 +645,11 @@ export interface CreateDockerfileSnapshotOptions {
   vCpus?: number;
   /** Memory in bytes for the temporary builder sandbox. */
   memBytes?: number;
+  /**
+   * Overrides the built image's `USER`, `WORKDIR` and `ENV`, which otherwise
+   * become the snapshot's run config.
+   */
+  runConfig?: SandboxRunConfig;
   /** Timeout in seconds for builder sandbox operations. Default: 60. */
   timeout?: number;
 }
@@ -602,6 +665,12 @@ export interface CaptureSnapshotOptions {
   dockerImage?: string;
   /** Filesystem capacity in bytes for Docker image export. */
   fsCapacityBytes?: number;
+  /**
+   * Overrides the run config the new snapshot records. A plain capture starts
+   * from what the sandbox was running with; a `dockerImage` export starts from
+   * that image's `USER`, `WORKDIR` and `ENV`.
+   */
+  runConfig?: SandboxRunConfig;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */
@@ -724,6 +793,14 @@ export interface UpdateSandboxOptions {
    * `ready`; start a stopped one first.
    */
   proxyConfig?: SandboxProxyConfig;
+  /**
+   * Merged into the sandbox's stored run config: `user` and `work_dir`
+   * replace, `env_vars` merge key by key. It takes effect for commands
+   * started after the update; commands already running keep what they
+   * started with, and a stopped sandbox picks the change up on its next
+   * start.
+   */
+  runConfig?: SandboxRunConfig;
 }
 
 /**

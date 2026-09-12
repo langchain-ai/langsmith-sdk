@@ -69,6 +69,7 @@ export type {
   SandboxMountConfig,
   SandboxProxyConfig,
   SandboxProxyRule,
+  SandboxRunConfig,
   SandboxProxySecret,
   SandboxMount,
   MountCacheConfig,

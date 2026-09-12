@@ -391,15 +391,52 @@ try {
   const failed = await sandbox.run("exit 1");
   console.log(failed.exit_code);  // 1
 
-  // Pass environment variables and working directory
+  // Pass environment variables and a working directory
   const envResult = await sandbox.run("echo $MY_VAR", {
-    env: { MY_VAR: "test-value" },
-    cwd: "/tmp",
+    runConfig: { env_vars: { MY_VAR: "test-value" }, work_dir: "/tmp" },
   });
 } finally {
   await sandbox.delete();
 }
 ```
+
+## Run Configuration
+
+`runConfig` sets the account commands run as, their working directory, and
+their environment. It mirrors `docker run -u/-w/-e`: `user` and `work_dir`
+replace the value from the layer below, `env_vars` merge over it key by key.
+
+A snapshot built from a Docker image records that image's `USER`, `WORKDIR`
+and `ENV`, and sandboxes created from it run that way. Override it per
+snapshot, per sandbox, per update, or per command:
+
+```typescript
+// Per snapshot: what every sandbox from it boots with
+const snapshot = await client.createSnapshot("python", "python:3.12-slim", 1_073_741_824, {
+  runConfig: { user: "app", work_dir: "/srv" },
+});
+
+// Per sandbox: overrides the snapshot's
+const sandbox = await client.createSandbox(snapshot.id, {
+  runConfig: { user: "root" },
+});
+
+// Per update: applies to subsequent commands
+await client.updateSandbox(sandbox.name, {
+  runConfig: { env_vars: { STAGE: "beta" } },
+});
+
+// Per command
+const result = await sandbox.run("id -un", { runConfig: { user: "app" } });
+```
+
+`user` takes `name`, `uid`, `name:group` or `uid:gid`; `work_dir` must be
+absolute and is created if missing. Snapshot and sandbox responses report the
+`run_config` in effect.
+
+The per-command `cwd` and `env` options are deprecated in favour of
+`runConfig.work_dir` and `runConfig.env_vars`. They still work on their own;
+combining them with `runConfig` throws `LangSmithValidationError`.
 
 ## Streaming Execution (WebSocket)
 
@@ -886,6 +923,7 @@ try {
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
 | `mountConfig?` | High-level mount config from `mountConfig({ mounts, auth })`; sent as `mount_config` and expanded by the backend at runtime |
 | `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
+| `runConfig?` | Overrides the snapshot's run config: `user` and `work_dir` replace, `env_vars` merge |
 
 ### ListSnapshotsOptions
 

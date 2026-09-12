@@ -20,6 +20,7 @@ from langsmith.sandbox._exceptions import (
     SandboxServerReloadError,
 )
 from langsmith.sandbox._helpers import merge_headers
+from langsmith.sandbox._run_config import SandboxRunConfig
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +341,7 @@ def run_ws_stream(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[SandboxRunConfig] = None,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -397,6 +399,8 @@ def run_ws_stream(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
                 if pty:
                     payload["pty"] = True
                 ws.send(json.dumps(payload))
@@ -547,6 +551,7 @@ async def run_ws_stream_async(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[SandboxRunConfig] = None,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -593,6 +598,8 @@ async def run_ws_stream_async(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
                 if pty:
                     payload["pty"] = True
                 await ws.send(json.dumps(payload))

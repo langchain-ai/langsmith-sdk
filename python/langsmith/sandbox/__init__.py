@@ -102,6 +102,7 @@ from langsmith.sandbox._proxy_config import (
     proxy_config,
     workspace_secret,
 )
+from langsmith.sandbox._run_config import SandboxRunConfig
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
 
@@ -125,6 +126,7 @@ __all__ = [
     "AsyncCommandHandle",
     "OutputChunk",
     "SandboxProxyConfig",
+    "SandboxRunConfig",
     "SandboxProxyRule",
     "SandboxProxySecret",
     "SandboxMount",
