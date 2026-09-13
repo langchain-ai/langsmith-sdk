@@ -34,9 +34,7 @@ export const parseLogLevel = (
     return maybeLevel;
   }
   loggerFor(client).warn(
-    `${sourceName} was set to ${JSON.stringify(maybeLevel)}, expected one of ${JSON.stringify(
-      Object.keys(levelNumbers),
-    )}`,
+    `${sourceName} was set to ${JSON.stringify(maybeLevel)}, expected one of ${JSON.stringify(Object.keys(levelNumbers))}`,
   );
   return undefined;
 };

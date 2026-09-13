@@ -1,8 +1,11 @@
 import os
 import logging
 
+from .._httpx import httpx
+
 logger: logging.Logger = logging.getLogger("langsmith._openapi_client")
-httpx_logger: logging.Logger = logging.getLogger("httpx")
+# Each backend logs under its own package name, so this has to follow the one in use.
+httpx_logger: logging.Logger = logging.getLogger(httpx.__name__)
 
 
 def _basic_config() -> None:

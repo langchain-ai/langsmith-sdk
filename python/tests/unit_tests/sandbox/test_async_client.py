@@ -1,5 +1,6 @@
 """Tests for AsyncSandboxClient."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     AsyncSandboxClient,
     AsyncServiceURL,
+    DownloadURL,
     ExecutionResult,
     ResourceCreationError,
     ResourceNameConflictError,
@@ -15,6 +17,7 @@ from langsmith.sandbox import (
     ResourceStatus,
     ResourceTimeoutError,
     SandboxConnectionError,
+    SandboxNotReadyError,
     Snapshot,
     aws_auth,
     mount_config,
@@ -489,6 +492,62 @@ class TestAsyncSandboxOperations:
 
         assert exc_info.value.resource_type == "sandbox"
 
+    async def test_update_sandbox_proxy_config(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test replacing a sandbox's proxy config."""
+        config = proxy_config(
+            rules=[
+                {
+                    "name": "github",
+                    "match_hosts": ["github.com"],
+                    "headers": [
+                        {
+                            "name": "Authorization",
+                            "type": "opaque",
+                            "value": "Basic rotated",
+                        }
+                    ],
+                }
+            ]
+        )
+        httpx_mock.add_response(
+            method="PATCH",
+            url="http://test-server:8080/boxes/my-sandbox",
+            json={
+                "id": "550e8400-e29b-41d4-a716-446655440003",
+                "name": "my-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
+            },
+        )
+
+        await client.update_sandbox("my-sandbox", proxy_config=config)
+
+        request = httpx_mock.get_requests()[-1]
+        assert json.loads(request.content) == {"proxy_config": config}
+
+    async def test_update_sandbox_proxy_config_not_ready(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """A proxy-config update on a stopped sandbox is a typed not-ready error."""
+        httpx_mock.add_response(
+            method="PATCH",
+            url="http://test-server:8080/boxes/my-sandbox",
+            json={
+                "detail": {
+                    "error": "InvalidRequest",
+                    "message": (
+                        'sandbox "my-sandbox" is in "stopped" state, '
+                        'must be "ready" to update proxy config'
+                    ),
+                }
+            },
+            status_code=400,
+        )
+
+        with pytest.raises(SandboxNotReadyError, match="stopped"):
+            await client.update_sandbox("my-sandbox", proxy_config={"rules": []})
+
     async def test_create_sandbox_async_returns_provisioning(
         self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
     ):
@@ -879,7 +938,7 @@ class TestAsyncSandboxOperations:
 
         with pytest.raises(
             ValueError,
-            match="At most one of snapshot_id or snapshot_name may be set",
+            match="At most one of snapshot_id, snapshot or snapshot_name may be set",
         ):
             await client.create_sandbox(snapshot_id="snap-1", snapshot_name="my-snap")
 
@@ -1077,6 +1136,81 @@ class TestAsyncSandboxOperations:
         assert sandbox_mock.call_args.kwargs["mem_bytes"] == 8589934592
 
 
+class TestAsyncSnapshotTags:
+    """The async client mirrors the sync tag surface."""
+
+    async def test_capture_snapshot_publishes_the_requested_tag(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-vm/snapshot",
+            json={
+                "id": "snap-3",
+                "name": "my-env",
+                "status": "building",
+                "fs_capacity_bytes": 4294967296,
+            },
+            status_code=201,
+        )
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/snap-3",
+            json={
+                "id": "snap-3",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 4294967296,
+                "tags": ["v2"],
+            },
+        )
+
+        snapshot = await client.capture_snapshot("my-vm", "my-env", tag="v2")
+
+        assert snapshot.tags == ["v2"]
+        assert json.loads(httpx_mock.get_requests()[0].content) == {
+            "name": "my-env",
+            "tag": "v2",
+        }
+
+    async def test_list_snapshot_tags_lists_every_tag(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots-by-name/my-env",
+            json={
+                "name": "my-env",
+                "tags": [{"tag": "latest", "snapshot_id": "snap-3"}],
+            },
+        )
+
+        tags = await client.list_snapshot_tags("my-env")
+
+        assert [(tag.tag, tag.snapshot_id) for tag in tags] == [("latest", "snap-3")]
+
+    async def test_get_snapshot_by_reference_keeps_the_tag_separator(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        httpx_mock.add_response(
+            method="GET",
+            url="http://test-server:8080/snapshots/my-env:v2",
+            json={
+                "id": "snap-5",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 1,
+                "tags": ["v2"],
+            },
+        )
+
+        snapshot = await client.get_snapshot("my-env:v2")
+
+        assert snapshot.id == "snap-5"
+
+
 class TestAsyncConnectionErrors:
     """Tests for async connection error handling."""
 
@@ -1090,6 +1224,82 @@ class TestAsyncConnectionErrors:
 
         with pytest.raises(SandboxConnectionError):
             await client.create_sandbox(snapshot_id="snap-1")
+
+
+class TestGenerateDownloadURL:
+    """Tests for AsyncSandboxClient.generate_download_url()."""
+
+    async def test_download_url_happy_path(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test minting a download link returns DownloadURL with correct fields."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={
+                "download_url": "http://uuid--dl.svc.example.com/tok",
+                "token": "tok",
+                "expires_at": None,
+            },
+        )
+
+        link = await client.generate_download_url("my-sandbox", "/tmp/report.pdf")
+
+        assert isinstance(link, DownloadURL)
+        assert link.download_url == "http://uuid--dl.svc.example.com/tok"
+        assert link.expires_at is None
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {"path": "/tmp/report.pdf"}
+
+    async def test_download_url_optional_fields(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test expiry and response headers are sent when provided."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/my-sandbox/download-url",
+            json={"download_url": "http://d/tok", "token": "tok", "expires_at": None},
+        )
+
+        await client.generate_download_url(
+            "my-sandbox",
+            "/tmp/page.html",
+            expires_in_seconds=3600,
+            content_type="text/html",
+            content_disposition="inline",
+        )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        assert json.loads(request.content) == {
+            "path": "/tmp/page.html",
+            "expires_in_seconds": 3600,
+            "content_type": "text/html",
+            "content_disposition": "inline",
+        }
+
+    async def test_download_url_not_found(
+        self, client: AsyncSandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test 404 raises ResourceNotFoundError."""
+        httpx_mock.add_response(
+            method="POST",
+            url="http://test-server:8080/boxes/nonexistent/download-url",
+            json={"detail": "Sandbox 'nonexistent' not found"},
+            status_code=404,
+        )
+
+        with pytest.raises(ResourceNotFoundError):
+            await client.generate_download_url("nonexistent", "/tmp/f")
+
+    async def test_download_url_invalid_expiry(self, client: AsyncSandboxClient):
+        """Test non-positive expires_in_seconds raises ValueError."""
+        with pytest.raises(ValueError, match="greater than 0"):
+            await client.generate_download_url(
+                "my-sandbox", "/tmp/f", expires_in_seconds=0
+            )
 
 
 class TestService:

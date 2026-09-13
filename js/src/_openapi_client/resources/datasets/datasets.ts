@@ -193,12 +193,7 @@ export interface Missing {
  * Enum for available dataset columns to sort by.
  */
 export type SortByDatasetColumn =
-  | 'name'
-  | 'created_at'
-  | 'last_session_start_time'
-  | 'example_count'
-  | 'session_count'
-  | 'modified_at';
+  'name' | 'created_at' | 'last_session_start_time' | 'example_count' | 'session_count' | 'modified_at';
 
 Datasets.ExperimentRuns = ExperimentRuns;
 

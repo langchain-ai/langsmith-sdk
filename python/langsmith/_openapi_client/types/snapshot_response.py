@@ -1,6 +1,6 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from .._models import BaseModel
 
@@ -40,5 +40,11 @@ class SnapshotResponse(BaseModel):
     status: Optional[str] = None
 
     status_message: Optional[str] = None
+
+    tags: Optional[List[str]] = None
+    """Tags currently resolving to this snapshot, under Name.
+
+    A snapshot with no tags is dangling — addressable only by id.
+    """
 
     updated_at: Optional[str] = None

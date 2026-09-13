@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import importlib
 import io
+import json
 import logging
 import os
 import queue
@@ -1591,13 +1592,16 @@ def test_fallback_json_serialization():
         (Document(content=item), expected) for item, expected in raw_surrogates
     ]
 
+    # Compare decoded values rather than bytes: which encoder produced the
+    # output is an implementation detail. The stdlib-json fallback keeps
+    # non-BMP characters as escaped surrogate pairs and separates keys with
+    # ": ", where the orjson path emits raw UTF-8 and no space. Both decode
+    # to the same string.
     for item, expected in raw_surrogates:
-        output = dumps_json(item).decode("utf8")
-        assert f'"{expected}"' == output
+        assert json.loads(dumps_json(item)) == expected
 
     for item, expected in pydantic_surrogates:
-        output = dumps_json(item).decode("utf8")
-        assert f'{{"content":"{expected}"}}' == output
+        assert json.loads(dumps_json(item)) == {"content": expected}
 
 
 def test_runs_stats():
@@ -1649,7 +1653,8 @@ def test_slow_run_read_multipart(
 
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
         with mock.patch(
-            "langsmith.client.rqtb_multipart.MultipartEncoder", create_encoder
+            "langsmith._internal._multipart.rqtb_multipart.MultipartEncoder",
+            create_encoder,
         ):
             langchain_client.create_run(**run_to_create)
             time.sleep(1)
@@ -4283,13 +4288,21 @@ async def test_runs_retrieve(v2_client: Client) -> None:
 async def test_runs_query(v2_client: Client) -> None:
     project_name = _v2_create_project_name("runs_query")
     trace_id, project_id, _ = _v2_post_trace(project_name)
-    runs = [
-        r
-        async for r in v2_client.runs.query(
-            project_ids=[project_id],
-            selects=_V2_DEFAULT_SELECTS,
-        )
-    ]
+    # Ingest is asynchronous and the query is served from an index, so the run
+    # is not queryable the instant `_v2_post_trace` returns. Poll like
+    # `test_runs_retrieve` does instead of racing the indexer.
+    runs: list = []
+    for _ in range(15):
+        runs = [
+            r
+            async for r in v2_client.runs.query(
+                project_ids=[project_id],
+                selects=_V2_DEFAULT_SELECTS,
+            )
+        ]
+        if any(r.trace_id == trace_id for r in runs):
+            break
+        time.sleep(2)
     assert len(runs) >= 1
     trace_ids = {r.trace_id for r in runs}
     assert trace_id in trace_ids

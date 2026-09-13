@@ -161,14 +161,20 @@ class TestLangsmithRunsEndpoints:
 
         # First replica call
         first_call = calls[0]
-        assert first_call.kwargs["api_key"] == "replica_key1"
-        assert first_call.kwargs["api_url"] == "https://replica1.example.com"
+        assert first_call.kwargs["_replica_auths"][0].api_key == "replica_key1"
+        assert (
+            first_call.kwargs["_replica_auths"][0].api_url
+            == "https://replica1.example.com"
+        )
         assert first_call.kwargs["session_name"] == "project1"
 
         # Second replica call
         second_call = calls[1]
-        assert second_call.kwargs["api_key"] == "replica_key2"
-        assert second_call.kwargs["api_url"] == "https://replica2.example.com"
+        assert second_call.kwargs["_replica_auths"][0].api_key == "replica_key2"
+        assert (
+            second_call.kwargs["_replica_auths"][0].api_url
+            == "https://replica2.example.com"
+        )
         assert second_call.kwargs["session_name"] == "project2"
 
     def test_background_threading_with_different_endpoints(self):

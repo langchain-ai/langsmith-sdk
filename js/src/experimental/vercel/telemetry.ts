@@ -1,5 +1,10 @@
 import type { ModelMessage, StepResult, Telemetry, TypedToolCall } from "ai";
 import { isRunTree, RunTree, RunTreeConfig } from "../../run_trees.js";
+import { allowUnprocessedPayloads } from "../../env.js";
+import {
+  _PROCESSING_FAILED_KEY,
+  _processingFailed,
+} from "../../singletons/constants.js";
 import { getCurrentRunTree, withRunTree } from "../../traceable.js";
 import { isEnvTracingEnabled } from "../../env.js";
 import { convertMessageToTracedFormat } from "./utils.js";
@@ -135,6 +140,26 @@ function _formatStepOutput(
   }
 
   return convertMessageToTracedFormat(output) as KVMap;
+}
+
+// Fail closed: a redactor that threw has redacted nothing, so the payload it
+// was handed must not be traced. LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS opts out.
+function droppedPayload(
+  payload: "inputs" | "outputs",
+  hook: string,
+  raw: KVMap,
+  e: unknown,
+): KVMap {
+  if (allowUnprocessedPayloads()) {
+    console.error(
+      `Error in ${hook}. Tracing unprocessed ${payload} because ` +
+        "LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is set:",
+      e,
+    );
+    return raw;
+  }
+  console.error(`Error in ${hook}. Dropping ${payload}:`, e);
+  return { [_PROCESSING_FAILED_KEY]: _processingFailed(payload, hook) };
 }
 
 function _hasNonzeroUsageMetadata(runTree: RunTree): boolean {
@@ -335,7 +360,7 @@ export function LangSmithTelemetry(
         try {
           inputs = processInputs(inputs);
         } catch (e) {
-          console.error("Error in processInputs, using raw inputs:", e);
+          inputs = droppedPayload("inputs", "processInputs", inputs, e);
         }
       }
     }
@@ -412,8 +437,10 @@ export function LangSmithTelemetry(
         try {
           inputs = processChildLLMRunInputs(inputs);
         } catch (e) {
-          console.error(
-            "Error in processChildLLMRunInputs, using raw inputs:",
+          inputs = droppedPayload(
+            "inputs",
+            "processChildLLMRunInputs",
+            inputs,
             e,
           );
         }
@@ -579,8 +606,10 @@ export function LangSmithTelemetry(
         try {
           outputs = processChildLLMRunOutputs(outputs);
         } catch (e) {
-          console.error(
-            "Error in processChildLLMRunOutputs, using raw outputs:",
+          outputs = droppedPayload(
+            "outputs",
+            "processChildLLMRunOutputs",
+            outputs,
             e,
           );
         }
@@ -715,7 +744,7 @@ export function LangSmithTelemetry(
         try {
           outputs = processOutputs(outputs);
         } catch (e) {
-          console.error("Error in processOutputs, using raw outputs:", e);
+          outputs = droppedPayload("outputs", "processOutputs", outputs, e);
         }
       }
     }

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
-import httpx
-
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import (
     SandboxConnectionError,
     SandboxOperationError,
@@ -113,6 +112,8 @@ class Snapshot:
         registry_id: Private registry ID, if applicable.
         created_at: Timestamp when the snapshot was created.
         updated_at: Timestamp when the snapshot was last updated.
+        tags: Tags currently resolving to this snapshot, under its name. Empty
+            means the snapshot is dangling — reachable only by id.
     """
 
     id: str
@@ -128,6 +129,8 @@ class Snapshot:
     registry_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # Appended last so existing positional constructions keep their meaning.
+    tags: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Snapshot:
@@ -146,7 +149,26 @@ class Snapshot:
             registry_id=data.get("registry_id"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
+            tags=list(data.get("tags") or []),
         )
+
+
+@dataclass
+class SnapshotTag:
+    """One tag published under a snapshot name, and the snapshot it resolves to.
+
+    Attributes:
+        tag: Tag name.
+        snapshot_id: Snapshot the tag currently points at.
+    """
+
+    tag: str
+    snapshot_id: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SnapshotTag:
+        """Create a SnapshotTag from an API response dict."""
+        return cls(tag=data.get("tag", ""), snapshot_id=data.get("snapshot_id", ""))
 
 
 # =============================================================================
@@ -456,6 +478,44 @@ class AsyncServiceURL:
         return (
             f"AsyncServiceURL(service_url={self._service_url!r}, "
             f"expires_at={self._expires_at!r})"
+        )
+
+
+# =============================================================================
+# Download URL Models
+# =============================================================================
+
+
+DownloadContentDisposition = Literal["attachment", "inline"]
+"""How a download link asks the browser to handle the file."""
+
+
+@dataclass
+class DownloadURL:
+    """A link that downloads one sandbox file with no LangSmith credential.
+
+    The link is pinned to the sandbox, the file path, and the response
+    headers, so it cannot be repointed at another file. It is pinned to the
+    path rather than to a snapshot of the contents, so the file must not be
+    modified while the link is in use.
+
+    Attributes:
+        download_url: The full URL to fetch. Supports GET, HEAD, and Range.
+        token: The signed token embedded in ``download_url``.
+        expires_at: Expiry timestamp, or None for a link that never expires.
+    """
+
+    download_url: str
+    token: str
+    expires_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DownloadURL:
+        """Create a DownloadURL from API response dict."""
+        return cls(
+            download_url=data.get("download_url", ""),
+            token=data.get("token", ""),
+            expires_at=data.get("expires_at"),
         )
 
 

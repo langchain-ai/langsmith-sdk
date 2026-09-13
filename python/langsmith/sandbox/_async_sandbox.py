@@ -8,17 +8,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
-import httpx
-
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
-    SandboxConnectTimeoutError,
+    SandboxRetryableConnectionError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import (
     AsyncCommandHandle,
     AsyncServiceURL,
+    DownloadContentDisposition,
+    DownloadURL,
     ExecutionResult,
     Snapshot,
     _StreamEndedBeforeStarted,
@@ -26,6 +27,7 @@ from langsmith.sandbox._models import (
 from langsmith.sandbox._tunnel import AsyncTunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
+    _retry_delay,
     connect_deadline,
     open_timeout_for,
 )
@@ -436,7 +438,10 @@ class AsyncSandbox:
             try:
                 await handle._ensure_started()
                 break
-            except (_StreamEndedBeforeStarted, SandboxConnectTimeoutError):
+            except (
+                _StreamEndedBeforeStarted,
+                SandboxRetryableConnectionError,
+            ) as exc:
                 # Idempotent re-issue (same command_id): neither an early close
                 # nor a failed connect can have started a second command.
                 attempt += 1
@@ -446,6 +451,8 @@ class AsyncSandbox:
                     AsyncCommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
                     AsyncCommandHandle._BACKOFF_MAX,
                 )
+                if isinstance(exc, SandboxRetryableConnectionError):
+                    backoff = _retry_delay(exc, backoff)
                 if deadline is not None:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -724,6 +731,53 @@ class AsyncSandbox:
             self.name,
             port,
             expires_in_seconds=expires_in_seconds,
+            headers=headers,
+        )
+
+    async def generate_download_url(
+        self,
+        path: str,
+        *,
+        expires_in_seconds: Optional[int] = None,
+        content_type: Optional[str] = None,
+        content_disposition: Optional[DownloadContentDisposition] = None,
+        headers: RequestHeaders = None,
+    ) -> DownloadURL:
+        """Create a link that downloads one file from this sandbox.
+
+        The link carries its own token, so anyone holding the URL can fetch
+        that one file without a LangSmith credential. Fetching wakes a
+        stopped sandbox.
+
+        Do not modify the file after minting a link for it. The link is
+        pinned to a path, not to a snapshot of the contents, so a later
+        write to that path may or may not be reflected in what the link
+        serves. Write a new file and mint a new link when the contents
+        change.
+
+        Args:
+            path: File path inside the sandbox.
+            expires_in_seconds: Link TTL in seconds. Omit for a link that
+                never expires.
+            content_type: Content-Type to serve the file as.
+            content_disposition: Content-Disposition to serve the file with,
+                either ``"attachment"`` or ``"inline"``.
+            headers: Optional per-request header overrides.
+
+        Returns:
+            DownloadURL with the link and its expiry, if any.
+
+        Raises:
+            ResourceNotFoundError: If sandbox not found.
+            ValueError: If expires_in_seconds is not positive.
+            SandboxClientError: For other errors.
+        """
+        return await self._client.generate_download_url(
+            self.name,
+            path,
+            expires_in_seconds=expires_in_seconds,
+            content_type=content_type,
+            content_disposition=content_disposition,
             headers=headers,
         )
 

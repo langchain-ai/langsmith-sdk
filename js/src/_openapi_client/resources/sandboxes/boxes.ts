@@ -3,7 +3,13 @@
 
 import { APIResource } from '../../core/resource.js';
 import * as SandboxesAPI from './sandboxes.js';
+import { SandboxResponsesItemsCursorGetPagination } from './sandboxes.js';
 import { APIPromise } from '../../core/api-promise.js';
+import {
+  ItemsCursorGetPagination,
+  type ItemsCursorGetPaginationParams,
+  PagePromise,
+} from '../../core/pagination.js';
 import { buildHeaders } from '../../internal/headers.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
@@ -12,6 +18,8 @@ export class Boxes extends APIResource {
   /**
    * Create a new sandbox from a snapshot. Provide at most one of `snapshot_id` or
    * `snapshot_name`; if neither is provided, the server uses the default snapshot.
+   * `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+   * name resolves to `name:latest`).
    */
   create(body: BoxCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
     return this._client.post('/api/v2/sandboxes/boxes', { body, ...options });
@@ -25,7 +33,9 @@ export class Boxes extends APIResource {
   }
 
   /**
-   * Update a sandbox's display name. The name must be unique within the tenant.
+   * Update a sandbox's display name, retention, resources, tags, or proxy
+   * configuration. The name must be unique within the tenant. Proxy configuration
+   * sent to a sandbox that is not running is stored and applied when it next starts.
    */
   update(
     name: string,
@@ -37,13 +47,20 @@ export class Boxes extends APIResource {
 
   /**
    * List sandboxes for the authenticated tenant, with optional filtering, sorting,
-   * and pagination.
+   * and pagination. Page with page_size and cursor: replay the response's
+   * next_cursor until it comes back null, which is the only signal that no pages
+   * remain. Cursors are opaque and only valid on this endpoint; do not parse or
+   * construct one.
    */
   list(
     query: BoxListParams | null | undefined = {},
     options?: RequestOptions,
-  ): APIPromise<SandboxesAPI.SandboxListResponse> {
-    return this._client.get('/api/v2/sandboxes/boxes', { query, ...options });
+  ): PagePromise<SandboxResponsesItemsCursorGetPagination, SandboxesAPI.SandboxResponse> {
+    return this._client.getAPIList(
+      '/api/v2/sandboxes/boxes',
+      ItemsCursorGetPagination<SandboxesAPI.SandboxResponse>,
+      { query, ...options },
+    );
   }
 
   /**
@@ -67,6 +84,22 @@ export class Boxes extends APIResource {
     options?: RequestOptions,
   ): APIPromise<SandboxesAPI.SnapshotResponse> {
     return this._client.post(path`/api/v2/sandboxes/boxes/${name}/snapshot`, { body, ...options });
+  }
+
+  /**
+   * Generate a tokenized link that downloads a single file from a sandbox with no
+   * further authentication. This mints a token rather than creating an addressable
+   * resource, so it returns 200 with no Location header. The token pins the sandbox,
+   * the file path, and the response content type and disposition, so a link cannot
+   * be repointed at another file. Links never expire unless expires_in_seconds is
+   * set. The link is served from the sandbox service domain, not the API host.
+   */
+  generateDownloadURL(
+    name: string,
+    body: BoxGenerateDownloadURLParams,
+    options?: RequestOptions,
+  ): APIPromise<SandboxesAPI.DownloadURLResponse> {
+    return this._client.post(path`/api/v2/sandboxes/boxes/${name}/download-url`, { body, ...options });
   }
 
   /**
@@ -131,6 +164,12 @@ export interface BoxCreateParams {
    */
   labels?: { [key: string]: string };
 
+  /**
+   * Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+   * it and it follows that ratio; set it and it must stay within 50% of the ratio
+   * for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+   * without CPU derives the CPU from the same ratio. Maximum 64 GiB.
+   */
   mem_bytes?: number;
 
   mount_config?: BoxCreateParams.MountConfig;
@@ -159,8 +198,18 @@ export interface BoxCreateParams {
    */
   restore_memory?: boolean;
 
+  /**
+   * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+   * resolves to name:latest.
+   */
+  snapshot?: string;
+
   snapshot_id?: string;
 
+  /**
+   * SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+   * that predate it. Set one or the other.
+   */
   snapshot_name?: string;
 
   tag_value_ids?: Array<string>;
@@ -672,6 +721,10 @@ export interface BoxUpdateParams {
 
   idle_ttl_seconds?: number;
 
+  /**
+   * New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+   * sandbox is created; a resize enforces only the maximum of 64 GiB.
+   */
   mem_bytes?: number;
 
   name?: string;
@@ -811,7 +864,7 @@ export namespace BoxUpdateParams {
   }
 }
 
-export interface BoxListParams {
+export interface BoxListParams extends ItemsCursorGetPaginationParams {
   /**
    * Filter by creator identity. Only 'me' is supported.
    */
@@ -824,7 +877,7 @@ export interface BoxListParams {
   label?: Array<string>;
 
   /**
-   * Maximum number of results
+   * Deprecated: use page_size. Maximum number of results
    */
   limit?: number;
 
@@ -834,19 +887,25 @@ export interface BoxListParams {
   name_contains?: string;
 
   /**
-   * Pagination offset
+   * Deprecated: use cursor. Pagination offset
    */
   offset?: number;
 
   /**
-   * Sort column (name, status, created_at)
+   * Sort column (name, status, created_at, stopped_at, idle_ttl_seconds,
+   * delete_after_stop_seconds)
    */
   sort_by?: string;
 
   /**
-   * Sort direction (asc, desc)
+   * Deprecated: use sort_order. Sort direction (asc, desc)
    */
   sort_direction?: string;
+
+  /**
+   * Sort direction (asc, desc)
+   */
+  sort_order?: string;
 
   /**
    * Filter by status (provisioning, ready, failed, stopped, deleting)
@@ -884,6 +943,24 @@ export interface BoxCreateSnapshotParams {
    * Labels seed the captured snapshot's labels.
    */
   labels?: { [key: string]: string };
+
+  /**
+   * mutable Docker-style tag; defaults to "latest"
+   */
+  tag?: string;
+}
+
+export interface BoxGenerateDownloadURLParams {
+  path: string;
+
+  content_disposition?: string;
+
+  content_type?: string;
+
+  /**
+   * ExpiresInSeconds is optional; a link with no expiry never expires.
+   */
+  expires_in_seconds?: number;
 }
 
 export interface BoxGenerateServiceURLParams {
@@ -898,6 +975,9 @@ export declare namespace Boxes {
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
   };
 }
+
+export { type SandboxResponsesItemsCursorGetPagination };

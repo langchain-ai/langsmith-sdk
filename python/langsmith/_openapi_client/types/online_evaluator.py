@@ -24,8 +24,8 @@ class OnlineEvaluator(BaseModel):
 
     is_managed: Optional[bool] = None
     """
-    IsManaged marks a LangChain-managed evaluator (currently the managed Perceived
-    Error judge). NULL in the DB is read as false via COALESCE.
+    IsManaged marks a LangChain Tuned Evaluator (currently the tuned Perceived Error
+    judge). NULL in the DB is read as false via COALESCE.
     """
 
     llm_evaluator: Optional[OnlineLlmEvaluator] = None

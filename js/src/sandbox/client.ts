@@ -12,6 +12,8 @@ import type {
   CreateDockerfileSnapshotOptions,
   CreateSandboxOptions,
   CreateSnapshotOptions,
+  DownloadURL,
+  GenerateDownloadURLOptions,
   ListSnapshotsOptions,
   ResourceStatus,
   SandboxClientConfig,
@@ -34,6 +36,7 @@ import {
 import {
   handleClientHttpError,
   handleSandboxCreationError,
+  throwIfNotReady,
   validateTtl,
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
@@ -479,6 +482,11 @@ export class SandboxClient {
    * Callers can add specific status checks (e.g. 404) before calling this.
    * @internal
    */
+  private _boxUrl(name: string, ...segments: string[]): string {
+    const suffix = segments.length ? `/${segments.join("/")}` : "";
+    return `${this._baseUrl}/boxes/${encodeURIComponent(name)}${suffix}`;
+  }
+
   private async _postJson(
     url: string,
     body: Record<string, unknown>,
@@ -637,7 +645,7 @@ export class SandboxClient {
     name: string,
     options?: { signal?: AbortSignal },
   ): Promise<Sandbox> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
+    const url = this._boxUrl(name);
 
     const response = await this._fetch(url, { signal: options?.signal });
 
@@ -688,8 +696,8 @@ export class SandboxClient {
    */
   async updateSandbox(name: string, newName: string): Promise<Sandbox>;
   /**
-   * Update a sandbox's name and/or retention settings (idle stop and
-   * delete-after-stop).
+   * Update a sandbox's name, retention settings (idle stop and
+   * delete-after-stop), and/or proxy config.
    *
    * @param name - Current sandbox name.
    * @param options - Fields to update. Omit a field to leave it unchanged.
@@ -697,6 +705,8 @@ export class SandboxClient {
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
    * @throws LangSmithValidationError if retention values are invalid.
+   * @throws LangSmithSandboxNotReadyError if proxyConfig was given and the
+   * sandbox is not `ready`.
    */
   async updateSandbox(
     name: string,
@@ -711,19 +721,21 @@ export class SandboxClient {
         ? { newName: newNameOrOptions }
         : newNameOrOptions;
 
-    const { newName, idleTtlSeconds, deleteAfterStopSeconds } = options;
+    const { newName, idleTtlSeconds, deleteAfterStopSeconds, proxyConfig } =
+      options;
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
     validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     if (
       newName === undefined &&
       idleTtlSeconds === undefined &&
-      deleteAfterStopSeconds === undefined
+      deleteAfterStopSeconds === undefined &&
+      proxyConfig === undefined
     ) {
       return this.getSandbox(name);
     }
 
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
+    const url = this._boxUrl(name);
     const payload: Record<string, unknown> = {};
     if (newName !== undefined) {
       payload.name = newName;
@@ -733,6 +745,9 @@ export class SandboxClient {
     }
     if (deleteAfterStopSeconds !== undefined) {
       payload.delete_after_stop_seconds = deleteAfterStopSeconds;
+    }
+    if (proxyConfig !== undefined) {
+      payload.proxy_config = proxyConfig;
     }
 
     const response = await this._fetch(url, {
@@ -756,6 +771,9 @@ export class SandboxClient {
           "sandbox",
         );
       }
+      if (proxyConfig !== undefined) {
+        await throwIfNotReady(response, name);
+      }
       await handleClientHttpError(response);
     }
 
@@ -770,7 +788,7 @@ export class SandboxClient {
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    */
   async deleteSandbox(name: string): Promise<void> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}`;
+    const url = this._boxUrl(name);
 
     const response = await this._fetch(url, { method: "DELETE" });
 
@@ -799,7 +817,7 @@ export class SandboxClient {
     name: string,
     options?: { signal?: AbortSignal },
   ): Promise<ResourceStatus> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/status`;
+    const url = this._boxUrl(name, "status");
 
     const response = await this._fetch(url, { signal: options?.signal });
 
@@ -889,10 +907,64 @@ export class SandboxClient {
     options: StartSandboxOptions = {},
   ): Promise<Sandbox> {
     const { timeout = 120, signal } = options;
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/start`;
+    const url = this._boxUrl(name, "start");
 
     await this._postJson(url, {}, { signal });
     return this.waitForSandbox(name, { timeout, signal });
+  }
+
+  /**
+   * Create a link that downloads one file from a sandbox.
+   *
+   * The link carries its own token, so anyone holding the URL can fetch that
+   * one file without a LangSmith credential. It is pinned to the sandbox and
+   * the exact path and cannot be repointed at another file. Fetching wakes a
+   * stopped sandbox.
+   *
+   * Do not modify the file after minting a link for it. The link is pinned to
+   * a path, not to a snapshot of the contents, so a later write to that path
+   * may or may not be reflected in what the link serves. Write a new file and
+   * mint a new link when the contents change.
+   *
+   * @param name - Sandbox name.
+   * @param path - File path inside the sandbox.
+   * @param options - Expiry and response header overrides.
+   * @returns The link and its expiry, if any.
+   *
+   * @example
+   * ```typescript
+   * const link = await client.generateDownloadURL("my-vm", "/tmp/report.pdf");
+   * console.log(link.download_url);
+   * ```
+   */
+  async generateDownloadURL(
+    name: string,
+    path: string,
+    options: GenerateDownloadURLOptions = {},
+  ): Promise<DownloadURL> {
+    const { expiresInSeconds, contentType, contentDisposition, signal } =
+      options;
+    if (expiresInSeconds !== undefined && expiresInSeconds < 1) {
+      throw new LangSmithValidationError(
+        `expiresInSeconds must be greater than 0 (got ${expiresInSeconds}); ` +
+          `omit it for a link that never expires`,
+      );
+    }
+
+    const url = this._boxUrl(name, "download-url");
+    const payload: Record<string, unknown> = { path };
+    if (expiresInSeconds !== undefined) {
+      payload.expires_in_seconds = expiresInSeconds;
+    }
+    if (contentType !== undefined) {
+      payload.content_type = contentType;
+    }
+    if (contentDisposition !== undefined) {
+      payload.content_disposition = contentDisposition;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    return (await response.json()) as DownloadURL;
   }
 
   /**
@@ -901,7 +973,7 @@ export class SandboxClient {
    * @param name - Sandbox name.
    */
   async stopSandbox(name: string): Promise<void> {
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(name)}/stop`;
+    const url = this._boxUrl(name, "stop");
     await this._postJson(url, {});
   }
 
@@ -1070,9 +1142,7 @@ export class SandboxClient {
     options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
     const { dockerImage, fsCapacityBytes, timeout = 60, signal } = options;
-    const url = `${this._baseUrl}/boxes/${encodeURIComponent(
-      sandboxName,
-    )}/snapshot`;
+    const url = this._boxUrl(sandboxName, "snapshot");
 
     const payload: Record<string, unknown> = { name };
     if (dockerImage !== undefined) {

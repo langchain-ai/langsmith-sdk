@@ -8,21 +8,22 @@ span detection, and the tiny chat-message builders the handlers reuse.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Optional
 
-from langsmith._internal.voice._helpers import try_parse_json_object
+from opentelemetry.util.types import AttributeValue
 
-# The instrumentation scope LiveKit's tracer is created under
-# (``get_tracer("livekit-agents")``). Every span LiveKit emits carries it, so it
-# is how we tell a LiveKit span apart from a non-LiveKit run riding the same OTel
-# provider (e.g. a LangChain/LangGraph trace under ``LANGSMITH_TRACING_MODE=otel``).
+from langsmith._internal.voice._helpers import (
+    build_assistant_tool_call_message,
+    build_tool_message,
+    try_parse_json_object,
+)
+from langsmith._internal.voice.translated_span import TranslatedSpan
+
+logger = logging.getLogger(__name__)
+
 _LIVEKIT_INSTRUMENTATION_SCOPE = "livekit-agents"
 
-# LiveKit reports some providers as the API base-URL host (e.g. its OpenAI
-# plugin → ``api.openai.com``), but LangSmith's cost engine keys on provider
-# *slugs* (``openai`` / ``deepgram`` / …), so a hostname never matches a price.
-# We recover the slug by substring — so ``beta.anthropic.com`` still → ``anthropic``
-# — mirroring how LangSmith itself infers the provider from a model name.
 _PROVIDER_ALIASES = (
     "openai",
     "anthropic",
@@ -35,6 +36,18 @@ _PROVIDER_ALIASES = (
     "mistral",
     "groq",
 )
+
+
+def get_content_attribute(tspan: TranslatedSpan, name: str) -> Optional[AttributeValue]:
+    """Read a LiveKit content field across the 1.7 ``lk.pii.*`` rename.
+
+    A present new key is authoritative, even when empty: do not replace withheld
+    content with an older value. ``name`` is the suffix without ``lk.``.
+    """
+    pii_key = f"lk.pii.{name}"
+    if pii_key in tspan.attributes:
+        return tspan.attributes[pii_key]
+    return tspan.attributes.get(f"lk.{name}")
 
 
 def normalize_provider(raw: Any) -> Optional[str]:
@@ -187,21 +200,6 @@ def flatten_lk_attributes_to_ls_metadata(
     return flat
 
 
-def build_tool_message(
-    content: str,
-    *,
-    tool_call_id: Optional[str] = None,
-    name: Optional[str] = None,
-) -> dict:
-    """Build a ``tool`` result message, with its call id / name when present."""
-    msg: dict = {"role": "tool", "content": content}
-    if tool_call_id:
-        msg["tool_call_id"] = str(tool_call_id)
-    if name:
-        msg["name"] = str(name)
-    return msg
-
-
 def build_message_from_event(role: str, event: Any) -> dict:
     """Build a chat message dict from a LiveKit ``gen_ai.*`` span event.
 
@@ -220,3 +218,55 @@ def build_message_from_event(role: str, event: Any) -> dict:
     if tool_calls:
         msg["tool_calls"] = tool_calls
     return msg
+
+
+def _content_to_text(content: list[Any]) -> str:
+    """Flatten a ``ChatMessage.content`` list to text, dropping non-text parts."""
+    return "\n".join(part for part in content if isinstance(part, str))
+
+
+def build_messages_from_chat_history(chat_history: Any) -> list[dict]:
+    """Convert a LiveKit ``ChatContext`` into LangSmith chat messages.
+
+    Keeps LiveKit's conversation order, including instructions, tool calls, and
+    tool outputs. Returns ``[]`` if LiveKit cannot serialize the history, so
+    export falls back to the span-derived transcript.
+    """
+    try:
+        items = chat_history.to_dict(
+            exclude_timestamp=False,
+            exclude_function_call=False,
+            exclude_metrics=True,
+            exclude_config_update=True,
+        )["items"]
+    except Exception:
+        logger.warning(
+            "langsmith voice: could not read the session report's chat history; "
+            "falling back to the transcript built from spans.",
+            exc_info=True,
+        )
+        return []
+
+    messages: list[dict] = []
+    for item in items:
+        kind = item["type"]
+        if kind == "message":
+            role = item["role"]
+            text = _content_to_text(item["content"])
+            if text:
+                messages.append({"role": role, "content": text})
+        elif kind == "function_call":
+            messages.append(
+                build_assistant_tool_call_message(
+                    item["call_id"], item["name"], item["arguments"]
+                )
+            )
+        elif kind == "function_call_output":
+            messages.append(
+                build_tool_message(
+                    item["output"],
+                    tool_call_id=item["call_id"],
+                    name=item["name"],
+                )
+            )
+    return messages

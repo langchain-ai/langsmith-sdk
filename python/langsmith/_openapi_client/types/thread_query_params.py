@@ -49,3 +49,31 @@ class ThreadQueryParams(TypedDict, total=False):
 
     project_id: str
     """`project_id` is the tracing project UUID."""
+
+    thread_filter: str
+    """
+    `thread_filter` narrows results using a LangSmith filter expression evaluated
+    against each complete thread summary. Self-hosted deployments require LangSmith
+    v0.17 or later; unsupported deployments return 501. See
+    https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+    for syntax.
+    """
+
+    trace_filter: str
+    """
+    `trace_filter` narrows results to threads containing at least one trace whose
+    root run matches this LangSmith filter expression. Trace-level aggregate fields
+    are evaluated using the complete trace summary. Self-hosted deployments require
+    LangSmith v0.17 or later; unsupported deployments return 501. See
+    https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+    for syntax.
+    """
+
+    tree_filter: str
+    """
+    `tree_filter` narrows results to threads containing at least one trace with a
+    matching run anywhere in its run tree. Self-hosted deployments require LangSmith
+    v0.17 or later; unsupported deployments return 501. See
+    https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+    for syntax.
+    """

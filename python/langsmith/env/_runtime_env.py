@@ -167,6 +167,20 @@ def get_langchain_env_vars() -> dict:
     return env_vars
 
 
+# Substrings marking a variable as secret-bearing or personal; matched
+# case-insensitively against the variable name.
+_EXCLUDED_SUBSTRINGS = (
+    "key",
+    "secret",
+    "token",
+    "password",
+    "passwd",
+    "pwd",
+    "credential",
+    "email",
+)
+
+
 @functools.lru_cache(maxsize=1)
 def get_langchain_env_var_metadata() -> dict:
     """Retrieve the langchain environment variables."""
@@ -186,9 +200,7 @@ def get_langchain_env_var_metadata() -> dict:
         for k, v in os.environ.items()
         if (k.startswith("LANGCHAIN_") or k.startswith("LANGSMITH_"))
         and k not in excluded
-        and "key" not in k.lower()
-        and "secret" not in k.lower()
-        and "token" not in k.lower()
+        and not any(sub in k.lower() for sub in _EXCLUDED_SUBSTRINGS)
     }
     env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
     if env_revision_id:

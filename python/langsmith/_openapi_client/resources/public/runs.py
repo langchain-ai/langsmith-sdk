@@ -6,8 +6,7 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-import httpx
-
+from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
 from ..._compat import cached_property

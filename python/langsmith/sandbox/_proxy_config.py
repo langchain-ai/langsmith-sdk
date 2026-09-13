@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict
 
 
@@ -28,6 +28,17 @@ def _require_non_empty_string_list(values: Sequence[str], field: str) -> list[st
         raise ValueError(f"{field} must be a non-empty list of strings")
     normalized = [_require_non_empty_string(value, field) for value in values]
     return normalized
+
+
+def _require_env_vars(env_vars: Mapping[str, str]) -> dict[str, str]:
+    if not isinstance(env_vars, Mapping) or not env_vars:
+        raise ValueError("env_vars must be a non-empty mapping of names to values")
+    resolved: dict[str, str] = {}
+    for name, value in env_vars.items():
+        # Validated on the trimmed form, stored verbatim: whitespace can be significant.
+        _require_non_empty_string(value, f"env_vars[{name}]")
+        resolved[_require_non_empty_string(name, "env_vars name")] = value
+    return resolved
 
 
 def workspace_secret(name: str) -> SandboxProxySecret:
@@ -112,6 +123,7 @@ def aws_auth(
     secret_access_key: SandboxProxySecret,
     name: str = "aws",
     enabled: bool = True,
+    env_vars: Mapping[str, str] | None = None,
 ) -> SandboxProxyRule:
     """Build a sandbox proxy rule that signs AWS HTTPS requests.
 
@@ -119,9 +131,15 @@ def aws_auth(
     signs supported AWS requests with SigV4 on the sandbox's behalf. AWS
     credentials must be supplied as ``workspace_secret`` or ``opaque`` values;
     plaintext AWS credentials are intentionally not supported.
+
+    Args:
+        env_vars: Plaintext environment variables set for every command in the
+            sandbox while this rule is enabled, for tools that refuse to run
+            unless a credential variable is present even though the proxy
+            injects the real credential on the wire.
     """
     rule_name = _require_non_empty_string(name, "name")
-    return {
+    rule: SandboxProxyRule = {
         "name": rule_name,
         "type": "aws",
         "enabled": enabled,
@@ -130,6 +148,9 @@ def aws_auth(
             "secret_access_key": secret_access_key,
         },
     }
+    if env_vars is not None:
+        rule["env_vars"] = _require_env_vars(env_vars)
+    return rule
 
 
 def gcp_auth(
@@ -138,6 +159,7 @@ def gcp_auth(
     scopes: Sequence[str] | None = None,
     name: str = "gcp",
     enabled: bool = True,
+    env_vars: Mapping[str, str] | None = None,
 ) -> SandboxProxyRule:
     """Build a sandbox proxy rule that injects GCP OAuth bearer auth.
 
@@ -146,6 +168,12 @@ def gcp_auth(
     ``service_account_json`` must be supplied as a ``workspace_secret`` or
     ``opaque`` value; plaintext service account JSON is intentionally not
     supported.
+
+    Args:
+        env_vars: Plaintext environment variables set for every command in the
+            sandbox while this rule is enabled, for tools that refuse to run
+            unless a credential variable is present even though the proxy
+            injects the real credential on the wire.
     """
     rule_name = _require_non_empty_string(name, "name")
     gcp_config: dict[str, Any] = {
@@ -153,9 +181,12 @@ def gcp_auth(
     }
     if scopes is not None:
         gcp_config["scopes"] = _require_non_empty_string_list(scopes, "scopes")
-    return {
+    rule: SandboxProxyRule = {
         "name": rule_name,
         "type": "gcp",
         "enabled": enabled,
         "gcp": gcp_config,
     }
+    if env_vars is not None:
+        rule["env_vars"] = _require_env_vars(env_vars)
+    return rule

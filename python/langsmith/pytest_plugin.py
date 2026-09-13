@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from langsmith import utils as ls_utils
+from langsmith.testing._internal import _get_test_suite_name
 from langsmith.testing._internal import test as ls_test
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ class LangSmithPlugin:
 
         self.test_suites = defaultdict(list)
         self.test_suite_urls = {}
+        self.langsmith_nodeids = set()
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
@@ -129,14 +131,23 @@ class LangSmithPlugin:
         self.live.console.print("Collecting tests...")
 
     def pytest_collection_finish(self, session):
-        """Call after collection phase is completed and session.items is populated."""
+        """Group collected LangSmith tests by suite."""
         self.collected_nodeids = set()
+        self.langsmith_nodeids = set()
         for item in session.items:
             self.collected_nodeids.add(item.nodeid)
+            marker = item.get_closest_marker("langsmith")
+            if marker:
+                self.langsmith_nodeids.add(item.nodeid)
+                test_suite = marker.kwargs.get("test_suite_name") or (
+                    _get_test_suite_name(item.obj)
+                )
+                self.add_process_to_test_suite(test_suite, item.nodeid)
 
     def add_process_to_test_suite(self, test_suite, process_id):
         """Group a test case with its test suite."""
-        self.test_suites[test_suite].append(process_id)
+        if process_id not in self.test_suites[test_suite]:
+            self.test_suites[test_suite].append(process_id)
 
     def update_process_status(self, process_id, status):
         """Update test results."""
@@ -156,6 +167,16 @@ class LangSmithPlugin:
     def pytest_runtest_logstart(self, nodeid):
         """Initialize live display when first test starts."""
         self.update_process_status(nodeid, {"status": "running"})
+
+    def pytest_runtest_logreport(self, report):
+        """Track setup failures and skips for LangSmith tests."""
+        if (
+            report.nodeid in self.langsmith_nodeids
+            and report.when == "setup"
+            and (report.failed or report.skipped)
+        ):
+            status = "failed" if report.failed else "skipped"
+            self.update_process_status(report.nodeid, {"status": status})
 
     def generate_tables(self):
         """Generate a collection of tables—one per suite.
@@ -178,7 +199,7 @@ class LangSmithPlugin:
         process_ids = self.test_suites[suite_name]
 
         title = f"""Test Suite: [bold]{suite_name}[/bold]
-LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]"""  # noqa: E501
+LangSmith URL: [bright_cyan]{self.test_suite_urls.get(suite_name, "--")}[/bright_cyan]"""  # noqa: E501
         table = Table(title=title, title_justify="left")
         table.add_column("Test")
         table.add_column("Inputs")
@@ -195,7 +216,7 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
         durations = []
         numeric_feedbacks = defaultdict(list)
         # Gather data only for this suite
-        suite_statuses = {pid: self.process_status[pid] for pid in process_ids}
+        suite_statuses = {pid: self.process_status.get(pid, {}) for pid in process_ids}
         for pid, status in suite_statuses.items():
             duration = status.get("end_time", now) - status.get("start_time", now)
             durations.append(duration)
@@ -206,11 +227,8 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
             max_status = max(len(status.get("status", "queued")), max_status)
 
         passed_count = sum(s.get("status") == "passed" for s in suite_statuses.values())
-        failed_count = sum(s.get("status") == "failed" for s in suite_statuses.values())
-
-        # You could arrange a row to show the aggregated data—here, in the last column:
-        if passed_count + failed_count:
-            rate = passed_count / (passed_count + failed_count)
+        if suite_statuses:
+            rate = passed_count / len(suite_statuses)
             color = "green" if rate == 1 else "red"
             aggregate_status = f"[{color}]{rate:.0%}[/{color}]"
         else:

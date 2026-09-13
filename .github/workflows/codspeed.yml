@@ -1,0 +1,91 @@
+name: CodSpeed
+
+on:
+  # Runs on main record the baseline that PR runs are compared against, so the
+  # setup files are listed too: a dependency bump that shifts performance has to
+  # refresh the baseline, or the shift gets attributed to a later unrelated PR.
+  push:
+    branches: [main]
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/codspeed.yml"
+  pull_request:
+    paths:
+      - "python/langsmith/**"
+      - "python/bench/**"
+      - "python/Makefile"
+      - "python/pyproject.toml"
+      - "python/uv.lock"
+      - ".github/workflows/codspeed.yml"
+  # `workflow_dispatch` allows CodSpeed to trigger backtest
+  # performance analysis in order to generate initial data.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: "Python Benchmarks (${{ matrix.mode }})"
+    # Same-repo PRs only: forks would pollute the baseline and reach the self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    # CodSpeed's bare-metal ARM64 runners, in the org's `oss-runners` group.
+    # Hosted runners swap the CPU model between runs (Intel Xeon to AMD EPYC),
+    # which moves simulated cache behaviour and surfaces as phantom regressions.
+    runs-on: codspeed-macro
+    # Backstop only: `--timeout=0` below disables pytest's own timeout.
+    timeout-minutes: 30
+    strategy:
+      # One job per instrument, so a failure in one cannot stop the others.
+      # `mode: simulation,memory` in a single job ran them sequentially: when the
+      # runner hung installing Valgrind for simulation, memory never ran at all.
+      fail-fast: false
+      matrix:
+        # memory tracks heap allocations; walltime measures real elapsed time,
+        # which matters for the create_*_run_trees cases since they drive
+        # tracing threads.
+        include:
+          # Disabled: Valgrind is too slow on the ARM64 macro runners. This leg
+          # completed zero of 9 benchmarks in 27 minutes and hit the job
+          # timeout, identically on 3.11, 3.12 and 3.13 (runs 33004187688,
+          # 33008357502, 33066038098), so neither the interpreter nor callgraph
+          # is the cause. The same cases take 6m12s on x86. Re-enable once
+          # CodSpeed offers x86_64 runners.
+          # - mode: simulation
+          - mode: memory
+          - mode: walltime
+    permissions:
+      contents: read # required for actions/checkout
+      id-token: write # required for OIDC authentication with CodSpeed
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Flame graphs need CPython's perf trampoline: pytest-codspeed reads
+      # PY_HAVE_PERF_TRAMPOLINE, absent before 3.12, and without it the run logs
+      # "callgraph: not supported" and the profiling pane is empty. 3.12 is the
+      # floor; we pin 3.13. No cache-suffix needed - setup-uv embeds the arch.
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --group bench
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
+        with:
+          mode: ${{ matrix.mode }}
+          working-directory: python
+          # --timeout=0 drops the repo-wide 120s pytest-timeout, which is sized
+          # for unit tests and kills benchmarks under instrumentation.
+          run: uv run pytest bench/test_bench.py --codspeed --timeout=0

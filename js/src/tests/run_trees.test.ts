@@ -650,3 +650,109 @@ test("fromHeaders drops a non-boolean replica primary value", () => {
   const remapped = (parsed as any)._remapForProject(replica);
   expect(remapped.id).not.toBe(parsed!.id);
 });
+
+describe("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", () => {
+  const originalLangSmithValue = process.env.LANGSMITH_EXCLUDE_INPUTS_ON_PATCH;
+  const originalLangChainValue = process.env.LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH;
+
+  beforeEach(() => {
+    delete process.env.LANGSMITH_EXCLUDE_INPUTS_ON_PATCH;
+    delete process.env.LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH;
+  });
+
+  afterEach(() => {
+    if (originalLangSmithValue === undefined) {
+      delete process.env.LANGSMITH_EXCLUDE_INPUTS_ON_PATCH;
+    } else {
+      process.env.LANGSMITH_EXCLUDE_INPUTS_ON_PATCH = originalLangSmithValue;
+    }
+    if (originalLangChainValue === undefined) {
+      delete process.env.LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH;
+    } else {
+      process.env.LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH = originalLangChainValue;
+    }
+  });
+
+  test.each([
+    ["env unset", undefined, undefined, undefined, false],
+    ["true", "LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "true", undefined, false],
+    ["TRUE", "LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "TRUE", undefined, false],
+    ["1", "LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "1", undefined, false],
+    ["false", "LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "false", undefined, true],
+    ["bogus", "LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", "bogus", undefined, true],
+    [
+      "LANGCHAIN namespace",
+      "LANGCHAIN_EXCLUDE_INPUTS_ON_PATCH",
+      "true",
+      undefined,
+      false,
+    ],
+    [
+      "explicit false override",
+      "LANGSMITH_EXCLUDE_INPUTS_ON_PATCH",
+      "true",
+      false,
+      true,
+    ],
+    ["explicit true override", undefined, undefined, true, false],
+  ] as const)(
+    "%s",
+    async (_name, envName, envValue, explicit, expectInputs) => {
+      if (envName !== undefined && envValue !== undefined) {
+        process.env[envName] = envValue;
+      }
+
+      const { client } = mockClient();
+      const updateSpy = jest.spyOn(client, "updateRun");
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { a: 1 },
+        client,
+      });
+
+      await runTree.patchRun(
+        explicit === undefined ? undefined : { excludeInputs: explicit },
+      );
+
+      const payload = updateSpy.mock.calls[0][1];
+      expect("inputs" in payload).toBe(expectInputs);
+      if (expectInputs) {
+        expect(payload.inputs).toEqual({ a: 1 });
+      }
+    },
+  );
+
+  test("applies to replica patches", async () => {
+    process.env.LANGSMITH_EXCLUDE_INPUTS_ON_PATCH = "true";
+    const { client } = mockClient();
+    const updateSpy = jest.spyOn(client, "updateRun");
+    const runTree = new RunTree({
+      name: "test-run",
+      inputs: { a: 1 },
+      client,
+      project_name: "test-project",
+      replicas: [{ projectName: "replica-project" }],
+    });
+
+    await runTree.patchRun();
+
+    expect("inputs" in updateSpy.mock.calls[0][1]).toBe(false);
+  });
+
+  test("reads the environment for each implicit patch", async () => {
+    const { client } = mockClient();
+    const updateSpy = jest.spyOn(client, "updateRun");
+    const runTree = new RunTree({
+      name: "test-run",
+      inputs: { a: 1 },
+      client,
+    });
+
+    await runTree.patchRun();
+    expect("inputs" in updateSpy.mock.calls[0][1]).toBe(false);
+
+    process.env.LANGSMITH_EXCLUDE_INPUTS_ON_PATCH = "false";
+    await runTree.patchRun();
+    expect(updateSpy.mock.calls[1][1].inputs).toEqual({ a: 1 });
+  });
+});

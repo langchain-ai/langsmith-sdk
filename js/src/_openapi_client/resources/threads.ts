@@ -44,7 +44,7 @@ export class Threads extends APIResource {
 
   /**
    * Query threads within a project (session), with cursor-based pagination. Returns
-   * threads matching the given time range and optional filter.
+   * threads matching the given time range and optional filters.
    *
    * Self-hosted deployments require LangSmith `v0.16` or later.
    *
@@ -786,6 +786,34 @@ export interface ThreadQueryParams extends ItemsCursorPostPaginationParams {
    * `project_id` is the tracing project UUID.
    */
   project_id?: string;
+
+  /**
+   * `thread_filter` narrows results using a LangSmith filter expression evaluated
+   * against each complete thread summary. Self-hosted deployments require LangSmith
+   * v0.17 or later; unsupported deployments return 501. See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  thread_filter?: string;
+
+  /**
+   * `trace_filter` narrows results to threads containing at least one trace whose
+   * root run matches this LangSmith filter expression. Trace-level aggregate fields
+   * are evaluated using the complete trace summary. Self-hosted deployments require
+   * LangSmith v0.17 or later; unsupported deployments return 501. See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  trace_filter?: string;
+
+  /**
+   * `tree_filter` narrows results to threads containing at least one trace with a
+   * matching run anywhere in its run tree. Self-hosted deployments require LangSmith
+   * v0.17 or later; unsupported deployments return 501. See
+   * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
+   * for syntax.
+   */
+  tree_filter?: string;
 }
 
 export interface ThreadStatsParams {

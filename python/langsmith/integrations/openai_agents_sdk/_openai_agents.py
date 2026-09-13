@@ -99,6 +99,33 @@ logger = logging.getLogger(__name__)
 
 if HAVE_AGENTS:
 
+    def _resolve_openai_agents_ls_agent_type(
+        span: "tracing.Span",
+        parent_run: "rt.RunTree",
+        existing_tag: Optional[str],
+    ) -> Optional[str]:
+        """Return an ls_agent_type for the span, or None to leave it alone.
+
+        If the run already has middleware/subagent/compaction, keep it.
+        Otherwise guardrails become middleware and agents under any tool
+        become subagents.
+
+        Openai-agents structural counterpart to ``resolveVercelLsAgentType``.
+        """
+        if existing_tag in NON_ROOT_LS_AGENT_TYPES:
+            return None
+        if isinstance(span.span_data, tracing.GuardrailSpanData):
+            return "middleware"
+        # Walk the full parent chain, not just the direct parent: as_tool
+        # inserts a chain run between the tool and the inner agent span.
+        if isinstance(span.span_data, tracing.AgentSpanData):
+            cursor: Optional[rt.RunTree] = parent_run
+            while cursor is not None:
+                if cursor.run_type == "tool":
+                    return "subagent"
+                cursor = cursor.parent_run
+        return None
+
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
         """Tracing processor for the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).
 
@@ -174,9 +201,6 @@ if HAVE_AGENTS:
             self._last_response_outputs: dict = {}
 
             self._runs: dict[str, rt.RunTree] = {}
-            self._span_data_types: dict[
-                str, type
-            ] = {}  # Track span data types by span_id
             self._unposted_traces: set[str] = set()
             self._unposted_spans: set[str] = set()
 
@@ -321,25 +345,15 @@ if HAVE_AGENTS:
                     else None,
                 )
 
-                # Add ls_agent_type metadata for agent spans that are children of
-                # function spans (i.e., agents used as tools via as_tool()).
-                # Note: Handoff agents are considered root agents, not subagents,
-                # since they take over the conversation rather than being called
-                # as tools.
-                if isinstance(span.span_data, tracing.AgentSpanData):
-                    # Check if parent span is a function span (agent used as tool)
-                    parent_span_data_type = (
-                        self._span_data_types.get(span.parent_id)
-                        if span.parent_id
-                        else None
-                    )
-                    if parent_span_data_type is tracing.FunctionSpanData:
-                        metadata = child_run.extra.setdefault("metadata", {})
-                        if metadata.get("ls_agent_type") not in NON_ROOT_LS_AGENT_TYPES:
-                            metadata["ls_agent_type"] = "subagent"
-
-                # Track span data type for parent lookups
-                self._span_data_types[span.span_id] = type(span.span_data)
+                # Handoffs replace the caller rather than run as a tool, so
+                # a handoff agent has no tool ancestor and correctly stays
+                # untagged here.
+                metadata = child_run.extra.setdefault("metadata", {})
+                structural_tag = _resolve_openai_agents_ls_agent_type(
+                    span, parent_run, metadata.get("ls_agent_type")
+                )
+                if structural_tag is not None:
+                    metadata["ls_agent_type"] = structural_tag
 
                 # Delay posting for spans whose inputs aren't available at start
                 if isinstance(
@@ -359,9 +373,6 @@ if HAVE_AGENTS:
 
         def on_span_end(self, span: tracing.Span) -> None:
             run = self._runs.pop(span.span_id, None)
-            self._span_data_types.pop(
-                span.span_id, None
-            )  # Clean up span data type tracking
             if not run:
                 return
 

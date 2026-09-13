@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-import httpx
-
+from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, SequenceNotStr, omit, not_given
 from ..._utils import path_template, maybe_transform, async_maybe_transform
 from ..._compat import cached_property
@@ -16,18 +15,20 @@ from ..._response import (
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
-from ..._base_client import make_request_options
+from ...pagination import SyncItemsCursorGetPagination, AsyncItemsCursorGetPagination
+from ..._base_client import AsyncPaginator, make_request_options
 from ...types.sandboxes import (
     box_list_params,
     box_create_params,
     box_update_params,
     box_create_snapshot_params,
     box_generate_service_url_params,
+    box_generate_download_url_params,
 )
 from ...types.sandbox_response import SandboxResponse
 from ...types.snapshot_response import SnapshotResponse
 from ...types.service_url_response import ServiceURLResponse
-from ...types.sandbox_list_response import SandboxListResponse
+from ...types.download_url_response import DownloadURLResponse
 from ...types.sandbox_status_response import SandboxStatusResponse
 
 __all__ = ["BoxesResource", "AsyncBoxesResource"]
@@ -64,6 +65,7 @@ class BoxesResource(SyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
@@ -79,6 +81,8 @@ class BoxesResource(SyncAPIResource):
 
         Provide at most one of `snapshot_id` or
         `snapshot_name`; if neither is provided, the server uses the default snapshot.
+        `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+        name resolves to `name:latest`).
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -87,6 +91,11 @@ class BoxesResource(SyncAPIResource):
 
           labels: Labels are free-form key/value metadata persisted with the sandbox and returned
               on reads. Labels from the source snapshot are inherited unless overridden here.
+
+          mem_bytes: Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+              it and it follows that ratio; set it and it must stay within 50% of the ratio
+              for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+              without CPU derives the CPU from the same ratio. Maximum 64 GiB.
 
           preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
               stop (idle timeout or explicit stop) so the next start resumes from where it
@@ -102,6 +111,12 @@ class BoxesResource(SyncAPIResource):
               false → never: always cold-boot.
 
               Applies to this request only.
+
+          snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+              resolves to name:latest.
+
+          snapshot_name: SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+              that predate it. Set one or the other.
 
           extra_headers: Send extra headers
 
@@ -127,6 +142,7 @@ class BoxesResource(SyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
                     "tag_value_ids": tag_value_ids,
@@ -194,11 +210,15 @@ class BoxesResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SandboxResponse:
-        """Update a sandbox's display name.
-
-        The name must be unique within the tenant.
+        """
+        Update a sandbox's display name, retention, resources, tags, or proxy
+        configuration. The name must be unique within the tenant. Proxy configuration
+        sent to a sandbox that is not running is stored and applied when it next starts.
 
         Args:
+          mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+              sandbox is created; a resize enforces only the maximum of 64 GiB.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -235,12 +255,15 @@ class BoxesResource(SyncAPIResource):
         self,
         *,
         created_by: str | Omit = omit,
+        cursor: str | Omit = omit,
         label: SequenceNotStr[str] | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
         offset: int | Omit = omit,
+        page_size: int | Omit = omit,
         sort_by: str | Omit = omit,
         sort_direction: str | Omit = omit,
+        sort_order: str | Omit = omit,
         status: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -248,26 +271,36 @@ class BoxesResource(SyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SandboxListResponse:
+    ) -> SyncItemsCursorGetPagination[SandboxResponse]:
         """
         List sandboxes for the authenticated tenant, with optional filtering, sorting,
-        and pagination.
+        and pagination. Page with page_size and cursor: replay the response's
+        next_cursor until it comes back null, which is the only signal that no pages
+        remain. Cursors are opaque and only valid on this endpoint; do not parse or
+        construct one.
 
         Args:
           created_by: Filter by creator identity. Only 'me' is supported.
 
+          cursor: Opaque pagination cursor from a prior response's next_cursor
+
           label: Filter by label. Repeatable; all must match. Use 'key' to match on key presence
               or 'key=value' for equality.
 
-          limit: Maximum number of results
+          limit: Deprecated: use page_size. Maximum number of results
 
           name_contains: Filter by name substring
 
-          offset: Pagination offset
+          offset: Deprecated: use cursor. Pagination offset
 
-          sort_by: Sort column (name, status, created_at)
+          page_size: Number of results per page
 
-          sort_direction: Sort direction (asc, desc)
+          sort_by: Sort column (name, status, created_at, stopped_at, idle_ttl_seconds,
+              delete_after_stop_seconds)
+
+          sort_direction: Deprecated: use sort_order. Sort direction (asc, desc)
+
+          sort_order: Sort direction (asc, desc)
 
           status: Filter by status (provisioning, ready, failed, stopped, deleting)
 
@@ -279,8 +312,9 @@ class BoxesResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        return self._get(
+        return self._get_api_list(
             "/api/v2/sandboxes/boxes",
+            page=SyncItemsCursorGetPagination[SandboxResponse],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -289,18 +323,21 @@ class BoxesResource(SyncAPIResource):
                 query=maybe_transform(
                     {
                         "created_by": created_by,
+                        "cursor": cursor,
                         "label": label,
                         "limit": limit,
                         "name_contains": name_contains,
                         "offset": offset,
+                        "page_size": page_size,
                         "sort_by": sort_by,
                         "sort_direction": sort_direction,
+                        "sort_order": sort_order,
                         "status": status,
                     },
                     box_list_params.BoxListParams,
                 ),
             ),
-            cast_to=SandboxListResponse,
+            model=SandboxResponse,
         )
 
     def delete(
@@ -349,6 +386,7 @@ class BoxesResource(SyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -374,6 +412,8 @@ class BoxesResource(SyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          tag: mutable Docker-style tag; defaults to "latest"
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -394,6 +434,7 @@ class BoxesResource(SyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
             ),
@@ -401,6 +442,59 @@ class BoxesResource(SyncAPIResource):
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=SnapshotResponse,
+        )
+
+    def generate_download_url(
+        self,
+        name: str,
+        *,
+        path: str,
+        content_disposition: str | Omit = omit,
+        content_type: str | Omit = omit,
+        expires_in_seconds: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> DownloadURLResponse:
+        """
+        Generate a tokenized link that downloads a single file from a sandbox with no
+        further authentication. This mints a token rather than creating an addressable
+        resource, so it returns 200 with no Location header. The token pins the sandbox,
+        the file path, and the response content type and disposition, so a link cannot
+        be repointed at another file. Links never expire unless expires_in_seconds is
+        set. The link is served from the sandbox service domain, not the API host.
+
+        Args:
+          expires_in_seconds: ExpiresInSeconds is optional; a link with no expiry never expires.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        return self._post(
+            path_template("/api/v2/sandboxes/boxes/{name}/download-url", name=name),
+            body=maybe_transform(
+                {
+                    "path": path,
+                    "content_disposition": content_disposition,
+                    "content_type": content_type,
+                    "expires_in_seconds": expires_in_seconds,
+                },
+                box_generate_download_url_params.BoxGenerateDownloadURLParams,
+            ),
+            options=make_request_options(
+                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+            ),
+            cast_to=DownloadURLResponse,
         )
 
     def generate_service_url(
@@ -583,6 +677,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         preserve_memory_on_stop: bool | Omit = omit,
         proxy_config: box_create_params.ProxyConfig | Omit = omit,
         restore_memory: bool | Omit = omit,
+        snapshot: str | Omit = omit,
         snapshot_id: str | Omit = omit,
         snapshot_name: str | Omit = omit,
         tag_value_ids: SequenceNotStr[str] | Omit = omit,
@@ -598,6 +693,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
         Provide at most one of `snapshot_id` or
         `snapshot_name`; if neither is provided, the server uses the default snapshot.
+        `snapshot_name` accepts a Docker-style `name` or `name:tag` reference (a bare
+        name resolves to `name:latest`).
 
         Args:
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
@@ -606,6 +703,11 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           labels: Labels are free-form key/value metadata persisted with the sandbox and returned
               on reads. Labels from the source snapshot are inherited unless overridden here.
+
+          mem_bytes: Memory for the sandbox, in bytes. Memory is tied to CPU at 4 GiB per vCPU: omit
+              it and it follows that ratio; set it and it must stay within 50% of the ratio
+              for the requested CPU, so a 1 vCPU sandbox accepts 2-6 GiB. Setting memory
+              without CPU derives the CPU from the same ratio. Maximum 64 GiB.
 
           preserve_memory_on_stop: PreserveMemoryOnStop, when true, suspends the sandbox's memory on a voluntary
               stop (idle timeout or explicit stop) so the next start resumes from where it
@@ -621,6 +723,12 @@ class AsyncBoxesResource(AsyncAPIResource):
               false → never: always cold-boot.
 
               Applies to this request only.
+
+          snapshot: Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
+              resolves to name:latest.
+
+          snapshot_name: SnapshotName is a synonym for Snapshot, accepted for compatibility with clients
+              that predate it. Set one or the other.
 
           extra_headers: Send extra headers
 
@@ -646,6 +754,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "preserve_memory_on_stop": preserve_memory_on_stop,
                     "proxy_config": proxy_config,
                     "restore_memory": restore_memory,
+                    "snapshot": snapshot,
                     "snapshot_id": snapshot_id,
                     "snapshot_name": snapshot_name,
                     "tag_value_ids": tag_value_ids,
@@ -713,11 +822,15 @@ class AsyncBoxesResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SandboxResponse:
-        """Update a sandbox's display name.
-
-        The name must be unique within the tenant.
+        """
+        Update a sandbox's display name, retention, resources, tags, or proxy
+        configuration. The name must be unique within the tenant. Proxy configuration
+        sent to a sandbox that is not running is stored and applied when it next starts.
 
         Args:
+          mem_bytes: New memory for the sandbox, in bytes. The 4 GiB per vCPU ratio applies when the
+              sandbox is created; a resize enforces only the maximum of 64 GiB.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -750,16 +863,19 @@ class AsyncBoxesResource(AsyncAPIResource):
             cast_to=SandboxResponse,
         )
 
-    async def list(
+    def list(
         self,
         *,
         created_by: str | Omit = omit,
+        cursor: str | Omit = omit,
         label: SequenceNotStr[str] | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
         offset: int | Omit = omit,
+        page_size: int | Omit = omit,
         sort_by: str | Omit = omit,
         sort_direction: str | Omit = omit,
+        sort_order: str | Omit = omit,
         status: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -767,26 +883,36 @@ class AsyncBoxesResource(AsyncAPIResource):
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> SandboxListResponse:
+    ) -> AsyncPaginator[SandboxResponse, AsyncItemsCursorGetPagination[SandboxResponse]]:
         """
         List sandboxes for the authenticated tenant, with optional filtering, sorting,
-        and pagination.
+        and pagination. Page with page_size and cursor: replay the response's
+        next_cursor until it comes back null, which is the only signal that no pages
+        remain. Cursors are opaque and only valid on this endpoint; do not parse or
+        construct one.
 
         Args:
           created_by: Filter by creator identity. Only 'me' is supported.
 
+          cursor: Opaque pagination cursor from a prior response's next_cursor
+
           label: Filter by label. Repeatable; all must match. Use 'key' to match on key presence
               or 'key=value' for equality.
 
-          limit: Maximum number of results
+          limit: Deprecated: use page_size. Maximum number of results
 
           name_contains: Filter by name substring
 
-          offset: Pagination offset
+          offset: Deprecated: use cursor. Pagination offset
 
-          sort_by: Sort column (name, status, created_at)
+          page_size: Number of results per page
 
-          sort_direction: Sort direction (asc, desc)
+          sort_by: Sort column (name, status, created_at, stopped_at, idle_ttl_seconds,
+              delete_after_stop_seconds)
+
+          sort_direction: Deprecated: use sort_order. Sort direction (asc, desc)
+
+          sort_order: Sort direction (asc, desc)
 
           status: Filter by status (provisioning, ready, failed, stopped, deleting)
 
@@ -798,28 +924,32 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
-        return await self._get(
+        return self._get_api_list(
             "/api/v2/sandboxes/boxes",
+            page=AsyncItemsCursorGetPagination[SandboxResponse],
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
                 extra_body=extra_body,
                 timeout=timeout,
-                query=await async_maybe_transform(
+                query=maybe_transform(
                     {
                         "created_by": created_by,
+                        "cursor": cursor,
                         "label": label,
                         "limit": limit,
                         "name_contains": name_contains,
                         "offset": offset,
+                        "page_size": page_size,
                         "sort_by": sort_by,
                         "sort_direction": sort_direction,
+                        "sort_order": sort_order,
                         "status": status,
                     },
                     box_list_params.BoxListParams,
                 ),
             ),
-            cast_to=SandboxListResponse,
+            model=SandboxResponse,
         )
 
     async def delete(
@@ -868,6 +998,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         fs_capacity_bytes: int | Omit = omit,
         include_memory: bool | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
+        tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -893,6 +1024,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           labels: Labels seed the captured snapshot's labels.
 
+          tag: mutable Docker-style tag; defaults to "latest"
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -913,6 +1046,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "include_memory": include_memory,
                     "labels": labels,
+                    "tag": tag,
                 },
                 box_create_snapshot_params.BoxCreateSnapshotParams,
             ),
@@ -920,6 +1054,59 @@ class AsyncBoxesResource(AsyncAPIResource):
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=SnapshotResponse,
+        )
+
+    async def generate_download_url(
+        self,
+        name: str,
+        *,
+        path: str,
+        content_disposition: str | Omit = omit,
+        content_type: str | Omit = omit,
+        expires_in_seconds: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> DownloadURLResponse:
+        """
+        Generate a tokenized link that downloads a single file from a sandbox with no
+        further authentication. This mints a token rather than creating an addressable
+        resource, so it returns 200 with no Location header. The token pins the sandbox,
+        the file path, and the response content type and disposition, so a link cannot
+        be repointed at another file. Links never expire unless expires_in_seconds is
+        set. The link is served from the sandbox service domain, not the API host.
+
+        Args:
+          expires_in_seconds: ExpiresInSeconds is optional; a link with no expiry never expires.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        return await self._post(
+            path_template("/api/v2/sandboxes/boxes/{name}/download-url", name=name),
+            body=await async_maybe_transform(
+                {
+                    "path": path,
+                    "content_disposition": content_disposition,
+                    "content_type": content_type,
+                    "expires_in_seconds": expires_in_seconds,
+                },
+                box_generate_download_url_params.BoxGenerateDownloadURLParams,
+            ),
+            options=make_request_options(
+                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+            ),
+            cast_to=DownloadURLResponse,
         )
 
     async def generate_service_url(
@@ -1093,6 +1280,9 @@ class BoxesResourceWithRawResponse:
         self.create_snapshot = to_raw_response_wrapper(
             boxes.create_snapshot,
         )
+        self.generate_download_url = to_raw_response_wrapper(
+            boxes.generate_download_url,
+        )
         self.generate_service_url = to_raw_response_wrapper(
             boxes.generate_service_url,
         )
@@ -1128,6 +1318,9 @@ class AsyncBoxesResourceWithRawResponse:
         )
         self.create_snapshot = async_to_raw_response_wrapper(
             boxes.create_snapshot,
+        )
+        self.generate_download_url = async_to_raw_response_wrapper(
+            boxes.generate_download_url,
         )
         self.generate_service_url = async_to_raw_response_wrapper(
             boxes.generate_service_url,
@@ -1165,6 +1358,9 @@ class BoxesResourceWithStreamingResponse:
         self.create_snapshot = to_streamed_response_wrapper(
             boxes.create_snapshot,
         )
+        self.generate_download_url = to_streamed_response_wrapper(
+            boxes.generate_download_url,
+        )
         self.generate_service_url = to_streamed_response_wrapper(
             boxes.generate_service_url,
         )
@@ -1200,6 +1396,9 @@ class AsyncBoxesResourceWithStreamingResponse:
         )
         self.create_snapshot = async_to_streamed_response_wrapper(
             boxes.create_snapshot,
+        )
+        self.generate_download_url = async_to_streamed_response_wrapper(
+            boxes.generate_download_url,
         )
         self.generate_service_url = async_to_streamed_response_wrapper(
             boxes.generate_service_url,

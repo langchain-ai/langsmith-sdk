@@ -36,7 +36,7 @@ client = wrap_openai(openai.Client())
 
 client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello, world"}],
-    model="gpt-3.5-turbo"
+    model="gpt-5.4"
 )
 ```
 
@@ -59,7 +59,7 @@ import { wrapOpenAI } from "langsmith/wrappers";
 const client = wrapOpenAI(new OpenAI());
 
 await client.chat.completions.create({
-  model: "gpt-3.5-turbo",
+  model: "gpt-5.4",
   messages: [{ content: "Hi there!", role: "user" }],
 });
 ```
@@ -69,7 +69,7 @@ await client.chat.completions.create({
   id: 'chatcmpl-8sOWEOYVyehDlyPcBiaDtTxWvr9v6',
   object: 'chat.completion',
   created: 1707974654,
-  model: 'gpt-3.5-turbo-0613',
+  model: 'gpt-5.4',
   choices: [
     {
       index: 0,

@@ -25,10 +25,11 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
 
   let nextId = 0;
   const result: StringNodeInternal[] = [];
-  while (queue.length > 0) {
-    const task = queue.shift();
-    if (task == null) continue;
-    const [value, depth, path, parent, key] = task;
+  // Head index, not `queue.shift()`: shift is O(n) per call, and this walk runs
+  // inline on the caller's tick, so a quadratic drain stalls unrelated work.
+  let head = 0;
+  while (head < queue.length) {
+    const [value, depth, path, parent, key] = queue[head++];
     if (typeof value === "string") {
       result.push({
         value,

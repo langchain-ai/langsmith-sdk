@@ -85,6 +85,7 @@ import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
+import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
@@ -482,6 +483,7 @@ interface feedback_source {
 interface FeedbackCreate {
   id: string;
   run_id: string | null;
+  trace_id?: string;
   key: string;
   score?: ScoreType;
   value?: ValueType;
@@ -562,6 +564,8 @@ export type CreateFeedbackOptions = {
   feedbackConfig?: FeedbackConfig;
   sourceRunId?: string;
   feedbackId?: string;
+  /** The trace the run belongs to. Omit for a root run. */
+  traceId?: string;
   comparativeExperimentId?: string;
   /**
    * The run's start time, ISO string or epoch ms. Better performance if provided.
@@ -578,7 +582,7 @@ export type CreateFeedbackLegacyOptions = Omit<CreateFeedbackOptions, "key"> & {
   /**
    * The session (project) ID of the run. Required for run-level feedback;
    * omitting it is deprecated. See
-   * https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create
+   * https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#feedback-create
    */
   sessionId?: string;
   /** The project (or experiment) to provide feedback on, for session-level feedback. */
@@ -1042,8 +1046,6 @@ export class Client implements LangSmithTracingClientInterface {
   private omitTracedRuntimeInfo?: boolean;
 
   private tracingSampleRate?: number;
-
-  private filteredPostUuids = new Set();
 
   private autoBatchTracing = true;
 
@@ -1621,17 +1623,29 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * The auth options and caller headers to build the generated client with.
+   * The options to build the generated client with: its auth, and the headers
+   * it should send on every request.
    *
    * The generated client applies `defaultHeaders` *after* its own auth headers,
    * so the ones this SDK sets are already dropped from `_callerHeaders` to keep
    * the precedence of `_mergedHeaders`, where required headers win.
    */
-  private get _openAPIAuth(): {
+  private get _openAPIClientOptions(): {
     apiKey: string | undefined;
     defaultHeaders: Record<string, string | null> | undefined;
   } {
     const headers: Record<string, string | null> = { ...this._callerHeaders };
+
+    // Without this the generated client falls back to its own
+    // `Langsmith/JS <generated version>`, so the same client would identify
+    // itself two different ways depending on which path a call takes. A
+    // caller-supplied one still wins, matched case-insensitively so the header
+    // is not sent twice.
+    if (
+      !Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")
+    ) {
+      headers["User-Agent"] = `langsmith-js/${__version__}`;
+    }
 
     // A caller may authenticate by supplying `x-api-key` themselves. The
     // generated client rejects that as a header (its `validateHeaders` requires
@@ -1691,19 +1705,21 @@ export class Client implements LangSmithTracingClientInterface {
    * its token is refreshed.
    */
   private get openAPIClient(): OpenAPILangsmith {
-    const auth = this._openAPIAuth;
-    const signature = JSON.stringify([auth.apiKey, auth.defaultHeaders]);
+    const options = this._openAPIClientOptions;
+    const signature = JSON.stringify([options.apiKey, options.defaultHeaders]);
     if (
       this._openAPIClient === undefined ||
       this._openAPIClientSignature !== signature
     ) {
       this._openAPIClientSignature = signature;
-      this._openAPIClient = this._newOpenAPIClient(auth);
+      this._openAPIClient = this._newOpenAPIClient(options);
     }
     return this._openAPIClient;
   }
 
-  private _newOpenAPIClient(auth = this._openAPIAuth): OpenAPILangsmith {
+  private _newOpenAPIClient(
+    options = this._openAPIClientOptions,
+  ): OpenAPILangsmith {
     const {
       method: _method,
       body: _body,
@@ -1712,13 +1728,13 @@ export class Client implements LangSmithTracingClientInterface {
     } = this.fetchOptions;
 
     return new OpenAPILangsmith({
-      apiKey: auth.apiKey,
+      apiKey: options.apiKey,
       tenantID: this.workspaceId,
       baseURL: this._getOpenAPIBaseUrl(),
       timeout: this.timeout_ms,
       fetch: this._fetch,
       fetchOptions: openAPIFetchOptions,
-      defaultHeaders: auth.defaultHeaders,
+      defaultHeaders: options.defaultHeaders,
     });
   }
 
@@ -1995,56 +2011,19 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   // Allows mocking for tests
-  private _shouldSample(): boolean {
-    if (this.tracingSampleRate === undefined) {
-      return true;
-    }
-    return Math.random() < this.tracingSampleRate;
+  private _shouldSample(identifier?: string | null): boolean {
+    return isSampledById(identifier, this.tracingSampleRate);
   }
 
-  private _filterForSampling(
-    runs: CreateRunParams[] | UpdateRunParams[],
-    patch = false,
-  ) {
-    if (this.tracingSampleRate === undefined) {
-      return runs;
-    }
-
-    if (patch) {
-      const sampled = [];
-      for (const run of runs) {
-        if (!this.filteredPostUuids.has(run.trace_id)) {
-          sampled.push(run);
-        } else if (run.id === run.trace_id) {
-          this.filteredPostUuids.delete(run.trace_id);
-        }
-      }
-      return sampled;
-    } else {
-      // For new runs, sample at trace level to maintain consistency
-      const sampled = [];
-      for (const run of runs) {
-        const traceId = run.trace_id ?? run.id;
-
-        // If we've already made a decision about this trace, follow it
-        if (this.filteredPostUuids.has(traceId)) {
-          continue;
-        }
-
-        // For new traces, apply sampling
-        if (run.id === traceId) {
-          if (this._shouldSample()) {
-            sampled.push(run);
-          } else {
-            this.filteredPostUuids.add(traceId);
-          }
-        } else {
-          // Child runs follow their trace's sampling decision
-          sampled.push(run);
-        }
-      }
-      return sampled;
-    }
+  private _filterForSampling(runs: CreateRunParams[] | UpdateRunParams[]) {
+    // updateRun() may omit trace_id; dotted order's first segment is the root.
+    return runs.filter((run) =>
+      this._shouldSample(
+        run.trace_id ??
+          run.dotted_order?.split(".", 1)[0].split("Z")[1] ??
+          run.id,
+      ),
+    );
   }
 
   private async _getBatchSizeLimitBytes(): Promise<number> {
@@ -2443,7 +2422,7 @@ export class Client implements LangSmithTracingClientInterface {
    */
   private async _checkFeedbackSessionId(): Promise<void> {
     const docs =
-      "https://docs.langchain.com/langsmith/smithdb-sdk-migration#feedback-create";
+      "https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#feedback-create";
     const serverInfo = await this._ensureServerInfo();
     if (
       getQueryBackend(serverInfo.instance_flags) === QueryBackend.SMITHDB_ONLY
@@ -3110,7 +3089,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
-    if (!this._filterForSampling([data], true).length) {
+    if (!this._filterForSampling([data]).length) {
       return;
     }
     if (
@@ -3178,7 +3157,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /** @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.runs.retrieve()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs#runs-retrieve for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRun(
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false },
@@ -3186,7 +3165,7 @@ export class Client implements LangSmithTracingClientInterface {
     warnOnce(
       "readRun() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.retrieve() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-retrieve for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs#runs-retrieve for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_RUN" },
     );
     return this._readRun(runId, { loadChildRuns });
@@ -3212,7 +3191,7 @@ export class Client implements LangSmithTracingClientInterface {
     return run;
   }
 
-  /** @deprecated Use `client.runs.getURL()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.runs.getURL()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs#runs-get-url for the migration guide. Will be removed after Jan 31, 2027. */
   public async getRunUrl({
     runId,
     run,
@@ -3225,7 +3204,7 @@ export class Client implements LangSmithTracingClientInterface {
     warnOnce(
       "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.getURL() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-get-url for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs#runs-get-url for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
@@ -3305,7 +3284,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   /**
    * List runs from the LangSmith server.
-   * @deprecated Use `client.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide. Will be removed after Jan 31, 2027.
+   * @deprecated Use `client.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs#runs-query for the migration guide. Will be removed after Jan 31, 2027.
    * @param projectId - The ID of the project to filter by.
    * @param projectName - The name of the project to filter by.
    * @param parentRunId - The ID of the parent run to filter by.
@@ -3390,7 +3369,7 @@ export class Client implements LangSmithTracingClientInterface {
     warnOnce(
       "listRuns() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.query() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#runs-query for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs#runs-query for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_RUNS" },
     );
     yield* this._listRuns(props);
@@ -3592,12 +3571,12 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.threads.listTraces()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads#threads-list-traces for the migration guide. Will be removed after Jan 31, 2027. */
   public async *readThread(props: ReadThreadParams): AsyncIterable<Run> {
     warnOnce(
       "readThread() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.threads.listTraces() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-list-traces for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads#threads-list-traces for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_READ_THREAD" },
     );
     const {
@@ -3631,14 +3610,14 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /** @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.threads.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads#threads-query for the migration guide. Will be removed after Jan 31, 2027. */
   public async listThreads(
     props: ListThreadsParams,
   ): Promise<ListThreadsItem[]> {
     warnOnce(
       "listThreads() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.threads.query() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#threads-query for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads#threads-query for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_LIST_THREADS" },
     );
     const {
@@ -3864,7 +3843,7 @@ export class Client implements LangSmithTracingClientInterface {
     return result;
   }
 
-  /** @deprecated Use `client.runs.share.create()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.runs.share.create()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async shareRun(
     runId: string,
     { shareId }: { shareId?: string } = {},
@@ -3872,7 +3851,7 @@ export class Client implements LangSmithTracingClientInterface {
     warnOnce(
       "shareRun() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.share.create() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_SHARE_RUN" },
     );
     const data = {
@@ -3899,12 +3878,12 @@ export class Client implements LangSmithTracingClientInterface {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
-  /** @deprecated Use `client.runs.share.delete()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.runs.share.delete()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async unshareRun(runId: string): Promise<void> {
     warnOnce(
       "unshareRun() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.runs.share.delete() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide.",
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_UNSHARE_RUN" },
     );
     assertUuid(runId);
@@ -3920,12 +3899,12 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /** @deprecated Use `client.runs.retrieve({ selects: ["SHARE_URL"] })` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.runs.retrieve({ selects: ["SHARE_URL"] })` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
     warnOnce(
       "readRunSharedLink() is deprecated and will be removed after Jan 31, 2027. " +
         'Use client.runs.retrieve({ selects: ["SHARE_URL"] }) instead. ' +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide.",
       {
         type: "DeprecationWarning",
         code: "LANGSMITH_DEPRECATED_READ_RUN_SHARED_LINK",
@@ -3949,7 +3928,7 @@ export class Client implements LangSmithTracingClientInterface {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
-  /** @deprecated Use `client.public.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
+  /** @deprecated Use `client.public.runs.query()` instead. See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide. Will be removed after Jan 31, 2027. */
   public async listSharedRuns(
     shareToken: string,
     {
@@ -3961,7 +3940,7 @@ export class Client implements LangSmithTracingClientInterface {
     warnOnce(
       "listSharedRuns() is deprecated and will be removed after Jan 31, 2027. " +
         "Use client.public.runs.query() instead. " +
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#share-and-read-public-runs for the migration guide.",
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#share-and-read-public-runs for the migration guide.",
       {
         type: "DeprecationWarning",
         code: "LANGSMITH_DEPRECATED_LIST_SHARED_RUNS",
@@ -5505,6 +5484,7 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackId,
       feedbackConfig,
       projectId,
+      traceId,
       comparativeExperimentId,
       sessionId,
       startTime,
@@ -5541,6 +5521,7 @@ export class Client implements LangSmithTracingClientInterface {
     const feedback: FeedbackCreate = {
       id: feedbackId ?? uuid.v7(),
       run_id: runId,
+      trace_id: traceId,
       key,
       score: _formatFeedbackScore(score),
       value,
@@ -5553,6 +5534,10 @@ export class Client implements LangSmithTracingClientInterface {
       start_time: startTime,
       extend_trace_retention: extendTraceRetention,
     };
+    const samplingId = traceId ?? runId;
+    if (samplingId != null && !this._shouldSample(samplingId)) {
+      return feedback as Feedback;
+    }
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
@@ -5857,6 +5842,9 @@ export class Client implements LangSmithTracingClientInterface {
           feedbackSourceType: "model",
           sessionId: run?.session_id ?? sessionId,
           startTime: run?.start_time,
+          // If an evaluator result targets a different run, we can't
+          // guarantee to know its trace ID.
+          traceId: runId_ === run?.id ? run?.trace_id : undefined,
         }),
       );
     }
@@ -6250,7 +6238,7 @@ export class Client implements LangSmithTracingClientInterface {
    *   by SmithDB; routes to `POST /runs/by-key`.
    * - `string[]`: a plain list of run IDs. **Deprecated**: this path will be
    *   removed after Jan 31, 2027; prefer the key form. Routes to `POST /runs`.
-   *   See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs.
+   *   See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#annotation-queues-add-runs.
    *
    * If every element is a string (or the list is empty) it is treated as run
    * IDs; otherwise the list is treated as `RunKey` objects.
@@ -6299,7 +6287,7 @@ export class Client implements LangSmithTracingClientInterface {
       warnOnce(
         "Passing run IDs as strings to addRunsToAnnotationQueue() is deprecated and will be removed after Jan 31, 2027. " +
           "Use RunKey[] instead. " +
-          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration#annotation-queues-add-runs for the migration guide.",
+          "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback#annotation-queues-add-runs for the migration guide.",
         {
           type: "DeprecationWarning",
           code: "LANGSMITH_DEPRECATED_ADD_RUNS_STRING_IDS",

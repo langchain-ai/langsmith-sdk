@@ -114,7 +114,15 @@ def test_git_info_caches_sanitized_remote_url(monkeypatch: pytest.MonkeyPatch) -
 
 @pytest.mark.parametrize(
     "secret_var",
-    ["LANGSMITH_SIGNING_JWKS", "LANGSMITH_SANDBOX_CALLBACK_SIGNING_JWK"],
+    [
+        "LANGSMITH_SIGNING_JWKS",
+        "LANGSMITH_SANDBOX_CALLBACK_SIGNING_JWK",
+        "LANGSMITH_ADMIN_PASSWORD",
+        "LANGSMITH_ADMIN_EMAIL",
+        "LANGCHAIN_DB_PASSWD",
+        "LANGSMITH_REDIS_PWD",
+        "LANGSMITH_GCP_CREDENTIALS",
+    ],
 )
 def test_env_var_metadata_excludes_signing_secrets(
     monkeypatch: pytest.MonkeyPatch, secret_var: str

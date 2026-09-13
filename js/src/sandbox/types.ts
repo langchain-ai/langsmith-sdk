@@ -287,6 +287,13 @@ export interface SandboxAwsAuthRule {
   type: "aws";
   /** Whether the rule is enabled. */
   enabled?: boolean;
+  /**
+   * Plaintext environment variables set for every command in the sandbox while
+   * the rule is enabled, for tools that refuse to run unless a credential
+   * variable is present even though the proxy injects the real credential on
+   * the wire.
+   */
+  env_vars?: Record<string, string>;
   /** AWS credentials used by the proxy signer. */
   aws: {
     access_key_id: SandboxProxySecret;
@@ -302,6 +309,13 @@ export interface SandboxGcpAuthRule {
   type: "gcp";
   /** Whether the rule is enabled. */
   enabled?: boolean;
+  /**
+   * Plaintext environment variables set for every command in the sandbox while
+   * the rule is enabled, for tools that refuse to run unless a credential
+   * variable is present even though the proxy injects the real credential on
+   * the wire.
+   */
+  env_vars?: Record<string, string>;
   /** GCP service-account credential and OAuth scopes. */
   gcp: {
     service_account_json: SandboxProxySecret;
@@ -595,6 +609,44 @@ export interface CaptureSnapshotOptions {
 }
 
 /**
+ * How a download link asks the browser to handle the file.
+ */
+export type DownloadContentDisposition = "attachment" | "inline";
+
+/**
+ * Options for minting a sandbox file download link.
+ */
+export interface GenerateDownloadURLOptions {
+  /**
+   * Link TTL in seconds. Omit for a link that never expires.
+   */
+  expiresInSeconds?: number;
+  /** Content-Type to serve the file as. */
+  contentType?: string;
+  /** Content-Disposition to serve the file with. */
+  contentDisposition?: DownloadContentDisposition;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A link that downloads one sandbox file with no LangSmith credential.
+ *
+ * The link is pinned to the sandbox, the file path, and the response headers,
+ * so it cannot be repointed at another file. It is pinned to the path rather
+ * than to a snapshot of the contents, so the file must not be modified while
+ * the link is in use.
+ */
+export interface DownloadURL {
+  /** The full URL to fetch. Supports GET, HEAD, and Range. */
+  download_url: string;
+  /** The signed token embedded in `download_url`. */
+  token: string;
+  /** Expiry timestamp, or null for a link that never expires. */
+  expires_at: string | null;
+}
+
+/**
  * Options for listing snapshots. All fields are optional and independent.
  *
  * The backend always paginates: when `limit` is omitted the server applies
@@ -646,7 +698,7 @@ export interface StartSandboxOptions {
 }
 
 /**
- * Options for updating a sandbox (name and/or retention settings).
+ * Options for updating a sandbox (name, retention settings, proxy config).
  */
 export interface UpdateSandboxOptions {
   /** New display name. */
@@ -663,6 +715,15 @@ export interface UpdateSandboxOptions {
    * `undefined`) to leave the existing value unchanged.
    */
   deleteAfterStopSeconds?: number;
+  /**
+   * Replacement proxy configuration, sent to the server as-is (same shape as
+   * `createSandbox`). Rules replace the existing set rather than merging into
+   * it, so include every rule the sandbox should keep. Opaque header values
+   * carry over from the current config, so rotating one credential does not
+   * mean re-supplying secrets that can no longer be read. The sandbox must be
+   * `ready`; start a stopped one first.
+   */
+  proxyConfig?: SandboxProxyConfig;
 }
 
 /**

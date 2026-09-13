@@ -730,12 +730,12 @@ class TestRunTreeReplicas:
         # Verify client.create_run was called with replica parameters
         assert client.create_run.call_count == 1
         call_args = client.create_run.call_args
-        assert call_args[1]["api_key"] is None
-        assert call_args[1]["api_url"] is None
-        assert call_args[1]["service_key"] is None
-        assert call_args[1]["tenant_id"] is None
-        assert call_args[1]["authorization"] is None
-        assert call_args[1]["cookie"] is None
+        assert call_args[1]["_replica_auths"][0].api_key is None
+        assert call_args[1]["_replica_auths"][0].api_url is None
+        assert call_args[1]["_replica_auths"][0].service_key is None
+        assert call_args[1]["_replica_auths"][0].tenant_id is None
+        assert call_args[1]["_replica_auths"][0].authorization is None
+        assert call_args[1]["_replica_auths"][0].cookie is None
 
     def test_run_tree_with_authorization_and_cookie(self):
         client = Mock()
@@ -762,9 +762,9 @@ class TestRunTreeReplicas:
         run_tree.post()
 
         call_args = client.create_run.call_args
-        assert call_args[1]["authorization"] == "Bearer token-123"
-        assert call_args[1]["cookie"] == "session=abc"
-        assert call_args[1]["api_key"] is None
+        assert call_args[1]["_replica_auths"][0].authorization == "Bearer token-123"
+        assert call_args[1]["_replica_auths"][0].cookie == "session=abc"
+        assert call_args[1]["_replica_auths"][0].api_key is None
 
     def test_run_tree_with_new_replicas(self):
         """Test RunTree with WriteReplica format."""
@@ -798,10 +798,14 @@ class TestRunTreeReplicas:
         assert client.create_run.call_count == 2
 
         calls = client.create_run.call_args_list
-        assert calls[0][1]["api_key"] == "replica1-key"
-        assert calls[0][1]["api_url"] == "https://replica1.example.com"
-        assert calls[1][1]["api_key"] == "replica2-key"
-        assert calls[1][1]["api_url"] == "https://replica2.example.com"
+        assert calls[0][1]["_replica_auths"][0].api_key == "replica1-key"
+        assert (
+            calls[0][1]["_replica_auths"][0].api_url == "https://replica1.example.com"
+        )
+        assert calls[1][1]["_replica_auths"][0].api_key == "replica2-key"
+        assert (
+            calls[1][1]["_replica_auths"][0].api_url == "https://replica2.example.com"
+        )
         assert calls[0][1]["id"] == run_tree.id
         assert calls[1][1]["id"] == compute_run_id_for_secondary_replica(
             run_tree.id, "replica2-project"
@@ -832,10 +836,12 @@ class TestRunTreeReplicas:
         # Verify client.create_run was called with service auth parameters
         assert client.create_run.call_count == 1
         call_args = client.create_run.call_args
-        assert call_args[1]["api_key"] is None
-        assert call_args[1]["api_url"] == "https://internal.example.com"
-        assert call_args[1]["service_key"] == "jwt-token-123"
-        assert call_args[1]["tenant_id"] == "tenant-abc"
+        assert call_args[1]["_replica_auths"][0].api_key is None
+        assert (
+            call_args[1]["_replica_auths"][0].api_url == "https://internal.example.com"
+        )
+        assert call_args[1]["_replica_auths"][0].service_key == "jwt-token-123"
+        assert call_args[1]["_replica_auths"][0].tenant_id == "tenant-abc"
 
     def test_run_tree_patch_with_replicas(self):
         """Test RunTree patch method with replicas."""
@@ -863,8 +869,10 @@ class TestRunTreeReplicas:
         # Verify client.update_run was called with replica parameters
         assert client.update_run.call_count == 1
         call_args = client.update_run.call_args
-        assert call_args[1]["api_key"] == "replica-key"
-        assert call_args[1]["api_url"] == "https://replica.example.com"
+        assert call_args[1]["_replica_auths"][0].api_key == "replica-key"
+        assert (
+            call_args[1]["_replica_auths"][0].api_url == "https://replica.example.com"
+        )
         assert call_args[1]["run_id"] == compute_run_id_for_secondary_replica(
             run_tree.id, "replica-project"
         )

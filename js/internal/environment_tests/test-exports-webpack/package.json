@@ -12,5 +12,10 @@
   "devDependencies": {
     "webpack": "^5.90.0",
     "webpack-cli": "^5.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri": "3.1.6"
+    }
   }
 }

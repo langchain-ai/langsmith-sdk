@@ -266,6 +266,11 @@ class Baggage {
   }
 }
 
+function getExcludeInputsOnPatch(): boolean {
+  const value = getLangSmithEnvironmentVariable("EXCLUDE_INPUTS_ON_PATCH");
+  return value === undefined || value.toLowerCase() === "true" || value === "1";
+}
+
 export class RunTree implements BaseRun {
   private static sharedClient: Client | null = null;
 
@@ -856,7 +861,20 @@ export class RunTree implements BaseRun {
     }
   }
 
+  /**
+   * Patch the run tree to the API.
+   *
+   * @param options.excludeInputs - Whether to exclude inputs from the patch
+   * request. Defaults to the value of `LANGSMITH_EXCLUDE_INPUTS_ON_PATCH`
+   * (or its `LANGCHAIN_` equivalent), which itself defaults to `true`.
+   * An explicit value overrides the environment variable for this call.
+   *
+   * Unless the environment variable is disabled, inputs added after the
+   * initial `postRun()` are not persisted unless this option is explicitly set
+   * to `false`.
+   */
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
+    const excludeInputs = options?.excludeInputs ?? getExcludeInputsOnPatch();
     if (this.replicas && this.replicas.length > 0) {
       for (const {
         projectName,
@@ -901,7 +919,7 @@ export class RunTree implements BaseRun {
         // Important that inputs is not a key in the run update
         // if excluded because it will overwrite the run create if the
         // two operations are merged during batching
-        if (!options?.excludeInputs) {
+        if (!excludeInputs) {
           updatePayload.inputs = runData.inputs;
         }
         const targetClient = replicaClient ?? this.client;
@@ -933,7 +951,7 @@ export class RunTree implements BaseRun {
         // Important that inputs is not a key in the run update
         // if excluded because it will overwrite the run create if the
         // two operations are merged during batching
-        if (!options?.excludeInputs) {
+        if (!excludeInputs) {
           runUpdate.inputs = this.inputs;
         }
         await this.client.updateRun(this.id, runUpdate);

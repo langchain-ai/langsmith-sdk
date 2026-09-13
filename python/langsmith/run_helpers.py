@@ -58,6 +58,33 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
 LOGGER = logging.getLogger(__name__)
+_PROCESSING_FAILED_KEY = "ls_error"
+_PROCESSING_FAILED_PREFIX = "Processing failed; "
+
+
+def _processing_failed(payload: str, e: BaseException) -> str:
+    """Build the marker that replaces a payload whose redactor raised.
+
+    Carries the exception type, never its message: an exception routinely echoes
+    the payload it was reading (``KeyError: 'secret'``), so the full text is
+    logged locally and never uploaded. ``__name__`` is assignable, hence the
+    identifier check.
+    """
+    kind = type(e).__name__
+    kind = kind[:64] if kind.isidentifier() else "unknown"
+    return f"{_PROCESSING_FAILED_PREFIX}{payload} dropped (process_{payload}: {kind})"
+
+
+def _allow_unprocessed_payloads() -> bool:
+    """Whether a failed redactor should fall back to tracing the raw payload.
+
+    Set ``LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS`` to restore the pre-fail-closed
+    behavior in an emergency. It uploads data no redactor processed, so it is off
+    by default and the caller logs a warning naming it whenever it takes effect.
+    """
+    return utils.is_truish(utils.get_env_var("ALLOW_UNPROCESSED_PAYLOADS"))
+
+
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "parent_ref": _context._PARENT_RUN_TREE_REF,
     "project_name": _context._PROJECT_NAME,
@@ -1657,7 +1684,19 @@ def _setup_run(
         try:
             inputs = process_inputs(inputs)
         except BaseException as e:
-            LOGGER.error(f"Failed to filter inputs for {name_}: {e}")
+            if _allow_unprocessed_payloads():
+                LOGGER.warning(
+                    "process_inputs failed for %s; tracing unprocessed inputs "
+                    "because LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is set: %s",
+                    name_,
+                    e,
+                )
+            else:
+                # Fail closed: trace the run, but with a marker, not raw inputs.
+                LOGGER.warning(
+                    "process_inputs failed for %s; dropping inputs: %s", name_, e
+                )
+                inputs = {_PROCESSING_FAILED_KEY: _processing_failed("inputs", e)}
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     context.run(_context._TAGS.set, tags_)
     tags_ += tags or []
@@ -1730,9 +1769,28 @@ def _handle_container_end(
     outputs_processor: Optional[Callable[..., dict]] = None,
 ) -> None:
     """Handle the end of run."""
-    try:
-        if outputs_processor is not None:
+    if outputs_processor is not None:
+        try:
             outputs = outputs_processor(outputs)
+        except BaseException as e:
+            # Fail closed, as for inputs. Outside the try so the run still ends.
+            run_name = getattr(container.get("new_run"), "name", None)
+            if _allow_unprocessed_payloads():
+                LOGGER.warning(
+                    "process_outputs failed for run %s; tracing unprocessed "
+                    "outputs because LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is "
+                    "set: %s",
+                    run_name,
+                    e,
+                )
+            else:
+                LOGGER.warning(
+                    "process_outputs failed for run %s; dropping outputs: %s",
+                    run_name,
+                    e,
+                )
+                outputs = {_PROCESSING_FAILED_KEY: _processing_failed("outputs", e)}
+    try:
         _container_end(container, outputs=outputs, error=error)
     except BaseException as e:
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")

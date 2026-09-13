@@ -44,13 +44,27 @@ class SandboxConnectionError(SandboxClientError):
     pass
 
 
-class SandboxConnectTimeoutError(SandboxConnectionError):
+class SandboxRetryableConnectionError(SandboxConnectionError):
+    """Raised when a transient failure occurs before a command can start.
+
+    ``run()`` retries this error with the same command ID, so the server can
+    deduplicate an attempt whose outcome is unknown.
+
+    Attributes:
+        retry_after: Optional server-provided delay in seconds before retrying.
+    """
+
+    def __init__(self, message: str, *, retry_after: Optional[float] = None):
+        """Initialize the error."""
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class SandboxConnectTimeoutError(SandboxRetryableConnectionError):
     """Raised when the socket fails or times out before the WebSocket handshake.
 
-    Distinct from its parent because it is safely retryable: the execute frame
-    was never sent, so re-issuing the same command_id cannot double-run a
-    command. run() retries this with backoff; a plain SandboxConnectionError
-    (a rejected handshake) is permanent and propagates immediately.
+    The execute frame was never sent, so re-issuing the same command ID cannot
+    double-run a command.
     """
 
     pass

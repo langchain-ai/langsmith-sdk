@@ -3,7 +3,13 @@
 
 import { APIResource } from '../../core/resource.js';
 import * as SandboxesAPI from './sandboxes.js';
+import { SnapshotResponsesItemsCursorGetPagination } from './sandboxes.js';
 import { APIPromise } from '../../core/api-promise.js';
+import {
+  ItemsCursorGetPagination,
+  type ItemsCursorGetPaginationParams,
+  PagePromise,
+} from '../../core/pagination.js';
 import { buildHeaders } from '../../internal/headers.js';
 import { RequestOptions } from '../../internal/request-options.js';
 import { path } from '../../internal/utils/path.js';
@@ -17,7 +23,9 @@ export class Snapshots extends APIResource {
   }
 
   /**
-   * Get a sandbox snapshot by ID.
+   * Get a sandbox snapshot by ID or by a Docker-style reference. A bare name means
+   * name:latest, falling back to the newest ready untagged snapshot of that name. To
+   * list the tags under a name, use /api/v2/sandboxes/snapshots-by-name/{name}.
    */
   retrieve(snapshotID: string, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
     return this._client.get(path`/api/v2/sandboxes/snapshots/${snapshotID}`, options);
@@ -25,23 +33,53 @@ export class Snapshots extends APIResource {
 
   /**
    * List sandbox snapshots for the authenticated tenant, with optional filtering,
-   * sorting, and pagination.
+   * sorting, and pagination. Page with page_size and cursor: replay the response's
+   * next_cursor until it comes back null, which is the only signal that no pages
+   * remain. Cursors are opaque and only valid on this endpoint; do not parse or
+   * construct one.
    */
   list(
     query: SnapshotListParams | null | undefined = {},
     options?: RequestOptions,
-  ): APIPromise<SandboxesAPI.SnapshotListResponse> {
-    return this._client.get('/api/v2/sandboxes/snapshots', { query, ...options });
+  ): PagePromise<SnapshotResponsesItemsCursorGetPagination, SandboxesAPI.SnapshotResponse> {
+    return this._client.getAPIList(
+      '/api/v2/sandboxes/snapshots',
+      ItemsCursorGetPagination<SandboxesAPI.SnapshotResponse>,
+      { query, ...options },
+    );
   }
 
   /**
-   * Delete a snapshot by ID. The underlying storage is reclaimed asynchronously.
+   * Delete a snapshot by ID or by a Docker-style name[:tag] reference. The
+   * underlying storage is reclaimed asynchronously.
    */
   delete(snapshotID: string, options?: RequestOptions): APIPromise<void> {
     return this._client.delete(path`/api/v2/sandboxes/snapshots/${snapshotID}`, {
       ...options,
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
+  }
+
+  /**
+   * Get a snapshot name and every tag under it, with the snapshot each tag resolves
+   * to. To fetch one snapshot, use /api/v2/sandboxes/snapshots/{snapshot_id}.
+   */
+  retrieveByName(name: string, options?: RequestOptions): APIPromise<SnapshotRetrieveByNameResponse> {
+    return this._client.get(path`/api/v2/sandboxes/snapshots-by-name/${name}`, options);
+  }
+}
+
+export interface SnapshotRetrieveByNameResponse {
+  name?: string;
+
+  tags?: Array<SnapshotRetrieveByNameResponse.Tag>;
+}
+
+export namespace SnapshotRetrieveByNameResponse {
+  export interface Tag {
+    snapshot_id?: string;
+
+    tag?: string;
   }
 }
 
@@ -59,9 +97,14 @@ export interface SnapshotCreateParams {
   labels?: { [key: string]: string };
 
   registry_id?: string;
+
+  /**
+   * mutable Docker-style tag; defaults to "latest"
+   */
+  tag?: string;
 }
 
-export interface SnapshotListParams {
+export interface SnapshotListParams extends ItemsCursorGetPaginationParams {
   /**
    * Filter by creator identity. Only 'me' is supported.
    */
@@ -74,7 +117,7 @@ export interface SnapshotListParams {
   label?: Array<string>;
 
   /**
-   * Maximum number of results
+   * Deprecated: use page_size. Maximum number of results
    */
   limit?: number;
 
@@ -84,7 +127,7 @@ export interface SnapshotListParams {
   name_contains?: string;
 
   /**
-   * Pagination offset
+   * Deprecated: use cursor. Pagination offset
    */
   offset?: number;
 
@@ -94,9 +137,14 @@ export interface SnapshotListParams {
   sort_by?: string;
 
   /**
-   * Sort direction (asc, desc)
+   * Deprecated: use sort_order. Sort direction (asc, desc)
    */
   sort_direction?: string;
+
+  /**
+   * Sort direction (asc, desc)
+   */
+  sort_order?: string;
 
   /**
    * Filter by status (building, ready, failed, deleting)
@@ -105,5 +153,11 @@ export interface SnapshotListParams {
 }
 
 export declare namespace Snapshots {
-  export { type SnapshotCreateParams as SnapshotCreateParams, type SnapshotListParams as SnapshotListParams };
+  export {
+    type SnapshotRetrieveByNameResponse as SnapshotRetrieveByNameResponse,
+    type SnapshotCreateParams as SnapshotCreateParams,
+    type SnapshotListParams as SnapshotListParams,
+  };
 }
+
+export { type SnapshotResponsesItemsCursorGetPagination };

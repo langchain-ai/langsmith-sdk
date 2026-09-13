@@ -199,6 +199,8 @@ export interface AnnotationQueueRubricItemSchema {
 
   is_required?: boolean | null;
 
+  regex_validator?: string | DatasetsAPI.Missing | null;
+
   score_descriptions?: { [key: string]: string } | null;
 
   value_descriptions?: { [key: string]: string } | null;

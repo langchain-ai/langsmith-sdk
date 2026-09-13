@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import uuid
 import warnings
 from typing import Final
@@ -88,14 +87,14 @@ def warn_if_not_uuid_v7(uuid_obj: uuid.UUID, id_type: str) -> None:
 def uuid7_deterministic(original_id: uuid.UUID, key: str) -> uuid.UUID:
     """Generate a deterministic UUID7 derived from an original UUID and a key.
 
-    This function creates a new UUID that:
-    - Preserves the timestamp from the original UUID if it's UUID v7
-    - Uses current time if the original is not UUID v7
-    - Uses deterministic bits derived from hashing the original + key with XXH3-128
-    - Is valid UUID v7 format
+    A pure function of ``original_id`` and ``key``: it reads no ambient state, so
+    the same pair always yields the same UUID, in any process, at any time. This
+    is used for creating replica ids that are reproducible across distributed
+    systems.
 
-    This is used for creating replica IDs that maintain time-ordering properties
-    while being deterministic across distributed systems.
+    A UUID v7 original keeps its timestamp, so derived ids stay ordered by run
+    start time. Any other original has none to keep, and the field is
+    hash-derived: stable, but not chronological.
 
     Args:
         original_id: The source UUID (ideally UUID v7 to preserve timestamp).
@@ -125,20 +124,14 @@ def uuid7_deterministic(original_id: uuid.UUID, key: str) -> uuid.UUID:
 
     b = bytearray(16)
 
-    # Check if original is UUID v7 - if so, preserve its timestamp
-    # If not, use current time to ensure the derived UUID has a valid timestamp
     if is_uuid_v7(original_id):
         # Preserve timestamp from original UUID7 (bytes 0-5)
         b[0:6] = original_id.bytes[0:6]
     else:
-        # Generate fresh timestamp for non-UUID7 inputs
-        # This matches CPython 3.14's uuid7() implementation:
-        # timestamp_ms = time.time_ns() // 1_000_000
-        # Then convert to big-endian bytes
-        timestamp_ms = time.time_ns() // 1_000_000
-        # Mask to 48 bits and convert to big-endian bytes
-        unix_ts_ms = timestamp_ms & 0xFFFF_FFFF_FFFF
-        b[0:6] = unix_ts_ms.to_bytes(6, "big")
+        # No timestamp to preserve. Use the six hash bytes left unused below: a
+        # clock read here would make this impure, and the same id is derived
+        # from several runs, all of which must agree.
+        b[0:6] = h[10:16]
 
     # Set version 7 (0111) in high nibble + 4 bits from hash
     b[6] = 0x70 | (h[0] & 0x0F)

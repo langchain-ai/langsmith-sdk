@@ -37,6 +37,7 @@ import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxNotReadyError,
   LangSmithStreamEndedBeforeStartedError,
 } from "../sandbox/errors.js";
 import type {
@@ -126,6 +127,50 @@ describe("sandbox proxy config helpers", () => {
       },
     });
   });
+
+  it("provider rules carry env vars and omit them when unset", () => {
+    expect(
+      awsAuth({
+        accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+        secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+        envVars: { AWS_ACCESS_KEY_ID: "dummy" },
+      }).env_vars,
+    ).toEqual({ AWS_ACCESS_KEY_ID: "dummy" });
+
+    const gcpRule = gcpAuth({
+      serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      envVars: { GOOGLE_API_KEY: "dummy" },
+    });
+    expect(gcpRule.env_vars).toEqual({ GOOGLE_API_KEY: "dummy" });
+
+    expect(
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+      }),
+    ).not.toHaveProperty("env_vars");
+  });
+
+  it("preserves surrounding whitespace in env var values", () => {
+    expect(
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+        envVars: { PREFIX: "  /opt/bin  " },
+      }).env_vars,
+    ).toEqual({ PREFIX: "  /opt/bin  " });
+  });
+
+  it.each<Record<string, string>>([{}, { "": "value" }, { NAME: "" }])(
+    "rejects invalid env vars %j",
+    (envVars) => {
+      expect(() =>
+        awsAuth({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+          envVars,
+        }),
+      ).toThrow();
+    },
+  );
 
   it("gcpAuth builds a GCP auth rule with built-in Google API host matching", () => {
     expect(
@@ -1230,6 +1275,57 @@ describe("SandboxClient - updateSandbox", () => {
     expect(url).toContain("/boxes/sb-1");
     expect(init.method).toBeUndefined();
     expect(sb.name).toBe("sb-1");
+  });
+
+  it("should PATCH proxy_config when provided in options", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        status: "ready",
+      }),
+    } as Response);
+
+    const config = proxyConfig({
+      rules: [
+        {
+          name: "github",
+          match_hosts: ["github.com"],
+          headers: [
+            { name: "Authorization", type: "opaque", value: "Basic rotated" },
+          ],
+        },
+      ],
+    });
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", { proxyConfig: config });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ proxy_config: config });
+  });
+
+  it("should throw NotReady when proxy config is set on a stopped sandbox", async () => {
+    const body = {
+      detail: {
+        error: "InvalidRequest",
+        message:
+          'sandbox "sb-1" is in "stopped" state, must be "ready" to update proxy config',
+      },
+    };
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => body,
+      clone: () => ({ status: 400, json: async () => body }),
+    } as unknown as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.updateSandbox("sb-1", { proxyConfig: { rules: [] } }),
+    ).rejects.toThrow(LangSmithSandboxNotReadyError);
   });
 });
 
@@ -2462,6 +2558,90 @@ describe("SandboxClient - start/stop", () => {
     await expect(client.stopSandbox("nonexistent")).rejects.toThrow(
       LangSmithResourceNotFoundError,
     );
+  });
+});
+
+describe("SandboxClient - generateDownloadURL", () => {
+  const createClientWithMock = (mockFetch: any) => {
+    const client = new SandboxClient({
+      apiEndpoint: "https://api.example.com/v2/sandboxes",
+      apiKey: "test-key",
+    });
+    (client as any)._caller = { call: (fn: any) => fn() };
+    (client as any)._fetchImpl = mockFetch;
+    return client;
+  };
+
+  it("should POST the path and return the link", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        download_url: "https://uuid--dl.svc.example.com/tok",
+        token: "tok",
+        expires_at: null,
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    const link = await client.generateDownloadURL("my-vm", "/tmp/report.pdf");
+
+    expect(link.download_url).toBe("https://uuid--dl.svc.example.com/tok");
+    expect(link.expires_at).toBeNull();
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/boxes/my-vm/download-url");
+    expect(JSON.parse(init.body as string)).toEqual({
+      path: "/tmp/report.pdf",
+    });
+  });
+
+  it("should send expiry and response headers when provided", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        download_url: "https://d/tok",
+        token: "tok",
+        expires_at: "2099-01-01T00:00:00Z",
+      }),
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await client.generateDownloadURL("my-vm", "/tmp/page.html", {
+      expiresInSeconds: 3600,
+      contentType: "text/html",
+      contentDisposition: "inline",
+    });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      path: "/tmp/page.html",
+      expires_in_seconds: 3600,
+      content_type: "text/html",
+      content_disposition: "inline",
+    });
+  });
+
+  it("should reject a non-positive expiry", async () => {
+    const mockFetch = jest.fn<typeof fetch>();
+    const client = createClientWithMock(mockFetch);
+
+    await expect(
+      client.generateDownloadURL("my-vm", "/tmp/f", { expiresInSeconds: 0 }),
+    ).rejects.toThrow(LangSmithValidationError);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("should throw ResourceNotFoundError on 404", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "not found" }),
+      text: async () => "not found",
+    } as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.generateDownloadURL("nonexistent", "/tmp/f"),
+    ).rejects.toThrow(LangSmithResourceNotFoundError);
   });
 });
 

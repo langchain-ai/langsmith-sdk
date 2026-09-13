@@ -29,12 +29,12 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import httpx
 import requests
 from typing_extensions import ParamSpec
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
+from langsmith._openapi_client._httpx import httpx
 
 _LOGGER = logging.getLogger(__name__)
 

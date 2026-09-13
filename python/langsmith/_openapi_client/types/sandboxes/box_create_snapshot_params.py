@@ -32,3 +32,6 @@ class BoxCreateSnapshotParams(TypedDict, total=False):
 
     labels: Dict[str, str]
     """Labels seed the captured snapshot's labels."""
+
+    tag: str
+    """mutable Docker-style tag; defaults to "latest" """

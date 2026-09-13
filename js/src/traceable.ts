@@ -13,7 +13,7 @@ import {
   KVMap,
   ExtractedUsageMetadata,
 } from "./schemas.js";
-import { isEnvTracingEnabled } from "./env.js";
+import { allowUnprocessedPayloads, isEnvTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
@@ -22,6 +22,8 @@ import {
 import {
   _LC_CHILD_RUN_END_PROMISES_KEY,
   _LC_CONTEXT_VARIABLES_KEY,
+  _PROCESSING_FAILED_KEY,
+  _processingFailed,
 } from "./singletons/constants.js";
 import type {
   TraceableFunction,
@@ -141,15 +143,29 @@ const handleRunInputs = <Args extends unknown[]>(
   processInputs: (
     inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
-): KVMap => {
+): KVMap | Promise<KVMap> => {
+  // Fail closed: trace the run, but with a marker instead of raw inputs.
+  const dropped = (e: unknown) => {
+    if (allowUnprocessedPayloads()) {
+      console.warn(
+        "Error occurred during processInputs. Tracing unprocessed inputs " +
+          "because LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is set:",
+        e,
+      );
+      return inputs;
+    }
+    console.warn("Error occurred during processInputs. Dropping inputs:", e);
+    return {
+      [_PROCESSING_FAILED_KEY]: _processingFailed("inputs", "processInputs"),
+    };
+  };
   try {
-    return processInputs(inputs);
+    const processed = processInputs(inputs);
+    return isThenable(processed)
+      ? Promise.resolve(processed).catch(dropped)
+      : processed;
   } catch (e) {
-    console.error(
-      "Error occurred during processInputs. Sending raw inputs:",
-      e,
-    );
-    return inputs;
+    return dropped(e);
   }
 };
 
@@ -245,6 +261,8 @@ async function handleRunOutputs<Return>(params: {
   } else {
     outputs = { outputs: rawOutputs };
   }
+  // `outputs` is overwritten by the redactor call below; keep the raw value.
+  const unprocessed: KVMap = outputs;
 
   const childRunEndPromises =
     !skipChildPromiseDelay &&
@@ -253,6 +271,31 @@ async function handleRunOutputs<Return>(params: {
     Array.isArray(runTree[_LC_CHILD_RUN_END_PROMISES_KEY])
       ? Promise.all(runTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
       : Promise.resolve();
+
+  // Fail closed, as for inputs: a marker rather than the raw value.
+  const droppedOutputs = (e: unknown): KVMap => {
+    if (allowUnprocessedPayloads()) {
+      console.error(
+        "Error occurred during processOutputs. Tracing unprocessed outputs " +
+          "because LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS is set:",
+        e,
+      );
+      return unprocessed;
+    }
+    console.error("Error occurred during processOutputs. Dropping outputs:", e);
+    return {
+      [_PROCESSING_FAILED_KEY]: _processingFailed("outputs", "processOutputs"),
+    };
+  };
+  const endOutputsDropped = async (e: unknown) => {
+    const finalOutputs = droppedOutputs(e);
+    try {
+      await childRunEndPromises;
+      await runTree?.end(finalOutputs);
+    } catch (endErr) {
+      console.error("Error occurred during runTree?.end.", endErr);
+    }
+  };
 
   try {
     outputs = processOutputsFn(outputs);
@@ -265,18 +308,7 @@ async function handleRunOutputs<Return>(params: {
           await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
-        .catch(async (e: unknown) => {
-          console.error(
-            "Error occurred during processOutputs. Sending unprocessed outputs:",
-            e,
-          );
-          try {
-            await childRunEndPromises;
-            await runTree?.end(outputs);
-          } catch (e) {
-            console.error("Error occurred during runTree?.end.", e);
-          }
-        })
+        .catch(endOutputsDropped)
         .finally(async () => {
           try {
             await handleEnd({
@@ -292,10 +324,7 @@ async function handleRunOutputs<Return>(params: {
       return;
     }
   } catch (e) {
-    console.error(
-      "Error occurred during processOutputs. Sending unprocessed outputs:",
-      e,
-    );
+    outputs = droppedOutputs(e);
   }
   _populateUsageMetadataAndOutputs(outputs, runTree);
   void childRunEndPromises
@@ -360,7 +389,9 @@ const getTracingRunTree = <Args extends unknown[]>(
   );
   runTree.attachments = attached;
   const processedInputs = handleRunInputs<Args>(args, processInputs);
-  if (isAsyncFn(processInputs)) {
+  // Off the value, not the fn shape: non-async redactors return promises too.
+  // Client.prepareRunCreateOrUpdateInputs also flattens it; don't rely on that.
+  if (isThenable(processedInputs)) {
     runTree._awaitInputsOnPost = true;
   }
   runTree.inputs = processedInputs;

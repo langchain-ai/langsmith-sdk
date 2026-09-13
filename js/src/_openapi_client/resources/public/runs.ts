@@ -134,7 +134,7 @@ export interface RunQueryParams {
   >;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }

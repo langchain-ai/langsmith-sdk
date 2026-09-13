@@ -370,6 +370,8 @@ export interface FeedbackBase {
   created_at: string;
   modified_at: string;
   run_id: string;
+  /** The trace the run belongs to. Equals run_id for a root run. */
+  trace_id?: string;
   key: string;
   score: ScoreType;
   value: ValueType;

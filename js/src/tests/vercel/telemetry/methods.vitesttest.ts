@@ -11,6 +11,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
 import { describe, it, expect, vi } from "vitest";
 import { LangSmithTelemetry } from "../../../experimental/vercel/telemetry.js";
+import { _processingFailed } from "../../../singletons/constants.js";
 import { traceable } from "../../../traceable.js";
 import { Client } from "../../../index.js";
 import { getAssumedTreeFromCalls } from "../../utils/tree.js";
@@ -1327,6 +1328,95 @@ describe("processInputs / processOutputs", () => {
         },
       },
     });
+  });
+
+  it("SECURITY: drops the inputs when processInputs throws (fail closed)", async () => {
+    const trace = createTrace({
+      processInputs: () => {
+        throw new Error("redactor boom");
+      },
+    });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Secret prompt",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const tree = await expectTree(trace);
+    expect(JSON.stringify(tree.data["test-provider:0"])).not.toContain(
+      "Secret prompt",
+    );
+    expect(tree.data["test-provider:0"].inputs).toEqual({
+      ls_error: _processingFailed("inputs", "processInputs"),
+    });
+  });
+
+  it("SECURITY: drops the outputs when processOutputs throws (fail closed)", async () => {
+    const trace = createTrace({
+      processOutputs: () => {
+        throw new Error("redactor boom");
+      },
+    });
+
+    await generateText({
+      model: createModel({ responses: [textResult("Secret response")] }),
+      prompt: "Test",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:0"].outputs).toEqual({
+      ls_error: _processingFailed("outputs", "processOutputs"),
+    });
+  });
+
+  it("SECURITY: drops the inputs when processChildLLMRunInputs throws", async () => {
+    const trace = createTrace({
+      processChildLLMRunInputs: () => {
+        throw new Error("redactor boom");
+      },
+    });
+
+    await generateText({
+      model: createModel(),
+      prompt: "Secret prompt",
+      telemetry: { integrations: [trace.integration] },
+    });
+
+    const tree = await expectTree(trace);
+    expect(tree.data["test-provider:1"].inputs).toEqual({
+      ls_error: _processingFailed("inputs", "processChildLLMRunInputs"),
+    });
+  });
+
+  it("SECURITY: LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS restores raw inputs", async () => {
+    // eslint-disable-next-line no-process-env
+    process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS = "true";
+    try {
+      const trace = createTrace({
+        processInputs: () => {
+          throw new Error("redactor boom");
+        },
+      });
+
+      await generateText({
+        model: createModel(),
+        prompt: "Secret prompt",
+        telemetry: { integrations: [trace.integration] },
+      });
+
+      const tree = await expectTree(trace);
+      expect(JSON.stringify(tree.data["test-provider:0"])).toContain(
+        "Secret prompt",
+      );
+      expect(tree.data["test-provider:0"].inputs).not.toHaveProperty(
+        "ls_error",
+      );
+    } finally {
+      // eslint-disable-next-line no-process-env
+      delete process.env.LANGSMITH_ALLOW_UNPROCESSED_PAYLOADS;
+    }
   });
 });
 
