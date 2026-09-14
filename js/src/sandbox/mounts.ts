@@ -15,6 +15,7 @@ import type {
   SandboxProxyRule,
   SandboxProxySecret,
 } from "./types.js";
+import { getAwsRoleArn } from "./proxy_config.js";
 
 function requireNonEmptyString(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
@@ -303,6 +304,11 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
       if (aws === undefined) {
         throw new Error("aws mount auth must include an aws block");
       }
+      const roleArn = getAwsRoleArn(aws);
+      if (roleArn !== undefined) {
+        byProvider.aws = { role_arn: roleArn };
+        continue;
+      }
       byProvider.aws = {
         access_key_id: copyMountSecret(aws.access_key_id, "accessKeyId"),
         secret_access_key: copyMountSecret(
@@ -326,21 +332,40 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
   return byProvider;
 }
 
+/**
+ * Build mount-scoped auth, or use enabled rules from proxyConfig. Pass the same
+ * proxyConfig to sandbox creation; its general IAM permissions remain unchanged.
+ */
 export function mountConfig({
   auth = [],
   mounts,
+  proxyConfig,
 }: {
   auth?: SandboxMountAuth[];
   mounts: SandboxMount[];
+  proxyConfig?: SandboxProxyConfig;
 }): SandboxMountConfig {
   const normalizedMounts = normalizeMounts(mounts);
   const authByProvider = normalizeMountAuth(auth);
   const mountProviders = new Set(normalizedMounts.map((mount) => mount.type));
+  const proxyProviders = new Set(
+    (proxyConfig?.rules ?? [])
+      .filter((rule) => rule?.enabled === true)
+      .map((rule) => rule.type),
+  );
 
-  if (mountProviders.has("s3") && authByProvider.aws === undefined) {
+  if (
+    mountProviders.has("s3") &&
+    authByProvider.aws === undefined &&
+    !proxyProviders.has("aws")
+  ) {
     throw new Error("s3 mounts require aws auth in mountConfig");
   }
-  if (mountProviders.has("gcs") && authByProvider.gcp === undefined) {
+  if (
+    mountProviders.has("gcs") &&
+    authByProvider.gcp === undefined &&
+    !proxyProviders.has("gcp")
+  ) {
     throw new Error("gcs mounts require gcp auth in mountConfig");
   }
   if (authByProvider.aws !== undefined && !mountProviders.has("s3")) {
@@ -350,10 +375,12 @@ export function mountConfig({
     throw new Error("gcp auth requires at least one gcs mount in mountConfig");
   }
 
-  return {
+  const config: SandboxMountConfig = {
     auth: authByProvider,
     mounts: normalizedMounts,
   };
+  validateMountConfigProxyConfig(config, proxyConfig);
+  return config;
 }
 
 export function validateMountConfigProxyConfig(
