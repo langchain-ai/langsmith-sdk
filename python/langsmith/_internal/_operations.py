@@ -181,6 +181,12 @@ def serialize_feedback_dict(
         feedback_create["id"] = uuid.uuid4()
     elif isinstance(feedback_create["id"], str):
         feedback_create["id"] = uuid.UUID(feedback_create["id"])
+    # `model_dump()` emits every field, but "provided" is meaningful to the
+    # endpoint -- an `agent_environment` without an `agent_id` is rejected -- so
+    # a null must not read as provided.
+    for _addressing_key in ("agent_id", "agent_environment"):
+        if feedback_create.get(_addressing_key) is None:
+            feedback_create.pop(_addressing_key, None)
     if "trace_id" not in feedback_create:
         feedback_create["trace_id"] = uuid.uuid4()
     elif isinstance(feedback_create["trace_id"], str):
