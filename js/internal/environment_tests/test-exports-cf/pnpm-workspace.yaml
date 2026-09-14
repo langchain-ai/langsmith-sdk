@@ -1,3 +1,5 @@
 confirmModulesPurge: false
 minimumReleaseAge: 1440
 packages: []
+overrides:
+  sharp: 0.35.4
