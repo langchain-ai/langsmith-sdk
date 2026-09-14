@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing_extensions import Literal, Required, TypedDict
+from typing import Union
+from datetime import datetime
+from typing_extensions import Literal, Required, Annotated, TypedDict
+
+from ..._utils import PropertyInfo
 
 __all__ = ["ItemListParams"]
 
@@ -19,6 +23,18 @@ class ItemListParams(TypedDict, total=False):
 
     item_type: Literal["RUN", "THREAD"]
     """Filter to RUN or THREAD"""
+
+    max_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """Only items whose trace start time is at or before this timestamp.
+
+    Omit or send the zero time for no bound
+    """
+
+    min_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """Only items whose trace start time is at or after this timestamp.
+
+    Omit or send the zero time for no bound
+    """
 
     page_size: int
     """Page size (max 100)"""
