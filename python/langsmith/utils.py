@@ -494,11 +494,18 @@ def validate_agent_addressing_env() -> None:
 
     A run is addressed either by agent (``LANGSMITH_AGENT_ID``) or by project
     (``LANGSMITH_PROJECT``), never both -- they name different targets, so
-    setting both is ambiguous. An environment on its own addresses nothing.
+    setting both is ambiguous.
+
+    Agent addressing is configured as a pair: ``LANGSMITH_AGENT_ID`` and
+    ``LANGSMITH_AGENT_ENVIRONMENT`` are set together or neither is. Half of the
+    pair is a mistake worth catching at startup rather than honoring. Note this
+    is stricter than a per-call ``agent_id``, which may stand alone and lets the
+    server apply its ``production`` default -- ambient configuration is held to
+    a higher bar than an explicit argument.
 
     Raises:
-        LangSmithUserError: If both addressing modes are configured, or if an
-            agent environment is set without an agent ID.
+        LangSmithUserError: If both addressing modes are configured, or if only
+            one half of the agent pair is set.
     """
     agent_id = get_tracer_agent_id()
     if agent_id and (project := get_env_var("PROJECT") or get_env_var("SESSION")):
@@ -508,12 +515,24 @@ def validate_agent_addressing_env() -> None:
             "either by agent or by project, not both. Unset one of them, or "
             "pass an explicit project per run to override the agent."
         )
-    if get_tracer_agent_environment() and not agent_id:
+    agent_environment = get_tracer_agent_environment()
+    if bool(agent_id) != bool(agent_environment):
+        if agent_id:
+            missing, present, value = (
+                "LANGSMITH_AGENT_ENVIRONMENT",
+                "LANGSMITH_AGENT_ID",
+                agent_id,
+            )
+        else:
+            missing, present, value = (
+                "LANGSMITH_AGENT_ID",
+                "LANGSMITH_AGENT_ENVIRONMENT",
+                cast(str, agent_environment),
+            )
         raise LangSmithUserError(
-            "LANGSMITH_AGENT_ENVIRONMENT is set without LANGSMITH_AGENT_ID. An "
-            "environment only narrows an agent, so on its own it doesn't "
-            "identify where runs should go. Set LANGSMITH_AGENT_ID too, or "
-            "unset LANGSMITH_AGENT_ENVIRONMENT."
+            f"{present} is set to {value!r} but {missing} is not. Agent "
+            "addressing is configured as a pair: set both, or neither and "
+            "address runs by project instead."
         )
 
 
