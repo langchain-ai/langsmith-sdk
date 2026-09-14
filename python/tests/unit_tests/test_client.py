@@ -49,8 +49,9 @@ from requests import HTTPError
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
+from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
-from langsmith._internal import _agent_addressing, _orjson
+from langsmith._internal import _agent_addressing, _operations, _orjson
 from langsmith._internal._beta_decorator import (
     LangSmithBetaWarning,
     _warn_once,
@@ -8700,3 +8701,117 @@ def test_a_complete_pair_survives_a_second_transform() -> None:
     _agent_addressing.apply_to_payload(payload)
     _agent_addressing.apply_to_payload(payload)
     assert payload == {"agent_id": "explicit", "agent_environment": "prod"}
+
+
+class TestFeedbackAgentAddressing:
+    """A `feedback.<id>` part is addressed by agent or by project, never both."""
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            # Each of these is rejected by the endpoint, not the SDK.
+            {"agent_id": "my-agent", "session_id": uuid.UUID(int=1)},
+            # `project_id` is deliberately absent: a pre-existing guard already
+            # rejects it alongside `run_id`, for reasons unrelated to agents.
+            {"agent_id": "my-agent"},
+            {"agent_environment": "staging"},
+        ],
+    )
+    def test_create_feedback_never_rejects_addressing(self, kwargs: dict) -> None:
+        """No client-side validation; the endpoint answers with a 400."""
+        session = mock.Mock()
+        session.request = mock.Mock()
+        client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+        with (
+            mock.patch.object(ls_client, "_check_feedback_session_id"),
+            mock.patch.object(Client, "_should_sample", return_value=False),
+        ):
+            client.create_feedback(
+                run_id=uuid.uuid4(),
+                key="correctness",
+                score=1,
+                trace_id=uuid.uuid4(),
+                **kwargs,
+            )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected_agent"),
+        [
+            ({"agent_id": "my-agent"}, {"agent_id": "my-agent"}),
+            ({"agent_environment": "staging"}, {"agent_environment": "staging"}),
+        ],
+    )
+    def test_half_an_agent_pair_is_forwarded(
+        self, kwargs: dict, expected_agent: dict
+    ) -> None:
+        """Forwarded so the endpoint answers, not dropped onto another project."""
+        serialized = _operations.serialize_feedback_dict(
+            {
+                "id": uuid.uuid4(),
+                "trace_id": uuid.uuid4(),
+                "key": "correctness",
+                "score": 1,
+                **kwargs,
+            }
+        )
+        body = json.loads(serialized.feedback)
+        assert {
+            key: body[key] for key in ("agent_id", "agent_environment") if key in body
+        } == expected_agent
+
+    def test_unset_agent_fields_are_omitted_not_nulled(self) -> None:
+        """A null must not read as "provided" to the endpoint."""
+        serialized = _operations.serialize_feedback_dict(
+            {
+                "id": uuid.uuid4(),
+                "trace_id": uuid.uuid4(),
+                "key": "correctness",
+                "score": 1,
+            }
+        )
+        body = json.loads(serialized.feedback)
+        assert "agent_id" not in body
+        assert "agent_environment" not in body
+
+    def test_agent_addressing_reaches_the_feedback_part(self) -> None:
+        serialized = _operations.serialize_feedback_dict(
+            {
+                "id": uuid.uuid4(),
+                "trace_id": uuid.uuid4(),
+                "key": "correctness",
+                "score": 1,
+                "agent_id": "my-agent",
+                "agent_environment": "staging",
+            }
+        )
+        body = json.loads(serialized.feedback)
+        assert (body["agent_id"], body["agent_environment"]) == (
+            "my-agent",
+            "staging",
+        )
+
+    def test_agent_addressed_feedback_skips_the_session_id_gate(self) -> None:
+        """An agent pair locates the project, so the SmithDB gate must not fire."""
+        session = mock.Mock()
+        session.request = mock.Mock()
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            session=session,
+            info=ls_schemas.LangSmithInfo(
+                instance_flags={"query_backend": "smithdb_only"}
+            ),
+        )
+        with (
+            mock.patch.object(ls_client, "_check_feedback_session_id") as gate,
+            mock.patch.object(Client, "_should_sample", return_value=False),
+        ):
+            client.create_feedback(
+                run_id=uuid.uuid4(),
+                key="correctness",
+                score=1,
+                trace_id=uuid.uuid4(),
+                agent_id="my-agent",
+                agent_environment="staging",
+            )
+        gate.assert_not_called()

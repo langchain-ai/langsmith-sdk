@@ -8304,6 +8304,8 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
+        agent_id: Optional[str] = None,
+        agent_environment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8369,6 +8371,17 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
+            agent_id (Optional[str]):
+                The agent to attach this feedback to, instead of a project. Pass
+                whatever the run being described was traced to -- for a run
+                created in this process, `run_tree.agent_id`. Cannot be combined
+                with `session_id` / `project_id`, and is never read from
+                `LANGSMITH_AGENT_ID`: feedback follows its run, not the ambient
+                environment. The agent must already exist; unlike run ingestion,
+                a feedback part never creates one.
+            agent_environment (Optional[str]):
+                Narrows `agent_id`, and requires it. Defaults server-side to
+                `production` when omitted.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -8426,7 +8439,9 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None:
+        if run_id is not None and session_id is None and agent_id is None:
+            # An agent pair locates the project directly, so it satisfies the
+            # same requirement this gate exists for.
             _check_feedback_session_id(self.info)
         if kwargs:
             warnings.warn(
@@ -8488,6 +8503,8 @@ class Client:
                 modified_at=datetime.datetime.now(datetime.timezone.utc),
                 feedback_config=feedback_config,
                 session_id=_session_id,
+                agent_id=agent_id,
+                agent_environment=agent_environment,
                 start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
                     comparative_experiment_id, accept_null=True
