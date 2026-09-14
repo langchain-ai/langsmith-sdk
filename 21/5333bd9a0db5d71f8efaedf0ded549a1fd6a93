@@ -1,0 +1,38 @@
+js/src/tests/insights.test.ts
+  s_f26131af361b77::t_ca1b1fee1b3368 1-253
+python/langsmith/client.py
+  s_f26131af361b77::t_9bb0d331544339 11247,11251-11253,11255,11257-11261,11266-11270,11276-11277,11282-11287,11291-11293,11295-11304
+  s_f26131af361b77::t_90205bfca739d1 396-403
+  s_f26131af361b77::t_5094c220728069 11317-11327,11329,11349-11363,11369-11381,11385-11387,11391-11392,11395,11401
+  s_f26131af361b77::t_9836c3b39b5c02 11455
+python/tests/unit_tests/test_insights_report.py
+  s_f26131af361b77::t_166a3fdd6f20a3 15,18,27
+  s_f26131af361b77::t_dd98490e417178 8-9
+  s_f26131af361b77::t_b2c66179b71b92 184-311
+js/src/index.ts
+  s_f26131af361b77::t_0481306e37351a 15-19
+js/src/client.ts
+  s_f26131af361b77::t_8982a76b5247dd 829-840
+  s_f26131af361b77::t_c5af6a7ea0356d 61-62
+  s_f26131af361b77::t_818b9662050eb0 4408-4765
+  s_f26131af361b77::t_2c9ef5d14a6629 841-860
+  s_f26131af361b77::t_dbc6f4bb75f19a 4766-4767
+js/src/schemas.ts
+  s_f26131af361b77::t_a6d04fce98c757 815-877
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "215333bd9a0db5d71f8efaedf0ded549a1fd6a93",
+  "prompts": {},
+  "sessions": {
+    "s_f26131af361b77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "acf5a36b-5dbe-4a1a-a5d5-3c56f487a8f7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Bagatur Askaryan <baskaryan@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+python/langsmith/secret.py
+  s_9d798f94fcb60d::t_05de9ea41f71c5 187,193-195,199-209,211-213,215-224
+python/tests/unit_tests/secret/test_secret_serde.py
+  s_9d798f94fcb60d::t_b474348afc25d3 12,357-410
+python/langsmith/_internal/otel/_attribute_utils.py
+  s_9d798f94fcb60d::t_05de9ea41f71c5 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "db81f94c8f1ada1c4754d408cc8e8b27e7750145",
+  "prompts": {},
+  "sessions": {
+    "s_9d798f94fcb60d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4d01e5-b817-4e2b-80b3-cb47b4623147",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

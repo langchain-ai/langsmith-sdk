@@ -1,0 +1,45 @@
+python/langsmith/secret/_types.py
+  s_a7892c28e33842::t_2e21c4242552dd 79-81
+  s_a7892c28e33842::t_75f718fb1c04f1 76-78
+python/langsmith/client.py
+  s_a7892c28e33842::t_d35fe21d7b7268 5780
+python/tests/unit_tests/secret/test_secret_serde.py
+  s_a7892c28e33842::t_2e21c4242552dd 12-14,381-421
+  s_a7892c28e33842::t_75f718fb1c04f1 160-176,178-196
+python/langsmith/_internal/otel/_attribute_utils.py
+  s_a7892c28e33842::t_b2d7bf5230da4a 18
+  s_a7892c28e33842::t_4b1144778d9301 19-22
+  s_a7892c28e33842::t_d35fe21d7b7268 8
+python/tests/unit_tests/secret/test_secret_integration.py
+  s_a7892c28e33842::t_83f7be83e81c03 192-199,204-220
+  s_a7892c28e33842::t_38b1bad2d4320e 200-203
+  s_a7892c28e33842::t_d28d13eda5a2eb 224
+  s_a7892c28e33842::t_2e21c4242552dd 229-239
+  s_a7892c28e33842::t_fdbf914c60d18b 221-223,225-228
+python/langsmith/_internal/_serde.py
+  s_a7892c28e33842::t_0b51c2f41061bd 19-23,296-297
+  s_a7892c28e33842::t_f9fde5e2c074ed 302
+  s_a7892c28e33842::t_f652ccc75ae4e0 242-244
+python/langsmith/_internal/_orjson.py
+  s_a7892c28e33842::t_4b1144778d9301 54-56,66-70
+python/langsmith/secret/_serialization.py
+  s_a7892c28e33842::t_f652ccc75ae4e0 56-58
+  s_a7892c28e33842::t_0b51c2f41061bd 11,63-64
+  s_a7892c28e33842::t_d80872fe5e7895 49-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7747426e0de6d39317c6831b923af524750332f7",
+  "prompts": {},
+  "sessions": {
+    "s_a7892c28e33842": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1cac4247-96bc-45c6-bc90-36f7562bed66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

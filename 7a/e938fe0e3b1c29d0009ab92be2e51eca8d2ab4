@@ -1,0 +1,45 @@
+python/langsmith/integrations/livekit/processor.py
+  s_444d53b020acdc::t_d75e7c17e06d32 47,587,594-604,607,609-617,639,641,643-644
+  s_444d53b020acdc::t_8dfb49c617f361 578,638,640,642,669-670,758,761,764
+  s_444d53b020acdc::t_e0823894b5e5d2 29-30
+python/langsmith/integrations/livekit/_helpers.py
+  s_444d53b020acdc::t_3a349036196849 42-47
+  s_444d53b020acdc::t_244c0020e3e2a4 51-52
+  s_444d53b020acdc::t_8dfb49c617f361 21,48-50
+  s_444d53b020acdc::t_ba16a60b373e0c 41
+  s_444d53b020acdc::t_af5c50fd9f6052 14-15
+  s_444d53b020acdc::t_3d090d96a1e4e5 16-20
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_444d53b020acdc::t_93bc21530bb3ad 1636-1638,1735-1740,1743-1756,1758-1764,1766-1771,1774-1776,1789-1796,1799-1801,1803-1827,1838-1856,1858-1861,1866-1868,1872-1878,1880-1882,1888,1892-1905,1914-1956,1958-1960,1962-1986
+  s_444d53b020acdc::t_e1282e563c2b92 1640-1644
+  s_444d53b020acdc::t_0362d57f3973ac 1869-1871,1889-1891
+  s_444d53b020acdc::t_e56071f3c14c7e 1606-1635,1639,1645-1734,1741-1742,1757,1765,1772-1773,1777-1788,1797-1798,1802,1828-1837,1857,1862-1865,1879,1883-1887,1906-1913,1957,1961
+  s_444d53b020acdc::t_da82989d779fe2 1987-1988
+  s_444d53b020acdc::t_e0823894b5e5d2 20-23
+python/langsmith/_internal/voice/_helpers.py
+  s_444d53b020acdc::t_1603befe25c298 6,20-28,30,32-34,44-50,52-109,115-175
+  s_444d53b020acdc::t_222187e14e6b51 29,31
+  s_444d53b020acdc::t_fd57b08ba2d6c1 176-177
+  s_444d53b020acdc::t_ca7706a284ded7 35
+  s_444d53b020acdc::t_970e07f6f5bc65 36-43,51,110-114
+python/langsmith/__init__.py
+  s_444d53b020acdc::t_e1ab0643571b8b 53
+python/.bumpversion.cfg
+  s_444d53b020acdc::t_e1ab0643571b8b 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7ae938fe0e3b1c29d0009ab92be2e51eca8d2ab4",
+  "prompts": {},
+  "sessions": {
+    "s_444d53b020acdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a086fa-a41a-79c3-85f4-b83b1f42d4a2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
