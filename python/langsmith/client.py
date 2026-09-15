@@ -5451,13 +5451,14 @@ class Client:
             project_name (str):
                 The name of the project to check for.
             project_id (Optional[str]):
-                The ID of the project to check for.
+                The ID of the project to check for. Takes precedence over
+                `project_name` when provided.
 
         Returns:
             bool: Whether the project exists.
         """
         try:
-            self.read_project(project_name=project_name)
+            self.read_project(project_id=project_id, project_name=project_name)
         except ls_utils.LangSmithNotFoundError:
             return False
         return True
