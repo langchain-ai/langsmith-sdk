@@ -71,6 +71,7 @@ from langsmith.sandbox._models import (
 )
 from langsmith.sandbox._mounts import (
     AWSMountAuthConfig,
+    AWSMountRoleAuthConfig,
     ContextHubMountConfig,
     ContextHubMountSpec,
     GCPMountAuthConfig,
@@ -132,6 +133,7 @@ __all__ = [
     "SandboxMountAuthConfig",
     "SandboxMountConfig",
     "AWSMountAuthConfig",
+    "AWSMountRoleAuthConfig",
     "ContextHubMountConfig",
     "ContextHubMountSpec",
     "GCPMountAuthConfig",
