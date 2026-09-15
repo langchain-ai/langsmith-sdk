@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing_extensions import Literal
+
 from ..._httpx import httpx
 from ..._types import Body, Omit, Query, Headers, NoneType, NotGiven, omit, not_given
 from ..._utils import path_template, maybe_transform, async_maybe_transform
@@ -41,9 +43,11 @@ class RegistriesResource(SyncAPIResource):
         self,
         *,
         name: str,
-        password: str,
         url: str,
-        username: str,
+        auth_type: Literal["DOCKER_CONFIG", "AWS_ROLE"] | Omit = omit,
+        aws_role_arn: str | Omit = omit,
+        password: str | Omit = omit,
+        username: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -68,8 +72,10 @@ class RegistriesResource(SyncAPIResource):
             body=maybe_transform(
                 {
                     "name": name,
-                    "password": password,
                     "url": url,
+                    "auth_type": auth_type,
+                    "aws_role_arn": aws_role_arn,
+                    "password": password,
                     "username": username,
                 },
                 registry_create_params.RegistryCreateParams,
@@ -117,6 +123,8 @@ class RegistriesResource(SyncAPIResource):
         self,
         path_name: str,
         *,
+        auth_type: Literal["DOCKER_CONFIG", "AWS_ROLE"] | Omit = omit,
+        aws_role_arn: str | Omit = omit,
         body_name: str | Omit = omit,
         password: str | Omit = omit,
         url: str | Omit = omit,
@@ -146,6 +154,8 @@ class RegistriesResource(SyncAPIResource):
             path_template("/api/v2/sandboxes/registries/{path_name}", path_name=path_name),
             body=maybe_transform(
                 {
+                    "auth_type": auth_type,
+                    "aws_role_arn": aws_role_arn,
                     "body_name": body_name,
                     "password": password,
                     "url": url,
@@ -264,9 +274,11 @@ class AsyncRegistriesResource(AsyncAPIResource):
         self,
         *,
         name: str,
-        password: str,
         url: str,
-        username: str,
+        auth_type: Literal["DOCKER_CONFIG", "AWS_ROLE"] | Omit = omit,
+        aws_role_arn: str | Omit = omit,
+        password: str | Omit = omit,
+        username: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -291,8 +303,10 @@ class AsyncRegistriesResource(AsyncAPIResource):
             body=await async_maybe_transform(
                 {
                     "name": name,
-                    "password": password,
                     "url": url,
+                    "auth_type": auth_type,
+                    "aws_role_arn": aws_role_arn,
+                    "password": password,
                     "username": username,
                 },
                 registry_create_params.RegistryCreateParams,
@@ -340,6 +354,8 @@ class AsyncRegistriesResource(AsyncAPIResource):
         self,
         path_name: str,
         *,
+        auth_type: Literal["DOCKER_CONFIG", "AWS_ROLE"] | Omit = omit,
+        aws_role_arn: str | Omit = omit,
         body_name: str | Omit = omit,
         password: str | Omit = omit,
         url: str | Omit = omit,
@@ -369,6 +385,8 @@ class AsyncRegistriesResource(AsyncAPIResource):
             path_template("/api/v2/sandboxes/registries/{path_name}", path_name=path_name),
             body=await async_maybe_transform(
                 {
+                    "auth_type": auth_type,
+                    "aws_role_arn": aws_role_arn,
                     "body_name": body_name,
                     "password": password,
                     "url": url,

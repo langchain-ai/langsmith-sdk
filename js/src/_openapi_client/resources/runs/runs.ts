@@ -215,6 +215,13 @@ export interface Run {
   latency_seconds?: number;
 
   /**
+   * `ls_user_id` identifies the LangSmith user whose credential traced the run. It
+   * is absent for runs traced with a service-account API key, which has no
+   * associated user.
+   */
+  ls_user_id?: string;
+
+  /**
    * `manifest` is the serialized configuration of the traced component (for example
    * the model parameters, prompt template, or pipeline definition), when recorded.
    */
@@ -707,7 +714,8 @@ export type RunSelectField =
   | 'IS_IN_DATASET'
   | 'LAST_QUEUED_AT'
   | 'SHARE_URL'
-  | 'FEEDBACK_STATS';
+  | 'FEEDBACK_STATS'
+  | 'LS_USER_ID';
 
 /**
  * Query params for run stats.
@@ -1020,6 +1028,7 @@ export interface RunRetrieveV2Params {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**
@@ -1091,6 +1100,7 @@ export interface RunRetrieveParams {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**

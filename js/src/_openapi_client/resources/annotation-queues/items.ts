@@ -46,8 +46,10 @@ export class Items extends APIResource {
   /**
    * List RUN and THREAD items in a single annotation queue for one review status
    * section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters
-   * the page. direction=backward returns items before the supplied cursor. The
-   * response contains item metadata only, not expanded run or thread payloads.
+   * the page. Optional min_start_time/max_start_time bound the item's trace start
+   * time; items with no start time are excluded when either bound is set.
+   * direction=backward returns items before the supplied cursor. The response
+   * contains item metadata only, not expanded run or thread payloads.
    * status=archived returns items whose queue review requirements have been
    * satisfied, not merely items the caller personally marked completed.
    */
@@ -109,7 +111,9 @@ export class Items extends APIResource {
 
   /**
    * Resolve a RUN or THREAD item to its current review section and zero-based
-   * position for deep linking.
+   * position for deep linking. The returned cursor counts RUN and THREAD items
+   * together, so it is only valid for a list request with no item_type or start-time
+   * filter.
    */
   retrievePlacement(
     itemID: string,
@@ -311,6 +315,18 @@ export interface ItemListParams extends ItemsCursorGetPaginationParams {
    * Filter to RUN or THREAD
    */
   item_type?: 'RUN' | 'THREAD';
+
+  /**
+   * Only items whose trace start time is at or before this timestamp. Omit or send
+   * the zero time for no bound
+   */
+  max_start_time?: string;
+
+  /**
+   * Only items whose trace start time is at or after this timestamp. Omit or send
+   * the zero time for no bound
+   */
+  min_start_time?: string;
 }
 
 export interface ItemCreateStatusParams {

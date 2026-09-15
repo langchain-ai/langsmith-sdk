@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Union
+from datetime import datetime
+from typing_extensions import Literal
+
 from .boxes import (
     BoxesResource,
     AsyncBoxesResource,
@@ -10,6 +14,10 @@ from .boxes import (
     BoxesResourceWithStreamingResponse,
     AsyncBoxesResourceWithStreamingResponse,
 )
+from ...types import sandbox_list_usage_costs_params
+from ..._httpx import httpx
+from ..._types import Body, Omit, Query, Headers, NotGiven, SequenceNotStr, omit, not_given
+from ..._utils import maybe_transform
 from ..._compat import cached_property
 from .snapshots import (
     SnapshotsResource,
@@ -28,6 +36,15 @@ from .registries import (
     AsyncRegistriesResourceWithStreamingResponse,
 )
 from ..._resource import SyncAPIResource, AsyncAPIResource
+from ..._response import (
+    to_raw_response_wrapper,
+    to_streamed_response_wrapper,
+    async_to_raw_response_wrapper,
+    async_to_streamed_response_wrapper,
+)
+from ...pagination import SyncItemsCursorGetPagination, AsyncItemsCursorGetPagination
+from ..._base_client import AsyncPaginator, make_request_options
+from ...types.sandbox_list_usage_costs_response import SandboxListUsageCostsResponse
 
 __all__ = ["SandboxesResource", "AsyncSandboxesResource"]
 
@@ -60,6 +77,75 @@ class SandboxesResource(SyncAPIResource):
         """
         return SandboxesResourceWithStreamingResponse(self)
 
+    def list_usage_costs(
+        self,
+        *,
+        end_time: Union[str, datetime],
+        start_time: Union[str, datetime],
+        cursor: str | Omit = omit,
+        page_size: int | Omit = omit,
+        resource_ids: SequenceNotStr[str] | Omit = omit,
+        resource_type: Literal["SANDBOX", "SNAPSHOT"] | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> SyncItemsCursorGetPagination[SandboxListUsageCostsResponse]:
+        """
+        Returns priced usage per sandbox or snapshot and UTC hour in the half-open
+        requested interval. LCU uses the recorded compute amount for sandboxes;
+        snapshots have zero LCU. LSU allocates the recorded workspace storage amount
+        proportionally to attributed bytes, including checkpoints on their sandbox and
+        snapshots as separate resources. Resource filters preserve each resource's
+        share. Rate changes do not reprice recorded amounts. An access-filtered page can
+        have no items and a non-null next_cursor; continue until next_cursor is null.
+
+        Args:
+          end_time: Exclusive RFC3339 end time; the range must not exceed 31 days
+
+          start_time: Inclusive RFC3339 start time
+
+          cursor: Opaque pagination cursor
+
+          page_size: Maximum rows to return
+
+          resource_ids: Resource UUID filter; repeat this parameter up to 100 times
+
+          resource_type: Resource type filter
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        return self._get_api_list(
+            "/api/v2/sandboxes/usage/costs",
+            page=SyncItemsCursorGetPagination[SandboxListUsageCostsResponse],
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {
+                        "end_time": end_time,
+                        "start_time": start_time,
+                        "cursor": cursor,
+                        "page_size": page_size,
+                        "resource_ids": resource_ids,
+                        "resource_type": resource_type,
+                    },
+                    sandbox_list_usage_costs_params.SandboxListUsageCostsParams,
+                ),
+            ),
+            model=SandboxListUsageCostsResponse,
+        )
+
 
 class AsyncSandboxesResource(AsyncAPIResource):
     @cached_property
@@ -89,10 +175,83 @@ class AsyncSandboxesResource(AsyncAPIResource):
         """
         return AsyncSandboxesResourceWithStreamingResponse(self)
 
+    def list_usage_costs(
+        self,
+        *,
+        end_time: Union[str, datetime],
+        start_time: Union[str, datetime],
+        cursor: str | Omit = omit,
+        page_size: int | Omit = omit,
+        resource_ids: SequenceNotStr[str] | Omit = omit,
+        resource_type: Literal["SANDBOX", "SNAPSHOT"] | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> AsyncPaginator[SandboxListUsageCostsResponse, AsyncItemsCursorGetPagination[SandboxListUsageCostsResponse]]:
+        """
+        Returns priced usage per sandbox or snapshot and UTC hour in the half-open
+        requested interval. LCU uses the recorded compute amount for sandboxes;
+        snapshots have zero LCU. LSU allocates the recorded workspace storage amount
+        proportionally to attributed bytes, including checkpoints on their sandbox and
+        snapshots as separate resources. Resource filters preserve each resource's
+        share. Rate changes do not reprice recorded amounts. An access-filtered page can
+        have no items and a non-null next_cursor; continue until next_cursor is null.
+
+        Args:
+          end_time: Exclusive RFC3339 end time; the range must not exceed 31 days
+
+          start_time: Inclusive RFC3339 start time
+
+          cursor: Opaque pagination cursor
+
+          page_size: Maximum rows to return
+
+          resource_ids: Resource UUID filter; repeat this parameter up to 100 times
+
+          resource_type: Resource type filter
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        return self._get_api_list(
+            "/api/v2/sandboxes/usage/costs",
+            page=AsyncItemsCursorGetPagination[SandboxListUsageCostsResponse],
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {
+                        "end_time": end_time,
+                        "start_time": start_time,
+                        "cursor": cursor,
+                        "page_size": page_size,
+                        "resource_ids": resource_ids,
+                        "resource_type": resource_type,
+                    },
+                    sandbox_list_usage_costs_params.SandboxListUsageCostsParams,
+                ),
+            ),
+            model=SandboxListUsageCostsResponse,
+        )
+
 
 class SandboxesResourceWithRawResponse:
     def __init__(self, sandboxes: SandboxesResource) -> None:
         self._sandboxes = sandboxes
+
+        self.list_usage_costs = to_raw_response_wrapper(
+            sandboxes.list_usage_costs,
+        )
 
     @cached_property
     def boxes(self) -> BoxesResourceWithRawResponse:
@@ -111,6 +270,10 @@ class AsyncSandboxesResourceWithRawResponse:
     def __init__(self, sandboxes: AsyncSandboxesResource) -> None:
         self._sandboxes = sandboxes
 
+        self.list_usage_costs = async_to_raw_response_wrapper(
+            sandboxes.list_usage_costs,
+        )
+
     @cached_property
     def boxes(self) -> AsyncBoxesResourceWithRawResponse:
         return AsyncBoxesResourceWithRawResponse(self._sandboxes.boxes)
@@ -128,6 +291,10 @@ class SandboxesResourceWithStreamingResponse:
     def __init__(self, sandboxes: SandboxesResource) -> None:
         self._sandboxes = sandboxes
 
+        self.list_usage_costs = to_streamed_response_wrapper(
+            sandboxes.list_usage_costs,
+        )
+
     @cached_property
     def boxes(self) -> BoxesResourceWithStreamingResponse:
         return BoxesResourceWithStreamingResponse(self._sandboxes.boxes)
@@ -144,6 +311,10 @@ class SandboxesResourceWithStreamingResponse:
 class AsyncSandboxesResourceWithStreamingResponse:
     def __init__(self, sandboxes: AsyncSandboxesResource) -> None:
         self._sandboxes = sandboxes
+
+        self.list_usage_costs = async_to_streamed_response_wrapper(
+            sandboxes.list_usage_costs,
+        )
 
     @cached_property
     def boxes(self) -> AsyncBoxesResourceWithStreamingResponse:

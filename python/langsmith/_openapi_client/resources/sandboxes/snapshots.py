@@ -46,8 +46,10 @@ class SnapshotsResource(SyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        description: str | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
+        run_config: snapshot_create_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -60,8 +62,16 @@ class SnapshotsResource(SyncAPIResource):
         Create a snapshot from a Docker image (async build).
 
         Args:
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           labels: Labels seed the snapshot's labels, overriding any label of the same key derived
               from the Docker image.
+
+          run_config: RunConfig overrides the runtime configuration taken from the Docker image. Every
+              sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+              its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+              the image's, and env_vars merge over it.
 
           tag: mutable Docker-style tag; defaults to "latest"
 
@@ -80,8 +90,10 @@ class SnapshotsResource(SyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "description": description,
                     "labels": labels,
                     "registry_id": registry_id,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 snapshot_create_params.SnapshotCreateParams,
@@ -309,8 +321,10 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        description: str | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
+        run_config: snapshot_create_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -323,8 +337,16 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         Create a snapshot from a Docker image (async build).
 
         Args:
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           labels: Labels seed the snapshot's labels, overriding any label of the same key derived
               from the Docker image.
+
+          run_config: RunConfig overrides the runtime configuration taken from the Docker image. Every
+              sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+              its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+              the image's, and env_vars merge over it.
 
           tag: mutable Docker-style tag; defaults to "latest"
 
@@ -343,8 +365,10 @@ class AsyncSnapshotsResource(AsyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "description": description,
                     "labels": labels,
                     "registry_id": registry_id,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 snapshot_create_params.SnapshotCreateParams,

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Optional
 from typing_extensions import TypedDict
 
 __all__ = ["CreateOnlineCodeEvaluatorRequestParam"]
 
 
 class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
+    advanced_features_enabled: bool
+
     code: str
+
+    dependencies: Optional[str]
 
     language: str
     """Default: "python" """
