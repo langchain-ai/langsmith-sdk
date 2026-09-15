@@ -431,3 +431,29 @@ def test_check_value_non_numeric(caplog):
         "Numeric values should be provided in the 'score' field, not 'value'."
         not in caplog.text
     )
+
+
+def test_feedback_config_arbitrary_dict_is_preserved():
+    """A dict passed as `feedback_config` must keep keys unknown to `FeedbackConfig`.
+
+    Regression test for https://github.com/langchain-ai/langchain/issues/31802:
+    `feedback_config` is typed `Optional[Union[FeedbackConfig, dict]]`, and
+    `FeedbackConfig` is a permissive `TypedDict` where every field is optional.
+    A dict with keys that don't match `FeedbackConfig` at all can still validate
+    against it (all its fields are absent, which `total=False` allows), so a
+    naive union match can silently coerce into `FeedbackConfig` and drop every
+    unrecognized key instead of falling through to the plain `dict` arm.
+    """
+    result = EvaluationResult(
+        key="sentiment", value="positive", feedback_config={"threshold": 1.0}
+    )
+    assert result.feedback_config == {"threshold": 1.0}
+
+    # a dict mixing a real FeedbackConfig key with an unrelated one must also
+    # keep both, not just the recognized one
+    result = EvaluationResult(
+        key="sentiment",
+        value="positive",
+        feedback_config={"type": "continuous", "threshold": 1.0},
+    )
+    assert result.feedback_config == {"type": "continuous", "threshold": 1.0}
