@@ -1,11 +1,8 @@
 ---
 type: repository quickstart
 title: LangSmith SDK Repository Quickstart
-description: Task-oriented starting point for working safely across the Python and TypeScript LangSmith SDKs, their public entrypoints, generated-code boundary, tests, and release workflows.
+description: Task-oriented map for working safely across the Python and TypeScript LangSmith SDKs, including routes to tracing implementation guidance and measured ingestion-path analysis.
 tags: [quickstart, sdk, python, typescript, tracing, evaluation, development]
-verified:
-  - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
 sources:
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
@@ -29,7 +26,10 @@ sources:
     resource: repo://python/langsmith/client.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-15T09:52:25.586Z" }
+verified:
+  - by: openwiki/0.5.2
+    at: 2026-09-15T09:58:29.947Z
 ---
 
 # LangSmith SDK Repository Quickstart
@@ -49,6 +49,7 @@ Choose the user-visible task first, then select the language implementation. Do 
 | Add or change runs, projects, datasets, examples, feedback, prompts, queues, threads, or sharing | The public handwritten client and its generated-resource bridge | [LangSmith Platform Client Domains](/openwiki/concepts/platform-client.md) |
 | Change run identity, parent/child nesting, propagation, streaming completion, tags, or metadata | `RunTree` and tracing-context helpers | [Run Trees, Trace Identity, and Context Propagation](/openwiki/concepts/run-tree-and-context.md) |
 | Change sampling, privacy transforms, batching, compression, replicas, retries, flush, or dropped traces | Follow capture through `RunTree` into the client ingestion path | [Trace Capture, Transformation, and Ingestion](/openwiki/workflows/trace-capture-and-ingestion.md) |
+| Investigate ingestion-path timing, HTTP-call count, wire size, or application-thread occupancy | Compare the trace lab's durable direct, batched, multipart, compressed, OTEL, and hybrid capture | [Measured Trace Ingestion Paths](/openwiki/workflows/trace-ingestion-measured.md) |
 | Change dataset evaluation, experiment execution, concurrency, repetitions, or evaluators | The language's evaluation entrypoint and runner | [Evaluation and Experiment Workflows](/openwiki/workflows/evaluation-and-experiments.md) |
 | Change pytest, Jest, or Vitest tracking and assertions | The test-framework adapter plus reporter/plugin lifecycle | [LangSmith Test Tracking and Evaluation Assertions](/openwiki/testing/test-tracking-and-assertions.md) |
 | Add or repair a model, agent, realtime, LangChain, or OpenTelemetry integration | The matching wrapper/integration, its provider normalization, and focused tests | [Provider Wrappers, Agent Integrations, and OpenTelemetry](/openwiki/integrations/provider-wrappers-and-opentelemetry.md) |

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:9ff36cfd024393ab25a682038237b6ab1f12a33270ebc8c3ff91baecccb1dd85",
+  "pageVersion": "sha256:d62c19544445ec57e684d0041ded06ed40aeb5c09e53fedeab3a2bb68d2aafca",
   "claims": [
     {
       "id": "claim_f2c93730ad354ca5921368caceaa034c",
@@ -341,10 +341,200 @@
           "version": "repo-lines-v1:sha256:fea833c25ac2f4a830ff2242832198d154a05df4d28bc40b7e8ca265d2c9ad4f:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZWNmYzNkYTQ3ZWI5MmEwZDRkMWYzYjY4MGQwOTE2YzczZjJlYjFkOWQ3ZDcwODYzY2M2OThmMWZkYjZiNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNzcyODgwZjYyZmE5MGM2ZWM2YTAwZDIzNGFjMzFmMjZkZmI0NzAzMWM5NTg3NjBhZWQ3NmY4Mzg0N2NiN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1YTMzMDQyMzY1MGI5ZmYxYWE4YmQ3NTk5NTE4OGI4YmUxNDg0YzNiOGEyYmYxZmRiMWYwMmFmYzZhNzA1ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyNTlmY2Y1MTlhNWNiOTI2ZWE5NjkwOTlmMDYwMTQzYzYyOWE5ZDkyMWE4MjA2NjA4MjlhM2Y1OTE5NDBkMDkifQ"
         }
       ]
+    },
+    {
+      "id": "claim_8605b37923354878b8dd56809b99295a",
+      "statement": "Python direct run writes synchronously POST to `/runs` and PATCH to `/runs/{id}` on the calling thread, while ordinary queued JSON or multipart writes execute synchronously on the tracing control or scaled drain subthread that owns the batch.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L295-L388",
+          "version": "repo-lines-v1:sha256:51dd0b6c7114fb17acb126a52129a4b8fb26c69b63cfc583c145ef8c10376f40:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhOWVkNDlkMzkxZWVlZTc1ZWM2N2MyZjk2Mjg3ZTA5N2Q2YTFiMWIyMjZlNWNjYzlmZmVlMDFmM2I4NGEyZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzNzViYjU5YzI3YmIyNWYyYWJkN2I4YTU1MzIxODJlZGNjMDdkZWM0YTNlNTU4MTUzMDAzZTM0NTM3NzAwYzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzNDhjOGI1YmJhODE2MjYzYjliZGY0NDcwNzVkMzc0MTZlMTIwYjg5Y2FlY2JjMjRjYjM4Y2Y3OWUwOTE0NGQifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L623-L687",
+          "version": "repo-lines-v1:sha256:7c2aa7d9abdb6cfb1c58c120a1c561a1793deed3c5ee0572e7ea6835ed53a092:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MDcyMDk1NzQwZGY0Y2NjYzNhMzdjMzFhZDI4NmQwODU1MGZkOGM5YzhlNzNiOTA2YjVjMzc1ZmMzY2MxM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZDM3Y2ZmYWQ2ZWMxMzIwNWVhN2JlMDA5MzdkYjk2NDgyZGYzNTk1NTJmN2UzNmNlZWE3ZGI5ZTdkM2I5MmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5MmNiMmM4MjY1YzUzYTA3NGMwYWI3Y2IxYTkyNDc1ZWZhZDg0Yjk5MDU3NGZhMDZmYTkzN2FmYjJmYzJjZGYifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L2821-L2890",
+          "version": "repo-lines-v1:sha256:0da0ef5c6f69553d69adc1920ad818f7dc3b621e0d76b69385c133c547485b17:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMmIyN2FkMGY5ZWU0MGUwMjlmYTcxYzBhMjc2NzE5YjViZGZhYTFlMzEwMTAxZGRmZjQ0ZjJkNGM4ZWNkMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzYTRmYjI0ODc4MTMyMzU3MTBhNmY2YjUwOTUwZmYzN2U0N2RlYWRiZTQ3NDk4Zjk3YzdmY2RhYzAyYzRlYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjMmY4MTRlMmM2ZGY5ZjJkNWE4ZDkzYjE5Y2QyMTU0NTJhZmRmOGUwMTg4ZWRmMzc0ZGU4MWZlODQ2MGM1ODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlOTJmYzkyZWY0Nzc2ZDEwMWQ4YjhjYTk4MDhlOGNhYzhhYzI2NzA1MzhiZTVkOWJmOWEwMTg5MjQ2NjdmMTIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L3997-L4052",
+          "version": "repo-lines-v1:sha256:8277d2cfc6565498beb9b130e27f5da3db2bdb18ddd7552b7061695941217557:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2YmFjOWQ3ODllNzI5MjAxNmY4ZTM1YmFkODhhNWI0ZjM2ZmZjOTE5OGU0Mjk1OWVlYTM3ZjRiMzc5YmI3YzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwOTA3ZTFiMjQ4OWQzNjYyMmY1MzNiOThkMTdiMzVmNjA4NGQzMWUzOTlkZDlmMjk4ODY5N2Q5MjJmNTZiMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1OWVlODhhYWI3MzBiZWE2MTFmNmY1MmM1NGVjM2JiMTdmMTY0ODYwNDIxOGI3YTA4NTVjMWExNDU4MDMzMDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d0dcd63bca84eb7b98adcc9b1a3c50d",
+      "statement": "Python SDK `tracing_mode=\"otel\"` and `\"hybrid\"` first route serialized run operations through the Client tracing queue; drain workers coalesce and translate them to spans, while ending those spans feeds the tracer provider's OpenTelemetry processors rather than issuing OTLP network I/O from the LangSmith translator itself.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L391-L485",
+          "version": "repo-lines-v1:sha256:20c175e7df658b8e9d00292ab77cd249d3ae3910d645ce9432edc6bcc9ed3e50:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMTkwOTAzMTIzYmM3MzQ0MDZiN2ExMDNjMjNjMTBlOTYzZDc4ODRkZjRiMDc5NjVjMWMxM2ZlNTRjNTA0YjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzNDFhM2ZkNTE4MzIzZDBiMTZhYTM3OTYzYmRmNTMwYzFkMzc2OTliOTRhODcxYWY1NDBkZDViNGUzYjRmZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0NjEyZDMyZTMzYTM2OWZjMjM0OGVlZGZjYTY2MGU4NTJiMDdjMWU1MmE0M2ExMGJjOWMxMWZmNDAyYmNkNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyZDRkODczYjEzYjUxMTIyNThhOWZiMjU4MjZmYTk1YWRjZjQ4NjhmZWEwOGJiMThiZGYwMmExZjIxYTJmZDAifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L109-L113",
+          "version": "repo-lines-v1:sha256:7378525c48b52cc15ae9013cd20e0ac4f3d8e3a3e7045ee446d8dcf940427bbc:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGVkZWRlYzM3ZjQ3ZTBhZmVjZDY0OTg1NjdiN2E5YjQ2ZWQ2MWZlYWU2YjFkNzdlYjQyODRlM2ZlODc0MzUyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDBhYTliYjczNDA5OTQ5NDM4NDExZTE0ZGUwMGFlYjM0NmY5M2M3OTE1MjcxNzUyZDljOGVlZDRlZDBhZTI2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzNiYWEwNDA1NTZiMjkyNTc0NTU5YjE2MWU0YWViODRkOGIwZDVlMTk1ODc4ZjY1ZGM0ZDNlZjk3NDE0MzYzMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGZkYjcwMGM0ZDIyYTZkNGIxYTYyNzkwZTMxM2UzZDA4NGExOWM2ZWYwNGMyOWZkZTIyNjk1YzE1ZGUyNjgzNCJ9"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_exporter.py#L251-L278",
+          "version": "repo-lines-v1:sha256:a4c6d7ba4d2f416e88631f8cebbafe419d11160d7955a6f46e9742a64aaaec7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNWU0ZjEwMzExMzVmODJhNjU0NzI0YTdmNDQ3MGRjMWFhNzE4NjEwNmUxN2Q2NDIwZDkxMTQwZDU5MTcxNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0OTY0ZGI5MDYyYWY3YjVlMTJhZTExYzY4ODEyMDU3M2YzMTRlOWZiM2IwMmRhM2NhZjE0MmU3NWYyMGVlYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5NjNmYzQ5OGEyM2RiMmJlMjlhMjNiOTk2YjljZDFjMWMxY2UwMmM4Y2QxZjlhMTlkMGY4MDM3NGFiYjc5NGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlMzlmNTMzNmI3NmRlNjlhOTRiZGVkYmZhOTUyOTU0M2FhYTNhMWQ1ODFjN2YxM2I0OTdiNjE5OGYyZWMwY2EifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1364-L1438",
+          "version": "repo-lines-v1:sha256:b683e48f729b61ff2dcfbf82f259af3cf343751cc42249d3d3894ae995167fb3:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxOThhNjBkMjliZmRkMWM1NDJhMDRhNjQ2NjdiMjdlNGRkMzIxZTYyYWJjZmY0OTVjNDBlNTc3YTY0YTFlM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3MDlhYTcwNjg1ODhkNDUzYWE4MWEzN2Y1NDk0MTQxNTg0Y2YwOTYzMTNjZGVjYTQ1NWM5NDJlY2Y3YWQyZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2OTAxYmNkOTA3YmExNTc0ZTAxMzU4YzkzNGU0ZGJmZmQxMDg4ZTdlZDJiMDk4YTM1NzcyYWJkNjQ5Yjg3Y2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3ZmNiYjM5MWZkYjExZTFmMTVjMWI4ZGNmZGVlMmY2NmZjZmZlZDRhYTQ2MWZiYWZkZGNkNTA3ODMxMTk3MDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_921e2ca079e9411a9daaf24ae22f5431",
+      "statement": "The Python internal OTLP provider passes the LangSmith API base plus `/otel` as the OTLP HTTP exporter's complete default endpoint, so hosted internal `otel` and `hybrid` delivery reaches exactly `POST /otel`; `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` replace those defaults and can target a non-LangSmith compatible collector.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L45-L57",
+          "version": "repo-lines-v1:sha256:3ca5e37ad48a27c99b3b92fdbf932ffeae62396373e5f0bb6d0509a99f04311a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NWIxYmNmNmRhNjlmMGY5YjQ1NjVkZDJkYjdkMjNmOTM2NDg3M2RmYTk1ZmQ5MjAzMDczY2IyMDU5NjE0MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlODdmNzA5NDZlZGY2MTYxZTc0MGQwMDZhMDFkMTRkYjE3ZWU1MjI2NjFiMzQ5NTRiYmQwYjQ4NDJiNzc5YzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczM2U4NDg3Yzg1ZGZkY2Y5ZmE3YjkzYzc0NmM5NDYyNWFlNDdlMTIwYzc5N2U3OTFlNzM3ZjllZDdmZmM3M2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjNWIxMzMxZWMxNWYwNDZkZmI4MjQxNzdmOWM5N2MyYzg4ZTg5ODUxNTVhMzc3OGNmY2M2YjE4YzNmYWRjZTIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L77-L113",
+          "version": "repo-lines-v1:sha256:21fdb6bd0490f4e07e6bb8edb0cfd9f530cb20bfa241ef56fca3dbb680681a4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMWZlOWU1NWU2ODgyNDkzMDgxNWM2ZjUyMTNjOGM4NzRkNzg2NjdlNjU1OTNkMjdlNTU3YzI2NTcwNDhiNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYWE5YmI3MzQwOTk0OTQzODQxMWUxNGRlMDBhZWIzNDZmOTNjNzkxNTI3MTc1MmQ5YzhlZWQ0ZWQwYWUyNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwMTJmNzNmZjU4NDkzYmVjOGRmZjNhYjlkZGFmMzFkZGI5YmUzMjczYmZlODI3NDk4OTZmNmJmOWZjZjQwYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmZGI3MDBjNGQyMmE2ZDRiMWE2Mjc5MGUzMTNlM2QwODRhMTljNmVmMDRjMjlmZGUyMjY5NWMxNWRlMjY4MzQifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_otel_exporter.py#L231-L274",
+          "version": "repo-lines-v1:sha256:3599b725f51dba23d83a29ba0e028d4bf1fd148ef0b372fb1186a48b8384a513:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2Q5Y2Y2ZmNlMDllMjMwMzA3ZjkwZmUwYTEzNDI1OWQwYjdiODIxNmU3MjE0MGZiOWYyZDAyZDM2OTU2ZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmYTYyZDJmMjdmOTQ0NmI0ZmI1Njg0MTQ0MWI3MmIxN2VmZjE1OWNiNTI1NzI5MDA3MWZjNjkzMjdiNWMxMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjOGY4NTIxODIyMGM3ZGI1NDE5MGU4MTE2Yzg3ZTY4YjVlMzc2YmMzZDY2NDUyNjMxOTRkOWQ2ZDRlMmZiOWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4803ee040a384cbe83c4f700dfb5aa04",
+      "statement": "JavaScript SDK `tracingMode: \"otel\"` still admits trace-aware operations to `AutoBatchQueue`; batch processing masks metadata and translates operations into active OpenTelemetry spans, whose processor/exporter callbacks and fetches run through JavaScript's event loop rather than a LangSmith queue thread.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1461-L1465",
+          "version": "repo-lines-v1:sha256:489bb12c91e2adfb10a104084acdeb1f63eabcb6bea58f6114e664a68ad13d63:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGQ1OWY0ZWUwMTkzM2YxZjNkNThkNGNiMDY2YTA3ZTVhMmY5MzM5ZmZiNDU1YTg3NjVjMDA5ZTc0Nzk1NzYyYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDc4NGU3OGJjY2U4MjQwYThkY2VhMjgwZTU2ZDFiZGYwM2RiOTM0ZjkwMzhiNGU4NTI4YWY3NWI2N2I0ODM1YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWVjMWQ5MzNmNGRhNGY0Y2U4YzY3OTk3MmMxZjhjZjA1ODJkNzJmMTgwNDAwMjVkMDU3YmQ2YzFiZWQ3NGZhNyJ9"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L2194-L2287",
+          "version": "repo-lines-v1:sha256:d211a2b1832e0267f91ce864f2f7d7643c57527d7d0d4eba88b388f989922d04:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5NWFhNmE3OGY2MmMxOGFhNmZlY2Q1NTIxYjIxMzZlNDg2OGQ0YzY0MjBlNzkzN2EzYjhjNzkyZjMxZTFjNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhYWRkNTczNzkyMGZkMjUxNjc4NmVjYWEwMDMwMzUwM2ZiYzEzMTI5ODYwMTE1YjU5MDRjYjdjNGQwNWVjMTAifQ"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L2479-L2512",
+          "version": "repo-lines-v1:sha256:f1de55d58cf504d1943606288fc62b47122a17f7b94111e260f2fa8267b4b46b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzYzFlMmRkNTg1ZDdmOTJjOWRlNjU2OGQyOGI5ZDBkNWYxMDI5ZDQwZWQ1MzI2ZDEzN2QzMjg2NGM4NWU2M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3OTJmODQ3YmIyMWNiMjkyZGQwOWY3ZmE2ZTdjYWM0YThjMTRkOTdkMzg5NjMzYjNkMTUyMGVhMTRiNWIxZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVmZmM0Zjk2NjJmODdhMWMwN2IzMWJhZTI5NmEwMDI5ZDA5NDNlOGVjNzZjOGExNmM5MmJhOTMzOThhY2ZmODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwZmE5NDhkNDAzM2I5ZjcwZWY1YTUwNGE4YzBkOTFmYjFlYmYyYWI4YmVhZmRhMGE2YmFhZmI0ZmJhMzgzOTMifQ"
+        },
+        {
+          "resource": "repo://js/src/experimental/otel/translator.ts#L35-L137",
+          "version": "repo-lines-v1:sha256:5a7421c7707e0cf3f7b702c25fc38d93292feacff33ebff3fa85059ff54b5b4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1N2ViNDA4ZWRmZWI5NTVmNDdiYzI3Y2MyYjI3N2U5ZTAzOGYwMTM3NjgzNjQwYzUzZTg4MWNiOTA2MGNhY2JkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODkzZjQwZTM3ODFlYjg5NmM4MmQwNDZhMDgwNjdhMTFlMzVjZGYyZjFkZmFmMjZmZWE5MGI4ZGI2Njc2NDEzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2ZjllOWUxZDQ4ZjBlODBlOTU5ZTljMTcyOGUzYTcwNWQ3MzFhYzFmMGZiMDA4ZDEyODRiZmE3MTliMWRkNGIzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhMWY4OWQ0MGI5YjFlMDE3MmVjNTdlYWEwN2NjMGJhYjliMDUxOTcwNDcxYWVjYzk4ZDIwNjk5YzEzOWEyZTJjIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_cefa82a7e22642f2bcfc48cdde8a251e",
+      "statement": "Python's public `OtelSpanProcessor` receives native OpenTelemetry spans through its own `BatchSpanProcessor` and bypasses the LangSmith Client tracing queue; it defaults to `{LANGSMITH_ENDPOINT}/otel/v1/traces`, supports constructor endpoint overrides, and delegates force-flush and shutdown to the OpenTelemetry processor.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L127-L197",
+          "version": "repo-lines-v1:sha256:30c05f95c81625e0acebe65f1bd45b007dfde6ac1073e799351ebe7d7b4a888e:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MjQ2ODcxZjEwYzgxYjYwMjZkNTIzMmU2OTcyNWRjZjliNTBhMzUyOGNmNzc5NGM1ZDE1MzhlMTE1YWRmNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YTM0YmVmNjFjMzlhYzE1ODY0M2QzNTBkNGU3MjU2ODBkNzFmMzUxOWQxYTVlNWYyMzQ2M2JjMGI2YzJjZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyN2VjNjNhODM1MTZiN2FmN2VlMGNmYmU1MDM1ZDI0MzAwMTQ4NmFkODEzM2RhNTBiOTE0ODk0NmVjYWE2ZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0NzM2OWNhNjFiYmJjMzBkODY5NWQ2MDcwNjZkMDVlNDhmYmQzOWI4MDZkOGJjOTI5MGE2ZGU2Y2Y2Y2M2MmIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L209-L241",
+          "version": "repo-lines-v1:sha256:312da7dbff6109fc402de4b88ad30b656700f51bfd6b7fb71951f3409c26cc0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMTc4YjJjZWY1YTM3NzYxNjNhYjU5ZjQxMDE4NjA3OGY4NDVhZTYzMTMyOTdmN2EzMjA0ZjJkY2Y5OTYzNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjZmRkNjRjNmZhYzhmYjM5ZTMxNzY3N2I3Y2ZkZDEzNzEyZTQ2NDBlOWU5N2M2YTM4MTE2YzYyNzlkNDQ5NmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzYWU1MWMxN2FjMzYzODlmMmM0YTIzNGI3YTM1YjI1NjdlMjNmNmEyOWUxNWI1ZDExNDdkMzhlMTViMDhjMDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L62-L124",
+          "version": "repo-lines-v1:sha256:8ee37f5d5f844d42e30363e02df3950b84d2e0d44d3432e09fb28092914b66ce:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YTk5MGZmNjU2YmZhODc1YzUyNzAwNzU1MjIyYjMyZGQ4NjA5YzZkNjY1MjYyYmNjOGVlMGRmMTE1MDE0NGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0M2I2ZDY4ZDViMmQ0YzQ2NzRhYTczOGVhNjM2YjdhZDA1MDg5NDdjMDI1NzFiMTY1MDllMWIyZjcyNjJlM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViMWMwNmRlZGY2ZTE1MjgwYmQwZjBlMmIzNDA2YzQ1NGVjYjYzNTM1ODJhYzJjZjA2YWRiYzQ5NjRkOWUwNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMmZlY2FjYTE4ZTliMDljNWI2M2E0OWU1ZjdhZDA1ODRlZDRlNzg3ZTgyOGM4OWM2YTU4OGE3YTQ5MDZkOGYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c7dc819f53604af2967fd2b8f3b4ba21",
+      "statement": "JavaScript's public `LangSmithOTLPSpanProcessor` receives and filters native spans in an inherited OpenTelemetry batch processor, bypassing `AutoBatchQueue`; its exporter defaults to `${LANGSMITH_ENDPOINT}/otel/v1/traces`, honors OTLP or constructor URL/header overrides, and its shutdown coordinates Client pending batches before inherited processor shutdown.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/experimental/otel/exporter.ts#L73-L127",
+          "version": "repo-lines-v1:sha256:86e4397025b33a8ae7f107a41112ec03b20ab0e140f2ed19e44337a1939b66a4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyNDdkNGIxZDEzYTMxYTAwYTY4ZWU3YTY1MmZhOWRhZWRhM2QyYWMyNDYyNGJkNjNlNGI0MjE1NmUyMzlmN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxMzY3MTNkZjI3N2UwMjc1YzJkMGVjZjg1MjRkY2E0YmQ3NGM5NTJlYmE5YjYyM2NiZWI3NzI0ZGIxZjkyYjkifQ"
+        },
+        {
+          "resource": "repo://js/src/experimental/otel/processor.ts#L16-L109",
+          "version": "repo-lines-v1:sha256:2d31b01d487d17fff35910b18b9f6feff26ef7e7ef782b90f590d46aeb69f068:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlM2NiMGRiNzIxMTg3YjA3Y2MyZjEyMTQwYzFkMWI2ZTQxNDkwYmQzNjQ1ZGZiN2Q0NDAwOWJkZWFiNzY5NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkZGViZjYzOTBkY2ViMWMxZDc3MDE4YmQzMTQ1MDdlYzVjYzVjZDMxMjRiOTE1YzliODhiY2NkZDk1MjgyNjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczZTcxOGY5OWM1OGQ3ZjY2ZjZmODNkNjc0NTA4ZDg3OGJjMDc3MjQwYTBlOTg4ODZkZThkNTNhODlkY2YwODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNzM5YTA2YzFjYmIxMjQ0ZTMzNjNkMzhiY2Y5ZmE1MGNlODRmZWQzOTljMjE5M2EzYzdmMDhkNTk5MThiMmEifQ"
+        },
+        {
+          "resource": "repo://js/src/experimental/otel/setup.ts#L113-L149",
+          "version": "repo-lines-v1:sha256:54df05d798e08d2761e53c2c567d5d07b64694341f5ec4d32171861064f39d81:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3N2Q4MGZmZDEzOTc1NTZmNTg0YzhjM2VhMDI3MWVlOWRkODY1Y2NiNTNhN2RlYzYwMWRmZmVmMTNmOGQ5ODYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiYjBkYzJiY2VlMGEwNDQ1NDU0YzFhN2Y0Y2NmMDQ3NmQ3NjNmY2Q5MWExMTM5ZjUwMTdmNmU0Nzg3ZDFmYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzODQzY2VkOGMyYWQ1OTJlY2JmMGM1NjNlMTk2MmMwYzhjNDZhNTg2ODRjYTI0MGViOThkMjA2NzU4YzU1MjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4e221692db74464a0ffd6e06af2e2d5",
+      "statement": "Python zstd multipart network sends run in a shared thread-pool worker, with synchronous execution on the compression thread if executor submission fails, whereas JavaScript direct, queued, multipart, gzip, and OTLP fetches remain event-loop work and its optional serialization worker performs CPU serialization only.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L2522-L2536",
+          "version": "repo-lines-v1:sha256:54dfb2f269741f9b21825bfebc65c904bed54e40b794dd42c743c506ab1f6487:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmZTAxMjIyMjMxNzJlNGMwYTg3YmU0ZDVjNTE5NTc3MzU2MWU2ZDg3NDdlYzY3OWQ1NTc0M2YzMGViN2I2MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZDExY2FmNDNlOTdlZjM2OWU2YmVlZDFhMjY4YmQwNTgzOGYyOWI5ZGQyNTRiZjY5YmE2NDg4NDE0NzIzNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhZDM3YjJhNzBkYzkzNTE2NjI2MTgxN2RhNTY0ZWQwOGQ3OTAwMGE2ZThmZTBiMzkxZWVjNmE5NTkzNDE0MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhOTI5M2ZkODA1NGI2ZTQ3MjQ4MzczZjM5ZjRkZDc3ODAwMTA1ZWI3NTgzNDg2ODcyNTQyODVjZDEyODJiNzgifQ"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L2958-L2996",
+          "version": "repo-lines-v1:sha256:d79931008079f15e47f777e9126dfeec7ee47216653694e605dd9e97dfa13dd3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2ZmQyNThkOGI2NmIwNzMxMTFkZDBjMWRmNWQwZjY4NzJkZTkxZjljNDMyMGM0NTNhNDJjZmE5MGUxZGI4ZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmZWQ3MzIyNzAzMDBhYjBjZDFhNzk3ZTgwMWU2YjI4YzczZmI3Zjc5NzIyYmU4MmRlMDAwYTllZmY4NTFjNTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxMWVlN2E3MDc4NTIxNDRhNzQ5MzY3YTZjZWE2MmY0M2M2MzljMDg2MTY0MDE3NWVkMGEyZmMyNDZhZTFjYTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1MjE1MDQ4YjM0MTg0ZjQ0MTc4MDI2OGRmN2JhMjljODBjY2M5MTQwNWI4YmY2ZTM4NjBiYWJiNTdmZmY0NmYifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/serialize_worker.ts#L102-L120",
+          "version": "repo-lines-v1:sha256:7ed856fb56da1879e82c5809a07c6df72bfd0a79b1cdc95daa8453b8474af6d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1Mzc2MmMxYTcxMGMzZmZjYTNmYjU3MWQyMTk2MDIxOTY1NGM0ZDVkOWYwNmFkOGJhYzRmOTRlZWMyZDgyOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0YWUyM2M1ODFjMzU0ZWI4OWU0NDRmZWEyNzVmNmNlMGIzMzk1MDY5Y2YwOTliNjNlMTE0ZTFmYTg2NmNmN2IifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/serialize_worker.ts#L256-L264",
+          "version": "repo-lines-v1:sha256:347303fc7ce800920d7e2769cf080dbddd3467ddae3e41dd1cc1e4911679be14:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWEwNTdhOTk3YjI1ZWJiZGViYmRiYzZhMTM4Nzg5YmJiNDdhMTk2MTdhNWQyODI0OGM5NjM1MWNlZWFhYjMzNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDA1Y2FiZmJlZDQ0ZGNkZWZkMGRiNGRhYjQxMDhlNjIyMzYwMDY4ZGJjNjQ2OTdiNzAxMDAxYzdjNDU4MGIxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmI1ODBlOTY0ZjgzYTQ3M2Y0M2Q0NDM4NDYyOTQ5ZDY4YjU2MDBmZGE3ODdmMTYzNzQ1ZDAwZGU4OWNiZjM2YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzc5MjllOTFlMGY5OWMzZTgyNWRlNjliNDM1ZmI2NDg0ZDFiMGExZGYyZjQ2NTYxYWJmMWEyOWYwNDE4OGI4OCJ9"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L760-L808",
+          "version": "repo-lines-v1:sha256:9d787c2ff23a85e3ad187ca0192b82d1ff642676a08444867fd6a2d628c8d53b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiMGZiYzU0MmVjNjdhNWJhZjc3MzdlZDQ2YmY5YTdlZTkwNTk1YTJhMGI5NTI4ZmYyZjBmNjUxNjBkNGI0NjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyYzI5OGNjZDJhODlmOTRiMDA5YmUyODAyODE1ODY4MWVjMmJjZWFiMmU2YmM0YTRlYWM4NjQ5OWY4ZmFjZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4OTc1ZGYxOGZlYjMxOThlZjM3NzFiNjUzODFiNWNhNGZiNmI0YzdjMWI3OWU4M2Y2MDJhYWUxM2IyNmUwMjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmNWZmZjJjMGNhODVmYjMzMmE0MDZkYjIzYmY3NDQ0NzFlMWM1NWEwMDZlNmU3ZDI4YzgzNTM2NjNiNTkxYjQifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L810-L855",
+          "version": "repo-lines-v1:sha256:e98e0c9204fbfdfd0a1c7e4ec22df15f7736baa23e79be24520b385a13f351ed:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5YTdkZjQ4ZWE2NWY2OWU3MmU0ZDliOTBlODM4Njc2MjlhN2FkZWY1ZGIyODA5MDYxNWRjNThiNmNjMTQ4ZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkNTBlZWEzOGUyODA1NWVjYWEzNzVhODExYzVkNGQ5Mzg2YTljOWJiYzZjZGRjMzUyNmIyNzU5YmVkZDU4NjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlODRiMzUwNDJjYzFjNGFhYzY4YTE5Zjg5ODk5MjU5ODNlZmVmZmFlMGE5OWEzOWJmZTM4NWVlY2Q1MzRjYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkMzljM2QzNzRiYzQ0NWJjZGU2ZGU4OTM0MTcyYmVkMDMwYjVkZWU0ZGIwNDQwYzFhYTk0ZWI4MWUzZWExYzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3163639f70f84b219e1d4b0347987e07",
+      "statement": "The measured bulk trace-lab capture produces 120 operations from 60 runs and treats direct `/runs`, JSON batch, multipart, zstd multipart, internal `/otel`, and hybrid ingestion as peer paths with separately recorded request counts, timing, bytes, and execution threads.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L455-L500",
+          "version": "repo-lines-v1:sha256:e8df71a5b302ea72b9ea06a33df8e7500b34742477a0e74c71110c79b0e803c6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzNTUyMWMwODdmNzU3ZTE3YjI2NzU0MWQ5YjRlYzRiNzE1N2FmODQ1MGI2YWZkNzI2NmQ5MDEwZDhhOGIxNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZjA0N2JhMzVjOGQ4Y2Y3YjA4ZmFlMDc1ZTkxMzRkYjc2N2IwNTc5NjkxNjZlMTExYWI5NmE1NDBmZDU3NzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0NjEyZDMyZTMzYTM2OWZjMjM0OGVlZGZjYTY2MGU4NTJiMDdjMWU1MmE0M2ExMGJjOWMxMWZmNDAyYmNkNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjNWM3NDQyMjgyM2M5NWZjMDNmMjg5YjA3YzgwYjhjMWZhMDRlNjM3ZmI1YTJlZGZiOGQzZjVjNmRlNjgyYjIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L77-L113",
+          "version": "repo-lines-v1:sha256:21fdb6bd0490f4e07e6bb8edb0cfd9f530cb20bfa241ef56fca3dbb680681a4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMWZlOWU1NWU2ODgyNDkzMDgxNWM2ZjUyMTNjOGM4NzRkNzg2NjdlNjU1OTNkMjdlNTU3YzI2NTcwNDhiNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYWE5YmI3MzQwOTk0OTQzODQxMWUxNGRlMDBhZWIzNDZmOTNjNzkxNTI3MTc1MmQ5YzhlZWQ0ZWQwYWUyNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwMTJmNzNmZjU4NDkzYmVjOGRmZjNhYjlkZGFmMzFkZGI5YmUzMjczYmZlODI3NDk4OTZmNmJmOWZjZjQwYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmZGI3MDBjNGQyMmE2ZDRiMWE2Mjc5MGUzMTNlM2QwODRhMTljNmVmMDRjMjlmZGUyMjY5NWMxNWRlMjY4MzQifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L3290-L3325",
+          "version": "repo-lines-v1:sha256:967c664f39169eb0febb03bc22dcad0faa44bb59c5feced37560f5c4c600471b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3ZTQ5YTU2NDVjMzdhZTc0MTNkYzc1ZjFlNDUyMjlmOWFlOTMyZTU2OTU3NTA3Y2FjZjYzM2Q0NDRlMTFjNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhMGExMjg2MmM0Njg1NjI0NTVlZjdjMTcyMTI1MjZmN2JkZTM4MjBiZjBlNWRhMDE4OWIxZDQ1MDA1NWVmNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmZmUwYmNiZTQ1ZjBhZmUxNzE5NWZjZDRlNzc3NmEzZWQ5ZDkzOGE4NzEyMjM1MzAxMGJjYzllZmUzZjRjZmEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L3588-L3624",
+          "version": "repo-lines-v1:sha256:55c89f0c986a8a5e1e3c77a31b8405cab8da582f06de84eccfe049faf3fc4ed1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMmM5MDAwNGRiNmUwYzNjMGFiMmViNDJiMzU1MGFlNjc1YjEyNzk0NTJlMWQzNWUwOTA0OGY0M2E3MDJkZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5OWQ4OTRlNjg4YTdhYTU4M2YyM2U1NWY1ZTc3NDEyZmEzMDlmOWQwZjE2NTJmOTQ4ZTVlYjY5NTAxMmQ2NGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4ZTM0M2MzN2EwOGFlMmFmODA2OWVhOTYwOGM4ZDk5ZGVjYWIwM2E0ZTk3ZjA5MjJhMzlkNzBjYzQzODNiZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4Y2U5OGIyYTU2MjA2YzQ3YzRmNjA2YWQ3YTQ5NWYyN2NmZGUxNjZmNjNlNzE5MDk4YTMwOTkzNTY1MDQ5OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1c23b45f3da94696a30bb1ad89919c6c",
+      "statement": "In the measured Python internal OTEL and hybrid paths, Client queue flush completes while translated spans remain open in the OpenTelemetry processor; hybrid emits two `/runs/multipart` requests and one `POST /otel`, demonstrating that Client flush does not own OTEL processor delivery.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L455-L500",
+          "version": "repo-lines-v1:sha256:e8df71a5b302ea72b9ea06a33df8e7500b34742477a0e74c71110c79b0e803c6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzNTUyMWMwODdmNzU3ZTE3YjI2NzU0MWQ5YjRlYzRiNzE1N2FmODQ1MGI2YWZkNzI2NmQ5MDEwZDhhOGIxNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZjA0N2JhMzVjOGQ4Y2Y3YjA4ZmFlMDc1ZTkxMzRkYjc2N2IwNTc5NjkxNjZlMTExYWI5NmE1NDBmZDU3NzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0NjEyZDMyZTMzYTM2OWZjMjM0OGVlZGZjYTY2MGU4NTJiMDdjMWU1MmE0M2ExMGJjOWMxMWZmNDAyYmNkNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFjNWM3NDQyMjgyM2M5NWZjMDNmMjg5YjA3YzgwYjhjMWZhMDRlNjM3ZmI1YTJlZGZiOGQzZjVjNmRlNjgyYjIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L77-L113",
+          "version": "repo-lines-v1:sha256:21fdb6bd0490f4e07e6bb8edb0cfd9f530cb20bfa241ef56fca3dbb680681a4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjMWZlOWU1NWU2ODgyNDkzMDgxNWM2ZjUyMTNjOGM4NzRkNzg2NjdlNjU1OTNkMjdlNTU3YzI2NTcwNDhiNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYWE5YmI3MzQwOTk0OTQzODQxMWUxNGRlMDBhZWIzNDZmOTNjNzkxNTI3MTc1MmQ5YzhlZWQ0ZWQwYWUyNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwMTJmNzNmZjU4NDkzYmVjOGRmZjNhYjlkZGFmMzFkZGI5YmUzMjczYmZlODI3NDk4OTZmNmJmOWZjZjQwYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmZGI3MDBjNGQyMmE2ZDRiMWE2Mjc5MGUzMTNlM2QwODRhMTljNmVmMDRjMjlmZGUyMjY5NWMxNWRlMjY4MzQifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L4116-L4147",
+          "version": "repo-lines-v1:sha256:43f212b744f4bc37cc1835eaecd68766632cfd7c2d9a498a6b5e1bead76d0d2f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlMjY2ZGYxZjhlZmRkODQwOTY0YmQyOWQzNWZjYTkxMWE3NTkxYjQ1N2VkYTRhMmRlN2Q2MzU2MDYyODkwOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNzcyODgwZjYyZmE5MGM2ZWM2YTAwZDIzNGFjMzFmMjZkZmI0NzAzMWM5NTg3NjBhZWQ3NmY4Mzg0N2NiN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzZmQ5NDkwOWE2NTE3NmY3OTdiMWFiYjg3NzFkZmNmY2M0OGIwY2YwYTMzNTE2MTgyYTMwYzcyZjUzOTJiZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyNTlmY2Y1MTlhNWNiOTI2ZWE5NjkwOTlmMDYwMTQzYzYyOWE5ZDkyMWE4MjA2NjA4MjlhM2Y1OTE5NDBkMDkifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-15T08:28:54.852Z"
+    "at": "2026-09-15T09:58:29.947Z"
   }
 }

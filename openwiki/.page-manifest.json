@@ -44,11 +44,11 @@
       "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
     },
     "/openwiki/quickstart.md": {
-      "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
-      "sourceFingerprint": "sha256:062bbfcdbe6d0e73172ef98905426185b822822d8109b41aa6703503de0c995b",
-      "pageVersion": "sha256:027779b33794af119cbc4f285cee8a0129ce73b27b75979a61bd33cc82880110",
+      "pageVersion": "sha256:c5b87264fa30a5455bf25e6b157b9a4322d7f15e365ed0846df63535d463ee98",
       "completedBy": "openwiki/0.5.2",
-      "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
+      "completedRunId": "71c3ec6d-f470-4941-8411-638f95b18d03",
+      "gitHead": "f42b633c8680e3fa0de2ba7c573c7922cabcf6dd",
+      "sourceFingerprint": "sha256:6e95216caba60b9c62b11f6faf2bbf572cbeb9c2ce4a78aa606d885790d3c71e"
     },
     "/openwiki/testing/repository-test-strategy.md": {
       "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
@@ -79,11 +79,18 @@
       "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
     },
     "/openwiki/workflows/trace-capture-and-ingestion.md": {
-      "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
-      "sourceFingerprint": "sha256:062bbfcdbe6d0e73172ef98905426185b822822d8109b41aa6703503de0c995b",
-      "pageVersion": "sha256:9ff36cfd024393ab25a682038237b6ab1f12a33270ebc8c3ff91baecccb1dd85",
+      "pageVersion": "sha256:d62c19544445ec57e684d0041ded06ed40aeb5c09e53fedeab3a2bb68d2aafca",
       "completedBy": "openwiki/0.5.2",
-      "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
+      "completedRunId": "71c3ec6d-f470-4941-8411-638f95b18d03",
+      "gitHead": "f42b633c8680e3fa0de2ba7c573c7922cabcf6dd",
+      "sourceFingerprint": "sha256:6e95216caba60b9c62b11f6faf2bbf572cbeb9c2ce4a78aa606d885790d3c71e"
+    },
+    "/openwiki/workflows/trace-ingestion-measured.md": {
+      "pageVersion": "sha256:cf58e61bf14fa7eaa69b6bf33da2172e9a5d98aaeeac3026c8f5a8d1e2bc941a",
+      "completedBy": "openwiki/0.5.2",
+      "completedRunId": "71c3ec6d-f470-4941-8411-638f95b18d03",
+      "gitHead": "f42b633c8680e3fa0de2ba7c573c7922cabcf6dd",
+      "sourceFingerprint": "sha256:6e95216caba60b9c62b11f6faf2bbf572cbeb9c2ce4a78aa606d885790d3c71e"
     }
   }
 }
