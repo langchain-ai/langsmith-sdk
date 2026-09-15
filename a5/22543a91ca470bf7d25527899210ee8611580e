@@ -1,0 +1,16 @@
+js/src/tests/vercel/telemetry/openai.int.test.ts
+  h_b47ec433af8c62 114,248
+js/src/tests/vercel/wrapper/openai.int.test.ts
+  h_b47ec433af8c62 48,90,169,362,378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a522543a91ca470bf7d25527899210ee8611580e",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}
