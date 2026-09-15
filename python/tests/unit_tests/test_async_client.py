@@ -34,6 +34,92 @@ def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
+@pytest.mark.asyncio
+async def test_get_current_workspace() -> None:
+    client = AsyncClient(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+    )
+    response = mock.Mock()
+    response.json.return_value = {
+        "id": "expected-workspace",
+        "display_name": "Expected Workspace",
+        "created_at": "2026-07-11T00:00:00Z",
+    }
+
+    with mock.patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as request:
+        request.return_value = response
+        workspace = await client.get_current_workspace()
+        cached_workspace = await client.get_current_workspace()
+
+    assert workspace.id == "expected-workspace"
+    assert cached_workspace is workspace
+    request.assert_awaited_once_with("GET", "/settings")
+    await client.aclose()
+
+
+def _mock_settings_response(workspace_id: str) -> mock.Mock:
+    response = mock.Mock()
+    response.json.return_value = {
+        "id": workspace_id,
+        "display_name": "Workspace",
+        "created_at": "2026-07-11T00:00:00Z",
+    }
+    return response
+
+
+async def test_validate_workspace_matches() -> None:
+    client = AsyncClient(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+    )
+    with mock.patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as request:
+        request.return_value = _mock_settings_response("expected-workspace")
+        workspace = await client.validate_workspace()
+    assert workspace.id == "expected-workspace"
+    await client.aclose()
+
+
+async def test_validate_workspace_mismatch_raises() -> None:
+    client = AsyncClient(
+        api_url="https://api.smith.langchain.com",
+        api_key="test-key",
+        workspace_id="expected-workspace",
+    )
+    with mock.patch.object(
+        AsyncClient, "_arequest_with_retries", new_callable=AsyncMock
+    ) as request:
+        request.return_value = _mock_settings_response("some-other-workspace")
+        with pytest.raises(ls_utils.LangSmithUserError, match="workspace mismatch"):
+            await client.validate_workspace()
+    await client.aclose()
+
+
+async def test_validate_workspace_requires_expectation() -> None:
+    client = AsyncClient(
+        api_url="https://eu.api.smith.langchain.com",
+        api_key="test-key",
+    )
+    with pytest.raises(
+        ls_utils.LangSmithUserError, match="requires an expected workspace"
+    ):
+        await client.validate_workspace()
+    await client.aclose()
+
+
+def test_workspace_without_endpoint_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
+    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
+    with pytest.warns(ls_utils.LangSmithWorkspaceEndpointWarning):
+        AsyncClient(api_key="test-key", workspace_id="expected-workspace")
+
+
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 def test_async_client_custom_headers(mock_client_cls: mock.Mock) -> None:
     mock_httpx_client = mock.Mock()
