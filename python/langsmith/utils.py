@@ -462,6 +462,80 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def get_tracer_agent_environment() -> Optional[str]:
+    """Get the agent environment for a LangSmith tracer.
+
+    Read from ``LANGSMITH_AGENT_ENVIRONMENT``. Unlike the project, this has no
+    default: when unset the run is ingested without an environment and the
+    server picks one.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    return get_env_var("AGENT_ENVIRONMENT")
+
+
+@functools.lru_cache(maxsize=1)
+def get_tracer_agent_id() -> Optional[str]:
+    """Get the agent ID for a LangSmith tracer.
+
+    Read from ``LANGSMITH_AGENT_ID``. This is an agent identifier, not a
+    credential: the server resolves the agent by this ID and creates one if it
+    doesn't exist yet. Like the environment, it has no default: when unset the
+    run is ingested without an agent ID and addressed by project instead.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    return get_env_var("AGENT_ID")
+
+
+def validate_agent_addressing_env() -> None:
+    """Reject env configurations the ingest endpoint can't route.
+
+    A run is addressed either by agent (``LANGSMITH_AGENT_ID``) or by project
+    (``LANGSMITH_PROJECT``), never both -- they name different targets, so
+    setting both is ambiguous.
+
+    Agent addressing is configured as a pair: ``LANGSMITH_AGENT_ID`` and
+    ``LANGSMITH_AGENT_ENVIRONMENT`` are set together or neither is. Half of the
+    pair is a mistake worth catching at startup rather than honoring. Note this
+    is stricter than a per-call ``agent_id``, which may stand alone and lets the
+    server apply its ``production`` default -- ambient configuration is held to
+    a higher bar than an explicit argument.
+
+    Raises:
+        LangSmithUserError: If both addressing modes are configured, or if only
+            one half of the agent pair is set.
+    """
+    agent_id = get_tracer_agent_id()
+    if agent_id and (project := get_env_var("PROJECT") or get_env_var("SESSION")):
+        raise LangSmithUserError(
+            "LANGSMITH_AGENT_ID and LANGSMITH_PROJECT are both set "
+            f"(agent {agent_id!r}, project {project!r}), but a run is addressed "
+            "either by agent or by project, not both. Unset one of them, or "
+            "pass an explicit project per run to override the agent."
+        )
+    agent_environment = get_tracer_agent_environment()
+    if bool(agent_id) != bool(agent_environment):
+        if agent_id:
+            missing, present, value = (
+                "LANGSMITH_AGENT_ENVIRONMENT",
+                "LANGSMITH_AGENT_ID",
+                agent_id,
+            )
+        else:
+            missing, present, value = (
+                "LANGSMITH_AGENT_ID",
+                "LANGSMITH_AGENT_ENVIRONMENT",
+                cast(str, agent_environment),
+            )
+        raise LangSmithUserError(
+            f"{present} is set to {value!r} but {missing} is not. Agent "
+            "addressing is configured as a pair: set both, or neither and "
+            "address runs by project instead."
+        )
+
+
 class FilterPoolFullWarning(logging.Filter):
     """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 

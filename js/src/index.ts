@@ -18,7 +18,11 @@ export { RunTree, type RunTreeConfig, type WriteReplica } from "./run_trees.js";
 
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
-export { getDefaultProjectName } from "./utils/project.js";
+export {
+  getDefaultAgentEnvironment,
+  getDefaultAgentId,
+  getDefaultProjectName,
+} from "./utils/project.js";
 
 export {
   computeRunIdForSecondaryReplica,

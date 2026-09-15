@@ -1288,6 +1288,9 @@ class Client:
         self._profile_auth: Optional[_profiles.ProfileAuth] = None
         self._profile_auth_headers: dict[str, str] = {}
 
+        # Fail here rather than per ingest batch, where it's only visible as a
+        # server-side rejection of every run.
+        ls_utils.validate_agent_addressing_env()
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
@@ -2412,6 +2415,52 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
+    @staticmethod
+    def _apply_agent_addressing(payload: dict) -> None:
+        """Leave exactly one addressing mode on a run payload.
+
+        A project already on the payload wins -- whether it was passed
+        explicitly or defaulted from the environment, it addresses the run on
+        its own, so the agent fields come off. Otherwise the agent env vars fill
+        in and the now-redundant project keys are dropped, so the payload never
+        carries both modes (nor a null for the one it isn't using).
+
+        The flat `agent_id` / `agent_environment` the rest of the SDK works in
+        become the wire's nested `agent` object here. Both members are required:
+        the endpoint defaults neither, so a run cannot reach `production` by
+        forgetting to name it.
+
+        Applies to creates and updates alike: a `patch.<run_id>` part has to be
+        addressed the same way as the `post.<run_id>` it belongs to.
+
+        Raises:
+            LangSmithUserError: If only one half of the agent pair resolves.
+        """
+        agent_id = payload.pop("agent_id", None)
+        agent_environment = payload.pop("agent_environment", None)
+        if (
+            payload.get("session_id") is not None
+            or payload.get("session_name") is not None
+        ):
+            return
+        if agent_id is None:
+            agent_id = ls_utils.get_tracer_agent_id()
+        if agent_environment is None:
+            agent_environment = ls_utils.get_tracer_agent_environment()
+        if agent_id is None and agent_environment is None:
+            # Neither mode is addressed; leave the server-side fallback to it.
+            return
+        if agent_id is None or agent_environment is None:
+            raise ls_utils.LangSmithUserError(
+                "An agent-addressed run needs both an agent ID and an agent "
+                f"environment, but got id={agent_id!r} and "
+                f"environment={agent_environment!r}. The environment is not "
+                "defaulted, so a run can't reach `production` without naming it."
+            )
+        payload["agent"] = {"id": agent_id, "environment": agent_environment}
+        payload.pop("session_name", None)
+        payload.pop("session_id", None)
+
     def _run_transform(
         self,
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
@@ -2457,6 +2506,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+        self._apply_agent_addressing(run_create)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
@@ -2598,11 +2648,22 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        project_name = project_name or kwargs.pop(
-            "session_name",
+        if project_name:
+            pass
+        elif "session_name" in kwargs:
+            # Passed through, even as None: callers that say "no project" get
+            # no project, exactly as before.
+            project_name = kwargs.pop("session_name")
+        elif kwargs.get("session_id") is None and (
+            kwargs.get("agent_id") or ls_utils.get_tracer_agent_id()
+        ):
+            # Agent-addressed: the backend resolves the project from the agent,
+            # so don't default one in -- a project here would address the run
+            # twice. An explicitly provided project still wins, above.
+            project_name = None
+        else:
             # if the project is not provided, use the environment's project
-            ls_utils.get_tracer_project(),
-        )
+            project_name = ls_utils.get_tracer_project()
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -3856,7 +3917,11 @@ class Client:
             "extra": extra,
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
+            "agent_id": kwargs.pop("agent_id", None),
+            "agent_environment": kwargs.pop("agent_environment", None),
         }
+        # Updates don't go through `_run_transform`, so address them here.
+        self._apply_agent_addressing(data)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:

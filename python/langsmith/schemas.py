@@ -558,6 +558,13 @@ class RunLikeDict(TypedDict, total=False):
     id: Optional[UUID]
     session_id: Optional[UUID]
     session_name: Optional[str]
+    agent: Optional[dict]
+    """Addressing only: `{"id": ..., "environment": ...}`, both required.
+
+    Request-shaped, and mutually exclusive with `session_id` / `session_name`.
+    The endpoint consumes it while resolving the target project and drops it
+    from the stored run, so it is not a field of the `Run` model.
+    """
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
