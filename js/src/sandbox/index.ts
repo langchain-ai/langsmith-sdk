@@ -67,6 +67,8 @@ export type {
   SandboxMountAuth,
   SandboxMountAuthConfig,
   SandboxMountConfig,
+  SandboxProxyCallback,
+  SandboxProxyCallbackHeader,
   SandboxProxyConfig,
   SandboxProxyRule,
   SandboxProxySecret,
