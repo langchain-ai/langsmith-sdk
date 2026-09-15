@@ -28,13 +28,41 @@ import {
   SnapshotRetrieveByNameResponse,
   Snapshots,
 } from './snapshots.js';
-import { ItemsCursorGetPagination } from '../../core/pagination.js';
+import {
+  ItemsCursorGetPagination,
+  type ItemsCursorGetPaginationParams,
+  PagePromise,
+} from '../../core/pagination.js';
+import { RequestOptions } from '../../internal/request-options.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
   registries: RegistriesAPI.Registries = new RegistriesAPI.Registries(this._client);
   snapshots: SnapshotsAPI.Snapshots = new SnapshotsAPI.Snapshots(this._client);
+
+  /**
+   * Returns priced usage per sandbox or snapshot and UTC hour in the half-open
+   * requested interval. LCU uses the recorded compute amount for sandboxes;
+   * snapshots have zero LCU. LSU allocates the recorded workspace storage amount
+   * proportionally to attributed bytes, including checkpoints on their sandbox and
+   * snapshots as separate resources. Resource filters preserve each resource's
+   * share. Rate changes do not reprice recorded amounts. An access-filtered page can
+   * have no items and a non-null next_cursor; continue until next_cursor is null.
+   */
+  listUsageCosts(
+    query: SandboxListUsageCostsParams,
+    options?: RequestOptions,
+  ): PagePromise<SandboxListUsageCostsResponsesItemsCursorGetPagination, SandboxListUsageCostsResponse> {
+    return this._client.getAPIList(
+      '/api/v2/sandboxes/usage/costs',
+      ItemsCursorGetPagination<SandboxListUsageCostsResponse>,
+      { query, ...options },
+    );
+  }
 }
+
+export type SandboxListUsageCostsResponsesItemsCursorGetPagination =
+  ItemsCursorGetPagination<SandboxListUsageCostsResponse>;
 
 export type SandboxResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SandboxResponse>;
 
@@ -794,6 +822,49 @@ export namespace SnapshotResponse {
   }
 }
 
+export interface SandboxListUsageCostsResponse {
+  /**
+   * Recorded compute usage in LangSmith Compute Units (LCU), as a decimal string
+   * with up to six fractional digits and trailing zeros omitted. Snapshots return
+   * "0".
+   */
+  lcu: string;
+
+  /**
+   * Allocated storage usage in LangSmith Storage Units (LSU), as a decimal string
+   * with up to six fractional digits and trailing zeros omitted.
+   */
+  lsu: string;
+
+  period_start: string;
+
+  resource_id: string;
+
+  resource_type: 'SANDBOX' | 'SNAPSHOT';
+}
+
+export interface SandboxListUsageCostsParams extends ItemsCursorGetPaginationParams {
+  /**
+   * Exclusive RFC3339 end time; the range must not exceed 31 days
+   */
+  end_time: string;
+
+  /**
+   * Inclusive RFC3339 start time
+   */
+  start_time: string;
+
+  /**
+   * Resource UUID filter; repeat this parameter up to 100 times
+   */
+  resource_ids?: Array<string>;
+
+  /**
+   * Resource type filter
+   */
+  resource_type?: 'SANDBOX' | 'SNAPSHOT';
+}
+
 Sandboxes.Boxes = Boxes;
 Sandboxes.Registries = Registries;
 Sandboxes.Snapshots = Snapshots;
@@ -807,6 +878,9 @@ export declare namespace Sandboxes {
     type ServiceURLResponse as ServiceURLResponse,
     type SnapshotListResponse as SnapshotListResponse,
     type SnapshotResponse as SnapshotResponse,
+    type SandboxListUsageCostsResponse as SandboxListUsageCostsResponse,
+    type SandboxListUsageCostsResponsesItemsCursorGetPagination as SandboxListUsageCostsResponsesItemsCursorGetPagination,
+    type SandboxListUsageCostsParams as SandboxListUsageCostsParams,
   };
 
   export {
