@@ -12,8 +12,10 @@ __all__ = [
     "MountConfig",
     "MountConfigAuth",
     "MountConfigAuthAws",
-    "MountConfigAuthAwsAccessKeyID",
-    "MountConfigAuthAwsSecretAccessKey",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey",
     "MountConfigAuthGcp",
     "MountConfigAuthGcpServiceAccountJson",
     "MountConfigMount",
@@ -51,8 +53,10 @@ __all__ = [
     "ProxyConfigCallbackRequestHeader",
     "ProxyConfigRule",
     "ProxyConfigRuleAws",
-    "ProxyConfigRuleAwsAccessKeyID",
-    "ProxyConfigRuleAwsSecretAccessKey",
+    "ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey",
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
@@ -142,7 +146,15 @@ class BoxCreateParams(TypedDict, total=False):
     vcpus: int
 
 
-class MountConfigAuthAwsAccessKeyID(TypedDict, total=False):
+class MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig(TypedDict, total=False):
+    role_arn: Required[str]
+    """
+    IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+    exclusive with static credentials. Configure only at creation.
+    """
+
+
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -150,7 +162,7 @@ class MountConfigAuthAwsAccessKeyID(TypedDict, total=False):
     value: str
 
 
-class MountConfigAuthAwsSecretAccessKey(TypedDict, total=False):
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -158,10 +170,21 @@ class MountConfigAuthAwsSecretAccessKey(TypedDict, total=False):
     value: str
 
 
-class MountConfigAuthAws(TypedDict, total=False):
-    access_key_id: Required[MountConfigAuthAwsAccessKeyID]
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig(TypedDict, total=False):
+    access_key_id: Required[MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID]
 
-    secret_access_key: Required[MountConfigAuthAwsSecretAccessKey]
+    secret_access_key: Required[MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey]
+
+    role_arn: Literal[""]
+    """
+    IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+    exclusive with static credentials. Configure only at creation.
+    """
+
+
+MountConfigAuthAws: TypeAlias = Union[
+    MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig, MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig
+]
 
 
 class MountConfigAuthGcpServiceAccountJson(TypedDict, total=False):
@@ -516,7 +539,16 @@ class ProxyConfigCallback(TypedDict, total=False):
     request_headers: Iterable[ProxyConfigCallbackRequestHeader]
 
 
-class ProxyConfigRuleAwsAccessKeyID(TypedDict, total=False):
+class ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig(TypedDict, total=False):
+    role_arn: Required[str]
+    """
+    RoleARN selects automatically renewed IAM-role credentials instead of static
+    keys. Access follows the role's effective AWS permissions, not the sandbox's
+    mount scope. Configure at creation; the role cannot be changed afterward.
+    """
+
+
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -524,7 +556,7 @@ class ProxyConfigRuleAwsAccessKeyID(TypedDict, total=False):
     value: str
 
 
-class ProxyConfigRuleAwsSecretAccessKey(TypedDict, total=False):
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -532,10 +564,22 @@ class ProxyConfigRuleAwsSecretAccessKey(TypedDict, total=False):
     value: str
 
 
-class ProxyConfigRuleAws(TypedDict, total=False):
-    access_key_id: Required[ProxyConfigRuleAwsAccessKeyID]
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig(TypedDict, total=False):
+    access_key_id: Required[ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID]
 
-    secret_access_key: Required[ProxyConfigRuleAwsSecretAccessKey]
+    secret_access_key: Required[ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey]
+
+    role_arn: Literal[""]
+    """
+    RoleARN selects automatically renewed IAM-role credentials instead of static
+    keys. Access follows the role's effective AWS permissions, not the sandbox's
+    mount scope. Configure at creation; the role cannot be changed afterward.
+    """
+
+
+ProxyConfigRuleAws: TypeAlias = Union[
+    ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig, ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig
+]
 
 
 class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):

@@ -141,19 +141,33 @@ export namespace SandboxResponse {
 
   export namespace MountConfig {
     export interface Auth {
-      aws?: Auth.Aws;
+      aws?: Auth.SandboxesSandboxAwsMountRoleAuthConfig | Auth.SandboxesSandboxAwsMountStaticAuthConfig;
 
       gcp?: Auth.Gcp;
     }
 
     export namespace Auth {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesSandboxAwsMountRoleAuthConfig {
+        /**
+         * IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+         * exclusive with static credentials. Configure only at creation.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesSandboxAwsMountStaticAuthConfig {
+        access_key_id: SandboxesSandboxAwsMountStaticAuthConfig.AccessKeyID;
+
+        secret_access_key: SandboxesSandboxAwsMountStaticAuthConfig.SecretAccessKey;
+
+        /**
+         * IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+         * exclusive with static credentials. Configure only at creation.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesSandboxAwsMountStaticAuthConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -545,7 +559,7 @@ export namespace SandboxResponse {
     export interface Rule {
       name: string;
 
-      aws?: Rule.Aws;
+      aws?: Rule.SandboxesProxyAwsRoleConfig | Rule.SandboxesProxyAwsStaticConfig;
 
       /**
        * Description says what this rule lets the sandbox reach, so an agent driving the
@@ -581,13 +595,29 @@ export namespace SandboxResponse {
     }
 
     export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesProxyAwsRoleConfig {
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesProxyAwsStaticConfig {
+        access_key_id: SandboxesProxyAwsStaticConfig.AccessKeyID;
+
+        secret_access_key: SandboxesProxyAwsStaticConfig.SecretAccessKey;
+
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesProxyAwsStaticConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
