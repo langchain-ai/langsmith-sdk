@@ -118,7 +118,10 @@ export class Boxes extends APIResource {
    * Create a short-lived JWT for accessing an HTTP service running on a specific
    * port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a
    * service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw
-   * token, and its expiry.
+   * token, and its expiry. Set access=restricted|workspace to instead enable durable
+   * LangSmith login (no token; users authenticate with their normal LangSmith
+   * session), or access=off to disable it. LangSmith login and token access are
+   * mutually exclusive per service URL.
    */
   generateServiceURL(
     name: string,
@@ -1090,6 +1093,16 @@ export interface BoxGenerateDownloadURLParams {
 }
 
 export interface BoxGenerateServiceURLParams {
+  /**
+   * Access selects the login mode, mutually exclusive with the minted token. Omit
+   * the field for token mode: mint a short-lived service token (default).
+   * "restricted" — LangSmith login: any user with SandboxesRead on the sandbox.
+   * "workspace" — LangSmith login: any member of the owning workspace. "off" —
+   * remove an existing LangSmith login grant and mint a token. A LangSmith login
+   * grant is durable; token mode is refused (409) while one exists.
+   */
+  access?: 'restricted' | 'workspace' | 'off';
+
   expires_in_seconds?: number;
 
   port?: number;

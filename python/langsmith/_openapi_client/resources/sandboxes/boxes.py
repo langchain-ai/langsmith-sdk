@@ -560,6 +560,7 @@ class BoxesResource(SyncAPIResource):
         self,
         name: str,
         *,
+        access: Literal["restricted", "workspace", "off"] | Omit = omit,
         expires_in_seconds: int | Omit = omit,
         port: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -573,9 +574,19 @@ class BoxesResource(SyncAPIResource):
         Create a short-lived JWT for accessing an HTTP service running on a specific
         port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a
         service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw
-        token, and its expiry.
+        token, and its expiry. Set access=restricted|workspace to instead enable durable
+        LangSmith login (no token; users authenticate with their normal LangSmith
+        session), or access=off to disable it. LangSmith login and token access are
+        mutually exclusive per service URL.
 
         Args:
+          access: Access selects the login mode, mutually exclusive with the minted token. Omit
+              the field for token mode: mint a short-lived service token (default).
+              "restricted" — LangSmith login: any user with SandboxesRead on the sandbox.
+              "workspace" — LangSmith login: any member of the owning workspace. "off" —
+              remove an existing LangSmith login grant and mint a token. A LangSmith login
+              grant is durable; token mode is refused (409) while one exists.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -590,6 +601,7 @@ class BoxesResource(SyncAPIResource):
             path_template("/api/v2/sandboxes/boxes/{name}/service-url", name=name),
             body=maybe_transform(
                 {
+                    "access": access,
                     "expires_in_seconds": expires_in_seconds,
                     "port": port,
                 },
@@ -1230,6 +1242,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         self,
         name: str,
         *,
+        access: Literal["restricted", "workspace", "off"] | Omit = omit,
         expires_in_seconds: int | Omit = omit,
         port: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
@@ -1243,9 +1256,19 @@ class AsyncBoxesResource(AsyncAPIResource):
         Create a short-lived JWT for accessing an HTTP service running on a specific
         port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a
         service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw
-        token, and its expiry.
+        token, and its expiry. Set access=restricted|workspace to instead enable durable
+        LangSmith login (no token; users authenticate with their normal LangSmith
+        session), or access=off to disable it. LangSmith login and token access are
+        mutually exclusive per service URL.
 
         Args:
+          access: Access selects the login mode, mutually exclusive with the minted token. Omit
+              the field for token mode: mint a short-lived service token (default).
+              "restricted" — LangSmith login: any user with SandboxesRead on the sandbox.
+              "workspace" — LangSmith login: any member of the owning workspace. "off" —
+              remove an existing LangSmith login grant and mint a token. A LangSmith login
+              grant is durable; token mode is refused (409) while one exists.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -1260,6 +1283,7 @@ class AsyncBoxesResource(AsyncAPIResource):
             path_template("/api/v2/sandboxes/boxes/{name}/service-url", name=name),
             body=await async_maybe_transform(
                 {
+                    "access": access,
                     "expires_in_seconds": expires_in_seconds,
                     "port": port,
                 },

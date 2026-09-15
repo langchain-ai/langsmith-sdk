@@ -653,7 +653,16 @@ export interface SandboxStatusResponse {
 }
 
 export interface ServiceURLResponse {
+  /**
+   * Token and ExpiresAt are empty in LangSmith login mode (no token is minted).
+   */
   token?: string;
+
+  /**
+   * Access echoes the enabled LangSmith login level ("restricted"/"workspace");
+   * omitted in token mode.
+   */
+  access?: 'restricted' | 'workspace';
 
   browser_url?: string;
 
