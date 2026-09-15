@@ -586,8 +586,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
     def _handle_llm_request(self, tspan: TranslatedSpan) -> None:
         """Read GenAI message attributes (1.8+) or legacy message events.
 
-        The translated events are then stripped so the ingester doesn't render
-        them twice.
+        The translated attributes and events are then stripped so the ingester
+        doesn't prefer the source representation or render messages twice.
         """
         tspan.set_kind("llm")
 
@@ -615,6 +615,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         if completion is None:
             completion = legacy_completion or None
         tspan.set_messages(prompt=prompt, completion=completion)
+        for attribute in (
+            "gen_ai.input.messages",
+            "gen_ai.output.messages",
+            "gen_ai.system_instructions",
+        ):
+            tspan.attributes.pop(attribute, None)
 
         provider = extract_provider_from_lk_metrics(
             tspan.attributes.get("lk.llm_metrics")
