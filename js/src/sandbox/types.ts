@@ -183,6 +183,8 @@ export interface WsRunOptions {
   ttlSeconds?: number;
   /** Whether to allocate a PTY. */
   pty?: boolean;
+  /** Whether to close the command's stdin so it reads EOF. */
+  closeStdin?: boolean;
   /**
    * Additional headers attached to the WebSocket upgrade request. Merged on
    * top of any default headers the SandboxClient was constructed with.
@@ -254,6 +256,14 @@ export interface RunOptions {
    * commands that use terminal control codes). Defaults to false.
    */
   pty?: boolean;
+  /**
+   * Close the command's stdin so a command that reads it sees EOF instead of
+   * blocking on a pipe nothing writes to. Defaults to true unless `pty` is set.
+   * Pass false to keep stdin open for `sendInput()`; calling `sendInput()` on a
+   * handle whose stdin was closed throws. Ignored by sandboxes older than this
+   * option.
+   */
+  closeInput?: boolean;
 }
 
 /**
