@@ -3,16 +3,20 @@ import functools
 import gc
 import inspect
 import json
+import logging
 import os
 import sys
 import time
 import uuid
 import warnings
 import weakref
+from contextlib import closing
+from datetime import datetime, timezone
 from typing import (
     Any,
     AsyncGenerator,
     Generator,
+    Iterator,
     List,
     Optional,
     Set,
@@ -23,6 +27,7 @@ from typing import (
 from unittest.mock import MagicMock, patch
 
 import pytest
+from openai import AsyncOpenAI
 from requests_toolbelt import MultipartEncoder
 from typing_extensions import Annotated, Literal
 
@@ -47,7 +52,8 @@ from langsmith.run_helpers import (
     tracing_context,
 )
 from langsmith.run_trees import RunTree
-from tests.unit_tests.conftest import parse_request_data
+from langsmith.wrappers import wrap_openai
+from tests.unit_tests.conftest import HttpEndpoint, parse_request_data
 
 
 def _get_calls(
@@ -559,6 +565,310 @@ def test_allow_unprocessed_payloads_restores_raw_outputs(
         assert all("ls_error" not in (p.get("outputs") or {}) for p in payloads)
     finally:
         ls_utils.get_env_var.cache_clear()
+
+
+@pytest.mark.parametrize("iteration", ["anext", "aiter", "context"])
+async def test_traceable_async_stream_records_iteration_errors(
+    iteration: str, mock_client: Client
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class FailingAsyncStream:
+        async def __aenter__(self) -> "FailingAsyncStream":
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+            pass
+
+        def __aiter__(self) -> "FailingAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            raise RuntimeError("stream failed")
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> FailingAsyncStream:
+        return FailingAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with pytest.raises(RuntimeError, match="stream failed"):
+            if iteration == "anext":
+                await aitertools.py_anext(stream)
+            elif iteration == "aiter":
+                async for _ in stream:
+                    pass
+            else:
+                async with stream:
+                    raise RuntimeError("stream failed")
+
+    assert len(ended_runs) == 1
+    assert "RuntimeError('stream failed')" in ended_runs[0].error
+    assert "NoneType: None" not in ended_runs[0].error
+
+
+async def test_traceable_async_stream_defers_success_until_context_exit(
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class ExhaustingAsyncStream:
+        def __init__(self) -> None:
+            self._done = False
+
+        async def __aenter__(self) -> "ExhaustingAsyncStream":
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+            pass
+
+        def __aiter__(self) -> "ExhaustingAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            if self._done:
+                raise StopAsyncIteration
+            self._done = True
+            return "chunk"
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> ExhaustingAsyncStream:
+        return ExhaustingAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with pytest.raises(RuntimeError, match="body failed"):
+            async with stream:
+                assert [item async for item in stream] == ["chunk"]
+                raise RuntimeError("body failed")
+
+    assert len(ended_runs) == 1
+    assert "RuntimeError('body failed')" in ended_runs[0].error
+
+
+@pytest.mark.parametrize("body_error", [False, True])
+async def test_traceable_async_stream_records_context_exit_error(
+    body_error: bool,
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class ExitFailingAsyncStream:
+        async def __aenter__(self) -> "ExitFailingAsyncStream":
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+            raise RuntimeError("exit failed")
+
+        def __aiter__(self) -> "ExitFailingAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            raise StopAsyncIteration
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> ExitFailingAsyncStream:
+        return ExitFailingAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with pytest.raises(RuntimeError, match="exit failed"):
+            async with stream:
+                if body_error:
+                    raise RuntimeError("body failed")
+
+    assert len(ended_runs) == 1
+    assert "RuntimeError('exit failed')" in ended_runs[0].error
+
+
+async def test_traceable_async_stream_records_context_enter_error(
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class EnterFailingAsyncStream:
+        async def __aenter__(self) -> "EnterFailingAsyncStream":
+            raise RuntimeError("enter failed")
+
+        def __aiter__(self) -> "EnterFailingAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            raise StopAsyncIteration
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> EnterFailingAsyncStream:
+        return EnterFailingAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with pytest.raises(RuntimeError, match="enter failed"):
+            async with stream:
+                pass
+
+    assert len(ended_runs) == 1
+    assert "RuntimeError('enter failed')" in ended_runs[0].error
+
+
+async def test_traceable_async_stream_records_success_when_context_suppresses(
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class SuppressingAsyncStream:
+        async def __aenter__(self) -> "SuppressingAsyncStream":
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback) -> bool:
+            return True
+
+        def __aiter__(self) -> "SuppressingAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            raise StopAsyncIteration
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> SuppressingAsyncStream:
+        return SuppressingAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        async with stream:
+            raise RuntimeError("suppressed")
+
+    assert len(ended_runs) == 1
+    assert ended_runs[0].error is None
+
+
+async def test_traceable_async_stream_finalizes_after_outermost_context_exit(
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class ReentrantAsyncStream:
+        def __init__(self) -> None:
+            self._done = False
+
+        async def __aenter__(self) -> "ReentrantAsyncStream":
+            return self
+
+        async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+            pass
+
+        def __aiter__(self) -> "ReentrantAsyncStream":
+            return self
+
+        async def __anext__(self) -> str:
+            if self._done:
+                raise StopAsyncIteration
+            self._done = True
+            return "chunk"
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    async def my_stream_fn() -> ReentrantAsyncStream:
+        return ReentrantAsyncStream()
+
+    with tracing_context(enabled=True):
+        stream = await my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with pytest.raises(RuntimeError, match="outer failed"):
+            async with stream:
+                async with stream:
+                    assert [item async for item in stream] == ["chunk"]
+                assert ended_runs == []
+                raise RuntimeError("outer failed")
+
+    assert len(ended_runs) == 1
+    assert "RuntimeError('outer failed')" in ended_runs[0].error
+
+
+def test_traceable_stream_records_success_when_context_suppresses(
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class SuppressingStream:
+        def __enter__(self) -> "SuppressingStream":
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> bool:
+            return True
+
+        def __iter__(self) -> Iterator[str]:
+            return iter(())
+
+    @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+    def my_stream_fn() -> SuppressingStream:
+        return SuppressingStream()
+
+    with tracing_context(enabled=True):
+        stream = my_stream_fn(langsmith_extra={"on_end": ended_runs.append})
+        with stream:
+            raise RuntimeError("suppressed")
+
+    assert len(ended_runs) == 1
+    assert ended_runs[0].error is None
+
+
+@pytest.mark.allow_hosts(["127.0.0.1"])
+async def test_openai_stream_records_error_after_exhaustion(
+    endpoint: HttpEndpoint,
+) -> None:
+    chunk: dict[str, Any] = {
+        "id": "chatcmpl-local",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "local",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": "hello"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    endpoint.responses["/v1/chat/completions"] = (
+        "text/event-stream",
+        f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode(),
+    )
+    with (
+        closing(
+            Client(api_url=endpoint.url, api_key="test", auto_batch_tracing=False)
+        ) as client,
+        tracing_context(enabled=True),
+    ):
+        async with AsyncOpenAI(
+            base_url=f"{endpoint.url}/v1", api_key="test", max_retries=0, timeout=5
+        ) as provider:
+            wrap_openai(provider, tracing_extra={"client": client})
+            stream = await provider.chat.completions.create(
+                model="local",
+                messages=[{"role": "user", "content": "Say hello."}],
+                stream=True,
+            )
+            with pytest.raises(RuntimeError, match="consumer failed after exhaustion"):
+                async with stream:
+                    assert [part.choices[0].delta.content async for part in stream] == [
+                        "hello"
+                    ]
+                    failed_at: datetime = datetime.now(timezone.utc)
+                    raise RuntimeError("consumer failed after exhaustion")
+
+    [run] = [
+        json.loads(body) for method, _, body in endpoint.requests if method == "PATCH"
+    ]
+    error: Optional[str] = run.get("error")
+    logging.getLogger(__name__).info(
+        "Collected stream run: error=%r end_time=%s body_error_at=%s output=%r",
+        error,
+        run["end_time"],
+        failed_at.isoformat(),
+        run["outputs"]["choices"][0]["message"]["content"],
+    )
+    assert error is not None
+    assert "RuntimeError('consumer failed after exhaustion')" in error
+    assert datetime.fromisoformat(run["end_time"]) >= failed_at
+    assert run["outputs"]["choices"][0]["message"]["content"] == "hello"
 
 
 @patch("langsmith.run_trees.Client", autospec=True)
