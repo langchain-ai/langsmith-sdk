@@ -925,6 +925,7 @@ class TestAsyncSandboxRunWs:
             timeout=60,
             env=None,
             cwd=None,
+            run_config=None,
             shell="/bin/bash",
             headers={"X-Test-Header": "sandbox-ws"},
             idle_timeout=300,
