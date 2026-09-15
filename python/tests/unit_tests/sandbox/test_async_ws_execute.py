@@ -680,6 +680,7 @@ class TestAsyncCommandHandle:
             "cmd-123",
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
+            stdin_closed=handle._stdin_closed,
         )
 
 
@@ -931,6 +932,7 @@ class TestAsyncSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 

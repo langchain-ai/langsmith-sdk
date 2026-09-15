@@ -24,6 +24,174 @@ export interface ResourceStatus {
 }
 
 /**
+ * The user, working directory and environment commands run with.
+ *
+ * Mirrors `docker run -u / -w / -e`: `user` and `work_dir` replace the layer
+ * below, `env_vars` merge into it key by key. It applies at three points, each
+ * layered over the one before -- the snapshot, the sandbox, and a single
+ * command.
+ */
+export interface RunConfig {
+  /**
+   * Account to run as: `name`, `uid`, `name:group` or `uid:gid`. Defaults to
+   * the Docker image's `USER`.
+   */
+  user?: string;
+  /**
+   * Absolute working directory. Defaults to the image's `WORKDIR`. A relative
+   * path is rejected by the server.
+   */
+  work_dir?: string;
+  /** Environment variables, merged over the layer below. */
+  env_vars?: Record<string, string>;
+}
+
+/**
+ * One filesystem entry returned by `sandbox.glob()`.
+ */
+export interface FileInfo {
+  /** Absolute path of the entry. */
+  path: string;
+  /** True for a directory. */
+  is_dir: boolean;
+  /** Size in bytes. */
+  size_bytes: number;
+  /** RFC 3339 modification timestamp. */
+  modified_at?: string;
+}
+
+/**
+ * Entries matching a glob pattern.
+ */
+export interface GlobResult {
+  matches: FileInfo[];
+  /**
+   * True when the server hit its result cap or deadline, so the search is a
+   * partial answer worth refining.
+   */
+  truncated: boolean;
+}
+
+/**
+ * One matching line found by `sandbox.grep()`.
+ */
+export interface GrepMatch {
+  /** Absolute path of the file the match was found in. */
+  path: string;
+  /** 1-based line number. */
+  line: number;
+  /** The matching line's text. */
+  text: string;
+}
+
+/**
+ * Lines matching a literal search.
+ */
+export interface GrepResult {
+  matches: GrepMatch[];
+  /** True when the server hit its result cap or deadline. */
+  truncated: boolean;
+}
+
+/**
+ * Options for the read-only filesystem search operations.
+ */
+export interface GlobOptions {
+  /** Maximum matches to return. */
+  limit?: number;
+  /** Request timeout in seconds. */
+  timeout?: number;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Options for `sandbox.grep()`.
+ */
+export interface GrepOptions extends GlobOptions {
+  /**
+   * Restrict which files are searched. A bare `*.py` matches by basename at
+   * any depth; a pattern containing `/` or `**` matches the path relative to
+   * the search root.
+   */
+  glob?: string;
+}
+
+/**
+ * What a `HEAD` on a sandbox file reports, without transferring it.
+ */
+export interface FileStat {
+  /** The file's size. */
+  size_bytes: number;
+  /**
+   * Strong validator for the current contents. Opaque -- compare it, never
+   * parse it. Pass it back as `ifRange` to resume a download safely, or as
+   * `ifNoneMatch` to poll for a change.
+   */
+  etag?: string;
+  /** HTTP-date of the last modification, second-resolution. */
+  last_modified?: string;
+  /** The server's content type for the file. */
+  content_type?: string;
+}
+
+/**
+ * Bytes returned by a ranged read, and where they sit in the file.
+ */
+export interface FileChunk {
+  /** The bytes returned. Empty when `unchanged` is true. */
+  content: Uint8Array;
+  /**
+   * Validator for the version these bytes came from. Pass it as `ifRange` on
+   * the next chunk so a rewrite restarts the read instead of splicing two
+   * versions together.
+   */
+  etag?: string;
+  /** The file's full size, or undefined when the server did not report it. */
+  total_bytes?: number;
+  /** Offset of the first byte returned. */
+  start: number;
+  /**
+   * True when the server answered 206 with only part of the file. A false
+   * here after a ranged request means the file changed and the server sent it
+   * whole -- restart from zero.
+   */
+  partial: boolean;
+  /**
+   * True when the caller passed `ifNoneMatch` and the file still matches it.
+   * No bytes are returned.
+   */
+  unchanged: boolean;
+  /** HTTP-date of the last modification. */
+  last_modified?: string;
+}
+
+/**
+ * Options for a ranged read. Provide `start` (with optional `end`), or
+ * `suffixBytes`.
+ */
+export interface ReadRangeOptions {
+  /** First byte to return. With `end`, an inclusive range. */
+  start?: number;
+  /** Last byte to return, inclusive. Clamped to EOF rather than rejected. */
+  end?: number;
+  /** Return the last N bytes. Mutually exclusive with `start`/`end`. */
+  suffixBytes?: number;
+  /**
+   * An `ETag` from an earlier chunk. The range is honored only while the file
+   * still matches it.
+   */
+  ifRange?: string;
+  /**
+   * An `ETag` the caller already holds. An unchanged file answers with
+   * `unchanged: true` and no bytes.
+   */
+  ifNoneMatch?: string;
+  /** Request timeout in seconds. */
+  timeout?: number;
+  headers?: Record<string, string>;
+}
+
+/**
  * Represents a sandbox snapshot.
  *
  * Snapshots are built from Docker images or captured from running sandboxes.
@@ -44,6 +212,13 @@ export interface Snapshot {
   registry_id?: string;
   created_at?: string;
   updated_at?: string;
+  /**
+   * User, working directory and environment sandboxes built from this
+   * snapshot boot with, resolved from the Docker image at build time. Absent
+   * on snapshots built before the server recorded it, which boot as root with
+   * no image environment.
+   */
+  run_config?: RunConfig;
 }
 
 /**
@@ -83,6 +258,11 @@ export interface SandboxData {
   mem_bytes?: number;
   /** Root filesystem capacity in bytes. */
   fs_capacity_bytes?: number;
+  /**
+   * User, working directory and environment the sandbox's commands run with.
+   * Absent on sandboxes created before the server recorded it.
+   */
+  run_config?: RunConfig;
 }
 
 /**
@@ -183,6 +363,10 @@ export interface WsRunOptions {
   ttlSeconds?: number;
   /** Whether to allocate a PTY. */
   pty?: boolean;
+  /** Per-command user, working directory and environment. */
+  runConfig?: RunConfig;
+  /** Half-close the spawned process's stdin so it reads EOF. */
+  closeStdin?: boolean;
   /**
    * Additional headers attached to the WebSocket upgrade request. Merged on
    * top of any default headers the SandboxClient was constructed with.
@@ -200,12 +384,30 @@ export interface RunOptions {
   timeout?: number;
   /**
    * Environment variables to set for the command.
+   *
+   * @deprecated Use `runConfig.env_vars`. The two cannot be combined.
    */
   env?: Record<string, string>;
   /**
    * Working directory for command execution.
+   *
+   * @deprecated Use `runConfig.work_dir`. The two cannot be combined.
    */
   cwd?: string;
+  /**
+   * User, working directory and environment for this one command, layered
+   * over the sandbox's own.
+   */
+  runConfig?: RunConfig;
+  /**
+   * Half-close the command's stdin so a command that reads it sees EOF
+   * rather than blocking until the timeout. Defaults to true for a non-PTY
+   * command, which means `sendInput()` on the returned handle throws unless
+   * this is set to false. Ignored under `pty: true`, where input and output
+   * share one terminal file descriptor -- send an EOT byte (0x04) as input
+   * instead.
+   */
+  closeInput?: boolean;
   /**
    * Shell to use for command execution. Defaults to "/bin/bash".
    */
@@ -552,6 +754,12 @@ export interface CreateSandboxOptions {
    * auth.
    */
   proxyConfig?: SandboxProxyConfig;
+  /**
+   * User, working directory and environment the sandbox boots with,
+   * overriding the snapshot's: `user` and `work_dir` replace, `env_vars`
+   * merge. The sandbox's own env vars remain a layer above this one.
+   */
+  runConfig?: RunConfig;
 }
 
 /**
@@ -560,6 +768,13 @@ export interface CreateSandboxOptions {
 export interface CreateSnapshotOptions {
   /** Private registry ID. */
   registryId?: string;
+  /**
+   * Override the Docker image's `USER`, `WORKDIR` and `ENV` for sandboxes
+   * built from this snapshot: `user` and `work_dir` replace the image's,
+   * `env_vars` merge over it key by key. Omitting it adopts the image's own
+   * configuration. Pass `{ user: "0" }` to keep running as root.
+   */
+  runConfig?: RunConfig;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */
@@ -602,6 +817,11 @@ export interface CaptureSnapshotOptions {
   dockerImage?: string;
   /** Filesystem capacity in bytes for Docker image export. */
   fsCapacityBytes?: number;
+  /**
+   * Override applied over the configuration the captured sandbox was running
+   * with: `user` and `work_dir` replace, `env_vars` merge.
+   */
+  runConfig?: RunConfig;
   /** Timeout in seconds when waiting for ready. Default: 60. */
   timeout?: number;
   /** AbortSignal for cancellation. */
@@ -724,6 +944,13 @@ export interface UpdateSandboxOptions {
    * `ready`; start a stopped one first.
    */
   proxyConfig?: SandboxProxyConfig;
+  /**
+   * Merge into the sandbox's stored run configuration: `user` and `work_dir`
+   * replace, `env_vars` merge. Takes effect for subsequent commands; commands
+   * already running are unaffected, and a stopped sandbox picks it up on its
+   * next start. Omitting it leaves the stored value untouched.
+   */
+  runConfig?: RunConfig;
 }
 
 /**

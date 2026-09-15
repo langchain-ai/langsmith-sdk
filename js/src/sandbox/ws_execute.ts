@@ -189,6 +189,13 @@ export class WSStreamControl {
       this._ws.send(JSON.stringify({ type: "input", data }));
     }
   }
+
+  /** Half-close the command's stdin so it reads EOF. */
+  sendCloseStdin(): void {
+    if (this._ws && !this._closed && this._ws.readyState === 1) {
+      this._ws.send(JSON.stringify({ type: "close_stdin" }));
+    }
+  }
 }
 
 // =============================================================================
@@ -429,6 +436,8 @@ export async function runWsStream(
     killOnDisconnect = false,
     ttlSeconds = 600,
     pty,
+    runConfig,
+    closeStdin,
     headers: extraHeaders,
     openTimeout = WS_OPEN_TIMEOUT,
   } = options;
@@ -455,6 +464,8 @@ export async function runWsStream(
       };
       if (env) payload.env = env;
       if (cwd) payload.cwd = cwd;
+      if (runConfig) payload.run_config = runConfig;
+      if (closeStdin) payload.close_stdin = true;
       if (commandId) payload.command_id = commandId;
       if (pty) payload.pty = true;
 

@@ -7,7 +7,15 @@ import type {
   CaptureSnapshotOptions,
   DownloadURL,
   ExecutionResult,
+  FileChunk,
+  FileStat,
   GenerateDownloadURLOptions,
+  GlobOptions,
+  GlobResult,
+  GrepOptions,
+  GrepResult,
+  ReadRangeOptions,
+  RunConfig,
   RunOptions,
   SandboxData,
   Snapshot,
@@ -19,7 +27,15 @@ import {
   LangSmithSandboxRetryableConnectionError,
   LangSmithStreamEndedBeforeStartedError,
 } from "./errors.js";
-import { handleSandboxHttpError } from "./helpers.js";
+import {
+  assertRunConfigNotCombined,
+  buildRangeHeader,
+  fileChunkFromResponse,
+  fileStatFromResponse,
+  handleFileHttpError,
+  handleSandboxHttpError,
+  resolveCloseInput,
+} from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
 import {
   connectDeadline,
@@ -89,6 +105,11 @@ export class Sandbox {
   readonly mem_bytes?: number;
   /** Root filesystem capacity in bytes. */
   readonly fs_capacity_bytes?: number;
+  /**
+   * User, working directory and environment this sandbox's commands run
+   * with. Absent on sandboxes created before the server recorded it.
+   */
+  readonly run_config?: RunConfig;
 
   private _client: SandboxClient;
 
@@ -108,6 +129,7 @@ export class Sandbox {
     this.vCpus = data.vcpus;
     this.mem_bytes = data.mem_bytes;
     this.fs_capacity_bytes = data.fs_capacity_bytes;
+    this.run_config = data.run_config;
     this._client = client;
   }
 
@@ -188,9 +210,12 @@ export class Sandbox {
       killOnDisconnect,
       ttlSeconds,
       pty,
+      closeInput,
       ...restOptions
     } = options;
     const hasCallbacks = onStdout !== undefined || onStderr !== undefined;
+    assertRunConfigNotCombined(restOptions);
+    const closeStdin = resolveCloseInput(closeInput, pty ?? false);
 
     if (!wait || hasCallbacks) {
       // WebSocket required for streaming / non-blocking
@@ -200,6 +225,7 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
+        closeInput: closeStdin,
         onStdout,
         onStderr,
       });
@@ -221,6 +247,7 @@ export class Sandbox {
         killOnDisconnect,
         ttlSeconds,
         pty,
+        closeInput: closeStdin,
       });
       return await handle.result;
     }
@@ -255,6 +282,8 @@ export class Sandbox {
       killOnDisconnect,
       ttlSeconds,
       pty,
+      runConfig,
+      closeInput: closeStdin = false,
     } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
@@ -284,6 +313,8 @@ export class Sandbox {
           killOnDisconnect,
           ttlSeconds,
           pty,
+          runConfig,
+          closeStdin,
           openTimeout: openTimeoutFor(deadline),
           ...(Object.keys(clientHeaders).length > 0
             ? { headers: clientHeaders }
@@ -294,6 +325,8 @@ export class Sandbox {
       const handle = new CommandHandle(stream, control, this, {
         onStdout,
         onStderr,
+        stdinClosed: closeStdin,
+        pty: pty ?? false,
       });
       try {
         await handle._ensureStarted();
@@ -344,7 +377,7 @@ export class Sandbox {
     command: string,
     options: Omit<RunOptions, "wait" | "onStdout" | "onStderr"> = {},
   ): Promise<ExecutionResult> {
-    const { timeout = 60, env, cwd, shell = "/bin/bash" } = options;
+    const { timeout = 60, env, cwd, runConfig, shell = "/bin/bash" } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
     const url = `${dataplaneUrl}/execute`;
 
@@ -355,6 +388,9 @@ export class Sandbox {
     };
     if (env !== undefined) {
       payload.env = env;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
     if (cwd !== undefined) {
       payload.cwd = cwd;
@@ -395,9 +431,10 @@ export class Sandbox {
     options: {
       stdoutOffset?: number;
       stderrOffset?: number;
+      stdinClosed?: boolean;
     } = {},
   ): Promise<CommandHandle> {
-    const { stdoutOffset = 0, stderrOffset = 0 } = options;
+    const { stdoutOffset = 0, stderrOffset = 0, stdinClosed = false } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
     const clientHeaders = this._client.getDefaultHeaders();
@@ -418,6 +455,7 @@ export class Sandbox {
       commandId,
       stdoutOffset,
       stderrOffset,
+      stdinClosed,
     });
   }
 
@@ -491,6 +529,144 @@ export class Sandbox {
 
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
+  }
+
+  /**
+   * Report a file's size and validators without transferring it.
+   *
+   * @param path - File path to stat.
+   * @param timeout - Request timeout in seconds.
+   * @returns The size and the `ETag` to pass to {@link readRange}.
+   */
+  async stat(path: string, timeout = 60): Promise<FileStat> {
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/download?path=${encodeURIComponent(path)}`;
+
+    const response = await this._client._fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+    if (!response.ok) {
+      await handleFileHttpError(response, path, this.name);
+    }
+    return fileStatFromResponse(response);
+  }
+
+  /**
+   * Read part of a file, for chunked reads and resumed downloads.
+   *
+   * @param path - File path to read.
+   * @param options - The byte range, plus optional `ifRange`/`ifNoneMatch`
+   *   validators. A 200 answer to a ranged request means the file changed and
+   *   the server sent it whole -- restart rather than append.
+   * @returns The bytes and where they sit in the file.
+   *
+   * @example
+   * ```typescript
+   * const head = await sandbox.readRange("/big.bin", { start: 0, end: 1023 });
+   * const next = await sandbox.readRange("/big.bin", {
+   *   start: head.end ?? 1024,
+   *   ifRange: head.etag,
+   * });
+   * ```
+   */
+  async readRange(path: string, options: ReadRangeOptions): Promise<FileChunk> {
+    const { ifRange, ifNoneMatch, timeout = 60, headers } = options;
+    const dataplaneUrl = this.requireDataplaneUrl();
+    const url = `${dataplaneUrl}/download?path=${encodeURIComponent(path)}`;
+
+    const requestHeaders: Record<string, string> = {
+      ...(headers ?? {}),
+      Range: buildRangeHeader(options),
+    };
+    if (ifRange) requestHeaders["If-Range"] = ifRange;
+    if (ifNoneMatch) requestHeaders["If-None-Match"] = ifNoneMatch;
+
+    const response = await this._client._fetch(url, {
+      method: "GET",
+      headers: requestHeaders,
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+    if (!response.ok && response.status !== 304) {
+      await handleFileHttpError(response, path, this.name);
+    }
+    return fileChunkFromResponse(response);
+  }
+
+  /**
+   * Find files and directories matching a pattern.
+   *
+   * @param pattern - Match against each entry's path relative to `path`.
+   *   Supports `**` for any number of segments plus `*`, `?` and `[...]`
+   *   within one segment.
+   * @param path - Absolute path of the directory to search under.
+   * @param options - Result cap and request options.
+   * @returns The matches; check `truncated` before treating them as complete.
+   */
+  async glob(
+    pattern: string,
+    path: string,
+    options: GlobOptions = {},
+  ): Promise<GlobResult> {
+    const body: Record<string, unknown> = { pattern, path };
+    if (options.limit !== undefined) body.limit = options.limit;
+    return (await this._fileSearch("glob", body, options)) as GlobResult;
+  }
+
+  /**
+   * List a directory's immediate entries, without recursing.
+   *
+   * A convenience over {@link glob} with the pattern `*`.
+   *
+   * @param path - Absolute path of the directory to list.
+   * @param options - Result cap and request options.
+   * @returns The directory's files and subdirectories.
+   */
+  async ls(path: string, options: GlobOptions = {}): Promise<GlobResult> {
+    return this.glob("*", path, options);
+  }
+
+  /**
+   * Search file contents for a literal string.
+   *
+   * @param pattern - Literal text to search for. Not a regular expression.
+   * @param path - Absolute path of the directory to search under.
+   * @param options - Optional `glob` file filter, result cap, request options.
+   * @returns The matching lines; check `truncated` for completeness.
+   */
+  async grep(
+    pattern: string,
+    path: string,
+    options: GrepOptions = {},
+  ): Promise<GrepResult> {
+    const body: Record<string, unknown> = { pattern, path };
+    if (options.glob !== undefined) body.glob = options.glob;
+    if (options.limit !== undefined) body.limit = options.limit;
+    return (await this._fileSearch("grep", body, options)) as GrepResult;
+  }
+
+  /**
+   * POST one of the read-only filesystem search endpoints.
+   * @internal
+   */
+  private async _fileSearch(
+    operation: "glob" | "grep",
+    body: Record<string, unknown>,
+    options: GlobOptions,
+  ): Promise<unknown> {
+    const { timeout = 60, headers } = options;
+    const dataplaneUrl = this.requireDataplaneUrl();
+
+    const response = await this._client._fetch(`${dataplaneUrl}/${operation}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeout * 1000),
+    });
+    if (!response.ok) {
+      await handleFileHttpError(response, String(body.path), this.name);
+    }
+    return response.json();
   }
 
   /**

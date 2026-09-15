@@ -82,6 +82,8 @@ export class CommandHandle {
   private _reconnectAttempts = 0;
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
+  private _stdinClosed: boolean;
+  private _pty: boolean;
 
   /** @internal */
   constructor(
@@ -94,6 +96,8 @@ export class CommandHandle {
       stderrOffset?: number;
       onStdout?: (data: string) => void;
       onStderr?: (data: string) => void;
+      stdinClosed?: boolean;
+      pty?: boolean;
     },
   ) {
     this._stream = messageStream;
@@ -103,6 +107,8 @@ export class CommandHandle {
     this._lastStderrOffset = options?.stderrOffset ?? 0;
     this._onStdout = options?.onStdout;
     this._onStderr = options?.onStderr;
+    this._stdinClosed = options?.stdinClosed ?? false;
+    this._pty = options?.pty ?? false;
 
     // New executions (no commandId): _ensureStarted reads "started".
     // Reconnections (commandId set): skip since reconnect streams
@@ -299,9 +305,30 @@ export class CommandHandle {
    * Write data to the command's stdin.
    */
   sendInput(data: string): void {
+    if (this._stdinClosed) {
+      throw new LangSmithSandboxOperationError(
+        "stdin is closed for this command. Non-PTY commands close stdin by " +
+          "default so a command that reads it sees EOF instead of hanging; " +
+          "pass closeInput: false to run() to stream input into it.",
+        "sendInput",
+      );
+    }
     if (this._control) {
       this._control.sendInput(data);
     }
+  }
+
+  /**
+   * Half-close stdin so the command reads EOF.
+   *
+   * Idempotent, and a no-op under a PTY, where input and output share one
+   * terminal file descriptor and there is no write end to close -- send an
+   * EOT byte (0x04) with {@link sendInput} instead.
+   */
+  closeInput(): void {
+    if (this._pty || this._stdinClosed) return;
+    this._stdinClosed = true;
+    this._control?.sendCloseStdin();
   }
 
   /** Last known stdout byte offset (for manual reconnection). */
@@ -330,6 +357,7 @@ export class CommandHandle {
     return this._sandbox.reconnect(this._commandId, {
       stdoutOffset: this._lastStdoutOffset,
       stderrOffset: this._lastStderrOffset,
+      stdinClosed: this._stdinClosed,
     });
   }
 }

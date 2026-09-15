@@ -42,8 +42,10 @@ from langsmith.sandbox._models import (
     DownloadContentDisposition,
     DownloadURL,
     ResourceStatus,
+    RunConfig,
     Snapshot,
     SnapshotTag,
+    _run_config_payload,
 )
 from langsmith.sandbox._mounts import (
     SandboxMountConfig,
@@ -265,6 +267,7 @@ class AsyncSandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a sandbox and return an AsyncSandbox instance.
@@ -343,6 +346,7 @@ class AsyncSandboxClient:
             fs_capacity_bytes=fs_capacity_bytes,
             mount_config=mount_config,
             proxy_config=proxy_config,
+            run_config=run_config,
             headers=headers,
         )
         sb._auto_delete = True
@@ -364,6 +368,7 @@ class AsyncSandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
@@ -464,6 +469,8 @@ class AsyncSandboxClient:
             payload["mount_config"] = mount_config
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
@@ -550,6 +557,7 @@ class AsyncSandboxClient:
         idle_ttl_seconds: Optional[int] = None,
         delete_after_stop_seconds: Optional[int] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Update a sandbox's properties.
@@ -596,6 +604,8 @@ class AsyncSandboxClient:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = await self._http.patch(
@@ -926,6 +936,7 @@ class AsyncSandboxClient:
         *,
         tag: Optional[str] = None,
         registry_id: Optional[str] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -959,6 +970,8 @@ class AsyncSandboxClient:
             payload["tag"] = tag
         if registry_id is not None:
             payload["registry_id"] = registry_id
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = await self._http.post(
@@ -1076,6 +1089,7 @@ class AsyncSandboxClient:
         tag: Optional[str] = None,
         docker_image: Optional[str] = None,
         fs_capacity_bytes: Optional[int] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -1109,6 +1123,8 @@ class AsyncSandboxClient:
             payload["docker_image"] = docker_image
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = await self._http.post(
