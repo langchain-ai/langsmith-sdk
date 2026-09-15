@@ -756,3 +756,81 @@ describe("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", () => {
     expect(updateSpy.mock.calls[1][1].inputs).toEqual({ a: 1 });
   });
 });
+
+describe.each([
+  ["LANGSMITH_AGENT_ENVIRONMENT", "agent_environment"],
+  ["LANGSMITH_AGENT_ID", "agent_id"],
+])("%s", (langSmithVar, field) => {
+  const langChainVar = langSmithVar.replace("LANGSMITH_", "LANGCHAIN_");
+  const originalLangSmithValue = process.env[langSmithVar];
+  const originalLangChainValue = process.env[langChainVar];
+
+  beforeEach(() => {
+    delete process.env[langSmithVar];
+    delete process.env[langChainVar];
+  });
+
+  afterEach(() => {
+    if (originalLangSmithValue === undefined) {
+      delete process.env[langSmithVar];
+    } else {
+      process.env[langSmithVar] = originalLangSmithValue;
+    }
+    if (originalLangChainValue === undefined) {
+      delete process.env[langChainVar];
+    } else {
+      process.env[langChainVar] = originalLangChainValue;
+    }
+  });
+
+  const parseBody = (call: unknown[]) => {
+    const { body } = call.slice(-1)[0] as { body: string | Uint8Array };
+    return JSON.parse(
+      typeof body === "string" ? body : new TextDecoder().decode(body),
+    );
+  };
+
+  const postedRun = async (config: Record<string, string> = {}) => {
+    const { client, callSpy } = mockClient();
+    const runTree = new RunTree({
+      name: "test-run",
+      inputs: { a: 1 },
+      client,
+      ...config,
+    });
+    await runTree.postRun();
+    return parseBody(callSpy.mock.calls[0]);
+  };
+
+  test(`is ingested as the run's ${field}`, async () => {
+    process.env[langSmithVar] = "from-env";
+    expect(await postedRun()).toMatchObject({ [field]: "from-env" });
+  });
+
+  test("falls back to the legacy LANGCHAIN_ namespace", async () => {
+    process.env[langChainVar] = "from-env";
+    expect(await postedRun()).toMatchObject({ [field]: "from-env" });
+  });
+
+  test("is omitted from the payload when unset", async () => {
+    expect(await postedRun()).not.toHaveProperty(field);
+  });
+
+  test(`is overridden by an explicit ${field}`, async () => {
+    process.env[langSmithVar] = "from-env";
+    expect(await postedRun({ [field]: "explicit" })).toMatchObject({
+      [field]: "explicit",
+    });
+  });
+
+  test("is inherited by child runs", async () => {
+    process.env[langSmithVar] = "from-env";
+    const { client, callSpy } = mockClient();
+    const parent = new RunTree({ name: "parent", inputs: {}, client });
+    const child = parent.createChild({ name: "child" });
+    await child.postRun();
+    expect(parseBody(callSpy.mock.calls[0])).toMatchObject({
+      [field]: "from-env",
+    });
+  });
+});

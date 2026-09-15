@@ -88,6 +88,8 @@ def _allow_unprocessed_payloads() -> bool:
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "parent_ref": _context._PARENT_RUN_TREE_REF,
     "project_name": _context._PROJECT_NAME,
+    "agent_id": _context._AGENT_ID,
+    "agent_environment": _context._AGENT_ENVIRONMENT,
     "tags": _context._TAGS,
     "metadata": _context._METADATA,
     "enabled": _context._TRACING_ENABLED,
@@ -152,6 +154,8 @@ def get_tracing_context(
         return {
             "parent": parent,
             "project_name": _context._PROJECT_NAME.get(),
+            "agent_id": _context._AGENT_ID.get(),
+            "agent_environment": _context._AGENT_ENVIRONMENT.get(),
             "tags": _context._TAGS.get(),
             "metadata": _context._METADATA.get(),
             "enabled": _context._TRACING_ENABLED.get(),
@@ -170,6 +174,8 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
@@ -183,6 +189,11 @@ def tracing_context(
 
     Args:
         project_name: The name of the project to log the run to.
+        agent_id: The agent to log the run to, instead of a project. Ignored
+            when a project is set here or on the run itself -- an explicit
+            project always wins. Defaults to `LANGSMITH_AGENT_ID`.
+        agent_environment: Narrows `agent_id`; meaningless without it.
+            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.
@@ -224,6 +235,8 @@ def tracing_context(
         {
             "parent": parent_run,
             "project_name": project_name,
+            "agent_id": agent_id,
+            "agent_environment": agent_environment,
             "tags": tags,
             "metadata": metadata,
             "enabled": enabled,
@@ -1147,7 +1160,9 @@ class trace:
         extra_outer = self.extra or {}
         extra_outer["metadata"] = metadata
 
-        project_name_ = _get_project_name(self.project_name)
+        project_name_, agent_id_, agent_environment_ = _get_addressing(
+            self.project_name
+        )
 
         if parent_run_ is not None and enabled:
             self.new_run = parent_run_.create_child(
@@ -1168,7 +1183,9 @@ class trace:
                 ),
                 run_type=self.run_type,
                 extra=extra_outer,
-                project_name=project_name_ or "default",
+                project_name=project_name_,
+                agent_id=agent_id_,
+                agent_environment=agent_environment_,
                 replicas=run_trees._REPLICAS.get(),
                 inputs=self.inputs or {},
                 tags=tags_,
@@ -1186,6 +1203,8 @@ class trace:
             else:
                 _context._PARENT_RUN_TREE_REF.set(None)
             _context._PROJECT_NAME.set(project_name_)
+            _context._AGENT_ID.set(agent_id_)
+            _context._AGENT_ENVIRONMENT.set(agent_environment_)
             _context._CLIENT.set(client_)
 
         return self.new_run
@@ -1297,6 +1316,36 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
         # fallback to the default for the environment
         or utils.get_tracer_project()
     )
+
+
+def _get_addressing(
+    project_name: Optional[str],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Resolve `(project_name, agent_id, agent_environment)` for a new run.
+
+    Mirrors `_get_project_name`, but stops short of defaulting a project in when
+    an agent addresses the run instead -- a run carries one mode, not both.
+    """
+    prt = get_current_run_tree()
+    explicit_project = (
+        project_name
+        or _context._PROJECT_NAME.get()
+        or (prt.session_name if prt else None)
+        or _context._GLOBAL_PROJECT_NAME
+    )
+    agent_id = (
+        _context._AGENT_ID.get()
+        or (prt.agent_id if prt else None)
+        or utils.get_tracer_agent_id()
+    )
+    if explicit_project is None and agent_id:
+        agent_environment = (
+            _context._AGENT_ENVIRONMENT.get()
+            or (prt.agent_environment if prt else None)
+            or utils.get_tracer_agent_environment()
+        )
+        return None, agent_id, agent_environment
+    return explicit_project or utils.get_tracer_project(), None, None
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
@@ -1613,7 +1662,7 @@ def _setup_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
     )
     project_cv = _context._PROJECT_NAME.get()
-    selected_project = (
+    explicit_project = (
         project_cv  # From parent trace
         or (
             parent_run_.session_name if parent_run_ else None
@@ -1621,8 +1670,25 @@ def _setup_run(
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
         or _context._GLOBAL_PROJECT_NAME  # global fallback from ls.configure
-        or utils.get_tracer_project()  # default
     )
+    selected_agent_id = (
+        _context._AGENT_ID.get()
+        or (parent_run_.agent_id if parent_run_ else None)
+        or utils.get_tracer_agent_id()
+    )
+    selected_agent_environment = (
+        _context._AGENT_ENVIRONMENT.get()
+        or (parent_run_.agent_environment if parent_run_ else None)
+        or utils.get_tracer_agent_environment()
+    )
+    if explicit_project is None and selected_agent_id:
+        # Agent-addressed: don't default a project in, or the run would carry
+        # both addressing modes. An explicit project anywhere above wins.
+        selected_project = None
+    else:
+        selected_project = explicit_project or utils.get_tracer_project()
+        selected_agent_id = None
+        selected_agent_environment = None
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
     enabled = container_input.get("enabled")
@@ -1720,6 +1786,8 @@ def _setup_run(
                 reference_example_id, accept_null=True
             ),
             "project_name": selected_project,
+            "agent_id": selected_agent_id,
+            "agent_environment": selected_agent_environment,
             "replicas": run_trees._REPLICAS.get(),
             "extra": extra_inner,
             "tags": tags_,
@@ -1751,6 +1819,10 @@ def _setup_run(
         exceptions_to_handle=container_input.get("exceptions_to_handle"),
     )
     context.run(_context._PROJECT_NAME.set, response_container["project_name"])
+    # Nested traceables inherit the addressing, the same way they inherit the
+    # project -- otherwise a child would fall back to the default project.
+    context.run(_context._AGENT_ID.set, selected_agent_id)
+    context.run(_context._AGENT_ENVIRONMENT.set, selected_agent_environment)
     # Store a weak reference (not the RunTree itself) in the copied context.
     # This prevents memory leaks when contexts are captured by asyncio operations
     # (call_later, create_task, etc.) — the captured context holds only a weakref,

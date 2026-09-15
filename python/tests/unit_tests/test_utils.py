@@ -92,6 +92,43 @@ class LangSmithProjectNameTest(unittest.TestCase):
                     self.assertEqual(project, case.expected_project_name)
 
 
+@pytest.mark.parametrize(
+    ("getter_name", "suffix"),
+    [
+        ("get_tracer_agent_environment", "AGENT_ENVIRONMENT"),
+        ("get_tracer_agent_id", "AGENT_ID"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("namespaces", "expected"),
+    [
+        ({}, None),
+        ({"LANGSMITH": "from-langsmith"}, "from-langsmith"),
+        ({"LANGCHAIN": "from-langchain"}, "from-langchain"),
+        # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
+        (
+            {"LANGSMITH": "from-langsmith", "LANGCHAIN": "from-langchain"},
+            "from-langsmith",
+        ),
+        # Blank is treated as unset, same as every other LangSmith env var.
+        ({"LANGSMITH": ""}, None),
+    ],
+)
+def test_get_tracer_agent_env_vars(
+    getter_name: str,
+    suffix: str,
+    namespaces: dict,
+    expected: Optional[str],
+) -> None:
+    """`LANGSMITH_AGENT_ENVIRONMENT` / `LANGSMITH_AGENT_ID` resolution."""
+    getter = getattr(ls_utils, getter_name)
+    envvars = {f"{ns}_{suffix}": value for ns, value in namespaces.items()}
+    ls_utils.get_env_var.cache_clear()
+    getter.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        assert getter() == expected
+
+
 def test_tracing_enabled():
     ls_utils.get_env_var.cache_clear()
     with patch.dict(
@@ -647,3 +684,62 @@ def test_filter_request_headers_localhost():
         request, allow_hosts=["http://localhost:3000"]
     )
     assert result is None
+
+
+@pytest.mark.parametrize(
+    ("envvars", "expected_error"),
+    [
+        # Agent addressing is configured as a pair: both, or neither.
+        ({"LANGSMITH_AGENT_ID": "my-agent"}, "LANGSMITH_AGENT_ENVIRONMENT is not"),
+        (
+            {"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
+            "LANGSMITH_AGENT_ID is not",
+        ),
+        # Two addressing modes at once is ambiguous.
+        (
+            {
+                "LANGSMITH_AGENT_ID": "my-agent",
+                "LANGSMITH_AGENT_ENVIRONMENT": "staging",
+                "LANGSMITH_PROJECT": "my-project",
+            },
+            "either by agent or by project",
+        ),
+        (
+            {
+                "LANGSMITH_AGENT_ID": "my-agent",
+                "LANGSMITH_AGENT_ENVIRONMENT": "staging",
+                "LANGCHAIN_SESSION": "legacy-project",
+            },
+            "either by agent or by project",
+        ),
+    ],
+)
+def test_validate_agent_addressing_env_rejects(
+    envvars: dict, expected_error: str
+) -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_agent_id.cache_clear()
+    ls_utils.get_tracer_agent_environment.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        with pytest.raises(ls_utils.LangSmithUserError, match=expected_error):
+            ls_utils.validate_agent_addressing_env()
+
+
+@pytest.mark.parametrize(
+    "envvars",
+    [
+        # Neither half set: project addressing, the legacy path.
+        {},
+        {"LANGSMITH_PROJECT": "my-project"},
+        # Both halves set, and no project to conflict with.
+        {"LANGSMITH_AGENT_ID": "my-agent", "LANGSMITH_AGENT_ENVIRONMENT": "staging"},
+        # Blank counts as unset, so this is still "neither".
+        {"LANGSMITH_AGENT_ID": "", "LANGSMITH_AGENT_ENVIRONMENT": ""},
+    ],
+)
+def test_validate_agent_addressing_env_accepts(envvars: dict) -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_agent_id.cache_clear()
+    ls_utils.get_tracer_agent_environment.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        ls_utils.validate_agent_addressing_env()
