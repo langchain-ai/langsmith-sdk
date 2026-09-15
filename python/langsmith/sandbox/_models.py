@@ -693,6 +693,8 @@ class CommandHandle:
                     exit_code=msg["exit_code"],
                 )
                 self._exhausted = True
+                # Finish the generator now so the WebSocket closes here, not at GC.
+                next(self._stream, None)
                 return
         raise SandboxConnectionError("Command stream ended without exit message")
 
@@ -956,6 +958,11 @@ class AsyncCommandHandle:
                     exit_code=msg["exit_code"],
                 )
                 self._exhausted = True
+                # Finish the generator now so the WebSocket closes here, not at GC.
+                try:
+                    await self._stream.__anext__()
+                except StopAsyncIteration:
+                    pass
                 return
         raise SandboxConnectionError("Command stream ended without exit message")
 

@@ -26,6 +26,8 @@ from opentelemetry.sdk.trace import Span, SpanProcessor
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice._helpers import (
     build_assistant_message,
+    build_messages_from_gen_ai,
+    build_system_messages_from_gen_ai,
     build_user_message,
     try_parse_json_object,
 )
@@ -42,6 +44,7 @@ from ._helpers import (
     extract_provider_from_lk_metrics,
     extract_realtime_usage,
     flatten_lk_attributes_to_ls_metadata,
+    get_content_attribute,
     is_livekit_span,
     normalize_provider,
 )
@@ -572,7 +575,7 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             normalize_provider(tspan.attributes.get("gen_ai.provider.name"))
         )
 
-        transcript = tspan.attributes.get("lk.user_transcript")
+        transcript = get_content_attribute(tspan, "user_transcript")
         if transcript:
             tspan.set_messages(
                 prompt=[build_user_message(f'Audio for: "{transcript}"')]
@@ -581,21 +584,37 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.exclude_from_message_view()
 
     def _handle_llm_request(self, tspan: TranslatedSpan) -> None:
-        """``llm_request``: rebuild prompt/completion from the gen_ai.* events.
+        """Read GenAI message attributes (1.8+) or legacy message events.
 
         The translated events are then stripped so the ingester doesn't render
         them twice.
         """
         tspan.set_kind("llm")
 
-        prompt: list[dict] = []
-        completion: list[dict] = []
+        prompt = build_messages_from_gen_ai(
+            tspan.attributes.get("gen_ai.input.messages")
+        )
+        completion = build_messages_from_gen_ai(
+            tspan.attributes.get("gen_ai.output.messages")
+        )
+        instructions = build_system_messages_from_gen_ai(
+            tspan.attributes.get("gen_ai.system_instructions")
+        )
+        legacy_prompt: list[dict] = []
+        legacy_completion: list[dict] = []
         for event in tspan.events:
             if event.name == _LLM_CHOICE_EVENT:
-                completion.append(build_message_from_event("assistant", event))
+                legacy_completion.append(build_message_from_event("assistant", event))
             elif (role := _LLM_EVENT_ROLES.get(event.name)) is not None:
-                prompt.append(build_message_from_event(role, event))
-        tspan.set_messages(prompt=prompt or None, completion=completion or None)
+                if instructions is None or role != "system":
+                    legacy_prompt.append(build_message_from_event(role, event))
+        if prompt is None:
+            prompt = legacy_prompt or None
+        if instructions is not None:
+            prompt = instructions + (prompt or [])
+        if completion is None:
+            completion = legacy_completion or None
+        tspan.set_messages(prompt=prompt, completion=completion)
 
         provider = extract_provider_from_lk_metrics(
             tspan.attributes.get("lk.llm_metrics")
@@ -616,12 +635,13 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         tspan.set_kind("llm")
         tspan.exclude_from_message_view()
 
-        text = (
-            tspan.attributes.get("lk.input_text")
-            or tspan.attributes.get("lk.request.text")
-            or tspan.attributes.get("lk.text")
-            or ""
-        )
+        text = get_content_attribute(tspan, "input_text")
+        if text is None:
+            text = get_content_attribute(tspan, "request.text")
+        if text is None:
+            text = get_content_attribute(tspan, "text")
+        if text is None:
+            text = ""
         tspan.set_messages(
             prompt=[build_user_message(str(text))],
             completion=[build_assistant_message(f'Generated audio for: "{text}"')],
@@ -646,8 +666,8 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
             "llm" if "lk.realtime_model_metrics" in tspan.attributes else "chain"
         )
 
-        user_input = tspan.attributes.get("lk.user_input")
-        response = tspan.attributes.get("lk.response.text")
+        user_input = get_content_attribute(tspan, "user_input")
+        response = get_content_attribute(tspan, "response.text")
         trace_id = tspan.span.context.trace_id
         start = tspan.span.start_time
         if user_input:
@@ -735,13 +755,13 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
 
     def _handle_tool(self, tspan: TranslatedSpan) -> None:
         tspan.set_kind("tool")
-        tool_name = tspan.attributes.get("lk.function_tool.name")
+        tool_name = get_content_attribute(tspan, "function_tool.name")
         if tool_name:
             tspan.set_metadata("tool_name", str(tool_name))
-        args = tspan.attributes.get("lk.function_tool.arguments")
+        args = get_content_attribute(tspan, "function_tool.arguments")
         if args is not None:
             tspan.set_tool_input(args)
-        output = tspan.attributes.get("lk.function_tool.output")
+        output = get_content_attribute(tspan, "function_tool.output")
         if output is not None:
             tspan.set_tool_output(output)
 
