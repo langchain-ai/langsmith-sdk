@@ -374,6 +374,13 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
 
     Runs against the raw validator input, so "provided" means the caller passed
     a non-`None` value rather than letting a default fill it in.
+
+    An agent needs both an ID and an environment -- the endpoint defaults
+    neither -- so half a pair is rejected here, at construction, rather than
+    travelling as far as a payload.
+
+    Raises:
+        utils.LangSmithUserError: If only one half of the agent pair is set.
     """
     if any(
         values.get(key) is not None
@@ -383,13 +390,21 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         values["agent_environment"] = None
         return
     agent_id = values.get("agent_id") or utils.get_tracer_agent_id()
-    if not agent_id:
-        # An environment on its own addresses nothing; drop it.
+    agent_environment = (
+        values.get("agent_environment") or utils.get_tracer_agent_environment()
+    )
+    if not agent_id and not agent_environment:
         values["agent_environment"] = None
         return
+    if not agent_id or not agent_environment:
+        raise utils.LangSmithUserError(
+            "An agent-addressed run needs both an agent ID and an agent "
+            f"environment, but got id={agent_id!r} and "
+            f"environment={agent_environment!r}. The environment is not "
+            "defaulted, so a run can't reach `production` without naming it."
+        )
     values["agent_id"] = agent_id
-    if values.get("agent_environment") is None:
-        values["agent_environment"] = utils.get_tracer_agent_environment()
+    values["agent_environment"] = agent_environment
     # Agent-addressed: the backend resolves the project from the agent, so this
     # run carries no project at all.
     values.pop("project_name", None)
@@ -919,8 +934,16 @@ class RunTree(ls_schemas.RunBase):
         """
         if (project_name := replica.get("project_name")) is not None:
             return project_name, None, None
-        if (agent_id := replica.get("agent_id")) is not None:
-            return None, agent_id, replica.get("agent_environment")
+        agent_id = replica.get("agent_id")
+        agent_environment = replica.get("agent_environment")
+        if agent_id is not None or agent_environment is not None:
+            if agent_id is None or agent_environment is None:
+                raise utils.LangSmithUserError(
+                    "A replica addressed by agent needs both `agent_id` and "
+                    f"`agent_environment`, but got id={agent_id!r} and "
+                    f"environment={agent_environment!r}."
+                )
+            return None, agent_id, agent_environment
         return self.session_name, self.agent_id, self.agent_environment
 
     def _replica_groups(self) -> list[_ReplicaGroup]:
@@ -1289,10 +1312,21 @@ class RunTree(ls_schemas.RunBase):
             init_args["tags"] = tags
         if baggage.project_name:
             init_args["project_name"] = baggage.project_name
-        elif baggage.agent_id:
-            # One mode survives the hop, and the project still wins.
+        elif baggage.agent_id and baggage.agent_environment:
+            # One mode survives the hop, and the project still wins. Both
+            # members or neither: a header carrying half a pair is ignored
+            # rather than raised on, since baggage is untrusted input and a
+            # malformed one must not take down the receiving service.
             init_args["agent_id"] = baggage.agent_id
             init_args["agent_environment"] = baggage.agent_environment
+        elif baggage.agent_id or baggage.agent_environment:
+            logger.warning(
+                "Ignoring incomplete agent addressing in a distributed-tracing "
+                "`baggage` header: both %s and %s are required, but only one "
+                "was present.",
+                LANGSMITH_AGENT_ID,
+                LANGSMITH_AGENT_ENVIRONMENT,
+            )
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
@@ -1393,9 +1427,12 @@ class _Baggage:
                             )
                             # A replica has to name a destination, but either
                             # mode counts -- requiring a project would silently
-                            # drop agent-addressed replicas.
+                            # drop agent-addressed replicas. An agent-addressed
+                            # one needs both members, so half a pair is dropped
+                            # here rather than raising downstream.
                             if filtered_replica.get("project_name") or (
                                 filtered_replica.get("agent_id")
+                                and filtered_replica.get("agent_environment")
                             ):
                                 parsed_replicas.append(filtered_replica)
                         else:

@@ -1195,36 +1195,36 @@ def test_create_run_mutate(
 
 
 @pytest.mark.parametrize(
-    ("env_var", "field"),
-    [
-        ("LANGSMITH_AGENT_ENVIRONMENT", "agent_environment"),
-        ("LANGSMITH_AGENT_ID", "agent_id"),
-    ],
-)
-@pytest.mark.parametrize(
-    ("env_value", "explicit_value", "expected"),
+    ("env_pair", "explicit_pair", "expected"),
     [
         (None, None, None),
-        ("from-env", None, "from-env"),
-        # An explicit value wins over the environment variable.
-        ("from-env", "explicit", "explicit"),
-        (None, "explicit", "explicit"),
+        (("env-agent", "env-env"), None, {"id": "env-agent", "environment": "env-env"}),
+        # Explicit values win over the environment variables.
+        (
+            ("env-agent", "env-env"),
+            ("explicit-agent", "explicit-env"),
+            {"id": "explicit-agent", "environment": "explicit-env"},
+        ),
+        (
+            None,
+            ("explicit-agent", "explicit-env"),
+            {"id": "explicit-agent", "environment": "explicit-env"},
+        ),
     ],
 )
 def test_create_run_agent_addressing(
-    env_var: str,
-    field: str,
-    env_value: Optional[str],
-    explicit_value: Optional[str],
-    expected: Optional[str],
+    env_pair: Optional[tuple],
+    explicit_pair: Optional[tuple],
+    expected: Optional[dict],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`LANGSMITH_AGENT_ENVIRONMENT` / `LANGSMITH_AGENT_ID` land on the run."""
-    if env_value is None:
-        monkeypatch.delenv(env_var, raising=False)
-        monkeypatch.delenv(env_var.replace("LANGSMITH_", "LANGCHAIN_"), raising=False)
-    else:
-        monkeypatch.setenv(env_var, env_value)
+    """The agent env vars reach the run as one nested `agent` object."""
+    for var in ("LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"):
+        monkeypatch.delenv(var, raising=False)
+        monkeypatch.delenv(var.replace("LANGSMITH_", "LANGCHAIN_"), raising=False)
+    if env_pair is not None:
+        monkeypatch.setenv("LANGSMITH_AGENT_ID", env_pair[0])
+        monkeypatch.setenv("LANGSMITH_AGENT_ENVIRONMENT", env_pair[1])
     ls_utils.get_env_var.cache_clear()
     ls_utils.get_tracer_agent_environment.cache_clear()
     ls_utils.get_tracer_agent_id.cache_clear()
@@ -1257,8 +1257,9 @@ def test_create_run_agent_addressing(
             datetime.now(timezone.utc), id_
         ),
     )
-    if explicit_value is not None:
-        run_dict[field] = explicit_value
+    if explicit_pair is not None:
+        run_dict["agent_id"] = explicit_pair[0]
+        run_dict["agent_environment"] = explicit_pair[1]
     client.create_run(**run_dict)
 
     for _ in range(10):
@@ -1279,7 +1280,10 @@ def test_create_run_agent_addressing(
         parts.extend(MultipartParser(io.BytesIO(data), boundary).parts())
 
     run_parsed = json.loads(next(p for p in parts if p.name == f"post.{id_}").value)
-    assert run_parsed.get(field) == expected
+    assert run_parsed.get("agent") == expected
+    # The flat fields are an SDK-side convenience; they never hit the wire.
+    assert "agent_id" not in run_parsed
+    assert "agent_environment" not in run_parsed
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -8218,18 +8222,13 @@ def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
             {"session_name": "proj"},
         ),
         (
-            {"session_id": "sid", "agent_id": "a"},
+            {"session_id": "sid", "agent_id": "a", "agent_environment": "e"},
             {"session_id": "sid"},
         ),
-        # No project: the agent addresses it, and the null project keys go.
+        # No project: the agent addresses it, nested, and the null project goes.
         (
             {"session_name": None, "agent_id": "a", "agent_environment": "e"},
-            {"agent_id": "a", "agent_environment": "e"},
-        ),
-        # An environment without an agent addresses nothing.
-        (
-            {"session_name": None, "agent_environment": "e"},
-            {"session_name": None},
+            {"agent": {"id": "a", "environment": "e"}},
         ),
         # Neither mode: left alone for the server-side fallback.
         ({"session_name": None}, {"session_name": None}),
@@ -8256,13 +8255,17 @@ def test_apply_agent_addressing_fills_from_env(
     )
     payload: dict = {"session_name": None}
     Client._apply_agent_addressing(payload)
-    assert payload == {"agent_id": "my-agent", "agent_environment": "staging"}
+    assert payload == {"agent": {"id": "my-agent", "environment": "staging"}}
 
 
 def test_apply_agent_addressing_keeps_explicit_project_over_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+    _clean_agent_env(
+        monkeypatch,
+        LANGSMITH_AGENT_ID="my-agent",
+        LANGSMITH_AGENT_ENVIRONMENT="staging",
+    )
     payload: dict = {"session_name": "explicit"}
     Client._apply_agent_addressing(payload)
     assert payload == {"session_name": "explicit"}
@@ -8322,7 +8325,11 @@ def test_agent_addressed_run_sends_no_project(
     Both parts have to agree -- a patch addressed by project while its post
     went to the agent would land the two halves of one run in two places.
     """
-    _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
+    _clean_agent_env(
+        monkeypatch,
+        LANGSMITH_AGENT_ID="my-agent",
+        LANGSMITH_AGENT_ENVIRONMENT="staging",
+    )
     session = mock.Mock()
     session.request = mock.Mock()
     client = _multipart_client(session)
@@ -8334,7 +8341,10 @@ def test_agent_addressed_run_sends_no_project(
     patch_body = _wait_for_part(session, "patch")
 
     for kind, body in (("post", post_body), ("patch", patch_body)):
-        assert body.get("agent_id") == "my-agent", kind
+        assert body.get("agent") == {
+            "id": "my-agent",
+            "environment": "staging",
+        }, kind
         assert "session_name" not in body, kind
         assert "session_id" not in body, kind
 
@@ -8352,6 +8362,7 @@ def test_project_addressed_run_is_unchanged(
 
     body = _wait_for_part(session, "post")
     assert body.get("session_name") == "default"
+    assert "agent" not in body
     assert "agent_id" not in body
     assert "agent_environment" not in body
 
@@ -8394,3 +8405,46 @@ def test_unambiguous_agent_env_is_accepted(
 ) -> None:
     _clean_agent_env(monkeypatch, **env)
     client_cls(api_url="http://localhost:1984", api_key="123")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"session_name": None, "agent_id": "a"},
+        {"session_name": None, "agent_environment": "e"},
+    ],
+)
+def test_apply_agent_addressing_rejects_half_a_pair(
+    payload: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `production` default, so a partial agent is an error, not a guess."""
+    _clean_agent_env(monkeypatch)
+    with pytest.raises(ls_utils.LangSmithUserError, match="both an agent ID"):
+        Client._apply_agent_addressing(payload)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"agent_id": "a"},
+        {"agent_environment": "e"},
+    ],
+)
+def test_run_tree_rejects_half_an_agent_pair(
+    kwargs: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rejected at construction, before it can reach a payload."""
+    _clean_agent_env(monkeypatch)
+    with pytest.raises(ls_utils.LangSmithUserError, match="both an agent ID"):
+        run_trees.RunTree(name="my_run", **kwargs)
+
+
+def test_run_tree_half_a_pair_is_fine_with_an_explicit_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A project addresses the run, so the agent fields are dropped, not judged."""
+    _clean_agent_env(monkeypatch)
+    run = run_trees.RunTree(name="my_run", project_name="proj", agent_id="a")
+    assert run.session_name == "proj"
+    assert run.agent_id is None
+    assert run.agent_environment is None

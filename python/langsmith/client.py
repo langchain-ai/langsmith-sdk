@@ -2445,29 +2445,39 @@ class Client:
         in and the now-redundant project keys are dropped, so the payload never
         carries both modes (nor a null for the one it isn't using).
 
+        The flat `agent_id` / `agent_environment` the rest of the SDK works in
+        become the wire's nested `agent` object here. Both members are required:
+        the endpoint defaults neither, so a run cannot reach `production` by
+        forgetting to name it.
+
         Applies to creates and updates alike: a `patch.<run_id>` part has to be
         addressed the same way as the `post.<run_id>` it belongs to.
+
+        Raises:
+            LangSmithUserError: If only one half of the agent pair resolves.
         """
+        agent_id = payload.pop("agent_id", None)
+        agent_environment = payload.pop("agent_environment", None)
         if (
             payload.get("session_id") is not None
             or payload.get("session_name") is not None
         ):
-            payload.pop("agent_id", None)
-            payload.pop("agent_environment", None)
             return
-        if payload.get("agent_id") is None:
-            if agent_id := ls_utils.get_tracer_agent_id():
-                payload["agent_id"] = agent_id
-        if payload.get("agent_id") is None:
+        if agent_id is None:
+            agent_id = ls_utils.get_tracer_agent_id()
+        if agent_environment is None:
+            agent_environment = ls_utils.get_tracer_agent_environment()
+        if agent_id is None and agent_environment is None:
             # Neither mode is addressed; leave the server-side fallback to it.
-            payload.pop("agent_id", None)
-            payload.pop("agent_environment", None)
             return
-        if payload.get("agent_environment") is None:
-            if agent_environment := ls_utils.get_tracer_agent_environment():
-                payload["agent_environment"] = agent_environment
-            else:
-                payload.pop("agent_environment", None)
+        if agent_id is None or agent_environment is None:
+            raise ls_utils.LangSmithUserError(
+                "An agent-addressed run needs both an agent ID and an agent "
+                f"environment, but got id={agent_id!r} and "
+                f"environment={agent_environment!r}. The environment is not "
+                "defaulted, so a run can't reach `production` without naming it."
+            )
+        payload["agent"] = {"id": agent_id, "environment": agent_environment}
         payload.pop("session_name", None)
         payload.pop("session_id", None)
 
