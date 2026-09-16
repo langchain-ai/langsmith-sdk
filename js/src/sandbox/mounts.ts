@@ -333,8 +333,9 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
 }
 
 /**
- * Build mount-scoped auth, or use enabled rules from proxyConfig. Pass the same
- * proxyConfig to sandbox creation; its general IAM permissions remain unchanged.
+ * Build mount-scoped auth, or use an enabled AWS rule from proxyConfig for S3.
+ * Pass the same proxyConfig to sandbox creation; its general IAM permissions
+ * remain unchanged. GCS mounts still require explicit GCP auth in this config.
  */
 export function mountConfig({
   auth = [],
@@ -361,11 +362,7 @@ export function mountConfig({
   ) {
     throw new Error("s3 mounts require aws auth in mountConfig");
   }
-  if (
-    mountProviders.has("gcs") &&
-    authByProvider.gcp === undefined &&
-    !proxyProviders.has("gcp")
-  ) {
+  if (mountProviders.has("gcs") && authByProvider.gcp === undefined) {
     throw new Error("gcs mounts require gcp auth in mountConfig");
   }
   if (authByProvider.aws !== undefined && !mountProviders.has("s3")) {

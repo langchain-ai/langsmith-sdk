@@ -11,6 +11,8 @@ from langsmith.sandbox import (
     AWSMountAuthConfig,
     SandboxClient,
     aws_auth,
+    gcp_auth,
+    gcs_mount,
     mount_config,
     opaque_secret,
     proxy_config,
@@ -116,6 +118,56 @@ def test_shared_proxy_role_is_not_copied_into_mount_auth() -> None:
 def test_mounts_still_require_enabled_auth(proxy) -> None:
     with pytest.raises(ValueError, match="s3 mounts require aws auth"):
         mount_config(proxy_config=proxy, mounts=_mounts())
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_gcp_proxy_rule_does_not_supply_gcs_mount_auth(enabled: bool) -> None:
+    proxy = proxy_config(
+        rules=[
+            gcp_auth(
+                service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT"),
+                scopes=["https://www.googleapis.com/auth/devstorage.read_only"],
+                enabled=enabled,
+            )
+        ]
+    )
+    with pytest.raises(ValueError, match="gcs mounts require gcp auth"):
+        mount_config(
+            proxy_config=proxy,
+            mounts=[gcs_mount(id="gcs", mount_path="/mnt/gcs", bucket="test-bucket")],
+        )
+
+
+@pytest.mark.parametrize("shared_aws", [False, True])
+def test_explicit_gcs_mount_auth_with_optional_shared_aws(shared_aws: bool) -> None:
+    secret = workspace_secret("GCP_SERVICE_ACCOUNT")
+    mounts = [gcs_mount(id="gcs", mount_path="/mnt/gcs", bucket="test-bucket")]
+    proxy = None
+    if shared_aws:
+        mounts += _mounts()
+        proxy = proxy_config(rules=[aws_auth(role_arn=ROLE_ARN)])
+    config = mount_config(
+        auth=[gcp_auth(service_account_json=secret)],
+        proxy_config=proxy,
+        mounts=mounts,
+    )
+    assert config["auth"] == {"gcp": {"service_account_json": secret}}
+    assert config["mounts"] == mounts
+
+
+def test_shared_static_aws_auth_is_not_copied_into_mount_auth() -> None:
+    proxy = proxy_config(
+        rules=[
+            aws_auth(
+                access_key_id=workspace_secret("AWS_KEY_ID_REF"),
+                secret_access_key=workspace_secret("AWS_KEY_VALUE_REF"),
+            )
+        ]
+    )
+    assert mount_config(proxy_config=proxy, mounts=_mounts()) == {
+        "auth": {},
+        "mounts": _mounts(),
+    }
 
 
 @pytest.mark.parametrize("mode", ["proxy", "mount", "shared"])

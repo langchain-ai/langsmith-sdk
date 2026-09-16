@@ -437,9 +437,10 @@ def mount_config(
     The returned value is sent as the public ``mount_config`` field. The
     backend expands provider auth into runtime proxy rules.
 
-    Alternatively, pass the same ``proxy_config`` here and to sandbox creation
-    to use its enabled provider rules. Those rules remain general proxy auth;
-    they are not copied into mount-scoped auth or restricted to mount paths.
+    For S3 mounts, pass the same ``proxy_config`` here and to sandbox creation
+    to use its enabled AWS rule. That rule remains general proxy auth; it is
+    not copied into mount-scoped auth or restricted to mount paths. GCS mounts
+    still require explicit GCP authentication in ``auth``.
     """
     normalized_mounts = _normalize_mounts(mounts)
     auth_by_provider = _normalize_mount_auth(auth)
@@ -456,11 +457,7 @@ def mount_config(
         and "aws" not in proxy_providers
     ):
         raise ValueError("s3 mounts require aws auth in mount_config")
-    if (
-        "gcs" in mount_providers
-        and "gcp" not in auth_by_provider
-        and "gcp" not in proxy_providers
-    ):
+    if "gcs" in mount_providers and "gcp" not in auth_by_provider:
         raise ValueError("gcs mounts require gcp auth in mount_config")
     if "aws" in auth_by_provider and "s3" not in mount_providers:
         raise ValueError("aws auth requires at least one s3 mount in mount_config")

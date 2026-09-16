@@ -2,6 +2,8 @@ import { describe, expect, it, jest } from "@jest/globals";
 import {
   SandboxClient,
   awsAuth,
+  gcpAuth,
+  gcsMount,
   mountConfig,
   opaqueSecret,
   proxyConfig,
@@ -11,6 +13,7 @@ import {
 import type {
   CreateSandboxOptions,
   SandboxAwsAuthRule,
+  SandboxMount,
 } from "../sandbox/types.js";
 
 const roleArn = "arn:aws:iam::123456789012:role/SandboxTest";
@@ -133,6 +136,69 @@ describe("sandbox AWS role auth", () => {
     expect(() => mountConfig({ proxyConfig: proxy, mounts: mounts() })).toThrow(
       "s3 mounts require aws auth",
     );
+  });
+
+  it.each([true, false])(
+    "does not use GCP proxy auth for a GCS mount (enabled=%s)",
+    (enabled) => {
+      const proxy = proxyConfig({
+        rules: [
+          gcpAuth({
+            serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT"),
+            scopes: ["https://www.googleapis.com/auth/devstorage.read_only"],
+            enabled,
+          }),
+        ],
+      });
+      expect(() =>
+        mountConfig({
+          proxyConfig: proxy,
+          mounts: [
+            gcsMount({
+              id: "gcs",
+              mountPath: "/mnt/gcs",
+              bucket: "test-bucket",
+            }),
+          ],
+        }),
+      ).toThrow("gcs mounts require gcp auth");
+    },
+  );
+
+  it.each([false, true])(
+    "preserves explicit GCS mount auth (shared AWS=%s)",
+    (sharedAws) => {
+      const secret = workspaceSecret("GCP_SERVICE_ACCOUNT");
+      const allMounts: SandboxMount[] = [
+        gcsMount({ id: "gcs", mountPath: "/mnt/gcs", bucket: "test-bucket" }),
+      ];
+      const proxy = sharedAws
+        ? proxyConfig({ rules: [awsAuth({ roleArn })] })
+        : undefined;
+      if (sharedAws) allMounts.push(...mounts());
+      const config = mountConfig({
+        auth: [gcpAuth({ serviceAccountJson: secret })],
+        proxyConfig: proxy,
+        mounts: allMounts,
+      });
+      expect(config.auth).toEqual({ gcp: { service_account_json: secret } });
+      expect(config.mounts).toEqual(allMounts);
+    },
+  );
+
+  it("does not copy shared static AWS auth into mount auth", () => {
+    const proxy = proxyConfig({
+      rules: [
+        awsAuth({
+          accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
+          secretAccessKey: workspaceSecret("AWS_KEY_VALUE_REF"),
+        }),
+      ],
+    });
+    expect(mountConfig({ proxyConfig: proxy, mounts: mounts() })).toEqual({
+      auth: {},
+      mounts: mounts(),
+    });
   });
 
   it.each(["proxy", "mount", "shared"])(
