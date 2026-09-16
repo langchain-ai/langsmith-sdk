@@ -2442,36 +2442,20 @@ class Client:
         in and the now-redundant project keys are dropped, so the payload never
         carries both modes (nor a null for the one it isn't using).
 
-        The flat `agent_id` / `agent_environment` the rest of the SDK works in
-        become the wire's nested `agent` object here. A nested object already on
-        the payload -- passed by the caller, or left by an earlier pass -- is an
-        explicit choice and outranks the environment, which also makes this
-        idempotent.
-
         Both members are required, but the endpoint is the one that says so:
-        whatever resolved is forwarded, and a partial object comes back as a
-        400 carrying the server's own message. Dropping it instead would route
-        the run to the `default` project, so a typo would quietly succeed in the
+        whatever resolved is forwarded, and a partial pair comes back as a 400
+        carrying the server's own message. Dropping it instead would route the
+        run to the `default` project, so a typo would quietly succeed in the
         wrong place rather than failing.
+
+        The keys read are the keys written, so running this twice re-resolves an
+        explicit value to itself rather than letting the environment replace it.
 
         Applies to creates and updates alike: a `patch.<run_id>` part has to be
         addressed the same way as the `post.<run_id>` it belongs to.
         """
         agent_id = payload.pop("agent_id", None)
         agent_environment = payload.pop("agent_environment", None)
-        # A caller can address a run with the nested object directly, and a
-        # payload that has already been through here carries one. Either way it
-        # is an explicit choice, so read it before the environment gets a say.
-        existing = payload.pop("agent", None)
-        if existing is not None and not isinstance(existing, dict):
-            # Not ours to interpret; the endpoint rejects a non-object `agent`.
-            payload["agent"] = existing
-            return
-        if existing:
-            if agent_id is None:
-                agent_id = existing.get("id")
-            if agent_environment is None:
-                agent_environment = existing.get("environment")
         if (
             payload.get("session_id") is not None
             or payload.get("session_name") is not None
@@ -2484,12 +2468,10 @@ class Client:
         if agent_id is None and agent_environment is None:
             # Neither mode is addressed; leave the server-side fallback to it.
             return
-        agent = {}
         if agent_id is not None:
-            agent["id"] = agent_id
+            payload["agent_id"] = agent_id
         if agent_environment is not None:
-            agent["environment"] = agent_environment
-        payload["agent"] = agent
+            payload["agent_environment"] = agent_environment
         payload.pop("session_name", None)
         payload.pop("session_id", None)
 
