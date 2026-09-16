@@ -200,6 +200,10 @@ def _exclude_inputs_on_patch() -> bool:
     return True if env is None else utils.is_truish(env)
 
 
+# Every way a caller can name a project. The agent-conflict check and the
+# `baggage` guard both key off this, so they cannot drift apart.
+_PROJECT_ADDRESSING_KEYS = ("project_name", "session_name", "project_id", "session_id")
+
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
 LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
@@ -386,7 +390,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     named_project = next(
         (
             values[key]
-            for key in ("project_name", "session_name", "project_id", "session_id")
+            for key in _PROJECT_ADDRESSING_KEYS
             if values.get(key) is not None
         ),
         None,
@@ -1326,10 +1330,10 @@ class RunTree(ls_schemas.RunBase):
             init_args["tags"] = tags
         if baggage.project_name:
             init_args["project_name"] = baggage.project_name
-        elif init_args.get("project_name") or init_args.get("session_name"):
-            # The caller named a project, so ignore any agent the header
-            # carries. Injecting it would conflict with that project, and
-            # untrusted input must never raise.
+        elif any(init_args.get(key) is not None for key in _PROJECT_ADDRESSING_KEYS):
+            # The caller named a project -- by name or by ID -- so ignore any
+            # agent the header carries. Injecting it would conflict with that
+            # project, and untrusted input must never raise.
             pass
         elif baggage.agent_id and baggage.agent_environment:
             # One mode survives the hop, and a baggage project takes

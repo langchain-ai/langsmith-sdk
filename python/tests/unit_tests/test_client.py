@@ -8616,6 +8616,30 @@ class TestRemoteInputNeverRaises:
         assert child.session_name == "p-caller"
         assert child.agent_id is None
 
+    @pytest.mark.parametrize(
+        "caller_kwargs",
+        [
+            {"project_name": "p-caller"},
+            # A receiver may select its project by ID rather than by name, and
+            # the conflict check treats every one of these as a named project.
+            {"project_id": uuid.UUID(int=7)},
+            {"session_id": uuid.UUID(int=7)},
+        ],
+    )
+    def test_a_baggage_agent_is_ignored_however_the_caller_named_its_project(
+        self, caller_kwargs: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch)
+        headers = dict(run_trees.RunTree(name="p", project_name="p-local").to_headers())
+        headers["baggage"] = (
+            f"{run_trees.LANGSMITH_AGENT_ID}=remote,"
+            f"{run_trees.LANGSMITH_AGENT_ENVIRONMENT}=prod"
+        )
+        child = run_trees.RunTree.from_headers(headers, name="c", **caller_kwargs)
+        assert child is not None
+        assert child.agent_id is None
+        assert child.agent_environment is None
+
     def test_a_baggage_replica_naming_both_is_normalized(self) -> None:
         """Otherwise a header could make the receiving service raise."""
         replicas = json.dumps(
