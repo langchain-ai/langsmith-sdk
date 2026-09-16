@@ -607,7 +607,15 @@ class AsyncClient:
         revision_id: Optional[ls_client.ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
-        """Create a run."""
+        """Create a run.
+
+        !!! warning "Experimental"
+            `agent_id` / `agent_environment` address the run to an agent
+            instead of a project. Agent addressing is in beta and enabled per
+            workspace; a workspace without it rejects the run, so the trace is
+            lost rather than falling back to a project. Both may change
+            without notice.
+        """
         ls_client._reject_conflicting_addressing(
             project=project_name or kwargs.get("session_name"),
             session_id=kwargs.get("session_id"),

@@ -187,13 +187,19 @@ def tracing_context(
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
 
+    !!! warning "Experimental"
+        `agent_id` / `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the runs, so
+        tracing is lost rather than falling back to a project. Both may change
+        without notice.
+
     Args:
         project_name: The name of the project to log the run to.
-        agent_id: The agent to log the run to, instead of a project. Ignored
-            when a project is set here or on the run itself -- an explicit
-            project always wins. Defaults to `LANGSMITH_AGENT_ID`.
-        agent_environment: Narrows `agent_id`; meaningless without it.
-            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent_id: (experimental) The agent to log the run to, instead of a
+            project. Cannot be combined with a project in the same call.
+            Defaults to `LANGSMITH_AGENT_ID`.
+        agent_environment: (experimental) Narrows `agent_id`; meaningless
+            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.

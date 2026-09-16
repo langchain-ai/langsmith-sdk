@@ -2626,6 +2626,15 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
+            agent_id (Optional[str]): (experimental) Address the run to an
+                agent instead of a project. Cannot be combined with
+                `project_name` / `session_id` in the same call. Defaults to
+                `LANGSMITH_AGENT_ID`. Agent addressing is in beta and enabled
+                per workspace; a workspace without it rejects the run, so the
+                trace is lost rather than falling back to a project.
+            agent_environment (Optional[str]): (experimental) Narrows
+                `agent_id`; required alongside it. Defaults to
+                `LANGSMITH_AGENT_ENVIRONMENT`.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
