@@ -316,6 +316,8 @@ class ItemsResource(SyncAPIResource):
         *,
         status: str,
         end_time: str | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
         start_time: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -324,16 +326,23 @@ class ItemsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ItemRetrieveCountResponse:
-        """
-        Returns the number of annotation queue items for the requested reviewer-specific
-        or archived bucket.
+        """Returns the number of annotation queue items in one status bucket.
+
+        The two time
+        windows are independent: start_time/end_time bound when an item was archived,
+        min_start_time/max_start_time bound when its trace ran. Items with no trace
+        start time are excluded when either of the latter is set.
 
         Args:
           status: Count bucket: all, needs_my_review, needs_others_review, or archived.
 
-          end_time: Exclusive upper bound for archived item timestamp
+          end_time: Archived strictly before this time. Only used when status=archived
 
-          start_time: Exclusive lower bound for archived item timestamp
+          max_start_time: Trace started at or before this time
+
+          min_start_time: Trace started at or after this time
+
+          start_time: Archived strictly after this time. Only used when status=archived
 
           extra_headers: Send extra headers
 
@@ -356,6 +365,8 @@ class ItemsResource(SyncAPIResource):
                     {
                         "status": status,
                         "end_time": end_time,
+                        "max_start_time": max_start_time,
+                        "min_start_time": min_start_time,
                         "start_time": start_time,
                     },
                     item_retrieve_count_params.ItemRetrieveCountParams,
@@ -686,6 +697,8 @@ class AsyncItemsResource(AsyncAPIResource):
         *,
         status: str,
         end_time: str | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
         start_time: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -694,16 +707,23 @@ class AsyncItemsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ItemRetrieveCountResponse:
-        """
-        Returns the number of annotation queue items for the requested reviewer-specific
-        or archived bucket.
+        """Returns the number of annotation queue items in one status bucket.
+
+        The two time
+        windows are independent: start_time/end_time bound when an item was archived,
+        min_start_time/max_start_time bound when its trace ran. Items with no trace
+        start time are excluded when either of the latter is set.
 
         Args:
           status: Count bucket: all, needs_my_review, needs_others_review, or archived.
 
-          end_time: Exclusive upper bound for archived item timestamp
+          end_time: Archived strictly before this time. Only used when status=archived
 
-          start_time: Exclusive lower bound for archived item timestamp
+          max_start_time: Trace started at or before this time
+
+          min_start_time: Trace started at or after this time
+
+          start_time: Archived strictly after this time. Only used when status=archived
 
           extra_headers: Send extra headers
 
@@ -726,6 +746,8 @@ class AsyncItemsResource(AsyncAPIResource):
                     {
                         "status": status,
                         "end_time": end_time,
+                        "max_start_time": max_start_time,
+                        "min_start_time": min_start_time,
                         "start_time": start_time,
                     },
                     item_retrieve_count_params.ItemRetrieveCountParams,
