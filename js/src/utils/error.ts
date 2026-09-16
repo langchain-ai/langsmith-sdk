@@ -144,9 +144,6 @@ export async function raiseForStatus(
     return;
   }
 
-  // The body is a single-use stream, so read it exactly once and parse from
-  // the text. Reading it twice yields "" on the second read, which used to
-  // discard the reason the server sent with a 403.
   try {
     errorBody = await response.text();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
