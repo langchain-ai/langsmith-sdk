@@ -204,7 +204,13 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
    * Sort field
    */
   sort_by?:
-    'default' | 'created_at' | 'updated_at' | 'last_seen' | 'last_updated' | 'trace_count' | 'severity';
+    | 'default'
+    | 'created_at'
+    | 'updated_at'
+    | 'last_seen'
+    | 'last_updated'
+    | 'trace_count'
+    | 'severity';
 
   /**
    * Filter by status
