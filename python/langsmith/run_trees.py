@@ -66,13 +66,7 @@ class WriteReplica(TypedDict, total=False):
     auth: AuthHeaders
     project_name: Optional[str]
     agent_id: Optional[str]
-    """Route this replica to an agent instead of a project.
-
-    Ignored when `project_name` is set on the same replica: as everywhere else,
-    an explicit project wins over agent addressing.
-    """
     agent_environment: Optional[str]
-    """Narrows `agent_id`; meaningless without it."""
     primary: bool
     """Whether this replica keeps the original run IDs.
 
