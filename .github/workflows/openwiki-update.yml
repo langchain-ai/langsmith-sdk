@@ -94,7 +94,10 @@ jobs:
             gh pr create --base "$BASE" --head "$BRANCH" \
               --title "docs: update OpenWiki" --body "$body"
           else
-            echo "PR for $BRANCH already open; pushed updated commit."
+            # The body states the run outcome, so refresh it: a partial run
+            # after a clean one must not keep advertising "success".
+            gh pr edit "$BRANCH" --body "$body"
+            echo "PR for $BRANCH already open; pushed updated commit and refreshed its body."
           fi
 
       - name: Propagate OpenWiki failure
