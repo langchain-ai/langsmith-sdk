@@ -375,12 +375,11 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     Runs against the raw validator input, so "provided" means the caller passed
     a non-`None` value rather than letting a default fill it in.
 
-    An agent needs both an ID and an environment -- the endpoint defaults
-    neither -- so half a pair is rejected here, at construction, rather than
-    travelling as far as a payload.
-
-    Raises:
-        utils.LangSmithUserError: If only one half of the agent pair is set.
+    An agent needs both an ID and an environment, but the endpoint is the one
+    that enforces it: half a pair travels as far as the payload and comes back
+    as a 400 rather than being judged here. A per-call value can complete a
+    half set in the environment, so there is no point at which the SDK knows
+    the pair is incomplete before it sends it.
     """
     if any(
         values.get(key) is not None
@@ -396,13 +395,6 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     if not agent_id and not agent_environment:
         values["agent_environment"] = None
         return
-    if not agent_id or not agent_environment:
-        raise utils.LangSmithUserError(
-            "An agent-addressed run needs both an agent ID and an agent "
-            f"environment, but got id={agent_id!r} and "
-            f"environment={agent_environment!r}. The environment is not "
-            "defaulted, so a run can't reach `production` without naming it."
-        )
     values["agent_id"] = agent_id
     values["agent_environment"] = agent_environment
     # Agent-addressed: the backend resolves the project from the agent, so this
@@ -937,12 +929,6 @@ class RunTree(ls_schemas.RunBase):
         agent_id = replica.get("agent_id")
         agent_environment = replica.get("agent_environment")
         if agent_id is not None or agent_environment is not None:
-            if agent_id is None or agent_environment is None:
-                raise utils.LangSmithUserError(
-                    "A replica addressed by agent needs both `agent_id` and "
-                    f"`agent_environment`, but got id={agent_id!r} and "
-                    f"environment={agent_environment!r}."
-                )
             return None, agent_id, agent_environment
         return self.session_name, self.agent_id, self.agent_environment
 

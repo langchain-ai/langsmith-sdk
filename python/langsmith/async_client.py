@@ -212,7 +212,6 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
-        ls_utils.validate_agent_addressing_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
