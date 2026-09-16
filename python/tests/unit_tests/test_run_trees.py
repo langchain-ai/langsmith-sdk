@@ -981,16 +981,15 @@ class TestRunTreeAgentAddressing:
 class TestReplicaAgentAddressing:
     """Addressing precedence applies per replica."""
 
-    def test_replica_project_beats_replica_agent(
+    def test_a_replica_naming_both_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
+        """One replica, one destination: naming both is a contradiction."""
         _agent_env(monkeypatch)
         _reset_agent_addressing_cache()
         run = RunTree(name="foo", ls_client=_get_mock_client())
-        project, agent_id, agent_environment = run._replica_addressing(
-            {"project_name": "proj", "agent_id": "ignored"}
-        )
-        assert (project, agent_id, agent_environment) == ("proj", None, None)
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            run._replica_addressing({"project_name": "proj", "agent_id": "a"})
 
     def test_replica_agent_is_used_when_it_names_no_project(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache

@@ -770,6 +770,38 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
+def _reject_conflicting_addressing(
+    *,
+    project: Optional[Any] = None,
+    session_id: Optional[Any] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
+) -> None:
+    """Reject a call that names both a project and an agent.
+
+    A run goes to one or the other, and the endpoint never sees this particular
+    conflict: resolution drops the agent before the payload is built, so without
+    this the agent would be discarded in silence. Every other rejection is left
+    to the endpoint, which can see what it is sent.
+
+    Pass only values the caller supplied in this call. An agent that came from
+    the environment alongside an explicit project is not a conflict -- the
+    project wins and the agent is dropped, which is what lets an evaluation set
+    its own project while `LANGSMITH_AGENT_ID` is set process-wide.
+
+    Raises:
+        LangSmithUserError: If a project and an agent are both named.
+    """
+    named_project = project if project is not None else session_id
+    named_agent = agent_id if agent_id is not None else agent_environment
+    if named_project is not None and named_agent is not None:
+        raise ls_utils.LangSmithUserError(
+            f"A run is addressed by project ({named_project!r}) or by agent "
+            f"({named_agent!r}), not both. Pass one of them, or set "
+            "LANGSMITH_AGENT_ID and leave the project off the call."
+        )
+
+
 def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
     """Raise on SmithDB-only deployments, warn elsewhere.
 
@@ -2662,6 +2694,12 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
+        _reject_conflicting_addressing(
+            project=project_name or kwargs.get("session_name"),
+            session_id=kwargs.get("session_id"),
+            agent_id=kwargs.get("agent_id"),
+            agent_environment=kwargs.get("agent_environment"),
+        )
         if project_name:
             pass
         elif "session_name" in kwargs:

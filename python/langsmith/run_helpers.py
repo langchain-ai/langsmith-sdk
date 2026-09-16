@@ -216,6 +216,11 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
+    ls_client._reject_conflicting_addressing(
+        project=project_name,
+        agent_id=agent_id,
+        agent_environment=agent_environment,
+    )
     current_context = get_tracing_context()
     parent_run = (
         _get_parent_run(

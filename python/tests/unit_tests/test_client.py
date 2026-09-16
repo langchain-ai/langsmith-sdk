@@ -15,6 +15,7 @@ import ssl
 import sys
 import threading
 import time
+import urllib.parse
 import uuid
 import warnings
 import weakref
@@ -47,6 +48,7 @@ from requests import HTTPError
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
+from langsmith import run_helpers as rh
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import (
@@ -8446,15 +8448,13 @@ def test_env_environment_plus_explicit_agent_id(
     assert "session_name" not in payload
 
 
-def test_run_tree_half_a_pair_is_fine_with_an_explicit_project(
+def test_run_tree_rejects_half_a_pair_beside_an_explicit_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A project addresses the run, so the agent fields are dropped, not judged."""
+    """Still two destinations named in one call, even with the pair incomplete."""
     _clean_agent_env(monkeypatch)
-    run = run_trees.RunTree(name="my_run", project_name="proj", agent_id="a")
-    assert run.session_name == "proj"
-    assert run.agent_id is None
-    assert run.agent_environment is None
+    with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+        run_trees.RunTree(name="my_run", project_name="proj", agent_id="a")
 
 
 def test_replica_addressing_forwards_half_a_pair(
@@ -8513,3 +8513,121 @@ class TestExplicitAgentBeatsAmbient:
         }
         Client._apply_agent_addressing(payload)
         assert payload == {"session_name": "proj"}
+
+
+class TestConflictingAddressingRaises:
+    """Naming a project and an agent in one call is the SDK's one rejection.
+
+    Resolution drops the agent before the payload is built, so the endpoint
+    never sees this conflict and cannot report it.
+    """
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"project_name": "p", "agent_id": "a", "agent_environment": "e"},
+            {"project_name": "p", "agent_id": "a"},
+            {"project_name": "p", "agent_environment": "e"},
+            {"project_id": uuid.UUID(int=1), "agent_id": "a"},
+        ],
+    )
+    def test_run_tree_rejects_it(
+        self, kwargs: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch)
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            run_trees.RunTree(name="r", **kwargs)
+
+    def test_create_run_rejects_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_env(monkeypatch)
+        client = Client(api_url="http://localhost:1984", api_key="123")
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            client.create_run(
+                name="r",
+                inputs={},
+                run_type="llm",
+                project_name="p",
+                agent_id="a",
+                agent_environment="e",
+            )
+
+    def test_tracing_context_rejects_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_env(monkeypatch)
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            with rh.tracing_context(project_name="p", agent_id="a"):
+                pass
+
+    def test_a_replica_naming_both_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch)
+        run = run_trees.RunTree(name="r")
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            run._replica_addressing({"project_name": "p", "agent_id": "a"})
+
+    def test_an_env_agent_beside_an_explicit_project_is_not_a_conflict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """What keeps evaluations working: they set their own project.
+
+        `_arunner` passes `project_name=experiment_name`, so raising here would
+        break every experiment run in a process with the agent env var set.
+        """
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="ambient",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        run = run_trees.RunTree(name="r", project_name="experiment-1")
+        assert run.session_name == "experiment-1"
+        assert run.agent_id is None
+
+    def test_a_child_of_an_explicit_project_parent_is_not_a_conflict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`create_child` forwards both fields, but one is always None."""
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="ambient",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        parent = run_trees.RunTree(name="p", project_name="p-explicit")
+        child = parent.create_child(name="c")
+        assert child.session_name == "p-explicit"
+        assert child.agent_id is None
+
+
+class TestRemoteInputNeverRaises:
+    """A `baggage` header is attacker-settable, so it is ignored, never raised on."""
+
+    def test_a_baggage_agent_beside_a_caller_project_is_ignored(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch)
+        headers = dict(run_trees.RunTree(name="p", project_name="p-local").to_headers())
+        headers["baggage"] = (
+            f"{run_trees.LANGSMITH_AGENT_ID}=remote,"
+            f"{run_trees.LANGSMITH_AGENT_ENVIRONMENT}=prod"
+        )
+        child = run_trees.RunTree.from_headers(
+            headers, name="c", project_name="p-caller"
+        )
+        assert child is not None
+        assert child.session_name == "p-caller"
+        assert child.agent_id is None
+
+    def test_a_baggage_replica_naming_both_is_normalized(self) -> None:
+        """Otherwise a header could make the receiving service raise."""
+        replicas = json.dumps(
+            [
+                {
+                    "project_name": "p-remote",
+                    "agent_id": "ag-remote",
+                    "agent_environment": "prod",
+                }
+            ]
+        )
+        parsed = run_trees._Baggage.from_header(
+            f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas)}"
+        )
+        assert parsed.replicas == [{"project_name": "p-remote"}]
