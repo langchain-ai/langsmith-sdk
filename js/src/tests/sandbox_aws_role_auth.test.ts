@@ -13,8 +13,12 @@ import {
 import type {
   CreateSandboxOptions,
   SandboxAwsAuthRule,
+  SandboxAwsMountAuthConfig,
   SandboxMount,
-} from "../sandbox/types.js";
+  SandboxMountAuthConfig,
+} from "../sandbox/index.js";
+
+import type * as SandboxTypes from "../sandbox/index.js";
 
 const roleArn = "arn:aws:iam::123456789012:role/SandboxTest";
 const mounts = () => [
@@ -29,10 +33,22 @@ function checkAuthAlternatives() {
   const roleRule = awsAuth({ roleArn });
   const keyValue: string = staticRule.aws.access_key_id.value;
   const roleValue: string = roleRule.aws.role_arn;
+  const staticMountAuth: SandboxAwsMountAuthConfig = staticRule.aws;
+  const staticMountKey: string = staticMountAuth.access_key_id.value;
+  const roleMountAuth: SandboxMountAuthConfig = { aws: roleRule.aws };
+  // @ts-expect-error static auth variants are not new public SDK types
+  const privateStatic: SandboxTypes.SandboxAwsStaticAuthConfig = staticRule.aws;
+  // @ts-expect-error role auth variants are not new public SDK types
+  const privateRole: SandboxTypes.SandboxAwsRoleAuthConfig = roleRule.aws;
+  // @ts-expect-error mount roles do not need a separate public auth type
+  const privateMountRole: SandboxTypes.SandboxAwsMountRoleAuthConfig =
+    roleRule.aws;
   // @ts-expect-error role and static alternatives are exclusive
   awsAuth({ roleArn, accessKeyId: key, secretAccessKey: secret });
   // @ts-expect-error static auth requires both keys
   awsAuth({ accessKeyId: key });
+  // @ts-expect-error static auth requires both keys
+  awsAuth({ secretAccessKey: secret });
   // @ts-expect-error an authentication alternative is required
   awsAuth({});
   const mixed: SandboxAwsAuthRule = {
@@ -41,7 +57,33 @@ function checkAuthAlternatives() {
     // @ts-expect-error raw AWS rules also require exclusive alternatives
     aws: { role_arn: roleArn, access_key_id: key, secret_access_key: secret },
   };
-  void [keyValue, roleValue, mixed];
+  const empty: SandboxAwsAuthRule = {
+    name: "bad",
+    type: "aws",
+    // @ts-expect-error raw AWS rules require an authentication alternative
+    aws: {},
+  };
+  const partial: SandboxMountAuthConfig = {
+    // @ts-expect-error raw mount auth requires both static keys
+    aws: { access_key_id: key },
+  };
+  const mixedMount: SandboxMountAuthConfig = {
+    // @ts-expect-error raw mount auth requires exclusive alternatives
+    aws: { role_arn: roleArn, access_key_id: key, secret_access_key: secret },
+  };
+  void [
+    keyValue,
+    roleValue,
+    staticMountKey,
+    roleMountAuth,
+    privateStatic,
+    privateRole,
+    privateMountRole,
+    mixed,
+    empty,
+    partial,
+    mixedMount,
+  ];
 }
 void checkAuthAlternatives;
 

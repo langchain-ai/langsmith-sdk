@@ -280,14 +280,14 @@ export interface SandboxProxySecret {
 }
 
 /** Static credentials used by the sandbox proxy signer. */
-export interface SandboxAwsStaticAuthConfig {
+interface AwsStaticAuthConfig {
   access_key_id: SandboxProxySecret;
   secret_access_key: SandboxProxySecret;
   role_arn?: "";
 }
 
 /** IAM role assumed and renewed by LangSmith, outside the sandbox. */
-export interface SandboxAwsRoleAuthConfig {
+interface AwsRoleAuthConfig {
   role_arn: string;
   access_key_id?: never;
   secret_access_key?: never;
@@ -295,9 +295,9 @@ export interface SandboxAwsRoleAuthConfig {
 
 /** AWS auth rule for sandbox proxy SigV4 signing. */
 export interface SandboxAwsAuthRule<
-  Auth extends SandboxAwsStaticAuthConfig | SandboxAwsRoleAuthConfig =
-    | SandboxAwsStaticAuthConfig
-    | SandboxAwsRoleAuthConfig,
+  Auth extends AwsStaticAuthConfig | AwsRoleAuthConfig =
+    | AwsStaticAuthConfig
+    | AwsRoleAuthConfig,
 > {
   /** Rule name. */
   name: string;
@@ -485,9 +485,6 @@ export interface SandboxAwsMountAuthConfig {
   role_arn?: "";
 }
 
-/** IAM role restricted by the backend to this sandbox's S3 mount scopes. */
-export type SandboxAwsMountRoleAuthConfig = SandboxAwsRoleAuthConfig;
-
 /** GCP credentials used by the backend to authenticate GCS mounts. */
 export interface SandboxGcpMountAuthConfig {
   service_account_json: SandboxProxySecret;
@@ -495,7 +492,8 @@ export interface SandboxGcpMountAuthConfig {
 
 /** Provider auth blocks for sandbox mounts. */
 export interface SandboxMountAuthConfig {
-  aws?: SandboxAwsMountAuthConfig | SandboxAwsMountRoleAuthConfig;
+  /** IAM roles here are restricted to this sandbox's S3 mount scopes. */
+  aws?: SandboxAwsMountAuthConfig | AwsRoleAuthConfig;
   gcp?: SandboxGcpMountAuthConfig;
 }
 

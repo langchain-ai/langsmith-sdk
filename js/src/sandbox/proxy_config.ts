@@ -1,8 +1,6 @@
 import type {
   SandboxAccessControl,
   SandboxAwsAuthRule,
-  SandboxAwsRoleAuthConfig,
-  SandboxAwsStaticAuthConfig,
   SandboxGcpAuthRule,
   SandboxProxyConfig,
   SandboxProxyRule,
@@ -148,6 +146,16 @@ interface AwsAuthCommonOptions {
   envVars?: Record<string, string>;
 }
 
+type AwsStaticAuthConfig = Extract<
+  SandboxAwsAuthRule["aws"],
+  { access_key_id: SandboxProxySecret }
+>;
+
+type AwsRoleAuthConfig = Extract<
+  SandboxAwsAuthRule["aws"],
+  { role_arn: string }
+>;
+
 type AwsStaticAuthOptions = AwsAuthCommonOptions & {
   accessKeyId: SandboxProxySecret;
   secretAccessKey: SandboxProxySecret;
@@ -169,10 +177,10 @@ type AwsRoleAuthOptions = AwsAuthCommonOptions & {
  */
 export function awsAuth(
   options: AwsStaticAuthOptions,
-): SandboxAwsAuthRule<SandboxAwsStaticAuthConfig>;
+): SandboxAwsAuthRule<AwsStaticAuthConfig>;
 export function awsAuth(
   options: AwsRoleAuthOptions,
-): SandboxAwsAuthRule<SandboxAwsRoleAuthConfig>;
+): SandboxAwsAuthRule<AwsRoleAuthConfig>;
 export function awsAuth(
   options: AwsStaticAuthOptions | AwsRoleAuthOptions,
 ): SandboxAwsAuthRule;
