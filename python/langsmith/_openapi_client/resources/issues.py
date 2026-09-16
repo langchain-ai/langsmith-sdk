@@ -30,6 +30,8 @@ class IssuesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return IssuesResourceWithRawResponse(self)
 
@@ -37,6 +39,8 @@ class IssuesResource(SyncAPIResource):
     def with_streaming_response(self) -> IssuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return IssuesResourceWithStreamingResponse(self)
 
@@ -187,6 +191,8 @@ class AsyncIssuesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncIssuesResourceWithRawResponse(self)
 
@@ -194,6 +200,8 @@ class AsyncIssuesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncIssuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncIssuesResourceWithStreamingResponse(self)
 

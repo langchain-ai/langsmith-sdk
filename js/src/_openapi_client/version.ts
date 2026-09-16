@@ -1,2 +1,2 @@
 // @ts-nocheck
-export const VERSION = '0.0.1';
+export const VERSION = '0.0.1'; // x-release-please-version

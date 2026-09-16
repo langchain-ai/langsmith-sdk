@@ -27,6 +27,8 @@ class ShareResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return ShareResourceWithRawResponse(self)
 
@@ -34,6 +36,8 @@ class ShareResource(SyncAPIResource):
     def with_streaming_response(self) -> ShareResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return ShareResourceWithStreamingResponse(self)
 
@@ -169,6 +173,8 @@ class AsyncShareResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncShareResourceWithRawResponse(self)
 
@@ -176,6 +182,8 @@ class AsyncShareResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncShareResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncShareResourceWithStreamingResponse(self)
 

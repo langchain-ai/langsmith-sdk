@@ -67,6 +67,8 @@ class SandboxesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return SandboxesResourceWithRawResponse(self)
 
@@ -74,6 +76,8 @@ class SandboxesResource(SyncAPIResource):
     def with_streaming_response(self) -> SandboxesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return SandboxesResourceWithStreamingResponse(self)
 
@@ -165,6 +169,8 @@ class AsyncSandboxesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncSandboxesResourceWithRawResponse(self)
 
@@ -172,6 +178,8 @@ class AsyncSandboxesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncSandboxesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncSandboxesResourceWithStreamingResponse(self)
 

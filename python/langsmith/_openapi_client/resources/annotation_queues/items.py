@@ -44,6 +44,8 @@ class ItemsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return ItemsResourceWithRawResponse(self)
 
@@ -51,6 +53,8 @@ class ItemsResource(SyncAPIResource):
     def with_streaming_response(self) -> ItemsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return ItemsResourceWithStreamingResponse(self)
 
@@ -425,6 +429,8 @@ class AsyncItemsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncItemsResourceWithRawResponse(self)
 
@@ -432,6 +438,8 @@ class AsyncItemsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncItemsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncItemsResourceWithStreamingResponse(self)
 

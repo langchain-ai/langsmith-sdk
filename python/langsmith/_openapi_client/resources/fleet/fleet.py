@@ -26,6 +26,8 @@ class FleetResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return FleetResourceWithRawResponse(self)
 
@@ -33,6 +35,8 @@ class FleetResource(SyncAPIResource):
     def with_streaming_response(self) -> FleetResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return FleetResourceWithStreamingResponse(self)
 
@@ -47,6 +51,8 @@ class AsyncFleetResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncFleetResourceWithRawResponse(self)
 
@@ -54,6 +60,8 @@ class AsyncFleetResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncFleetResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncFleetResourceWithStreamingResponse(self)
 
