@@ -104,14 +104,16 @@ class LangSmithProjectNameTest(unittest.TestCase):
     [
         ({}, None),
         ({"LANGSMITH": "from-langsmith"}, "from-langsmith"),
-        ({"LANGCHAIN": "from-langchain"}, "from-langchain"),
-        # LANGSMITH_ takes precedence over the legacy LANGCHAIN_ namespace.
+        # The agent variables are LANGSMITH_-only: the legacy LANGCHAIN_
+        # namespace is not taking new members, so that spelling is not read.
+        ({"LANGCHAIN": "from-langchain"}, None),
         (
             {"LANGSMITH": "from-langsmith", "LANGCHAIN": "from-langchain"},
             "from-langsmith",
         ),
         # Blank is treated as unset, same as every other LangSmith env var.
         ({"LANGSMITH": ""}, None),
+        ({"LANGSMITH": "", "LANGCHAIN": "from-langchain"}, None),
     ],
 )
 def test_get_tracer_agent_env_vars(

@@ -870,9 +870,7 @@ def _agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     """Set up a clean LangSmith env with only `values` present."""
     for name in (
         "LANGSMITH_AGENT_ID",
-        "LANGCHAIN_AGENT_ID",
         "LANGSMITH_AGENT_ENVIRONMENT",
-        "LANGCHAIN_AGENT_ENVIRONMENT",
         "LANGSMITH_PROJECT",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",

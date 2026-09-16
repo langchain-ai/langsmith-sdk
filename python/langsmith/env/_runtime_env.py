@@ -190,12 +190,12 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_TRACING_V2",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
-        # Ingested as the run's `agent_environment` / `agent_id`, so don't
-        # duplicate them here. Neither name matches `_EXCLUDED_SUBSTRINGS`, so
-        # they have to be listed explicitly.
-        "LANGCHAIN_AGENT_ENVIRONMENT",
+        # Ingested as the run's `agent` object, so don't duplicate them here.
+        # Neither name matches `_EXCLUDED_SUBSTRINGS`, so they have to be
+        # listed explicitly. `LANGSMITH_` only -- the agent variables have no
+        # legacy alias, so a `LANGCHAIN_` spelling isn't read and isn't
+        # duplicating anything.
         "LANGSMITH_AGENT_ENVIRONMENT",
-        "LANGCHAIN_AGENT_ID",
         "LANGSMITH_AGENT_ID",
         "LANGSMITH_RUNS_ENDPOINTS",
         # Control-plane signing secrets the substring filter misses; excluded here.

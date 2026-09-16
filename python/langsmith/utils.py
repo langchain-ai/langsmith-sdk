@@ -466,27 +466,29 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 def get_tracer_agent_environment() -> Optional[str]:
     """Get the agent environment for a LangSmith tracer.
 
-    Read from ``LANGSMITH_AGENT_ENVIRONMENT``. Unlike the project, this has no
-    default: when unset the run is ingested without an environment and the
-    server picks one.
+    Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
+    variables there is no legacy ``LANGCHAIN_`` alias: the legacy namespace is
+    not taking new members. There is also no default -- an agent-addressed run
+    must name its environment.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return get_env_var("AGENT_ENVIRONMENT")
+    return get_env_var("AGENT_ENVIRONMENT", namespaces=("LANGSMITH",))
 
 
 @functools.lru_cache(maxsize=1)
 def get_tracer_agent_id() -> Optional[str]:
     """Get the agent ID for a LangSmith tracer.
 
-    Read from ``LANGSMITH_AGENT_ID``. This is an agent identifier, not a
-    credential: the server resolves the agent by this ID and creates one if it
-    doesn't exist yet. Like the environment, it has no default: when unset the
-    run is ingested without an agent ID and addressed by project instead.
+    Read from ``LANGSMITH_AGENT_ID`` only -- there is no legacy ``LANGCHAIN_``
+    alias, since that namespace is not taking new members. This is an agent
+    identifier, not a credential: the server resolves the agent by this ID and
+    creates one if it doesn't exist yet. When unset the run is addressed by
+    project instead.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return get_env_var("AGENT_ID")
+    return get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
 
 
 def validate_agent_addressing_env() -> None:
