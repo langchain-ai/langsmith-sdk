@@ -615,7 +615,7 @@ class AsyncClient:
             and (kwargs.get("agent_id") or ls_utils.get_tracer_agent_id())
         ):
             # Agent-addressed: don't default a project in, or the run would be
-            # addressed twice. An explicit project still wins.
+            # addressed twice. An explicit project takes precedence, below.
             session_name = None
         else:
             session_name = project_name or ls_utils.get_tracer_project()
