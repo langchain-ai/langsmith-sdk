@@ -94,7 +94,7 @@ async def aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
-    trace_evaluators: bool = True,
+    disable_evaluator_tracing: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
 ) -> AsyncExperimentResults:
@@ -133,13 +133,13 @@ async def aevaluate(
             `'log'` will trace the runs with the error message as part of the
             experiment, `'ignore'` will not count the run as part of the experiment at
             all.
-        trace_evaluators (bool, default=True): Whether to trace evaluator
-            invocations to the `evaluators` project in LangSmith.
+        disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+            evaluator invocations to the `evaluators` project in LangSmith.
 
-            Set to `False` to run evaluators without creating evaluator traces.
-            Feedback is still created and attached to the experiment runs, but
-            it won't link to an evaluator run. Tracing of the target itself is
-            unaffected.
+            Set to `True` to run evaluators without creating evaluator traces.
+            Feedback is still created and attached to the experiment runs, but it
+            won't link back to an evaluator run, which also means it can't be
+            corrected from the UI. Tracing of the target itself is unaffected.
 
     Returns:
         An async iterator over the experiment results.
@@ -303,7 +303,7 @@ async def aevaluate(
             max_concurrency=max_concurrency,
             client=client,
             blocking=blocking,
-            trace_evaluators=trace_evaluators,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
     elif isinstance(target, (list, tuple)):
@@ -348,7 +348,7 @@ async def aevaluate(
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
-            trace_evaluators=trace_evaluators,
+            disable_evaluator_tracing=disable_evaluator_tracing,
         )
 
 
@@ -362,7 +362,7 @@ async def aevaluate_existing(
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
-    trace_evaluators: bool = True,
+    disable_evaluator_tracing: bool = False,
 ) -> AsyncExperimentResults:
     r"""Evaluate existing experiment runs asynchronously.
 
@@ -381,8 +381,8 @@ async def aevaluate_existing(
 
             Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
-        trace_evaluators (bool): Whether to trace evaluator invocations to the
-            `evaluators` project in LangSmith. Defaults to `True`.
+        disable_evaluator_tracing (bool): Whether to skip tracing evaluator
+            invocations to the `evaluators` project in LangSmith. Defaults to `False`.
 
     Returns:
         An async iterator over the experiment results.
@@ -481,7 +481,7 @@ async def aevaluate_existing(
         client=client,
         blocking=blocking,
         experiment=project,
-        trace_evaluators=trace_evaluators,
+        disable_evaluator_tracing=disable_evaluator_tracing,
     )
 
 
@@ -500,7 +500,7 @@ async def _aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
-    trace_evaluators: bool = True,
+    disable_evaluator_tracing: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
 ) -> AsyncExperimentResults:
     is_async_target = (
@@ -533,7 +533,7 @@ async def _aevaluate(
         reuse_attachments=num_repetitions * num_include_attachments > 1,
         upload_results=upload_results,
         error_handling=error_handling,
-        trace_evaluators=trace_evaluators,
+        disable_evaluator_tracing=disable_evaluator_tracing,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
     if cache_dir is not None:
@@ -606,8 +606,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             `'log'` will trace the runs with the error message as part of the
             experiment, `'ignore'` will not count the run as part of the experiment at
             all.
-        trace_evaluators (bool, default=True): Whether to trace evaluator
-            invocations to the `evaluators` project.
+        disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+            evaluator invocations to the `evaluators` project.
     """
 
     def __init__(
@@ -628,7 +628,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
-        trace_evaluators: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
     ):
         super().__init__(
@@ -656,7 +656,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
-        self._trace_evaluators = trace_evaluators
+        self._disable_evaluator_tracing = disable_evaluator_tracing
 
     def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
         """Reset attachment readers for an example.
@@ -1022,7 +1022,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "project_name": "evaluators",
                 "metadata": metadata,
                 "enabled": _evaluator_tracing_mode(
-                    self._upload_results, self._trace_evaluators
+                    self._upload_results, self._disable_evaluator_tracing
                 ),
                 "client": self.client,
             }
@@ -1042,7 +1042,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     selected_results = self.client._select_eval_results(
                         evaluator_response
                     )
-                    if not self._trace_evaluators:
+                    if self._disable_evaluator_tracing:
                         evaluator_response = _without_source_run_ids(selected_results)
 
                     if self._upload_results:
@@ -1062,9 +1062,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                                 EvaluationResult(
                                     key=key,
                                     source_run_id=(
-                                        evaluator_run_id
-                                        if self._trace_evaluators
-                                        else None
+                                        None
+                                        if self._disable_evaluator_tracing
+                                        else evaluator_run_id
                                     ),
                                     comment=repr(e),
                                     extra={"error": True},
@@ -1131,7 +1131,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "project_name": "evaluators",
                 "metadata": metadata,
                 "enabled": _evaluator_tracing_mode(
-                    self._upload_results, self._trace_evaluators
+                    self._upload_results, self._disable_evaluator_tracing
                 ),
                 "client": self.client,
             }
@@ -1224,7 +1224,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             "upload_results": self._upload_results,
             "attachment_raw_data_dict": self._attachment_raw_data_dict,
             "error_handling": self._error_handling,
-            "trace_evaluators": self._trace_evaluators,
+            "disable_evaluator_tracing": self._disable_evaluator_tracing,
         }
         full_args = list(args) + list(default_args[len(args) :])
         full_kwargs = {**default_kwargs, **kwargs}
