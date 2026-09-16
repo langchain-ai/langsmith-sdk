@@ -1288,9 +1288,6 @@ class Client:
         self._profile_auth: Optional[_profiles.ProfileAuth] = None
         self._profile_auth_headers: dict[str, str] = {}
 
-        # Fail here rather than per ingest batch, where it's only visible as a
-        # server-side rejection of every run.
-        ls_utils.validate_agent_addressing_env()
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
@@ -2426,15 +2423,16 @@ class Client:
         carries both modes (nor a null for the one it isn't using).
 
         The flat `agent_id` / `agent_environment` the rest of the SDK works in
-        become the wire's nested `agent` object here. Both members are required:
-        the endpoint defaults neither, so a run cannot reach `production` by
-        forgetting to name it.
+        become the wire's nested `agent` object here.
+
+        Both members are required, but the endpoint is the one that says so:
+        whatever resolved is forwarded, and a partial object comes back as a
+        400 carrying the server's own message. Dropping it instead would route
+        the run to the `default` project, so a typo would quietly succeed in the
+        wrong place rather than failing.
 
         Applies to creates and updates alike: a `patch.<run_id>` part has to be
         addressed the same way as the `post.<run_id>` it belongs to.
-
-        Raises:
-            LangSmithUserError: If only one half of the agent pair resolves.
         """
         agent_id = payload.pop("agent_id", None)
         agent_environment = payload.pop("agent_environment", None)
@@ -2450,14 +2448,12 @@ class Client:
         if agent_id is None and agent_environment is None:
             # Neither mode is addressed; leave the server-side fallback to it.
             return
-        if agent_id is None or agent_environment is None:
-            raise ls_utils.LangSmithUserError(
-                "An agent-addressed run needs both an agent ID and an agent "
-                f"environment, but got id={agent_id!r} and "
-                f"environment={agent_environment!r}. The environment is not "
-                "defaulted, so a run can't reach `production` without naming it."
-            )
-        payload["agent"] = {"id": agent_id, "environment": agent_environment}
+        agent = {}
+        if agent_id is not None:
+            agent["id"] = agent_id
+        if agent_environment is not None:
+            agent["environment"] = agent_environment
+        payload["agent"] = agent
         payload.pop("session_name", None)
         payload.pop("session_id", None)
 

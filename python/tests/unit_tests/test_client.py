@@ -8168,72 +8168,79 @@ def test_project_addressed_run_is_unchanged(
 @pytest.mark.parametrize(
     "env",
     [
+        # The endpoint rejects these, not the SDK: at construction there is no
+        # run-level addressing yet, so a per-run value may still complete the
+        # pair. See `test_env_environment_plus_explicit_agent_id`.
         {"LANGSMITH_AGENT_ID": "a", "LANGSMITH_PROJECT": "p"},
         {"LANGSMITH_AGENT_ID": "a", "LANGCHAIN_PROJECT": "p"},
         {"LANGSMITH_AGENT_ID": "a", "LANGCHAIN_SESSION": "p"},
         {"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
-    ],
-)
-def test_ambiguous_agent_env_raises_at_init(
-    client_cls: type,
-    env: dict,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Fail locally, not as a server-side rejection of every ingest batch."""
-    _clean_agent_env(monkeypatch, **env)
-    with pytest.raises(ls_utils.LangSmithUserError):
-        client_cls(api_url="http://localhost:1984", api_key="123")
-
-
-@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
-@pytest.mark.parametrize(
-    "env",
-    [
-        {},
         {"LANGSMITH_AGENT_ID": "a"},
         {"LANGSMITH_AGENT_ID": "a", "LANGSMITH_AGENT_ENVIRONMENT": "staging"},
         {"LANGSMITH_PROJECT": "p"},
+        {},
     ],
 )
-def test_unambiguous_agent_env_is_accepted(
+def test_client_init_never_rejects_agent_env(
     client_cls: type,
     env: dict,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """No agent-addressing validation at client construction."""
     _clean_agent_env(monkeypatch, **env)
     client_cls(api_url="http://localhost:1984", api_key="123")
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "expected_agent"),
     [
-        {"session_name": None, "agent_id": "a"},
-        {"session_name": None, "agent_environment": "e"},
+        ({"session_name": None, "agent_id": "a"}, {"id": "a"}),
+        ({"session_name": None, "agent_environment": "e"}, {"environment": "e"}),
     ],
 )
-def test_apply_agent_addressing_rejects_half_a_pair(
-    payload: dict, monkeypatch: pytest.MonkeyPatch
+def test_apply_agent_addressing_forwards_half_a_pair(
+    payload: dict, expected_agent: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No `production` default, so a partial agent is an error, not a guess."""
+    """A partial object goes out so the endpoint answers it.
+
+    Dropping it would route the run to the `default` project, so a typo would
+    quietly succeed somewhere wrong instead of failing.
+    """
     _clean_agent_env(monkeypatch)
-    with pytest.raises(ls_utils.LangSmithUserError, match="both an agent ID"):
-        Client._apply_agent_addressing(payload)
+    Client._apply_agent_addressing(payload)
+    assert payload == {"agent": expected_agent}
 
 
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"agent_id": "a"},
-        {"agent_environment": "e"},
-    ],
-)
-def test_run_tree_rejects_half_an_agent_pair(
+@pytest.mark.parametrize("kwargs", [{"agent_id": "a"}, {"agent_environment": "e"}])
+def test_run_tree_accepts_half_an_agent_pair(
     kwargs: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Rejected at construction, before it can reach a payload."""
+    """Carried, not judged -- the endpoint owns the both-required rule."""
     _clean_agent_env(monkeypatch)
-    with pytest.raises(ls_utils.LangSmithUserError, match="both an agent ID"):
-        run_trees.RunTree(name="my_run", **kwargs)
+    run = run_trees.RunTree(name="my_run", **kwargs)
+    assert (run.agent_id, run.agent_environment) == (
+        kwargs.get("agent_id"),
+        kwargs.get("agent_environment"),
+    )
+    assert run.session_name is None
+
+
+def test_env_environment_plus_explicit_agent_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The case the old client-init guard broke.
+
+    `LANGSMITH_AGENT_ENVIRONMENT` in the environment plus a per-run `agent_id`
+    is a complete pair, but a constructor-time check couldn't see it and
+    refused to build the client at all.
+    """
+    _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    run = run_trees.RunTree(name="my_run", agent_id="my-agent", ls_client=client)
+    payload = run._get_dicts_safe()
+    Client._apply_agent_addressing(payload)
+    assert payload["agent"] == {"id": "my-agent", "environment": "staging"}
+    assert "session_name" not in payload
 
 
 def test_run_tree_half_a_pair_is_fine_with_an_explicit_project(
@@ -8245,3 +8252,16 @@ def test_run_tree_half_a_pair_is_fine_with_an_explicit_project(
     assert run.session_name == "proj"
     assert run.agent_id is None
     assert run.agent_environment is None
+
+
+def test_replica_addressing_forwards_half_a_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same rule per replica: forwarded, and the endpoint answers."""
+    _clean_agent_env(monkeypatch)
+    run = run_trees.RunTree(name="my_run", replicas=[{"agent_id": "replica-agent"}])
+    assert run._replica_addressing({"agent_id": "replica-agent"}) == (
+        None,
+        "replica-agent",
+        None,
+    )
