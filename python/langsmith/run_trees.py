@@ -60,7 +60,14 @@ class AuthHeaders(TypedDict, total=False):
 
 
 class WriteReplica(TypedDict, total=False):
-    """Configuration for a write replica endpoint."""
+    """Configuration for a write replica endpoint.
+
+    !!! warning "Experimental"
+        `agent_id` and `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the runs, so
+        tracing is lost rather than falling back to a project. Both keys may
+        change without notice.
+    """
 
     api_url: Optional[str]
     api_key: NotRequired[str]
@@ -434,12 +441,23 @@ class RunTree(ls_schemas.RunBase):
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     agent_environment: Optional[str] = Field(
         default_factory=utils.get_tracer_agent_environment,
-        description="The agent environment to ingest this run into.",
+        description=(
+            "Experimental. The agent environment to ingest this run into; "
+            "requires `agent_id`."
+        ),
     )
     agent_id: Optional[str] = Field(
         default_factory=utils.get_tracer_agent_id,
-        description="The ID of the agent to ingest this run into.",
+        description=(
+            "Experimental. The ID of the agent to ingest this run into, "
+            "instead of a project."
+        ),
     )
+    """Agent addressing is in beta and enabled per workspace.
+
+    A workspace without it rejects these runs, so tracing is lost rather than
+    falling back to a project. Both fields may change without notice.
+    """
     extra: dict = Field(default_factory=dict)
     tags: Optional[list[str]] = Field(default_factory=list)
     events: list[dict] = Field(default_factory=list)

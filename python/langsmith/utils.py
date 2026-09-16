@@ -466,6 +466,10 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 def get_tracer_agent_environment() -> Optional[str]:
     """Get the agent environment for a LangSmith tracer.
 
+    Experimental: in beta and enabled per workspace. A workspace without
+    agent addressing rejects the runs, so tracing is lost rather than falling
+    back to a project.
+
     Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
     variables there is no legacy ``LANGCHAIN_`` alias: the legacy namespace is
     not taking new members. There is also no default -- an agent-addressed run
@@ -479,6 +483,10 @@ def get_tracer_agent_environment() -> Optional[str]:
 @functools.lru_cache(maxsize=1)
 def get_tracer_agent_id() -> Optional[str]:
     """Get the agent ID for a LangSmith tracer.
+
+    Experimental: in beta and enabled per workspace. A workspace without
+    agent addressing rejects the runs, so tracing is lost rather than falling
+    back to a project.
 
     Read from ``LANGSMITH_AGENT_ID`` only -- there is no legacy ``LANGCHAIN_``
     alias, since that namespace is not taking new members. This is an agent
