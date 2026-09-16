@@ -2665,15 +2665,15 @@ class Client:
         if project_name:
             pass
         elif "session_name" in kwargs:
-            # Passed through, even as None: callers that say "no project" get
-            # no project, exactly as before.
+            # Passed through, even as None: a caller that says "no project"
+            # gets no project.
             project_name = kwargs.pop("session_name")
         elif kwargs.get("session_id") is None and (
             kwargs.get("agent_id") or ls_utils.get_tracer_agent_id()
         ):
             # Agent-addressed: the backend resolves the project from the agent,
             # so don't default one in -- a project here would address the run
-            # twice. An explicitly provided project still wins, above.
+            # twice. An explicitly provided project takes precedence, above.
             project_name = None
         else:
             # if the project is not provided, use the environment's project

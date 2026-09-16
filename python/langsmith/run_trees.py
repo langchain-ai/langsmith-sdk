@@ -370,7 +370,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     A run is addressed either by project (`session_name` / `session_id`) or by
     agent (`agent_id` / `agent_environment`). An explicitly provided project
     always wins: the agent env vars only replace the project the SDK would
-    otherwise default in, so the legacy path keeps behaving exactly as before.
+    otherwise default in.
 
     Runs against the raw validator input, so "provided" means the caller passed
     a non-`None` value rather than letting a default fill it in.
@@ -1299,10 +1299,11 @@ class RunTree(ls_schemas.RunBase):
         if baggage.project_name:
             init_args["project_name"] = baggage.project_name
         elif baggage.agent_id and baggage.agent_environment:
-            # One mode survives the hop, and the project still wins. Both
-            # members or neither: a header carrying half a pair is ignored
-            # rather than raised on, since baggage is untrusted input and a
-            # malformed one must not take down the receiving service.
+            # One mode survives the hop, and a baggage project takes
+            # precedence over a baggage agent. Both members or neither: a header
+            # carrying half a pair is ignored rather than raised on, since
+            # baggage is untrusted input and a malformed one must not take down
+            # the receiving service.
             init_args["agent_id"] = baggage.agent_id
             init_args["agent_environment"] = baggage.agent_environment
         elif baggage.agent_id or baggage.agent_environment:
