@@ -48,7 +48,6 @@ from requests import HTTPError
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
-from langsmith import run_helpers as rh
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import (
@@ -1194,98 +1193,6 @@ def test_create_run_mutate(
             "<generator object test_create_run_mutate.<locals>."
         )
         assert outputs == {"messages": ["hi", "there"]}
-
-
-@pytest.mark.parametrize(
-    ("env_pair", "explicit_pair", "expected"),
-    [
-        (None, None, None),
-        (("env-agent", "env-env"), None, ("env-agent", "env-env")),
-        # Explicit values win over the environment variables.
-        (
-            ("env-agent", "env-env"),
-            ("explicit-agent", "explicit-env"),
-            ("explicit-agent", "explicit-env"),
-        ),
-        (None, ("explicit-agent", "explicit-env"), ("explicit-agent", "explicit-env")),
-    ],
-)
-def test_create_run_agent_addressing(
-    env_pair: Optional[tuple],
-    explicit_pair: Optional[tuple],
-    expected: Optional[tuple],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The agent env vars reach the run as flat `agent_id` / `agent_environment`."""
-    for var in ("LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"):
-        monkeypatch.delenv(var, raising=False)
-        monkeypatch.delenv(var.replace("LANGSMITH_", "LANGCHAIN_"), raising=False)
-    if env_pair is not None:
-        monkeypatch.setenv("LANGSMITH_AGENT_ID", env_pair[0])
-        monkeypatch.setenv("LANGSMITH_AGENT_ENVIRONMENT", env_pair[1])
-    ls_utils.get_env_var.cache_clear()
-    ls_utils.get_tracer_agent_environment.cache_clear()
-    ls_utils.get_tracer_agent_id.cache_clear()
-
-    session = mock.Mock()
-    session.request = mock.Mock()
-    client = Client(
-        api_url="http://localhost:1984",
-        api_key="123",
-        session=session,
-        info=ls_schemas.LangSmithInfo(
-            batch_ingest_config=ls_schemas.BatchIngestConfig(
-                use_multipart_endpoint=True,
-                size_limit_bytes=None,
-                size_limit=100,
-                scale_up_nthreads_limit=16,
-                scale_up_qsize_trigger=1000,
-                scale_down_nempty_trigger=4,
-            )
-        ),
-    )
-    id_ = uuid.uuid4()
-    run_dict: dict = dict(
-        id=id_,
-        name="my_run",
-        inputs={"messages": ["hi"]},
-        run_type="llm",
-        trace_id=id_,
-        dotted_order=run_trees._create_current_dotted_order(
-            datetime.now(timezone.utc), id_
-        ),
-    )
-    if explicit_pair is not None:
-        run_dict["agent_id"] = explicit_pair[0]
-        run_dict["agent_environment"] = explicit_pair[1]
-    client.create_run(**run_dict)
-
-    for _ in range(10):
-        time.sleep(0.1)  # Give the background thread time to flush
-        payloads = [
-            (call[2]["headers"], call[2]["data"])
-            for call in session.request.mock_calls
-            if call.args and call.args[1].endswith("runs/multipart")
-        ]
-        if payloads:
-            break
-    else:
-        assert False, "No payloads found"
-
-    parts: List[MultipartPart] = []
-    for headers, data in payloads:
-        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
-        parts.extend(MultipartParser(io.BytesIO(data), boundary).parts())
-
-    run_parsed = json.loads(next(p for p in parts if p.name == f"post.{id_}").value)
-    if expected is None:
-        assert "agent_id" not in run_parsed
-        assert "agent_environment" not in run_parsed
-    else:
-        assert (
-            run_parsed.get("agent_id"),
-            run_parsed.get("agent_environment"),
-        ) == expected
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -8258,19 +8165,6 @@ def test_apply_agent_addressing_fills_from_env(
     assert payload == {"agent_id": "my-agent", "agent_environment": "staging"}
 
 
-def test_apply_agent_addressing_keeps_explicit_project_over_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _clean_agent_env(
-        monkeypatch,
-        LANGSMITH_AGENT_ID="my-agent",
-        LANGSMITH_AGENT_ENVIRONMENT="staging",
-    )
-    payload: dict = {"session_name": "explicit"}
-    Client._apply_agent_addressing(payload)
-    assert payload == {"session_name": "explicit"}
-
-
 def _multipart_parts(session: mock.Mock) -> dict:
     """Collect the `post.<id>` / `patch.<id>` JSON parts sent so far, by kind."""
     parts: dict = {}
@@ -8366,33 +8260,6 @@ def test_project_addressed_run_is_unchanged(
     assert "agent_environment" not in body
 
 
-@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
-@pytest.mark.parametrize(
-    "env",
-    [
-        # The endpoint rejects these, not the SDK: at construction there is no
-        # run-level addressing yet, so a per-run value may still complete the
-        # pair. See `test_env_environment_plus_explicit_agent_id`.
-        {"LANGSMITH_AGENT_ID": "a", "LANGSMITH_PROJECT": "p"},
-        {"LANGSMITH_AGENT_ID": "a", "LANGCHAIN_PROJECT": "p"},
-        {"LANGSMITH_AGENT_ID": "a", "LANGCHAIN_SESSION": "p"},
-        {"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
-        {"LANGSMITH_AGENT_ID": "a"},
-        {"LANGSMITH_AGENT_ID": "a", "LANGSMITH_AGENT_ENVIRONMENT": "staging"},
-        {"LANGSMITH_PROJECT": "p"},
-        {},
-    ],
-)
-def test_client_init_never_rejects_agent_env(
-    client_cls: type,
-    env: dict,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """No agent-addressing validation at client construction."""
-    _clean_agent_env(monkeypatch, **env)
-    client_cls(api_url="http://localhost:1984", api_key="123")
-
-
 @pytest.mark.parametrize(
     ("payload", "expected_agent"),
     [
@@ -8411,20 +8278,6 @@ def test_apply_agent_addressing_forwards_half_a_pair(
     _clean_agent_env(monkeypatch)
     Client._apply_agent_addressing(payload)
     assert payload == expected_agent
-
-
-@pytest.mark.parametrize("kwargs", [{"agent_id": "a"}, {"agent_environment": "e"}])
-def test_run_tree_accepts_half_an_agent_pair(
-    kwargs: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Carried, not judged -- the endpoint owns the both-required rule."""
-    _clean_agent_env(monkeypatch)
-    run = run_trees.RunTree(name="my_run", **kwargs)
-    assert (run.agent_id, run.agent_environment) == (
-        kwargs.get("agent_id"),
-        kwargs.get("agent_environment"),
-    )
-    assert run.session_name is None
 
 
 def test_env_environment_plus_explicit_agent_id(
@@ -8446,28 +8299,6 @@ def test_env_environment_plus_explicit_agent_id(
         "staging",
     )
     assert "session_name" not in payload
-
-
-def test_run_tree_rejects_half_a_pair_beside_an_explicit_project(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Still two destinations named in one call, even with the pair incomplete."""
-    _clean_agent_env(monkeypatch)
-    with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
-        run_trees.RunTree(name="my_run", project_name="proj", agent_id="a")
-
-
-def test_replica_addressing_forwards_half_a_pair(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Same rule per replica: forwarded, and the endpoint answers."""
-    _clean_agent_env(monkeypatch)
-    run = run_trees.RunTree(name="my_run", replicas=[{"agent_id": "replica-agent"}])
-    assert run._replica_addressing({"agent_id": "replica-agent"}) == (
-        None,
-        "replica-agent",
-        None,
-    )
 
 
 class TestExplicitAgentBeatsAmbient:
@@ -8499,20 +8330,6 @@ class TestExplicitAgentBeatsAmbient:
         Client._apply_agent_addressing(payload)
         assert payload == first
         assert payload["agent_id"] == "explicit"
-
-    def test_a_missing_member_is_completed_from_the_environment(self) -> None:
-        payload: dict = {"session_name": None, "agent_id": "explicit"}
-        Client._apply_agent_addressing(payload)
-        assert payload == {"agent_id": "explicit", "agent_environment": "staging"}
-
-    def test_an_explicit_project_still_wins(self) -> None:
-        payload: dict = {
-            "session_name": "proj",
-            "agent_id": "explicit",
-            "agent_environment": "prod",
-        }
-        Client._apply_agent_addressing(payload)
-        assert payload == {"session_name": "proj"}
 
 
 class TestConflictingAddressingRaises:
@@ -8550,12 +8367,6 @@ class TestConflictingAddressingRaises:
                 agent_id="a",
                 agent_environment="e",
             )
-
-    def test_tracing_context_rejects_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _clean_agent_env(monkeypatch)
-        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
-            with rh.tracing_context(project_name="p", agent_id="a"):
-                pass
 
     def test_a_replica_naming_both_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch

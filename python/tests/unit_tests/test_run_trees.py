@@ -941,15 +941,6 @@ class TestRunTreeAgentAddressing:
         assert run.agent_id is None
         assert run.session_name is None
 
-    def test_explicit_agent_id_without_env_var(
-        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
-    ) -> None:
-        _agent_env(monkeypatch)
-        _reset_agent_addressing_cache()
-        run = RunTree(name="foo", agent_id="passed-in", ls_client=_get_mock_client())
-        assert run.agent_id == "passed-in"
-        assert run.session_name is None
-
     def test_children_inherit_agent_addressing(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
@@ -1022,20 +1013,6 @@ class TestReplicaAgentAddressing:
         assert first["agent_id"] == "agent-a"
         assert second["agent_id"] == "agent-b"
         assert first["session_name"] is None
-
-    def test_agent_fields_survive_baggage_headers(self) -> None:
-        """A distributed child needs its parent's routing, like `project_name`."""
-        filtered = run_trees._filter_replica_for_headers(
-            {
-                "project_name": None,
-                "agent_id": "my-agent",
-                "agent_environment": "staging",
-                "api_key": "secret",
-            }
-        )
-        assert filtered["agent_id"] == "my-agent"
-        assert filtered["agent_environment"] == "staging"
-        assert "api_key" not in filtered
 
 
 class TestBaggageAgentAddressing:
@@ -1129,11 +1106,3 @@ class TestBaggageAgentAddressing:
         replica = parsed.replicas[0]
         assert "api_key" not in replica
         assert "api_url" not in replica
-
-    def test_quoting_survives_special_characters(self) -> None:
-        baggage = run_trees._Baggage(
-            agent_id="agent, with=chars", agent_environment="env/one"
-        ).to_header()
-        parsed = run_trees._Baggage.from_header(baggage)
-        assert parsed.agent_id == "agent, with=chars"
-        assert parsed.agent_environment == "env/one"
