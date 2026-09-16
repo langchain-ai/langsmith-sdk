@@ -2423,7 +2423,10 @@ class Client:
         carries both modes (nor a null for the one it isn't using).
 
         The flat `agent_id` / `agent_environment` the rest of the SDK works in
-        become the wire's nested `agent` object here.
+        become the wire's nested `agent` object here. A nested object already on
+        the payload -- passed by the caller, or left by an earlier pass -- is an
+        explicit choice and outranks the environment, which also makes this
+        idempotent.
 
         Both members are required, but the endpoint is the one that says so:
         whatever resolved is forwarded, and a partial object comes back as a
@@ -2436,6 +2439,19 @@ class Client:
         """
         agent_id = payload.pop("agent_id", None)
         agent_environment = payload.pop("agent_environment", None)
+        # A caller can address a run with the nested object directly, and a
+        # payload that has already been through here carries one. Either way it
+        # is an explicit choice, so read it before the environment gets a say.
+        existing = payload.pop("agent", None)
+        if existing is not None and not isinstance(existing, dict):
+            # Not ours to interpret; the endpoint rejects a non-object `agent`.
+            payload["agent"] = existing
+            return
+        if existing:
+            if agent_id is None:
+                agent_id = existing.get("id")
+            if agent_environment is None:
+                agent_environment = existing.get("environment")
         if (
             payload.get("session_id") is not None
             or payload.get("session_name") is not None
