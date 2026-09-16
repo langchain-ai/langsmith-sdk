@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [LangSmith SDK Repository Quickstart](quickstart.md) - Task-oriented map for working safely across the Python and TypeScript LangSmith SDKs, including routes to tracing implementation guidance and measured ingestion-path analysis.
+- [LangSmith SDK Repository Quickstart](quickstart.md) - Task-oriented map for the Python and JavaScript/TypeScript SDKs implemented in this repository, with external pointers to the supported Java and Go SDKs. Routes agents to architecture, tracing, platform concepts, workflows, tests, integrations, and operations.
 
 # Directories
 

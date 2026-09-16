@@ -1,8 +1,11 @@
 ---
 type: repository quickstart
 title: LangSmith SDK Repository Quickstart
-description: Task-oriented map for working safely across the Python and TypeScript LangSmith SDKs, including routes to tracing implementation guidance and measured ingestion-path analysis.
-tags: [quickstart, sdk, python, typescript, tracing, evaluation, development]
+description: Task-oriented map for the Python and JavaScript/TypeScript SDKs implemented in this repository, with external pointers to the supported Java and Go SDKs. Routes agents to architecture, tracing, platform concepts, workflows, tests, integrations, and operations.
+tags: [quickstart, sdk, python, javascript, typescript, java, go, tracing, evaluation, development]
+verified:
+  - by: openwiki/0.5.2
+    at: 2026-09-16T06:53:56.756Z
 sources:
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
@@ -12,6 +15,8 @@ sources:
     resource: repo://CONTRIBUTING.md
   - id: openwiki-source-1278717ecdbca75bfb2a542f
     resource: repo://js/AGENTS.md
+  - id: openwiki-source-800d5dde6ae372323c1d8246
+    resource: repo://js/README.md
   - id: openwiki-source-8417e31aa1fddf53964ceb5a
     resource: repo://js/scripts/create-entrypoints.js
   - id: openwiki-source-c27c18f68326f94a1c4b2695
@@ -24,17 +29,25 @@ sources:
     resource: repo://python/langsmith/__init__.py
   - id: openwiki-source-197446e566d18b5ec23537cc
     resource: repo://python/langsmith/client.py
+  - id: openwiki-source-18f88568abbfc5332724cfc8
+    resource: repo://python/README.md
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T09:52:25.586Z" }
-verified:
-  - by: openwiki/0.5.2
-    at: 2026-09-15T09:58:29.947Z
+generated: { by: "openwiki/0.5.2", at: "2026-09-16T06:53:56.756Z" }
 ---
 
 # LangSmith SDK Repository Quickstart
 
-This repository contains two independently implemented `langsmith` packages for the same LangSmith observability and evaluation platform: Python under `python/` and TypeScript/JavaScript under `js/`. They cover parallel product concepts, but they are not bindings over shared runtime code and do not guarantee identical API shape. Before making a “cross-SDK” change, verify the behavior, naming, lifecycle, and tests in both languages.
+This repository owns two independently implemented `langsmith` packages for the same LangSmith observability and evaluation platform: Python under `python/` and JavaScript/TypeScript under `js/`. They cover parallel product concepts, but they are not bindings over shared runtime code and do not guarantee identical API shape. Before making a “cross-SDK” change, verify the behavior, naming, lifecycle, and tests in both languages.
+
+> **Supported SDK ecosystem**
+>
+> - **Python:** implemented here in [`python/`](../python/).
+> - **JavaScript/TypeScript:** implemented here in [`js/`](../js/).
+> - **Java:** maintained externally at [langchain-ai/langsmith-java](https://github.com/langchain-ai/langsmith-java); Java source is not in this repository.
+> - **Go:** maintained externally at [langchain-ai/langsmith-go](https://github.com/langchain-ai/langsmith-go); Go source is not in this repository.
+>
+> Scope changes, implementation work, and local validation accordingly: this repository owns only the Python and JavaScript/TypeScript implementations.
 
 > **Authority rule:** source code and tests are authoritative. The generated OpenWiki pages linked below are optional, just-in-time context—not required startup reading and not a substitute for checking the current implementation and focused tests.
 
