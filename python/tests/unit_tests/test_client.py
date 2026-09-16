@@ -8466,3 +8466,60 @@ def test_replica_addressing_forwards_half_a_pair(
         "replica-agent",
         None,
     )
+
+
+class TestExplicitNestedAgent:
+    """A nested `agent` on the payload outranks the ambient env vars."""
+
+    @pytest.fixture(autouse=True)
+    def _ambient_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="ambient",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+
+    def test_explicit_nested_agent_is_not_overwritten(self) -> None:
+        """Otherwise an explicitly addressed run is silently rerouted."""
+        payload: dict = {
+            "session_name": None,
+            "agent": {"id": "explicit", "environment": "prod"},
+        }
+        Client._apply_agent_addressing(payload)
+        assert payload == {"agent": {"id": "explicit", "environment": "prod"}}
+
+    def test_is_idempotent(self) -> None:
+        """A second pass must not swap the agent for the ambient one."""
+        payload: dict = {"session_name": None, "agent_id": "explicit"}
+        Client._apply_agent_addressing(payload)
+        first = {key: dict(value) for key, value in payload.items()}
+        Client._apply_agent_addressing(payload)
+        assert payload == first
+
+    def test_flat_fields_win_over_a_nested_object(self) -> None:
+        payload: dict = {
+            "session_name": None,
+            "agent": {"id": "nested", "environment": "nested-env"},
+            "agent_id": "flat",
+        }
+        Client._apply_agent_addressing(payload)
+        assert payload["agent"] == {"id": "flat", "environment": "nested-env"}
+
+    def test_nested_object_completes_from_the_environment(self) -> None:
+        payload: dict = {"session_name": None, "agent": {"id": "explicit"}}
+        Client._apply_agent_addressing(payload)
+        assert payload["agent"] == {"id": "explicit", "environment": "staging"}
+
+    def test_an_explicit_project_still_wins(self) -> None:
+        payload: dict = {
+            "session_name": "proj",
+            "agent": {"id": "explicit", "environment": "prod"},
+        }
+        Client._apply_agent_addressing(payload)
+        assert payload == {"session_name": "proj"}
+
+    def test_a_non_object_agent_is_left_for_the_endpoint(self) -> None:
+        """Not ours to interpret, and not ours to raise on either."""
+        payload: dict = {"session_name": None, "agent": "not-an-object"}
+        Client._apply_agent_addressing(payload)
+        assert payload["agent"] == "not-an-object"
