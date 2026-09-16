@@ -14,6 +14,7 @@ from langsmith.sandbox._exceptions import (
     SandboxOperationError,
     SandboxServerReloadError,
 )
+from langsmith.sandbox._run_config import SandboxRunConfig
 
 if TYPE_CHECKING:
     from langsmith.sandbox._async_sandbox import AsyncSandbox
@@ -114,6 +115,10 @@ class Snapshot:
         updated_at: Timestamp when the snapshot was last updated.
         tags: Tags currently resolving to this snapshot, under its name. Empty
             means the snapshot is dangling — reachable only by id.
+        run_config: What sandboxes created from this snapshot boot with, as
+            ``{"user": ..., "work_dir": ..., "env_vars": {...}}``. ``None`` on
+            snapshots built before run configs were recorded: those boot as
+            root with only the sandbox's own environment.
     """
 
     id: str
@@ -131,6 +136,7 @@ class Snapshot:
     updated_at: Optional[str] = None
     # Appended last so existing positional constructions keep their meaning.
     tags: list[str] = field(default_factory=list)
+    run_config: Optional[SandboxRunConfig] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Snapshot:
@@ -150,6 +156,7 @@ class Snapshot:
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
             tags=list(data.get("tags") or []),
+            run_config=data.get("run_config"),
         )
 
 

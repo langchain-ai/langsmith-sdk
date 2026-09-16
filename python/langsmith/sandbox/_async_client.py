@@ -50,6 +50,7 @@ from langsmith.sandbox._mounts import (
     validate_mount_config_proxy_config,
 )
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
+from langsmith.sandbox._run_config import SandboxRunConfig, validate_run_config
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 if TYPE_CHECKING:
@@ -265,6 +266,7 @@ class AsyncSandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a sandbox and return an AsyncSandbox instance.
@@ -319,6 +321,10 @@ class AsyncSandboxClient:
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
                 such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
+            run_config: Overrides the snapshot's run config, as
+                ``{"user": ..., "work_dir": ..., "env_vars": {...}}``.
+                ``user`` and ``work_dir`` replace the snapshot's, ``env_vars``
+                merge over them. The result is what the sandbox boots with.
 
         Returns:
             AsyncSandbox instance.
@@ -343,6 +349,7 @@ class AsyncSandboxClient:
             fs_capacity_bytes=fs_capacity_bytes,
             mount_config=mount_config,
             proxy_config=proxy_config,
+            run_config=run_config,
             headers=headers,
         )
         sb._auto_delete = True
@@ -364,6 +371,7 @@ class AsyncSandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
@@ -412,6 +420,11 @@ class AsyncSandboxClient:
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
                 such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
+            run_config: Overrides the snapshot's run config, as
+                ``{"user": ..., "work_dir": ..., "env_vars": {...}}``.
+                ``user`` and ``work_dir`` replace the snapshot's, ``env_vars``
+                merge over them. The result is stored on the sandbox and is
+                what it boots with.
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
@@ -433,6 +446,7 @@ class AsyncSandboxClient:
             )
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
+        validate_run_config(run_config)
 
         url = f"{self._base_url}/boxes"
 
@@ -464,6 +478,8 @@ class AsyncSandboxClient:
             payload["mount_config"] = mount_config
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = run_config
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
@@ -550,6 +566,7 @@ class AsyncSandboxClient:
         idle_ttl_seconds: Optional[int] = None,
         delete_after_stop_seconds: Optional[int] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Update a sandbox's properties.
@@ -571,6 +588,11 @@ class AsyncSandboxClient:
                 from the current config, so rotating one credential does not
                 mean re-supplying secrets that can no longer be read. The
                 sandbox must be ``ready``; start a stopped one first.
+            run_config: Merged into the sandbox's stored run config: ``user``
+                and ``work_dir`` replace, ``env_vars`` merge key by key. It
+                takes effect for commands started after the update; commands
+                already running keep what they started with, and a stopped
+                sandbox picks the change up on its next start.
 
         Returns:
             Updated AsyncSandbox.
@@ -585,6 +607,7 @@ class AsyncSandboxClient:
         """
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
+        validate_run_config(run_config)
 
         url = _box_url(self._base_url, name)
         payload: dict[str, Any] = {}
@@ -596,6 +619,8 @@ class AsyncSandboxClient:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = run_config
 
         try:
             response = await self._http.patch(
@@ -926,6 +951,7 @@ class AsyncSandboxClient:
         *,
         tag: Optional[str] = None,
         registry_id: Optional[str] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -938,6 +964,10 @@ class AsyncSandboxClient:
             docker_image: Docker image to build from (e.g., "python:3.12-slim").
             fs_capacity_bytes: Filesystem capacity in bytes.
             registry_id: Private registry ID.
+            run_config: Overrides the image's own ``USER``, ``WORKDIR`` and
+                ``ENV``, which the snapshot otherwise records and every
+                sandbox created from it adopts. ``user`` and ``work_dir``
+                replace the image's, ``env_vars`` merge over its ``ENV``.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -948,6 +978,8 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot build fails.
             SandboxClientError: For other errors.
         """
+        validate_run_config(run_config)
+
         url = f"{self._base_url}/snapshots"
 
         payload: dict[str, Any] = {
@@ -959,6 +991,8 @@ class AsyncSandboxClient:
             payload["tag"] = tag
         if registry_id is not None:
             payload["registry_id"] = registry_id
+        if run_config is not None:
+            payload["run_config"] = run_config
 
         try:
             response = await self._http.post(
@@ -986,10 +1020,14 @@ class AsyncSandboxClient:
         on_build_log: Optional[Callable[[str], Any]] = None,
         vcpus: Optional[int] = None,
         mem_bytes: Optional[int] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
         """Build a snapshot from a local Dockerfile context.
+
+        The built image's ``USER``, ``WORKDIR`` and ``ENV`` become the
+        snapshot's run config; ``run_config`` overrides them.
 
         When ``fs_capacity_bytes`` is omitted, the server applies its default.
         ``vcpus`` and ``mem_bytes`` size the temporary builder sandbox. The
@@ -1064,6 +1102,7 @@ class AsyncSandboxClient:
                 name,
                 docker_image=image_ref,
                 fs_capacity_bytes=fs_capacity_bytes,
+                run_config=run_config,
                 timeout=timeout,
                 headers=headers,
             )
@@ -1076,6 +1115,7 @@ class AsyncSandboxClient:
         tag: Optional[str] = None,
         docker_image: Optional[str] = None,
         fs_capacity_bytes: Optional[int] = None,
+        run_config: Optional[SandboxRunConfig] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -1089,6 +1129,10 @@ class AsyncSandboxClient:
             tag: Tag to publish the snapshot under, within ``name``. Re-using a
                 tag moves it to the new snapshot, leaving the previous one
                 addressable by id. Defaults server-side to ``latest``.
+            run_config: Overrides the run config the new snapshot records. A
+                plain capture starts from what the sandbox was running with;
+                a ``docker_image`` export starts from that image's ``USER``,
+                ``WORKDIR`` and ``ENV``.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -1100,6 +1144,8 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
+        validate_run_config(run_config)
+
         url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}
@@ -1109,6 +1155,8 @@ class AsyncSandboxClient:
             payload["docker_image"] = docker_image
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if run_config is not None:
+            payload["run_config"] = run_config
 
         try:
             response = await self._http.post(

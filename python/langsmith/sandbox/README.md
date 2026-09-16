@@ -380,6 +380,42 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     print(result.exit_code)  # 1
 ```
 
+## Run Configuration
+
+`run_config` sets the account commands run as, their working directory, and
+their environment. It mirrors `docker run -u/-w/-e`: `user` and `work_dir`
+replace the value from the layer below, `env_vars` merge over it key by key.
+
+A snapshot built from a Docker image records that image's `USER`, `WORKDIR`
+and `ENV`, and sandboxes created from it run that way. Override it per
+snapshot, per sandbox, per update, or per command:
+
+```python
+# Per snapshot: what every sandbox from it boots with
+snapshot = client.create_snapshot(
+    "python",
+    "python:3.12-slim",
+    1 * 1024**3,
+    run_config={"user": "app", "work_dir": "/srv"},
+)
+
+# Per sandbox: overrides the snapshot's
+with client.sandbox(snapshot_id=snapshot.id, run_config={"user": "root"}) as sb:
+    # Per update: applies to subsequent commands
+    client.update_sandbox(sb.name, run_config={"env_vars": {"STAGE": "beta"}})
+
+    # Per command
+    result = sb.run("id -un", run_config={"user": "app"})
+```
+
+`user` takes `name`, `uid`, `name:group` or `uid:gid`; `work_dir` must be
+absolute and is created if missing. Snapshot and sandbox responses report the
+`run_config` in effect.
+
+The per-command `cwd` and `env` arguments are deprecated in favour of
+`run_config["work_dir"]` and `run_config["env_vars"]`. They still work on their
+own; combining them with `run_config` raises `ValueError`.
+
 ## Streaming Output
 
 For long-running commands, you can stream output in real time. This uses the
