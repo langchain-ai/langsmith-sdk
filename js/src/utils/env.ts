@@ -109,13 +109,6 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGCHAIN_TRACING_V2",
     "LANGCHAIN_PROJECT",
     "LANGCHAIN_SESSION",
-    // Ingested as the run's `agent` object, so don't duplicate them here.
-    // Neither name is caught by isSensitiveEnvVarName, so they have to be
-    // listed explicitly. `LANGSMITH_` only -- the agent variables have no
-    // legacy alias, so a `LANGCHAIN_` spelling isn't read and isn't
-    // duplicating anything.
-    "LANGSMITH_AGENT_ENVIRONMENT",
-    "LANGSMITH_AGENT_ID",
     "LANGSMITH_API_KEY",
     "LANGSMITH_ENDPOINT",
     "LANGSMITH_TRACING_V2",
