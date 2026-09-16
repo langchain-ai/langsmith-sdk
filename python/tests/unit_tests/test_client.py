@@ -1175,27 +1175,23 @@ def test_create_run_mutate(
     ("env_pair", "explicit_pair", "expected"),
     [
         (None, None, None),
-        (("env-agent", "env-env"), None, {"id": "env-agent", "environment": "env-env"}),
+        (("env-agent", "env-env"), None, ("env-agent", "env-env")),
         # Explicit values win over the environment variables.
         (
             ("env-agent", "env-env"),
             ("explicit-agent", "explicit-env"),
-            {"id": "explicit-agent", "environment": "explicit-env"},
-        ),
-        (
-            None,
             ("explicit-agent", "explicit-env"),
-            {"id": "explicit-agent", "environment": "explicit-env"},
         ),
+        (None, ("explicit-agent", "explicit-env"), ("explicit-agent", "explicit-env")),
     ],
 )
 def test_create_run_agent_addressing(
     env_pair: Optional[tuple],
     explicit_pair: Optional[tuple],
-    expected: Optional[dict],
+    expected: Optional[tuple],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The agent env vars reach the run as one nested `agent` object."""
+    """The agent env vars reach the run as flat `agent_id` / `agent_environment`."""
     for var in ("LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"):
         monkeypatch.delenv(var, raising=False)
         monkeypatch.delenv(var.replace("LANGSMITH_", "LANGCHAIN_"), raising=False)
@@ -1257,10 +1253,14 @@ def test_create_run_agent_addressing(
         parts.extend(MultipartParser(io.BytesIO(data), boundary).parts())
 
     run_parsed = json.loads(next(p for p in parts if p.name == f"post.{id_}").value)
-    assert run_parsed.get("agent") == expected
-    # The flat fields are an SDK-side convenience; they never hit the wire.
-    assert "agent_id" not in run_parsed
-    assert "agent_environment" not in run_parsed
+    if expected is None:
+        assert "agent_id" not in run_parsed
+        assert "agent_environment" not in run_parsed
+    else:
+        assert (
+            run_parsed.get("agent_id"),
+            run_parsed.get("agent_environment"),
+        ) == expected
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -8022,10 +8022,10 @@ def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
             {"session_id": "sid", "agent_id": "a", "agent_environment": "e"},
             {"session_id": "sid"},
         ),
-        # No project: the agent addresses it, nested, and the null project goes.
+        # No project: the agent addresses it, and the null project key goes.
         (
             {"session_name": None, "agent_id": "a", "agent_environment": "e"},
-            {"agent": {"id": "a", "environment": "e"}},
+            {"agent_id": "a", "agent_environment": "e"},
         ),
         # Neither mode: left alone for the server-side fallback.
         ({"session_name": None}, {"session_name": None}),
@@ -8052,7 +8052,7 @@ def test_apply_agent_addressing_fills_from_env(
     )
     payload: dict = {"session_name": None}
     Client._apply_agent_addressing(payload)
-    assert payload == {"agent": {"id": "my-agent", "environment": "staging"}}
+    assert payload == {"agent_id": "my-agent", "agent_environment": "staging"}
 
 
 def test_apply_agent_addressing_keeps_explicit_project_over_env(
@@ -8138,10 +8138,10 @@ def test_agent_addressed_run_sends_no_project(
     patch_body = _wait_for_part(session, "patch")
 
     for kind, body in (("post", post_body), ("patch", patch_body)):
-        assert body.get("agent") == {
-            "id": "my-agent",
-            "environment": "staging",
-        }, kind
+        assert (body.get("agent_id"), body.get("agent_environment")) == (
+            "my-agent",
+            "staging",
+        ), kind
         assert "session_name" not in body, kind
         assert "session_id" not in body, kind
 
@@ -8159,7 +8159,6 @@ def test_project_addressed_run_is_unchanged(
 
     body = _wait_for_part(session, "post")
     assert body.get("session_name") == "default"
-    assert "agent" not in body
     assert "agent_id" not in body
     assert "agent_environment" not in body
 
@@ -8194,8 +8193,8 @@ def test_client_init_never_rejects_agent_env(
 @pytest.mark.parametrize(
     ("payload", "expected_agent"),
     [
-        ({"session_name": None, "agent_id": "a"}, {"id": "a"}),
-        ({"session_name": None, "agent_environment": "e"}, {"environment": "e"}),
+        ({"session_name": None, "agent_id": "a"}, {"agent_id": "a"}),
+        ({"session_name": None, "agent_environment": "e"}, {"agent_environment": "e"}),
     ],
 )
 def test_apply_agent_addressing_forwards_half_a_pair(
@@ -8208,7 +8207,7 @@ def test_apply_agent_addressing_forwards_half_a_pair(
     """
     _clean_agent_env(monkeypatch)
     Client._apply_agent_addressing(payload)
-    assert payload == {"agent": expected_agent}
+    assert payload == expected_agent
 
 
 @pytest.mark.parametrize("kwargs", [{"agent_id": "a"}, {"agent_environment": "e"}])
@@ -8239,7 +8238,10 @@ def test_env_environment_plus_explicit_agent_id(
     run = run_trees.RunTree(name="my_run", agent_id="my-agent", ls_client=client)
     payload = run._get_dicts_safe()
     Client._apply_agent_addressing(payload)
-    assert payload["agent"] == {"id": "my-agent", "environment": "staging"}
+    assert (payload["agent_id"], payload["agent_environment"]) == (
+        "my-agent",
+        "staging",
+    )
     assert "session_name" not in payload
 
 
@@ -8267,8 +8269,8 @@ def test_replica_addressing_forwards_half_a_pair(
     )
 
 
-class TestExplicitNestedAgent:
-    """A nested `agent` on the payload outranks the ambient env vars."""
+class TestExplicitAgentBeatsAmbient:
+    """An explicit value on the payload outranks the ambient env vars."""
 
     @pytest.fixture(autouse=True)
     def _ambient_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -8278,47 +8280,35 @@ class TestExplicitNestedAgent:
             LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
 
-    def test_explicit_nested_agent_is_not_overwritten(self) -> None:
+    def test_explicit_agent_is_not_overwritten(self) -> None:
         """Otherwise an explicitly addressed run is silently rerouted."""
         payload: dict = {
             "session_name": None,
-            "agent": {"id": "explicit", "environment": "prod"},
+            "agent_id": "explicit",
+            "agent_environment": "prod",
         }
         Client._apply_agent_addressing(payload)
-        assert payload == {"agent": {"id": "explicit", "environment": "prod"}}
+        assert payload == {"agent_id": "explicit", "agent_environment": "prod"}
 
     def test_is_idempotent(self) -> None:
-        """A second pass must not swap the agent for the ambient one."""
+        """The keys read are the keys written, so a second pass is a no-op."""
         payload: dict = {"session_name": None, "agent_id": "explicit"}
         Client._apply_agent_addressing(payload)
-        first = {key: dict(value) for key, value in payload.items()}
+        first = dict(payload)
         Client._apply_agent_addressing(payload)
         assert payload == first
+        assert payload["agent_id"] == "explicit"
 
-    def test_flat_fields_win_over_a_nested_object(self) -> None:
-        payload: dict = {
-            "session_name": None,
-            "agent": {"id": "nested", "environment": "nested-env"},
-            "agent_id": "flat",
-        }
+    def test_a_missing_member_is_completed_from_the_environment(self) -> None:
+        payload: dict = {"session_name": None, "agent_id": "explicit"}
         Client._apply_agent_addressing(payload)
-        assert payload["agent"] == {"id": "flat", "environment": "nested-env"}
-
-    def test_nested_object_completes_from_the_environment(self) -> None:
-        payload: dict = {"session_name": None, "agent": {"id": "explicit"}}
-        Client._apply_agent_addressing(payload)
-        assert payload["agent"] == {"id": "explicit", "environment": "staging"}
+        assert payload == {"agent_id": "explicit", "agent_environment": "staging"}
 
     def test_an_explicit_project_still_wins(self) -> None:
         payload: dict = {
             "session_name": "proj",
-            "agent": {"id": "explicit", "environment": "prod"},
+            "agent_id": "explicit",
+            "agent_environment": "prod",
         }
         Client._apply_agent_addressing(payload)
         assert payload == {"session_name": "proj"}
-
-    def test_a_non_object_agent_is_left_for_the_endpoint(self) -> None:
-        """Not ours to interpret, and not ours to raise on either."""
-        payload: dict = {"session_name": None, "agent": "not-an-object"}
-        Client._apply_agent_addressing(payload)
-        assert payload["agent"] == "not-an-object"
