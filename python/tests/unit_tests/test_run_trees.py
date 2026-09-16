@@ -926,15 +926,20 @@ class TestRunTreeAgentAddressing:
         assert run.session_name == "default"
         assert run.agent_id is None
 
-    def test_agent_environment_alone_is_dropped(
+    def test_agent_environment_alone_is_forwarded(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
-        """An environment without an agent addresses nothing."""
+        """Half a pair travels, for the endpoint to reject with its own 400.
+
+        Dropping it would fall back to the `default` project, so a typo would
+        quietly succeed somewhere the caller never named.
+        """
         _agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
         _reset_agent_addressing_cache()
         run = RunTree(name="foo", ls_client=_get_mock_client())
-        assert run.agent_environment is None
-        assert run.session_name == "default"
+        assert run.agent_environment == "staging"
+        assert run.agent_id is None
+        assert run.session_name is None
 
     def test_explicit_agent_id_without_env_var(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
@@ -1063,13 +1068,16 @@ class TestBaggageAgentAddressing:
     ) -> None:
         _agent_env(monkeypatch)
         _reset_agent_addressing_cache()
-        baggage = ",".join(
+        # `from_headers` needs the trace header to reconstruct a parent at all,
+        # so start from a real one and swap in just the baggage under test.
+        headers = dict(RunTree(name="parent", project_name="p").to_headers())
+        headers["baggage"] = ",".join(
             [
                 f"{run_trees.LANGSMITH_PROJECT}=from-header",
                 f"{run_trees.LANGSMITH_AGENT_ID}=agent-from-header",
             ]
         )
-        child = RunTree.from_headers({"baggage": baggage}, name="child")
+        child = RunTree.from_headers(headers, name="child")
         assert child is not None
         assert child.session_name == "from-header"
         assert child.agent_id is None
@@ -1105,7 +1113,16 @@ class TestBaggageAgentAddressing:
 
     def test_replica_credentials_are_still_stripped(self) -> None:
         replicas_json = json.dumps(
-            [{"agent_id": "replica-agent", "api_key": "secret", "api_url": "http://x"}]
+            [
+                {
+                    # Both members, or the replica is dropped before the
+                    # credential check below can run.
+                    "agent_id": "replica-agent",
+                    "agent_environment": "staging",
+                    "api_key": "secret",
+                    "api_url": "http://x",
+                }
+            ]
         )
         baggage = f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas_json)}"
         parsed = run_trees._Baggage.from_header(baggage)
