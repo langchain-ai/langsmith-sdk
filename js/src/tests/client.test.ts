@@ -1030,9 +1030,7 @@ describe("Client", () => {
 
     it.each([
       "LANGSMITH_AGENT_ENVIRONMENT",
-      "LANGCHAIN_AGENT_ENVIRONMENT",
       "LANGSMITH_AGENT_ID",
-      "LANGCHAIN_AGENT_ID",
     ])("should keep %s out of run metadata", (agentVar) => {
       // Agent addressing is a first-class run field, so it must not be swept
       // into metadata too. Neither name is caught by the sensitive-substring

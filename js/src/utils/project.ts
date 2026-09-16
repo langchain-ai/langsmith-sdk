@@ -15,21 +15,22 @@ export const getDefaultProjectName = () => {
  * The agent environment to ingest runs into, read from
  * `LANGSMITH_AGENT_ENVIRONMENT`.
  *
- * Unlike the project, this has no default: when unset the run is ingested
- * without an environment and the server picks one.
+ * Read from that name only: unlike most LangSmith variables there is no legacy
+ * `LANGCHAIN_` alias, since that namespace is not taking new members. There is
+ * also no default -- an agent-addressed run must name its environment.
  */
 export const getDefaultAgentEnvironment = () => {
-  return getLangSmithEnvironmentVariable("AGENT_ENVIRONMENT");
+  return getEnvironmentVariable("LANGSMITH_AGENT_ENVIRONMENT");
 };
 
 /**
  * The ID of the agent to ingest runs into, read from `LANGSMITH_AGENT_ID`.
  *
- * This is an agent identifier, not a credential: the server resolves the agent
- * by this ID and creates one if it doesn't exist yet. Like the environment, it
- * has no default: when unset the run is ingested without an agent ID and
- * addressed by project instead.
+ * That name only -- there is no legacy `LANGCHAIN_` alias. This is an agent
+ * identifier, not a credential: the server resolves the agent by this ID and
+ * creates one if it doesn't exist yet. When unset the run is addressed by
+ * project instead.
  */
 export const getDefaultAgentId = () => {
-  return getLangSmithEnvironmentVariable("AGENT_ID");
+  return getEnvironmentVariable("LANGSMITH_AGENT_ID");
 };

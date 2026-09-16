@@ -2751,9 +2751,7 @@ def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str
 def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name in (
         "LANGSMITH_AGENT_ID",
-        "LANGCHAIN_AGENT_ID",
         "LANGSMITH_AGENT_ENVIRONMENT",
-        "LANGCHAIN_AGENT_ENVIRONMENT",
         "LANGSMITH_PROJECT",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",

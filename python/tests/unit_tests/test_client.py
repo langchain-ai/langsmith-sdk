@@ -7999,9 +7999,7 @@ def _clear_agent_addressing_caches() -> None:
 def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name in (
         "LANGSMITH_AGENT_ID",
-        "LANGCHAIN_AGENT_ID",
         "LANGSMITH_AGENT_ENVIRONMENT",
-        "LANGCHAIN_AGENT_ENVIRONMENT",
         "LANGSMITH_PROJECT",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
