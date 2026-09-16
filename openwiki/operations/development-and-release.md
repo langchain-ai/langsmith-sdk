@@ -210,7 +210,7 @@ pnpm run bump-version   # or: pnpm run bump-version X.Y.Z
 With no argument the script increments the patch component; with an argument it uses that version. It synchronizes `js/package.json` and the exported `__version__` in `js/src/index.ts`, but it does not commit. **Do not hand-edit either version file, use another bump mechanism, or push a tag.** Commit only the synchronized version files:
 
 ```bash
-git add js/package.json js/src/index.ts
+git add package.json src/index.ts
 git commit -m "release(js): X.Y.Z"
 git push origin release-js-X.Y.Z
 gh pr create --title "release(js): X.Y.Z"
