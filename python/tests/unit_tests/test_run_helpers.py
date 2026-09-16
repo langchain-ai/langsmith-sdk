@@ -2779,17 +2779,16 @@ class TestTracingContextAgentAddressing:
                 assert run.agent_environment == "staging"
                 assert run.session_name is None
 
-    def test_project_in_the_same_context_wins(
+    def test_naming_both_in_one_context_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A single context sets one destination, not two."""
         _clean_agent_addressing_env(monkeypatch)
-        mock_client = _get_mock_client()
-        with tracing_context(
-            enabled=True, project_name="explicit", agent_id="ctx-agent"
-        ):
-            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
-                assert run.session_name == "explicit"
-                assert run.agent_id is None
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            with tracing_context(
+                enabled=True, project_name="explicit", agent_id="ctx-agent"
+            ):
+                pass
 
     def test_context_agent_overrides_the_env_var(
         self, monkeypatch: pytest.MonkeyPatch

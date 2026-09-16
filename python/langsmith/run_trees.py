@@ -29,6 +29,7 @@ from langsmith.client import (
     ReplicaAuth,
     _dumps_json,
     _ensure_uuid,
+    _reject_conflicting_addressing,
 )
 from langsmith.uuid import uuid7_from_datetime
 
@@ -375,10 +376,20 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     half set in the environment, so there is no point at which the SDK knows
     the pair is incomplete before it sends it.
     """
-    if any(
-        values.get(key) is not None
-        for key in ("project_name", "session_name", "project_id", "session_id")
-    ):
+    named_project = next(
+        (
+            values[key]
+            for key in ("project_name", "session_name", "project_id", "session_id")
+            if values.get(key) is not None
+        ),
+        None,
+    )
+    if named_project is not None:
+        _reject_conflicting_addressing(
+            project=named_project,
+            agent_id=values.get("agent_id"),
+            agent_environment=values.get("agent_environment"),
+        )
         values["agent_id"] = None
         values["agent_environment"] = None
         return
@@ -918,10 +929,15 @@ class RunTree(ls_schemas.RunBase):
         own project wins over its own agent, and a replica that names neither
         inherits the run tree's addressing whole rather than mixing the two.
         """
-        if (project_name := replica.get("project_name")) is not None:
-            return project_name, None, None
         agent_id = replica.get("agent_id")
         agent_environment = replica.get("agent_environment")
+        if (project_name := replica.get("project_name")) is not None:
+            _reject_conflicting_addressing(
+                project=project_name,
+                agent_id=agent_id,
+                agent_environment=agent_environment,
+            )
+            return project_name, None, None
         if agent_id is not None or agent_environment is not None:
             return None, agent_id, agent_environment
         return self.session_name, self.agent_id, self.agent_environment
@@ -1292,6 +1308,11 @@ class RunTree(ls_schemas.RunBase):
             init_args["tags"] = tags
         if baggage.project_name:
             init_args["project_name"] = baggage.project_name
+        elif init_args.get("project_name") or init_args.get("session_name"):
+            # The caller named a project, so ignore any agent the header
+            # carries. Injecting it would conflict with that project, and
+            # untrusted input must never raise.
+            pass
         elif baggage.agent_id and baggage.agent_environment:
             # One mode survives the hop, and a baggage project takes
             # precedence over a baggage agent. Both members or neither: a header
@@ -1411,9 +1432,15 @@ class _Baggage:
                             # drop agent-addressed replicas. An agent-addressed
                             # one needs both members, so half a pair is dropped
                             # here rather than raising downstream.
-                            if filtered_replica.get("project_name") or (
-                                filtered_replica.get("agent_id")
-                                and filtered_replica.get("agent_environment")
+                            if filtered_replica.get("project_name"):
+                                # Naming both would raise once resolved, and a
+                                # header must not be able to do that; the
+                                # project takes precedence, so drop the agent.
+                                filtered_replica.pop("agent_id", None)
+                                filtered_replica.pop("agent_environment", None)
+                                parsed_replicas.append(filtered_replica)
+                            elif filtered_replica.get("agent_id") and (
+                                filtered_replica.get("agent_environment")
                             ):
                                 parsed_replicas.append(filtered_replica)
                         else:

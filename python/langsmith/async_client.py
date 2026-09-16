@@ -608,6 +608,12 @@ class AsyncClient:
         **kwargs: Any,
     ) -> None:
         """Create a run."""
+        ls_client._reject_conflicting_addressing(
+            project=project_name or kwargs.get("session_name"),
+            session_id=kwargs.get("session_id"),
+            agent_id=kwargs.get("agent_id"),
+            agent_environment=kwargs.get("agent_environment"),
+        )
         if (
             project_name is None
             and kwargs.get("session_name") is None
