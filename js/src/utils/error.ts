@@ -144,16 +144,20 @@ export async function raiseForStatus(
     return;
   }
 
+  // The body is a single-use stream, so read it exactly once and parse from
+  // the text. Reading it twice yields "" on the second read, which used to
+  // discard the reason the server sent with a 403.
+  try {
+    errorBody = await response.text();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (_e: any) {
+    errorBody = "";
+  }
+
   if (response.status === 403) {
+    let errorData;
     try {
-      const errorData = await response.json();
-      const errorCode = errorData?.error;
-      if (errorCode === "org_scoped_key_requires_workspace") {
-        errorBody =
-          "This API key is org-scoped and requires workspace specification. " +
-          "Please provide 'workspaceId' parameter, " +
-          "or set LANGSMITH_WORKSPACE_ID environment variable.";
-      }
+      errorData = JSON.parse(errorBody);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (_e: any) {
       const errorWithStatus = new Error(
@@ -163,13 +167,11 @@ export async function raiseForStatus(
       (errorWithStatus as any).status = response?.status;
       throw errorWithStatus;
     }
-  }
-  if (errorBody === undefined) {
-    try {
-      errorBody = await response.text();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (_e: any) {
-      errorBody = "";
+    if (errorData?.error === "org_scoped_key_requires_workspace") {
+      errorBody =
+        "This API key is org-scoped and requires workspace specification. " +
+        "Please provide 'workspaceId' parameter, " +
+        "or set LANGSMITH_WORKSPACE_ID environment variable.";
     }
   }
 
