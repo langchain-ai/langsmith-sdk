@@ -15,11 +15,12 @@ import pytest
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
     PROJECT,
+    REJECTED_AGENT_WITH_PROJECT,
+    REJECTED_PAIR_REQUIRED,
     Case,
     Harness,
     InAgent,
     InProject,
-    Rejected,
 )
 
 CASES = [
@@ -52,7 +53,7 @@ CASES = [
             "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             "LANGSMITH_PROJECT": PROJECT,
         },
-        lands_in=Rejected(),
+        lands_in=REJECTED_AGENT_WITH_PROJECT,
     ),
     # Addressing passed per call rather than configured in the environment.
     Case(
@@ -75,7 +76,7 @@ CASES = [
     Case(
         "env_agent_id_only",
         env={"LANGSMITH_AGENT_ID": AGENT},
-        lands_in=Rejected(),
+        lands_in=REJECTED_PAIR_REQUIRED,
     ),
     # The legacy path, unchanged: a project by name, and no addressing at all.
     Case(
