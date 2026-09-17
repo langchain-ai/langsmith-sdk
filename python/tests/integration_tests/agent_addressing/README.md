@@ -36,6 +36,10 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 - **Why compare `session_id` instead of reading the run out of the expected
   project?** `read_run` ignores `project_id` on ClickHouse-backed deployments,
   so scoping the read proves nothing.
+- **Why is one test mocked, in an integration suite?** `test_rollout_disabled.py`
+  stubs the 403 a workspace off the `agent_platform_unified_experience` flag
+  gets. A workspace with the flag on cannot produce one, and a second flag-off
+  workspace would mean a second API key in CI. It asserts the SDK's side only.
 - **Why does the agent lookup build its own URL?** `/agents` exists only under
   `/api/v1`, and the SDK has no agent methods yet. See the TODO.
 

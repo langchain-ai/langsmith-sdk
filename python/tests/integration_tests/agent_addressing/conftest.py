@@ -236,7 +236,7 @@ class Harness:
         different projects before, so checking the create alone says half.
         """
         if isinstance(destination, Rejected):
-            self.assert_rejected(destination)
+            self.assert_rejected(because=destination.because)
             return
 
         expected = self._expected_project(destination)
@@ -250,11 +250,11 @@ class Harness:
             f"the run landed in project {run.session_id}, not {expected}"
         )
 
-    def assert_rejected(self, destination: Rejected = Rejected()) -> None:
+    def assert_rejected(self, *, because: str = "400") -> None:
         """Assert the endpoint refused what we sent, and created no agent."""
         reported = "\n".join(str(error) for error in self.errors)
-        assert destination.because in reported, (
-            f"expected the endpoint to reject the run with {destination.because!r};"
+        assert because in reported, (
+            f"expected the endpoint to reject the run with {because!r};"
             f" the SDK reported {reported or 'no errors'}"
         )
         assert self.agent() is None, (
