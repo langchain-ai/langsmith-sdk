@@ -136,10 +136,14 @@ class _WSStreamControl:
         self._ws: Any = None
         self._closed = False
         self._killed = False
+        self._close_stdin_pending = False
 
     def _bind(self, ws: Any) -> None:
         """Bind to the active WebSocket. Called inside the generator."""
         self._ws = ws
+        if self._close_stdin_pending:
+            self._close_stdin_pending = False
+            self.send_close_stdin()
 
     def _unbind(self) -> None:
         """Mark as closed. Called when the generator exits."""
@@ -170,6 +174,20 @@ class _WSStreamControl:
         if self._ws and not self._closed:
             self._ws.send(json.dumps({"type": "input", "data": data}))
 
+    def send_close_stdin(self) -> None:
+        """Half-close the command's stdin so it reads EOF.
+
+        A reconnected stream binds its socket only once iteration starts, so a
+        close arriving before that is queued and sent on bind -- dropping it
+        would leave the command waiting for an EOF that never comes.
+        """
+        if self._closed:
+            return
+        if self._ws is None:
+            self._close_stdin_pending = True
+            return
+        self._ws.send(json.dumps({"type": "close_stdin"}))
+
 
 class _AsyncWSStreamControl:
     """Async equivalent of _WSStreamControl."""
@@ -178,9 +196,16 @@ class _AsyncWSStreamControl:
         self._ws: Any = None
         self._closed = False
         self._killed = False
+        self._close_stdin_pending = False
 
     def _bind(self, ws: Any) -> None:
         self._ws = ws
+
+    async def _flush_pending(self) -> None:
+        """Send anything queued while no socket was bound."""
+        if self._close_stdin_pending:
+            self._close_stdin_pending = False
+            await self.send_close_stdin()
 
     def _unbind(self) -> None:
         self._closed = True
@@ -206,6 +231,14 @@ class _AsyncWSStreamControl:
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
             await self._ws.send(json.dumps({"type": "input", "data": data}))
+
+    async def send_close_stdin(self) -> None:
+        if self._closed:
+            return
+        if self._ws is None:
+            self._close_stdin_pending = True
+            return
+        await self._ws.send(json.dumps({"type": "close_stdin"}))
 
 
 # =============================================================================
@@ -342,6 +375,8 @@ def run_ws_stream(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[dict[str, Any]] = None,
+    close_stdin: bool = False,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -399,6 +434,10 @@ def run_ws_stream(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
+                if close_stdin:
+                    payload["close_stdin"] = True
                 if pty:
                     payload["pty"] = True
                 ws.send(json.dumps(payload))
@@ -549,6 +588,8 @@ async def run_ws_stream_async(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[dict[str, Any]] = None,
+    close_stdin: bool = False,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -579,6 +620,7 @@ async def run_ws_stream_async(
                 ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
+                await control._flush_pending()
 
                 payload: dict[str, Any] = {
                     "type": "execute",
@@ -595,6 +637,10 @@ async def run_ws_stream_async(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
+                if close_stdin:
+                    payload["close_stdin"] = True
                 if pty:
                     payload["pty"] = True
                 await ws.send(json.dumps(payload))
@@ -665,6 +711,7 @@ async def reconnect_ws_stream_async(
                 ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
+                await control._flush_pending()
 
                 await ws.send(
                     json.dumps(
