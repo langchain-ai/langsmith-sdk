@@ -212,6 +212,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
+        ls_utils.warn_on_agent_and_project_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -627,14 +628,19 @@ class AsyncClient:
             and kwargs.get("session_name") is None
             and kwargs.get("session_id") is None
             and ls_utils.is_agent_addressed(
-                *ls_utils.resolve_agent_addressing(
-                    kwargs.get("agent_id"), kwargs.get("agent_environment")
+                *(
+                    agent_addressing := ls_utils.resolve_agent_addressing(
+                        kwargs.get("agent_id"), kwargs.get("agent_environment")
+                    )
                 )
             )
         ):
             # Agent-addressed: don't default a project in, or the run would be
-            # addressed twice. An explicit project takes precedence, below.
-            session_name = None
+            # addressed twice. An explicit project takes precedence, below. A
+            # project the caller *configured* travels alongside the agent so
+            # the endpoint refuses the pair rather than the SDK dropping one.
+            session_name = ls_utils.get_tracer_project(return_default_value=False)
+            kwargs["agent_id"], kwargs["agent_environment"] = agent_addressing
         else:
             session_name = project_name or ls_utils.get_tracer_project()
         run_create = {

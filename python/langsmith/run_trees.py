@@ -397,13 +397,13 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         None,
     )
     if named_project is not None:
-        _reject_conflicting_addressing(
-            project=named_project,
-            agent_id=values.get("agent_id"),
-            agent_environment=values.get("agent_environment"),
-        )
-        values["agent_id"] = None
-        values["agent_environment"] = None
+        # Only the *ambient* agent yields to a project on the values. An agent
+        # already there came from the caller or from the parent run, and travels
+        # alongside the project so the endpoint refuses the pair. Pinning both
+        # keys to what is already there keeps their `default_factory` from
+        # reading the environment after this validator returns.
+        values["agent_id"] = values.get("agent_id")
+        values["agent_environment"] = values.get("agent_environment")
         return
     agent_id, agent_environment = utils.resolve_agent_addressing(
         values.get("agent_id"), values.get("agent_environment")
@@ -413,10 +413,12 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         return
     values["agent_id"] = agent_id
     values["agent_environment"] = agent_environment
-    # Agent-addressed: the backend resolves the project from the agent, so this
-    # run carries no project at all.
+    # Agent-addressed: the backend resolves the project from the agent, so the
+    # defaulted project comes off. A project the caller *configured* stays, and
+    # travels with the agent so the endpoint refuses the pair -- dropping it
+    # would move their traces without asking.
     values.pop("project_name", None)
-    values["session_name"] = None
+    values["session_name"] = utils.get_tracer_project(return_default_value=False)
 
 
 class RunTree(ls_schemas.RunBase):

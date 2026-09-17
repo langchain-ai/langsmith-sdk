@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import warnings
 from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
@@ -534,6 +535,31 @@ def is_agent_addressed(
     reporting the mistake.
     """
     return agent_id is not None or agent_environment is not None
+
+
+def warn_on_agent_and_project_env() -> None:
+    """Warn when the environment configures both an agent and a project.
+
+    Both go out on the payload and the endpoint answers 400, so the run is
+    lost either way; this says which variable to unset. Emitted at client
+    construction rather than per run, so it is seen once instead of drowned
+    out by the background flush's warnings.
+    """
+    agent_id = get_tracer_agent_id()
+    if agent_id is None:
+        return
+    project = get_tracer_project(return_default_value=False)
+    if project is None:
+        return
+    warnings.warn(
+        f"LANGSMITH_AGENT_ID ({agent_id!r}) and a configured project "
+        f"({project!r}) both address runs, and the API accepts only one. "
+        "Unset LANGSMITH_AGENT_ID to trace to the project, or unset "
+        "LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / LANGCHAIN_SESSION) to "
+        "trace to the agent.",
+        LangSmithWarning,
+        stacklevel=3,
+    )
 
 
 class FilterPoolFullWarning(logging.Filter):

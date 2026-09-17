@@ -1357,6 +1357,7 @@ class Client:
                 tracing_mode=resolved_mode,
             )
             self._write_api_urls = {self.api_url: self.api_key}
+        ls_utils.warn_on_agent_and_project_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -2446,13 +2447,17 @@ class Client:
 
     @staticmethod
     def _apply_agent_addressing(payload: dict, *, update: bool = False) -> None:
-        """Leave exactly one addressing mode on a run payload.
+        """Settle the addressing mode on a run payload.
 
-        A project already on the payload wins -- whether it was passed
-        explicitly or defaulted from the environment, it addresses the run on
-        its own, so the agent fields come off. Otherwise the agent env vars fill
-        in and the now-redundant project keys are dropped, so the payload never
-        carries both modes (nor a null for the one it isn't using).
+        A project already on the payload addresses the run, so the environment
+        is not consulted; whatever agent fields the caller put there travel
+        alongside it and the endpoint refuses the pair. With no project, the
+        agent env vars fill in and the null project keys are dropped, so the
+        payload never carries a null for the mode it isn't using.
+
+        Which project reaches this payload is decided upstream, in `create_run`
+        and in the `RunTree` validator: a project named on the call replaces the
+        agent outright, and only one the caller *configured* travels with it.
 
         On an update the environment is not consulted: a patch inherits its
         target from the post that established it. Filling it in here would
@@ -2476,12 +2481,15 @@ class Client:
         """
         agent_id = payload.pop("agent_id", None)
         agent_environment = payload.pop("agent_environment", None)
-        if (
+        named_project = (
             payload.get("session_id") is not None
             or payload.get("session_name") is not None
-        ):
-            return
-        if not update:
+        )
+        if not ls_utils.is_agent_addressed(agent_id, agent_environment):
+            if update or named_project:
+                # A patch inherits its post's target, and a project already on
+                # the payload addresses the run on its own.
+                return
             agent_id, agent_environment = ls_utils.resolve_agent_addressing(
                 agent_id, agent_environment
             )
@@ -2492,8 +2500,11 @@ class Client:
             payload["agent_id"] = agent_id
         if agent_environment is not None:
             payload["agent_environment"] = agent_environment
-        payload.pop("session_name", None)
-        payload.pop("session_id", None)
+        if not named_project:
+            # Nothing to drop, and nothing to keep: the null project keys would
+            # otherwise be serialized.
+            payload.pop("session_name", None)
+            payload.pop("session_id", None)
 
     def _run_transform(
         self,
@@ -2703,14 +2714,23 @@ class Client:
             # gets no project.
             project_name = kwargs.pop("session_name")
         elif kwargs.get("session_id") is None and ls_utils.is_agent_addressed(
-            *ls_utils.resolve_agent_addressing(
-                kwargs.get("agent_id"), kwargs.get("agent_environment")
+            *(
+                agent_addressing := ls_utils.resolve_agent_addressing(
+                    kwargs.get("agent_id"), kwargs.get("agent_environment")
+                )
             )
         ):
             # Agent-addressed: the backend resolves the project from the agent,
             # so don't default one in -- a project here would address the run
             # twice. An explicitly provided project takes precedence, above.
-            project_name = None
+            #
+            # A project the caller *configured* is different from a defaulted
+            # one: it travels alongside the agent so the endpoint refuses the
+            # pair. Dropping either would move their traces without telling
+            # them, and the warning at client construction names the variable
+            # to unset.
+            project_name = ls_utils.get_tracer_project(return_default_value=False)
+            kwargs["agent_id"], kwargs["agent_environment"] = agent_addressing
         else:
             # if the project is not provided, use the environment's project
             project_name = ls_utils.get_tracer_project()
