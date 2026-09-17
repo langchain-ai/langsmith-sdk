@@ -2560,7 +2560,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
-        self._apply_agent_addressing(run_create)
+        self._apply_agent_addressing(run_create, update=update)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
