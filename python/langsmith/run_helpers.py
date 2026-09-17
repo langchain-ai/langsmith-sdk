@@ -286,6 +286,8 @@ def ensure_traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -300,6 +302,8 @@ def ensure_traceable(
         client=client,
         reduce_fn=reduce_fn,
         project_name=project_name,
+        agent_id=agent_id,
+        agent_environment=agent_environment,
         process_inputs=process_inputs,
         process_outputs=process_outputs,
         process_chunk=process_chunk,
@@ -328,6 +332,10 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional run tree (deprecated)."""
     project_name: Optional[str]
     """Optional name of the project."""
+    agent_id: Optional[str]
+    """(experimental) Optional agent to log the run to, instead of a project."""
+    agent_environment: Optional[str]
+    """(experimental) Narrows `agent_id`; required alongside it."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
     tags: Optional[list[str]]
@@ -399,6 +407,8 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -439,6 +449,13 @@ def traceable(
         project_name: The name of the project to log the run to.
 
             Defaults to `None`, which will use the default project.
+        agent_id: (experimental) The agent to log the run to, instead of a
+            project. Cannot be combined with a project in the same call.
+            Defaults to `LANGSMITH_AGENT_ID`.
+        agent_environment: (experimental) Narrows `agent_id`; meaningless
+            without it. One of `local`, `development`, `staging` or
+            `production` -- anything else is rejected rather than defaulted.
+            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
         process_inputs: Custom serialization / processing function for inputs.
 
             Defaults to `None`.
@@ -626,6 +643,8 @@ def traceable(
         tags=kwargs.pop("tags", None),
         client=kwargs.pop("client", None),
         project_name=kwargs.pop("project_name", None),
+        agent_id=kwargs.pop("agent_id", None),
+        agent_environment=kwargs.pop("agent_environment", None),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         process_chunk=kwargs.pop("process_chunk", None),
@@ -633,6 +652,11 @@ def traceable(
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
         enabled=enabled,
         exceptions_to_handle=kwargs.pop("exceptions_to_handle", None),
+    )
+    ls_client._reject_conflicting_addressing(
+        project=container_input["project_name"],
+        agent_id=container_input["agent_id"],
+        agent_environment=container_input["agent_environment"],
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
@@ -1035,6 +1059,13 @@ class trace:
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
         inputs: Initial input data for the run.
         project_name: Project name to associate the run with.
+        agent_id: (experimental) The agent to log the run to, instead of a
+            project. Cannot be combined with a project in the same call.
+            Defaults to `LANGSMITH_AGENT_ID`.
+        agent_environment: (experimental) Narrows `agent_id`; meaningless
+            without it. One of `local`, `development`, `staging` or
+            `production` -- anything else is rejected rather than defaulted.
+            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
         parent: Parent run.
 
             Can be a `RunTree`, dotted order string, or tracing headers.
@@ -1096,6 +1127,8 @@ class trace:
         inputs: Optional[dict] = None,
         extra: Optional[dict] = None,
         project_name: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_environment: Optional[str] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
         ] = None,
@@ -1124,7 +1157,14 @@ class trace:
         self.inputs = inputs
         self.attachments = attachments
         self.extra = extra
+        ls_client._reject_conflicting_addressing(
+            project=project_name,
+            agent_id=agent_id,
+            agent_environment=agent_environment,
+        )
         self.project_name = project_name
+        self.agent_id = agent_id
+        self.agent_environment = agent_environment
         self.parent = parent
         # The run tree is deprecated. Keeping for backwards compat.
         # Will fully merge within parent later.
@@ -1174,7 +1214,7 @@ class trace:
         extra_outer["metadata"] = metadata
 
         project_name_, agent_id_, agent_environment_ = _get_addressing(
-            self.project_name
+            self.project_name, self.agent_id, self.agent_environment
         )
 
         if parent_run_ is not None and enabled:
@@ -1333,11 +1373,16 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
 
 def _get_addressing(
     project_name: Optional[str],
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Resolve `(project_name, agent_id, agent_environment)` for a new run.
 
     Mirrors `_get_project_name`, but stops short of defaulting a project in when
     an agent addresses the run instead -- a run carries one mode, not both.
+
+    The two chains are walked in the same order, so an agent named where a
+    project would have been named takes effect at the same point.
     """
     prt = get_current_run_tree()
     explicit_project = (
@@ -1347,8 +1392,14 @@ def _get_addressing(
         or _context._GLOBAL_PROJECT_NAME
     )
     agent_id, agent_environment = utils.resolve_agent_addressing(
-        _context._AGENT_ID.get() or (prt.agent_id if prt else None),
-        _context._AGENT_ENVIRONMENT.get() or (prt.agent_environment if prt else None),
+        agent_id
+        or _context._AGENT_ID.get()
+        or (prt.agent_id if prt else None)
+        or _context._GLOBAL_AGENT_ID,
+        agent_environment
+        or _context._AGENT_ENVIRONMENT.get()
+        or (prt.agent_environment if prt else None)
+        or _context._GLOBAL_AGENT_ENVIRONMENT,
     )
     if explicit_project is None and utils.is_agent_addressed(
         agent_id, agent_environment
@@ -1516,6 +1567,8 @@ class _ContainerInput(TypedDict, total=False):
     client: Optional[ls_client.Client]
     reduce_fn: Optional[Callable]
     project_name: Optional[str]
+    agent_id: Optional[str]
+    agent_environment: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     process_chunk: Optional[Callable]
@@ -1676,6 +1729,11 @@ def _setup_run(
     parent_run_ = _get_parent_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
     )
+    ls_client._reject_conflicting_addressing(
+        project=langsmith_extra.get("project_name"),
+        agent_id=langsmith_extra.get("agent_id"),
+        agent_environment=langsmith_extra.get("agent_environment"),
+    )
     project_cv = _context._PROJECT_NAME.get()
     explicit_project = (
         project_cv  # From parent trace
@@ -1686,14 +1744,22 @@ def _setup_run(
         or container_input["project_name"]  # at decorator time
         or _context._GLOBAL_PROJECT_NAME  # global fallback from ls.configure
     )
+    # The same tiers as `explicit_project`, in the same order, so an agent
+    # named where a project would have been named takes effect at that point.
     selected_agent_id = (
         _context._AGENT_ID.get()
         or (parent_run_.agent_id if parent_run_ else None)
+        or langsmith_extra.get("agent_id")
+        or container_input.get("agent_id")
+        or _context._GLOBAL_AGENT_ID
         or utils.get_tracer_agent_id()
     )
     selected_agent_environment = (
         _context._AGENT_ENVIRONMENT.get()
         or (parent_run_.agent_environment if parent_run_ else None)
+        or langsmith_extra.get("agent_environment")
+        or container_input.get("agent_environment")
+        or _context._GLOBAL_AGENT_ENVIRONMENT
         or utils.get_tracer_agent_environment()
     )
     if explicit_project is None and utils.is_agent_addressed(

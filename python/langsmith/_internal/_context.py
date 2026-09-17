@@ -44,6 +44,8 @@ def get_current_run_tree() -> Optional["RunTree"]:
 
 # Not thread-local, so you can set this process-wide (before asyncio.run, etc.)
 _GLOBAL_PROJECT_NAME: Optional[str] = None
+_GLOBAL_AGENT_ID: Optional[str] = None
+_GLOBAL_AGENT_ENVIRONMENT: Optional[str] = None
 _GLOBAL_TAGS: Optional[list[str]] = None
 _GLOBAL_METADATA: Optional[dict[str, Any]] = None
 _GLOBAL_TRACING_ENABLED: Optional[Union[bool, Literal["local"]]] = None
