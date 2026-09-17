@@ -10626,6 +10626,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ExperimentResults: ...
 
@@ -10645,6 +10646,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ComparativeExperimentResults: ...
 
@@ -10667,6 +10669,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
@@ -10711,6 +10714,11 @@ class Client:
                 `'log'` will trace the runs with the error message as part of the
                 experiment, `'ignore'` will not count the run as part of the experiment at
                 all.
+            disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+                evaluator invocations to the `evaluators` project in LangSmith. Set to
+                `True` to run evaluators without creating evaluator traces; feedback is
+                still created and attached to the experiment runs, but can't be
+                corrected from the UI.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -10873,6 +10881,7 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
 
@@ -10900,6 +10909,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
@@ -10941,6 +10951,11 @@ class Client:
                 `'log'` will trace the runs with the error message as part of the
                 experiment, `'ignore'` will not count the run as part of the experiment at
                 all.
+            disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+                evaluator invocations to the `evaluators` project in LangSmith. Set to
+                `True` to run evaluators without creating evaluator traces; feedback is
+                still created and attached to the experiment runs, but can't be
+                corrected from the UI.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -11124,6 +11139,7 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
 
