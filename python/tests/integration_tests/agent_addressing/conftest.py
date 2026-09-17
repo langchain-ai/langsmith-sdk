@@ -75,32 +75,14 @@ class Rejected:
     """The endpoint refuses the part, and creates no agent.
 
     `reason` and `remedy` are the endpoint's own two halves, asserted together
-    because they are what a customer reads. A case names which rejection it
-    expects rather than only that one happened.
+    because they are what a customer reads. A case spells them out rather than
+    naming a shared constant, so a reviewer can see what it expects; keep them
+    in step with `smith-go/runs/agent_addressing.go`.
     """
 
     reason: str
     remedy: str
     status: int = 400
-
-
-# Every rejection the SDK can provoke, worded as the endpoint words it. From
-# `smith-go/runs/agent_addressing.go`, confirmed against a live response.
-REJECTED_PAIR_REQUIRED = Rejected(
-    reason="agent_id and agent_environment must be sent together",
-    remedy="Send agent_id and agent_environment together",
-)
-REJECTED_AGENT_WITH_PROJECT = Rejected(
-    reason="agent_id cannot be combined with session_id or session_name",
-    remedy=(
-        "Address the run by agent_id, or by session_id or session_name, but not both"
-    ),
-)
-REJECTED_ROLLOUT_DISABLED = Rejected(
-    reason="agent addressing is not enabled for this workspace",
-    remedy="Address the run by session_id or session_name",
-    status=403,
-)
 
 
 Destination = Union[InAgent, InProject, Rejected]

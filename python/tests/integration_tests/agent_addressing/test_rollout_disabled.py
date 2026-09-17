@@ -15,16 +15,15 @@ import requests
 from langsmith.run_helpers import get_current_run_tree, traceable
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
-    REJECTED_ROLLOUT_DISABLED,
     Case,
     Harness,
     InAgent,
+    Rejected,
 )
 
 
-def _refusal_body(part: str) -> bytes:
+def _refusal_body(part: str, refused: Rejected) -> bytes:
     """The real body: status phrase, then the sentinel, then remedy and reason."""
-    refused = REJECTED_ROLLOUT_DISABLED
     return json.dumps(
         {
             "error": (
@@ -36,18 +35,21 @@ def _refusal_body(part: str) -> bytes:
 
 
 def _refuse_agent_addressing(
-    client, monkeypatch: pytest.MonkeyPatch, part: Callable[[], str]
+    client,
+    monkeypatch: pytest.MonkeyPatch,
+    part: Callable[[], str],
+    refused: Rejected,
 ) -> None:
     """Refuse ingestion only, so other routes reach the real API."""
     send = client.session.request
 
     def request(method, url, *args, **kwargs):
         if str(url).endswith("/runs/multipart"):
-            refused = requests.Response()
-            refused.status_code = REJECTED_ROLLOUT_DISABLED.status
-            refused.url = str(url)
-            refused._content = _refusal_body(part())
-            return refused
+            response = requests.Response()
+            response.status_code = refused.status
+            response.url = str(url)
+            response._content = _refusal_body(part(), refused)
+            return response
         return send(method, url, *args, **kwargs)
 
     monkeypatch.setattr(client.session, "request", request)
@@ -71,6 +73,11 @@ def test_a_refused_workspace_loses_the_run_without_raising(
             lands_in=InAgent("STAGING"),
         )
     )
+    refused = Rejected(
+        reason="agent addressing is not enabled for this workspace",
+        remedy="Address the run by session_id or session_name",
+        status=403,
+    )
     sent: dict = {}
 
     @traceable
@@ -86,7 +93,9 @@ def test_a_refused_workspace_loses_the_run_without_raising(
 
     # Read lazily: the run id exists only after the call, the refusal only on
     # flush.
-    _refuse_agent_addressing(ls.client, monkeypatch, lambda: f"post.{sent.get('id')}")
+    _refuse_agent_addressing(
+        ls.client, monkeypatch, lambda: f"post.{sent.get('id')}", refused
+    )
 
     assert traced_function(langsmith_extra={"client": ls.client}) == "ok"
     ls.client.flush()
@@ -98,4 +107,4 @@ def test_a_refused_workspace_loses_the_run_without_raising(
         "staging",
         None,
     )
-    ls.assert_rejected(REJECTED_ROLLOUT_DISABLED)
+    ls.assert_rejected(refused)
