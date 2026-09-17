@@ -1,16 +1,14 @@
 """Agent addressing when the workspace is not on the rollout flag.
 
-A workspace without `agent_platform_unified_experience` gets a 403, answered
-before any lookup so nothing is created. That is stubbed here rather than
-reached for real: a workspace with the flag on cannot produce a 403, and a
-flag-off one would mean a second API key in CI.
-
-Only the SDK's half is asserted. The status is langchainplus's contract.
+The 403 is stubbed: a workspace with the flag on cannot produce one, and a
+flag-off workspace would mean a second API key in CI.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import Callable
 
 import pytest
 import requests
@@ -23,12 +21,27 @@ from tests.integration_tests.agent_addressing.conftest import (
     InAgent,
 )
 
-# What the endpoint answers a workspace off the rollout with.
-REFUSAL_DETAIL = "agent addressing is not enabled for this workspace"
+# Keep in step with smith-go `runs.errAgentAddressingNotEnabled`.
+REFUSAL_REASON = "agent addressing is not enabled for this workspace"
+REFUSAL_REMEDY = "Address the run by session_id or session_name"
 
 
-def _refuse_agent_addressing(client, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Answer ingestion with a 403. Other routes still reach the real API."""
+def _refusal_body(part: str) -> bytes:
+    """The real body: status phrase, then the sentinel, then remedy and reason."""
+    return json.dumps(
+        {
+            "error": (
+                f"Forbidden: feature not enabled for {part}:"
+                f" {REFUSAL_REMEDY}: {REFUSAL_REASON}"
+            )
+        }
+    ).encode()
+
+
+def _refuse_agent_addressing(
+    client, monkeypatch: pytest.MonkeyPatch, part: Callable[[], str]
+) -> None:
+    """Refuse ingestion only, so other routes reach the real API."""
     send = client.session.request
 
     def request(method, url, *args, **kwargs):
@@ -36,7 +49,7 @@ def _refuse_agent_addressing(client, monkeypatch: pytest.MonkeyPatch) -> None:
             refused = requests.Response()
             refused.status_code = 403
             refused.url = str(url)
-            refused._content = f'{{"detail":"{REFUSAL_DETAIL}"}}'.encode()
+            refused._content = _refusal_body(part())
             return refused
         return send(method, url, *args, **kwargs)
 
@@ -48,9 +61,8 @@ def test_a_refused_workspace_loses_the_run_without_raising(
 ) -> None:
     """The 403 is reported, never raised at the call site, and creates nothing.
 
-    Losing the traces is the accepted cost of resolving addressing server-side:
-    a rejected batch is logged on the flush thread, so a misconfigured
-    workspace shows up as missing traces rather than a failure.
+    A rejected batch is logged on the flush thread, so a misconfigured
+    workspace shows up as missing traces rather than as a failure.
     """
     ls.configure(
         Case(
@@ -62,35 +74,44 @@ def test_a_refused_workspace_loses_the_run_without_raising(
             lands_in=InAgent("STAGING"),
         )
     )
-    _refuse_agent_addressing(ls.client, monkeypatch)
-    addressing = {}
+    sent: dict = {}
 
     @traceable
     def traced_function() -> str:
         run = get_current_run_tree()
-        addressing["agent_id"] = run.agent_id
-        addressing["agent_environment"] = run.agent_environment
-        addressing["session_name"] = run.session_name
+        sent.update(
+            id=run.id,
+            agent_id=run.agent_id,
+            agent_environment=run.agent_environment,
+            session_name=run.session_name,
+        )
         return "ok"
+
+    # Read lazily: the run id exists only after the call, the refusal only on
+    # flush.
+    _refuse_agent_addressing(ls.client, monkeypatch, lambda: f"post.{sent.get('id')}")
 
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
         assert traced_function(langsmith_extra={"client": ls.client}) == "ok"
         ls.client.flush()
 
-    # The stub refuses every multipart request, so without this the test would
+    # The stub refuses any multipart request, so without this the test would
     # pass for a project-addressed run too.
-    assert addressing == {
-        "agent_id": ls.agent_key,
-        "agent_environment": "staging",
-        "session_name": None,
-    }
+    assert (sent["agent_id"], sent["agent_environment"], sent["session_name"]) == (
+        ls.agent_key,
+        "staging",
+        None,
+    )
     ls.assert_rejected(because="403")
 
-    # The log line is all a misconfigured caller gets, so it has to name the
-    # failure and carry the server's reason rather than just say something
-    # went wrong.
+    # The log line is all the caller gets. "multipart ingest" matches both
+    # senders, which word it differently ("Failed to multipart ingest runs" and
+    # "Failed to send compressed multipart ingest").
     warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
     assert any(
-        "multipart ingest" in message and "403" in message and REFUSAL_DETAIL in message
+        "multipart ingest" in message
+        and "403" in message
+        and REFUSAL_REASON in message
+        and REFUSAL_REMEDY in message
         for message in warnings
     ), f"expected a warning explaining the refused ingest, got {warnings}"
