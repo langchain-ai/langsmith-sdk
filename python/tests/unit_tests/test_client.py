@@ -8334,3 +8334,41 @@ class TestEitherAgentFieldAddressesTheRun:
 
     def test_run_helpers(self) -> None:
         assert rh._get_addressing(None) == (None, None, "staging")
+
+
+def test_batch_update_does_not_resolve_the_ambient_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`multipart_ingest(update=...)` must inherit the post's target too.
+
+    Driven through the public method rather than `_apply_agent_addressing`:
+    the first round of tests for this called the helper directly, which is why
+    they passed while `_run_transform` -- and so both batch paths -- stayed
+    broken.
+    """
+    _clean_agent_env(
+        monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
+    )
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    id_ = uuid.uuid4()
+    dotted = run_trees._create_current_dotted_order(datetime.now(timezone.utc), id_)
+    base: dict = {
+        "id": id_,
+        "trace_id": id_,
+        "dotted_order": dotted,
+        "name": "r",
+        "run_type": "llm",
+    }
+    # The post names a project, as an evaluation or an explicit caller would.
+    client.multipart_ingest(create=[{**base, "inputs": {"a": 1}, "session_name": "p"}])
+    post = _wait_for_part(session, "post")
+    client.multipart_ingest(update=[{**base, "outputs": {"b": 2}}])
+    patch = _wait_for_part(session, "patch")
+
+    assert post.get("session_name") == "p"
+    assert "agent_id" not in post
+    # The patch inherits the post's target by naming nothing at all.
+    assert "agent_id" not in patch
+    assert "agent_environment" not in patch
