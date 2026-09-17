@@ -259,6 +259,8 @@ def configure(
     client: Optional[Client] = _SENTINEL,
     enabled: Optional[bool] = _SENTINEL,
     project_name: Optional[str] = _SENTINEL,
+    agent_id: Optional[str] = _SENTINEL,
+    agent_environment: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
 ):
@@ -292,6 +294,15 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
+        agent_id: (experimental) The agent to send traces to, instead of a
+            project. Mutually exclusive with `project_name`.
+
+            Pass `None` to explicitly clear it.
+        agent_environment: (experimental) Narrows `agent_id`; one of `local`,
+            `development`, `staging` or `production`. Both agent arguments are
+            required together.
+
+            Pass `None` to explicitly clear it.
         tags: A list of tags to be applied to all traced runs.
 
             Tags are useful for filtering and organizing runs in the LangSmith UI.
@@ -331,6 +342,13 @@ def configure(
         >>> ls.configure(enabled=False)
     """
     global _CLIENT
+    _reject_conflicting_addressing(
+        project=None if project_name is _SENTINEL else project_name,
+        agent_id=None if agent_id is _SENTINEL else agent_id,
+        agent_environment=(
+            None if agent_environment is _SENTINEL else agent_environment
+        ),
+    )
     with _LOCK:
         if client is not _SENTINEL:
             _CLIENT = client
@@ -340,6 +358,12 @@ def configure(
         if project_name is not _SENTINEL:
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
+        if agent_id is not _SENTINEL:
+            _context._AGENT_ID.set(agent_id)
+            _context._GLOBAL_AGENT_ID = agent_id
+        if agent_environment is not _SENTINEL:
+            _context._AGENT_ENVIRONMENT.set(agent_environment)
+            _context._GLOBAL_AGENT_ENVIRONMENT = agent_environment
         if tags is not _SENTINEL:
             _context._TAGS.set(tags)
             _context._GLOBAL_TAGS = tags

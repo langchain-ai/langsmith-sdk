@@ -2765,6 +2765,129 @@ def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) 
     ls_utils.get_tracer_project.cache_clear()
 
 
+class TestEveryEntryPointTakesAnAgent:
+    """`agent_id` / `agent_environment` sit beside `project_name` everywhere.
+
+    Each tier of the project chain has an agent counterpart resolved at the
+    same point, so an agent named where a project could have been named takes
+    effect there.
+    """
+
+    def test_the_decorator_takes_an_agent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable(agent_id="dec-agent", agent_environment="staging")
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo()
+
+        assert seen["value"] == ("dec-agent", "staging", None)
+
+    def test_langsmith_extra_takes_an_agent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """And beats one named at decoration, as a project there would."""
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable(agent_id="dec-agent", agent_environment="staging")
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo(langsmith_extra={"agent_id": "extra-agent"})
+
+        assert seen["value"] == ("extra-agent", "staging", None)
+
+    def test_trace_takes_an_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        with tracing_context(enabled=True, client=mock_client):
+            with trace(
+                name="r", agent_id="trace-agent", agent_environment="staging"
+            ) as run:
+                assert (run.agent_id, run.agent_environment, run.session_name) == (
+                    "trace-agent",
+                    "staging",
+                    None,
+                )
+
+    def test_configure_takes_an_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        langsmith.configure(agent_id="cfg-agent", agent_environment="staging")
+        try:
+            with tracing_context(enabled=True, client=mock_client):
+                foo()
+        finally:
+            langsmith.configure(agent_id=None, agent_environment=None)
+
+        assert seen["value"] == ("cfg-agent", "staging", None)
+
+    def test_a_project_named_in_the_same_call_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One call naming two destinations is the SDK's one rejection."""
+        _clean_agent_addressing_env(monkeypatch)
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            traceable(project_name="p", agent_id="a")
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            trace(name="r", project_name="p", agent_id="a")
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            langsmith.configure(project_name="p", agent_id="a")
+
+        mock_client = _get_mock_client()
+
+        @traceable
+        def foo() -> None:
+            pass
+
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            with tracing_context(enabled=True, client=mock_client):
+                foo(langsmith_extra={"project_name": "p", "agent_id": "a"})
+
+    def test_a_project_named_in_code_still_beats_the_ambient_agent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="env-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable(project_name="dec-proj")
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo()
+
+        assert seen["value"] == (None, None, "dec-proj")
+
+
 class TestTracingContextAgentAddressing:
     """`tracing_context` can address runs by agent instead of project."""
 
