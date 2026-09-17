@@ -182,6 +182,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
     def list(
         self,
         *,
+        agent_id: str | Omit = omit,
         feedback_key: str | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
@@ -203,6 +204,8 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         name, tag, feedback key, or resource ID.
 
         Args:
+          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets
+
           feedback_key: Filter by feedback key
 
           limit: Maximum number of results (1-100)
@@ -239,6 +242,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "agent_id": agent_id,
                         "feedback_key": feedback_key,
                         "limit": limit,
                         "name_contains": name_contains,
@@ -577,6 +581,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
     def list(
         self,
         *,
+        agent_id: str | Omit = omit,
         feedback_key: str | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
@@ -598,6 +603,8 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         name, tag, feedback key, or resource ID.
 
         Args:
+          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets
+
           feedback_key: Filter by feedback key
 
           limit: Maximum number of results (1-100)
@@ -634,6 +641,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "agent_id": agent_id,
                         "feedback_key": feedback_key,
                         "limit": limit,
                         "name_contains": name_contains,
