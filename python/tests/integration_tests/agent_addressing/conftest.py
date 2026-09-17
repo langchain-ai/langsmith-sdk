@@ -72,14 +72,35 @@ class InProject:
 
 @dataclasses.dataclass(frozen=True)
 class Rejected:
-    """The endpoint refuses the run and creates no agent.
+    """The endpoint refuses the part, and creates no agent.
 
-    `because` is matched against the reported error text, since a LangSmith
-    exception carries no status attribute. Pin the endpoint's own wording only
-    where the distinction matters.
+    `reason` and `remedy` are the endpoint's own two halves, asserted together
+    because they are what a customer reads. A case names which rejection it
+    expects rather than only that one happened.
     """
 
-    because: str = "400"
+    reason: str
+    remedy: str
+    status: int = 400
+
+
+# Every rejection the SDK can provoke, worded as the endpoint words it. From
+# `smith-go/runs/agent_addressing.go`, confirmed against a live response.
+REJECTED_PAIR_REQUIRED = Rejected(
+    reason="agent_id and agent_environment must be sent together",
+    remedy="Send agent_id and agent_environment together",
+)
+REJECTED_AGENT_WITH_PROJECT = Rejected(
+    reason="agent_id cannot be combined with session_id or session_name",
+    remedy=(
+        "Address the run by agent_id, or by session_id or session_name, but not both"
+    ),
+)
+REJECTED_ROLLOUT_DISABLED = Rejected(
+    reason="agent addressing is not enabled for this workspace",
+    remedy="Address the run by session_id or session_name",
+    status=403,
+)
 
 
 Destination = Union[InAgent, InProject, Rejected]
@@ -113,8 +134,11 @@ class CallArgs:
 class Harness:
     """One test's client, names, environment and assertions."""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def __init__(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
         self._monkeypatch = monkeypatch
+        self._caplog = caplog
         token = uuid.uuid4().hex[:12]
         # Lower case and dashes only: an agent key becomes a project name, and
         # a key the backend cannot slug is rejected outright.
@@ -236,7 +260,7 @@ class Harness:
         different projects before, so checking the create alone says half.
         """
         if isinstance(destination, Rejected):
-            self.assert_rejected(because=destination.because)
+            self.assert_rejected(destination)
             return
 
         expected = self._expected_project(destination)
@@ -250,13 +274,29 @@ class Harness:
             f"the run landed in project {run.session_id}, not {expected}"
         )
 
-    def assert_rejected(self, *, because: str = "400") -> None:
-        """Assert the endpoint refused what we sent, and created no agent."""
-        reported = "\n".join(str(error) for error in self.errors)
-        assert because in reported, (
-            f"expected the endpoint to reject the run with {because!r};"
-            f" the SDK reported {reported or 'no errors'}"
+    def assert_rejected(self, rejected: Rejected) -> None:
+        """Assert the endpoint refused this, said why, logged it, created nothing."""
+        wanted = (str(rejected.status), rejected.reason, rejected.remedy)
+        reported = [str(error) for error in self.errors]
+        assert reported, (
+            "the endpoint accepted what it should have refused with"
+            f" {rejected.status} {rejected.reason!r}, since the SDK reported"
+            " no error at all"
         )
+        assert any(all(part in error for part in wanted) for error in reported), (
+            f"expected the reported error to carry {wanted}; got {reported}"
+        )
+        # The log line is the only copy a caller who is not watching the error
+        # callback ever sees, so it has to carry both halves too.
+        logged = [
+            record.getMessage()
+            for record in self._caplog.records
+            if record.levelno >= logging.WARNING
+        ]
+        assert any(
+            rejected.reason in message and rejected.remedy in message
+            for message in logged
+        ), f"expected the rejection logged at warning or above; got {logged}"
         assert self.agent() is None, (
             f"a rejected run must not create an agent, but {self.agent_key!r} exists"
         )
@@ -376,12 +416,17 @@ def _wait_for(
 
 
 @pytest.fixture
-def ls(monkeypatch: pytest.MonkeyPatch) -> Iterator[Harness]:
+def ls(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> Iterator[Harness]:
     """A client, unique names, and a clean addressing environment."""
     for name in ADDRESSING_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
     _clear_env_caches()
-    harness = Harness(monkeypatch)
+    # Set explicitly rather than relying on caplog's default, so a rejection
+    # assertion cannot pass or fail on how capturing happens to be configured.
+    caplog.set_level(logging.WARNING)
+    harness = Harness(monkeypatch, caplog)
     try:
         yield harness
     finally:

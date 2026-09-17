@@ -7,7 +7,6 @@ flag-off workspace would mean a second API key in CI.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Callable
 
 import pytest
@@ -16,23 +15,21 @@ import requests
 from langsmith.run_helpers import get_current_run_tree, traceable
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
+    REJECTED_ROLLOUT_DISABLED,
     Case,
     Harness,
     InAgent,
 )
 
-# Keep in step with smith-go `runs.errAgentAddressingNotEnabled`.
-REFUSAL_REASON = "agent addressing is not enabled for this workspace"
-REFUSAL_REMEDY = "Address the run by session_id or session_name"
-
 
 def _refusal_body(part: str) -> bytes:
     """The real body: status phrase, then the sentinel, then remedy and reason."""
+    refused = REJECTED_ROLLOUT_DISABLED
     return json.dumps(
         {
             "error": (
                 f"Forbidden: feature not enabled for {part}:"
-                f" {REFUSAL_REMEDY}: {REFUSAL_REASON}"
+                f" {refused.remedy}: {refused.reason}"
             )
         }
     ).encode()
@@ -47,7 +44,7 @@ def _refuse_agent_addressing(
     def request(method, url, *args, **kwargs):
         if str(url).endswith("/runs/multipart"):
             refused = requests.Response()
-            refused.status_code = 403
+            refused.status_code = REJECTED_ROLLOUT_DISABLED.status
             refused.url = str(url)
             refused._content = _refusal_body(part())
             return refused
@@ -57,7 +54,7 @@ def _refuse_agent_addressing(
 
 
 def test_a_refused_workspace_loses_the_run_without_raising(
-    ls: Harness, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ls: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The 403 is reported, never raised at the call site, and creates nothing.
 
@@ -91,9 +88,8 @@ def test_a_refused_workspace_loses_the_run_without_raising(
     # flush.
     _refuse_agent_addressing(ls.client, monkeypatch, lambda: f"post.{sent.get('id')}")
 
-    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        assert traced_function(langsmith_extra={"client": ls.client}) == "ok"
-        ls.client.flush()
+    assert traced_function(langsmith_extra={"client": ls.client}) == "ok"
+    ls.client.flush()
 
     # The stub refuses any multipart request, so without this the test would
     # pass for a project-addressed run too.
@@ -102,16 +98,4 @@ def test_a_refused_workspace_loses_the_run_without_raising(
         "staging",
         None,
     )
-    ls.assert_rejected(because="403")
-
-    # The log line is all the caller gets. "multipart ingest" matches both
-    # senders, which word it differently ("Failed to multipart ingest runs" and
-    # "Failed to send compressed multipart ingest").
-    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any(
-        "multipart ingest" in message
-        and "403" in message
-        and REFUSAL_REASON in message
-        and REFUSAL_REMEDY in message
-        for message in warnings
-    ), f"expected a warning explaining the refused ingest, got {warnings}"
+    ls.assert_rejected(REJECTED_ROLLOUT_DISABLED)
