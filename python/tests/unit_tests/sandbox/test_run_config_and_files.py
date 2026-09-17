@@ -1,7 +1,7 @@
 """Tests for run_config, stdin closing, and the filesystem search/range ops."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_httpx import HTTPXMock
@@ -13,6 +13,7 @@ from langsmith.sandbox import (
 )
 from langsmith.sandbox._models import CommandHandle
 from langsmith.sandbox._sandbox import Sandbox
+from langsmith.sandbox._ws_execute import _AsyncWSStreamControl, _WSStreamControl
 
 DATAPLANE = "https://sandbox-router.example.com/sb-123"
 
@@ -351,3 +352,79 @@ class TestRangeRead:
         assert stat.size_bytes == 100
         assert stat.etag == '"abc"'
         assert stat.content_type == "application/octet-stream"
+
+
+class TestCloseInputBeforeBind:
+    """A reconnected stream binds its socket only once iteration starts."""
+
+    def test_close_before_bind_is_queued_then_sent(self):
+        control = _WSStreamControl()
+        control.send_close_stdin()
+        assert control._close_stdin_pending is True
+
+        ws = MagicMock()
+        control._bind(ws)
+        ws.send.assert_called_once_with(json.dumps({"type": "close_stdin"}))
+        assert control._close_stdin_pending is False
+
+    def test_close_after_bind_sends_immediately(self):
+        control = _WSStreamControl()
+        ws = MagicMock()
+        control._bind(ws)
+        control.send_close_stdin()
+        ws.send.assert_called_once_with(json.dumps({"type": "close_stdin"}))
+
+    def test_close_on_a_finished_stream_is_dropped(self):
+        control = _WSStreamControl()
+        control._unbind()
+        control.send_close_stdin()
+        assert control._close_stdin_pending is False
+
+    @pytest.mark.asyncio
+    async def test_async_close_before_bind_is_queued_then_flushed(self):
+        control = _AsyncWSStreamControl()
+        await control.send_close_stdin()
+        assert control._close_stdin_pending is True
+
+        ws = MagicMock()
+        ws.send = AsyncMock()
+        control._bind(ws)
+        await control._flush_pending()
+        ws.send.assert_awaited_once_with(json.dumps({"type": "close_stdin"}))
+
+
+class TestReconnectPreservesIdentity:
+    """A reconnected handle keeps the stdin and PTY state of the original."""
+
+    def _handle(self, *, stdin_closed: bool, pty: bool) -> CommandHandle:
+        handle = CommandHandle.__new__(CommandHandle)
+        handle._command_id = "cmd-1"
+        handle._sandbox = MagicMock()
+        handle._control = MagicMock()
+        handle._stdin_closed = stdin_closed
+        handle._pty = pty
+        handle._last_stdout_offset = 4
+        handle._last_stderr_offset = 0
+        return handle
+
+    def test_reconnect_forwards_stdin_and_pty(self):
+        handle = self._handle(stdin_closed=True, pty=True)
+        handle.reconnect()
+        handle._sandbox.reconnect.assert_called_once_with(
+            "cmd-1",
+            stdout_offset=4,
+            stderr_offset=0,
+            stdin_closed=True,
+            pty=True,
+        )
+
+    def test_handle_built_by_reconnect_keeps_pty(self):
+        handle = CommandHandle.__new__(CommandHandle)
+        handle._control = MagicMock()
+        handle._stdin_closed = False
+        handle._pty = True
+        # Under a PTY the close is a no-op, so the documented EOT path keeps working.
+        handle.close_input()
+        handle._control.send_close_stdin.assert_not_called()
+        handle.send_input("\x04")
+        handle._control.send_input.assert_called_once_with("\x04")

@@ -358,6 +358,7 @@ export class CommandHandle {
       stdoutOffset: this._lastStdoutOffset,
       stderrOffset: this._lastStderrOffset,
       stdinClosed: this._stdinClosed,
+      pty: this._pty,
     });
   }
 }

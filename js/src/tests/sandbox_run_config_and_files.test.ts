@@ -373,3 +373,65 @@ describe("ranged reads", () => {
     expect(stat.content_type).toBe("application/octet-stream");
   });
 });
+
+describe("closeInput before the socket binds", () => {
+  const fakeWs = () => ({ readyState: 1, send: jest.fn() }) as any;
+
+  it("queues the close and sends it on bind", () => {
+    // A reconnected stream binds lazily; dropping the close would leave the
+    // command waiting for an EOF that never comes.
+    const control = new WSStreamControl();
+    control.sendCloseStdin();
+
+    const ws = fakeWs();
+    control._bind(ws);
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "close_stdin" }),
+    );
+  });
+
+  it("sends immediately once bound", () => {
+    const control = new WSStreamControl();
+    const ws = fakeWs();
+    control._bind(ws);
+    control.sendCloseStdin();
+
+    expect(ws.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a close on a finished stream", () => {
+    const control = new WSStreamControl();
+    control._unbind();
+    control.sendCloseStdin();
+
+    const ws = fakeWs();
+    control._bind(ws);
+    expect(ws.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("reconnect preserves the command's identity", () => {
+  it("forwards stdinClosed and pty", async () => {
+    const sandbox = {
+      reconnect: jest
+        .fn<(...args: any[]) => Promise<any>>()
+        .mockResolvedValue({}),
+    } as any;
+    const handle = new CommandHandle(
+      (async function* () {})() as any,
+      new WSStreamControl(),
+      sandbox,
+      { commandId: "cmd-1", stdinClosed: true, pty: true },
+    );
+
+    await handle.reconnect();
+
+    expect(sandbox.reconnect).toHaveBeenCalledWith("cmd-1", {
+      stdoutOffset: 0,
+      stderrOffset: 0,
+      stdinClosed: true,
+      pty: true,
+    });
+  });
+});

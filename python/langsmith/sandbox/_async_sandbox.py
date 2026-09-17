@@ -582,6 +582,7 @@ class AsyncSandbox:
         stdout_offset: int = 0,
         stderr_offset: int = 0,
         stdin_closed: bool = False,
+        pty: bool = False,
         headers: RequestHeaders = None,
     ) -> AsyncCommandHandle:
         """Reconnect to a running or recently-finished command.
@@ -629,6 +630,7 @@ class AsyncSandbox:
             stdout_offset=stdout_offset,
             stderr_offset=stderr_offset,
             stdin_closed=stdin_closed,
+            pty=pty,
         )
 
     async def write(

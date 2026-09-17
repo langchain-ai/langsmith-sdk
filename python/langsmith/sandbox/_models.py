@@ -1071,6 +1071,7 @@ class CommandHandle:
             stdout_offset=self._last_stdout_offset,
             stderr_offset=self._last_stderr_offset,
             stdin_closed=self._stdin_closed,
+            pty=self._pty,
         )
 
 
@@ -1327,4 +1328,5 @@ class AsyncCommandHandle:
             stdout_offset=self._last_stdout_offset,
             stderr_offset=self._last_stderr_offset,
             stdin_closed=self._stdin_closed,
+            pty=self._pty,
         )

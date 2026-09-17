@@ -578,6 +578,7 @@ class Sandbox:
         stdout_offset: int = 0,
         stderr_offset: int = 0,
         stdin_closed: bool = False,
+        pty: bool = False,
         headers: RequestHeaders = None,
     ) -> CommandHandle:
         """Reconnect to a running or recently-finished command.
@@ -625,6 +626,7 @@ class Sandbox:
             stdout_offset=stdout_offset,
             stderr_offset=stderr_offset,
             stdin_closed=stdin_closed,
+            pty=pty,
         )
 
     def write(

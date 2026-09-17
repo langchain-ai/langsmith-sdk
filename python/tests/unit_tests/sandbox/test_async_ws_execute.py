@@ -664,6 +664,7 @@ class TestAsyncCommandHandle:
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
             stdin_closed=handle._stdin_closed,
+            pty=handle._pty,
         )
 
 

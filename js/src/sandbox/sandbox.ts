@@ -432,9 +432,15 @@ export class Sandbox {
       stdoutOffset?: number;
       stderrOffset?: number;
       stdinClosed?: boolean;
+      pty?: boolean;
     } = {},
   ): Promise<CommandHandle> {
-    const { stdoutOffset = 0, stderrOffset = 0, stdinClosed = false } = options;
+    const {
+      stdoutOffset = 0,
+      stderrOffset = 0,
+      stdinClosed = false,
+      pty = false,
+    } = options;
     const dataplaneUrl = this.requireDataplaneUrl();
 
     const clientHeaders = this._client.getDefaultHeaders();
@@ -456,6 +462,7 @@ export class Sandbox {
       stdoutOffset,
       stderrOffset,
       stdinClosed,
+      pty,
     });
   }
 
