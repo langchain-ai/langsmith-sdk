@@ -1,0 +1,56 @@
+python/langsmith/utils.py
+  s_c849eb4dd0e538::t_f28a5db49de948 509-538
+python/tests/unit_tests/test_run_trees.py
+  s_c849eb4dd0e538::t_f28a5db49de948 1109-1143
+python/langsmith/client.py
+  s_c849eb4dd0e538::t_f28a5db49de948 2448,2457-2464,2484-2488,2705-2708,3974
+  s_c849eb4dd0e538::t_f90ad55fb03d7d 8412-8422
+  s_c849eb4dd0e538::t_e1e9262e88b3d3 8544-8545
+  s_c849eb4dd0e538::t_21ad3b23ff5ec2 8345-8346
+  s_c849eb4dd0e538::t_8fa72687971fd5 8480-8482
+python/tests/unit_tests/test_client.py
+  s_c849eb4dd0e538::t_553ed5dd515a6c 52,8270-8337
+  s_c849eb4dd0e538::t_0f4f04cbacfac2 8399,8479
+  s_c849eb4dd0e538::t_cc2b212398d204 8477-8478,8480
+  s_c849eb4dd0e538::t_a18d40dc27086f 8487
+  s_c849eb4dd0e538::t_684365ba2d48bd 8135
+  s_c849eb4dd0e538::t_d240725dfbfa5f 8378-8380,8407-8409,8411,8414-8415,8418,8428,8433-8459,8464-8476,8481-8486,8488-8489
+  s_c849eb4dd0e538::t_caa7d17ffc747c 51,54
+  s_c849eb4dd0e538::t_93966915f67224 8381,8391
+  s_c849eb4dd0e538::t_e615f51a674896 8382-8385,8388-8390,8392-8398,8400-8406,8410,8416-8417,8419-8427
+  s_c849eb4dd0e538::t_b71a929a558b3f 8412-8413,8429-8432,8460-8463
+  s_c849eb4dd0e538::t_98ec59bc4ca4dc 8386-8387
+  s_c849eb4dd0e538::t_1bda3af9751c27 8270-8271
+  s_c849eb4dd0e538::t_75b00ec5dea76c 8338-8339
+python/langsmith/run_helpers.py
+  s_c849eb4dd0e538::t_f28a5db49de948 1349-1351,1353-1355
+python/langsmith/run_trees.py
+  s_c849eb4dd0e538::t_f28a5db49de948 206,408-409,411,1331-1339,1341-1351,1354
+python/langsmith/async_client.py
+  s_c849eb4dd0e538::t_f28a5db49de948 629-633,661
+  s_c849eb4dd0e538::t_900284ab641993 1281-1282
+  s_c849eb4dd0e538::t_820a1eda9256ec 1201-1208
+  s_c849eb4dd0e538::t_beb1fc10e4026c 1165-1166
+  s_c849eb4dd0e538::t_0e9cae329a53e6 1224-1226
+python/langsmith/schemas.py
+  s_c849eb4dd0e538::t_612c94196dd46c 652-661
+python/langsmith/_internal/_operations.py
+  s_c849eb4dd0e538::t_89b9e03ec532c1 185-191
+  s_c849eb4dd0e538::t_70771a92993ae9 184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "591516105eac1c7bef491f77a3aaefb0c0b81b35",
+  "prompts": {},
+  "sessions": {
+    "s_c849eb4dd0e538": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8765c25-fb1f-4465-a790-ed0986da2072",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
