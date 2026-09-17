@@ -199,7 +199,9 @@ def tracing_context(
             project. Cannot be combined with a project in the same call.
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. One of `local`, `development`, `staging` or
+            `production` -- anything else is rejected rather than defaulted.
+            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.
