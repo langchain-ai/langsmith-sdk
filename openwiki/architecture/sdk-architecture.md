@@ -1,11 +1,11 @@
 ---
 type: SDK architecture
 title: Dual-SDK Architecture and Public Surfaces
-description: How the Python and TypeScript LangSmith SDKs divide handwritten behavior from generated OpenAPI resources, expose their public APIs, and diverge around asynchronous execution and runtime packaging.
+description: How the independently versioned Python and TypeScript LangSmith SDKs divide handwritten behavior from generated OpenAPI resources and define root and subpath public APIs.
 tags: [architecture, sdk, python, typescript, openapi, public-api]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-17T08:42:57.973Z
 sources:
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
@@ -25,6 +25,8 @@ sources:
     resource: repo://js/src/schemas.ts
   - id: openwiki-source-dd0879e61f8dabf4b92cc7a8
     resource: repo://js/src/tests/client_headers.test.ts
+  - id: openwiki-source-23b0b1834ee9c4c1a11d64b7
+    resource: repo://js/src/tests/traceable.test.ts
   - id: openwiki-source-e1498332cfe4ae0889c8c3ac
     resource: repo://python/langsmith/__init__.py
   - id: openwiki-source-cf9f400507ed3df7b2223f31
@@ -43,14 +45,16 @@ sources:
     resource: repo://python/tests/unit_tests/test_async_client.py
   - id: openwiki-source-f6f8016e7d65a51479aabe9b
     resource: repo://python/tests/unit_tests/test_client.py
+  - id: openwiki-source-968e7cb254562232d57fe9b1
+    resource: repo://python/tests/unit_tests/test_run_helpers.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-17T08:42:57.973Z" }
 ---
 
 # Dual-SDK Architecture and Public Surfaces
 
-The repository ships two implementations of the same product-facing SDK: the Python `langsmith` package and the JavaScript/TypeScript `langsmith` package. They target the same LangSmith platform concepts—traces and runs, datasets, evaluation, prompt caching, provider wrappers, and sandboxes—but they are independent runtime implementations rather than bindings over a shared library.
+The repository ships two implementations of the same product-facing SDK: the Python `langsmith` package and the JavaScript/TypeScript `langsmith` package. They target the same LangSmith platform concepts—traces and runs, datasets, evaluation, prompt caching, provider wrappers, and sandboxes—but they are independent runtime implementations rather than bindings over a shared library. Each owns its version in its package facade or manifest, and separate release workflows publish Python when `python/langsmith/__init__.py` changes and JavaScript when `js/package.json` changes; release bumps therefore belong in separate PRs.
 
 Treat **capability parity as an architectural goal, not an exact API contract**. The matching `Client`, run-tree, schema, evaluation, wrapper, and generated resource families make the intended parallel clear. Naming, typing, lifecycle, packaging, and even sync/async behavior remain language-specific. A feature must therefore be checked in both implementations before documenting or changing it as “shared.”
 
@@ -123,15 +127,17 @@ Tests pin both behaviors and the warning threshold. This is an implementation di
 
 ### Python package root
 
-`python/langsmith/__init__.py` is a curated, lazy facade. `TYPE_CHECKING` imports provide static visibility, while module `__getattr__` imports expensive implementation modules only when names such as `Client`, `AsyncClient`, `RunTree`, tracing helpers, evaluators, caches, or testing helpers are requested. `__all__` records that supported root surface.
+`python/langsmith/__init__.py` is a curated, mostly lazy facade. `TYPE_CHECKING` imports provide static visibility, while module `__getattr__` imports expensive implementation modules only when names such as `Client`, `AsyncClient`, `RunTree`, tracing helpers, evaluators, caches, or testing helpers are requested. `__all__` records the supported root surface. Small metadata values are eager: the package version and `LS_MESSAGE_VIEW_EXCLUDE` are defined directly in the facade.
 
-Generated exception classes are deliberately promoted through the same lazy mechanism. Before return, their `__module__` is rewritten to `langsmith`, giving users stable root-level exception names even though implementation comes from `_openapi_client`. By contrast, generated clients, models, and resources remain internal implementation details; callers reach selected resources through `Client` and `AsyncClient` properties.
+Generated exception classes are deliberately promoted through the lazy mechanism. Before return, their `__module__` is rewritten to `langsmith`, giving users stable root-level exception names even though implementation comes from `_openapi_client`. By contrast, generated clients, models, and resources remain internal implementation details; callers reach selected resources through `Client` and `AsyncClient` properties.
 
 Python schemas are handwritten runtime models. They use Pydantic models for validation and conversion, plus `TypedDict`, protocols, enums, UUIDs, datetimes, and Python-specific attachment forms such as `bytes` and `Path`. They should not be assumed to be aliases of generated OpenAPI models.
 
 ### TypeScript package root and subpaths
 
-`js/src/index.ts` deliberately exports a compact root: `Client`, selected schema types, `RunTree`, utility and cache APIs, UUID helpers, generated error classes, version metadata, and a tracing metadata constant. Broader capabilities are reached through explicit package subpaths such as `langsmith/client`, `langsmith/traceable`, `langsmith/evaluation`, `langsmith/schemas`, `langsmith/wrappers/openai`, test-runner integrations, experimental OpenTelemetry modules, and `langsmith/sandbox`.
+`js/src/index.ts` deliberately exports a compact root: `Client` and its configuration/interface types, selected schema types, `RunTree`, focused fetch/project/tracing utilities, prompt-cache and UUID APIs, generated error classes, `__version__`, and `LS_MESSAGE_VIEW_EXCLUDE`. The metadata constant has the same value and purpose as the Python root constant: callers can mark a traced run to be hidden from LangSmith's Messages View. This is a verified point of root-level parity, not evidence that the roots are otherwise interchangeable.
+
+Broader capabilities are reached through explicit package subpaths such as `langsmith/client`, `langsmith/traceable`, `langsmith/evaluation`, `langsmith/schemas`, provider wrappers, test-runner integrations, experimental OpenTelemetry modules, and `langsmith/sandbox`. These are public package boundaries even though they are absent from the curated root; generated `_openapi_client` modules are neither root exports nor package subpaths.
 
 Those subpaths are assembled by `js/scripts/create-entrypoints.js`, not by hand-editing a set of wrapper files. The script is the source list for entrypoints; it generates ESM, CommonJS, and declaration shims and rewrites `package.json` `exports` and `files`. The build compiles ESM and CommonJS, then creates these entrypoints. Package exports provide separate `import`, `require`, and type declaration targets, while the `browser` map substitutes browser implementations for filesystem and worker-thread utilities.
 
@@ -157,6 +163,7 @@ For architecture changes, the highest-value checks are narrower than the full in
 - Python `tests/unit_tests/test_async_client.py`: one-per-version background compatibility checks and async client lifecycle/request behavior.
 - TypeScript `src/tests/client_headers.test.ts`: header/auth/user-agent consistency and generated-client rebuilding.
 - TypeScript `src/tests/client.test.ts`: generated resource mounting and concrete annotation-queue URL/auth behavior.
+- Python `tests/unit_tests/test_run_helpers.py` and TypeScript `src/tests/traceable.test.ts`: root import/value checks for `LS_MESSAGE_VIEW_EXCLUDE` and propagation through traced-run metadata.
 - Package build/type checks: `pnpm build` validates dual-module entrypoint generation and declarations; Python lint and type configuration explicitly exclude or suppress generated-client diagnostics, reinforcing that fixes belong upstream.
 
 See [Platform Client](/openwiki/concepts/platform-client.md) for user-facing client behavior, [Run Tree and Context](/openwiki/concepts/run-tree-and-context.md) for tracing composition, [Provider Wrappers and OpenTelemetry](/openwiki/integrations/provider-wrappers-and-opentelemetry.md) for integration boundaries, and [Development and Release](/openwiki/operations/development-and-release.md) for the generated sync and independent package release processes.

@@ -5,7 +5,7 @@ description: Contributor workflows for validating, building, and releasing the P
 tags: [development, build, release, ci, python, typescript, openapi]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-17T08:42:57.973Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml

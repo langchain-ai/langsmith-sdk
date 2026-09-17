@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "pages": {
     "/openwiki/architecture/sdk-architecture.md": {
-      "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
-      "sourceFingerprint": "sha256:062bbfcdbe6d0e73172ef98905426185b822822d8109b41aa6703503de0c995b",
-      "pageVersion": "sha256:3daf51e4ff36517cf81c74efa2d8e6f98939cfebd6d9377c061a6858b8b3b875",
+      "pageVersion": "sha256:8f9cb7aabd039c07a2d54aa2b286358505fd07432684a35f535497253153c854",
       "completedBy": "openwiki/0.5.2",
-      "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
+      "completedRunId": "bbc19522-d560-4ded-96cb-87ec0e5b0e4e",
+      "gitHead": "68342eae8047a39379c1f848390a7c5995a9166d",
+      "sourceFingerprint": "sha256:6e160cfae27737f30e9a0a4c8feac99e622778f6fdf20893e4668f309ca0d331"
     },
     "/openwiki/concepts/client-configuration-and-auth.md": {
       "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
@@ -37,18 +37,18 @@
       "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
     },
     "/openwiki/operations/development-and-release.md": {
-      "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
-      "sourceFingerprint": "sha256:062bbfcdbe6d0e73172ef98905426185b822822d8109b41aa6703503de0c995b",
-      "pageVersion": "sha256:d2a2b7f7c6cdda93b134f1fca98b7cb0c698c5620bf26c4199d13119b57e6f76",
+      "pageVersion": "sha256:794bee77ed19fb30fbe10db5fedf9532018748e416ec4bac064a24219b8fa550",
       "completedBy": "openwiki/0.5.2",
-      "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
+      "completedRunId": "bbc19522-d560-4ded-96cb-87ec0e5b0e4e",
+      "gitHead": "68342eae8047a39379c1f848390a7c5995a9166d",
+      "sourceFingerprint": "sha256:6e160cfae27737f30e9a0a4c8feac99e622778f6fdf20893e4668f309ca0d331"
     },
     "/openwiki/quickstart.md": {
+      "gitHead": "68342eae8047a39379c1f848390a7c5995a9166d",
+      "sourceFingerprint": "sha256:6e160cfae27737f30e9a0a4c8feac99e622778f6fdf20893e4668f309ca0d331",
       "pageVersion": "sha256:ae1d447e60b57903a515e98604b9eda38fd08b4926641b9a6abdf1d4027797bb",
       "completedBy": "openwiki/0.5.2",
-      "completedRunId": "68c436a4-e0d7-47a4-874d-d9cb7ec0bae4",
-      "gitHead": "5d4350085d612daa1b80b54e05be6d8b6f0ad79b",
-      "sourceFingerprint": "sha256:67469daa82522a2c4bb193a704a0fb1dffd799a23d495bc2d68ae28992c05e20"
+      "completedRunId": "68c436a4-e0d7-47a4-874d-d9cb7ec0bae4"
     },
     "/openwiki/testing/repository-test-strategy.md": {
       "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
@@ -65,11 +65,11 @@
       "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
     },
     "/openwiki/workflows/evaluation-and-experiments.md": {
-      "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
-      "sourceFingerprint": "sha256:062bbfcdbe6d0e73172ef98905426185b822822d8109b41aa6703503de0c995b",
-      "pageVersion": "sha256:23f96a987c7aa95c590793dbc8da5b7cc8ef97878978fdc34564252baf0b7502",
+      "pageVersion": "sha256:95579186cdf7d8bcd0a5ae6f6c7a4c41e92a13edd6145c1577aaaff6ba34b242",
       "completedBy": "openwiki/0.5.2",
-      "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
+      "completedRunId": "bbc19522-d560-4ded-96cb-87ec0e5b0e4e",
+      "gitHead": "68342eae8047a39379c1f848390a7c5995a9166d",
+      "sourceFingerprint": "sha256:6e160cfae27737f30e9a0a4c8feac99e622778f6fdf20893e4668f309ca0d331"
     },
     "/openwiki/workflows/sandbox-lifecycle-and-execution.md": {
       "gitHead": "dae91bb7709468e3a9ab17f9d1d23bbefb33b669",
@@ -79,15 +79,15 @@
       "completedRunId": "98aa1c2b-15ee-4f80-a5e9-e54621dc56e3"
     },
     "/openwiki/workflows/trace-capture-and-ingestion.md": {
-      "gitHead": "f42b633c8680e3fa0de2ba7c573c7922cabcf6dd",
-      "sourceFingerprint": "sha256:6e95216caba60b9c62b11f6faf2bbf572cbeb9c2ce4a78aa606d885790d3c71e",
+      "gitHead": "68342eae8047a39379c1f848390a7c5995a9166d",
+      "sourceFingerprint": "sha256:6e160cfae27737f30e9a0a4c8feac99e622778f6fdf20893e4668f309ca0d331",
       "pageVersion": "sha256:d62c19544445ec57e684d0041ded06ed40aeb5c09e53fedeab3a2bb68d2aafca",
       "completedBy": "openwiki/0.5.2",
       "completedRunId": "71c3ec6d-f470-4941-8411-638f95b18d03"
     },
     "/openwiki/workflows/trace-ingestion-measured.md": {
-      "gitHead": "f42b633c8680e3fa0de2ba7c573c7922cabcf6dd",
-      "sourceFingerprint": "sha256:6e95216caba60b9c62b11f6faf2bbf572cbeb9c2ce4a78aa606d885790d3c71e",
+      "gitHead": "68342eae8047a39379c1f848390a7c5995a9166d",
+      "sourceFingerprint": "sha256:6e160cfae27737f30e9a0a4c8feac99e622778f6fdf20893e4668f309ca0d331",
       "pageVersion": "sha256:cf58e61bf14fa7eaa69b6bf33da2172e9a5d98aaeeac3026c8f5a8d1e2bc941a",
       "completedBy": "openwiki/0.5.2",
       "completedRunId": "71c3ec6d-f470-4941-8411-638f95b18d03"
