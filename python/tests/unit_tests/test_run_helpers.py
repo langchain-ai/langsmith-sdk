@@ -2819,6 +2819,55 @@ class TestTracingContextAgentAddressing:
 
         assert seen == {"agent_id": "env-agent", "session_name": None}
 
+    def test_traceable_forwards_a_lone_agent_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Half a pair must reach the endpoint, not fall into `default`.
+
+        `_setup_run` resolves addressing itself, so the decorator needs the same
+        either-half rule as `trace` and `RunTree`.
+        """
+        _clean_agent_addressing_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["agent_environment"] = run.agent_environment
+            seen["session_name"] = run.session_name
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo()
+
+        assert seen == {"agent_environment": "staging", "session_name": None}
+
+    def test_traceable_keeps_a_configured_project_beside_the_agent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both travel so the endpoint refuses the pair, rather than the SDK
+        quietly moving the trace to the agent."""
+        _clean_agent_addressing_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="env-agent",
+            LANGSMITH_PROJECT="env-proj",
+        )
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["agent_id"] = run.agent_id
+            seen["session_name"] = run.session_name
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo()
+
+        assert seen == {"agent_id": "env-agent", "session_name": "env-proj"}
+
     def test_nested_traceables_inherit_agent_addressing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

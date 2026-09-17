@@ -1696,9 +1696,15 @@ def _setup_run(
         or (parent_run_.agent_environment if parent_run_ else None)
         or utils.get_tracer_agent_environment()
     )
-    if explicit_project is None and selected_agent_id:
+    if explicit_project is None and utils.is_agent_addressed(
+        selected_agent_id, selected_agent_environment
+    ):
         # Agent-addressed: don't default a project in, or the run would carry
         # both addressing modes. An explicit project anywhere above wins.
+        #
+        # Either half addresses the run. A lone `agent_environment` is
+        # incomplete and the endpoint says so, but falling through to `default`
+        # here would send the run somewhere else instead of reporting it.
         selected_project = None
     else:
         selected_project = explicit_project or utils.get_tracer_project()

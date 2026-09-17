@@ -621,9 +621,11 @@ class AsyncClient:
             lost rather than falling back to a project. Both may change
             without notice.
         """
+        # Only `project_name`, this method's own parameter, counts as a caller
+        # naming a project; `session_name` and `session_id` arrive in `kwargs`
+        # as part of an already-resolved run body.
         ls_client._reject_conflicting_addressing(
-            project=project_name or kwargs.get("session_name"),
-            session_id=kwargs.get("session_id"),
+            project=project_name,
             agent_id=kwargs.get("agent_id"),
             agent_environment=kwargs.get("agent_environment"),
         )

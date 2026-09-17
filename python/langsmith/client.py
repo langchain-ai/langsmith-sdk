@@ -784,6 +784,11 @@ def _reject_conflicting_addressing(
     this the agent would be discarded in silence. Every other rejection is left
     to the endpoint, which can see what it is sent.
 
+    Callers pass only values a caller supplied in this one call. A resolved run
+    body can legitimately carry both -- a project configured in the environment
+    travels with the agent so the endpoint refuses the pair -- and an inherited
+    pair must not be mistaken for a conflict.
+
     Pass only values the caller supplied in this call. An agent that came from
     the environment alongside an explicit project is not a conflict -- the
     project wins and the agent is dropped, which is what lets an evaluation set
@@ -2724,9 +2729,13 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
+        # Only `project_name`, this method's own parameter, counts as a caller
+        # naming a project. `session_name` and `session_id` arrive in `kwargs`
+        # as part of an already-resolved run body -- `RunTree.post` sends the
+        # tree's fields that way -- where a project beside an agent means the
+        # two were meant to travel together for the endpoint to refuse.
         _reject_conflicting_addressing(
-            project=project_name or kwargs.get("session_name"),
-            session_id=kwargs.get("session_id"),
+            project=project_name,
             agent_id=kwargs.get("agent_id"),
             agent_environment=kwargs.get("agent_environment"),
         )
