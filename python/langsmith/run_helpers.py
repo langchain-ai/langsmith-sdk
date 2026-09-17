@@ -1353,7 +1353,13 @@ def _get_addressing(
     if explicit_project is None and utils.is_agent_addressed(
         agent_id, agent_environment
     ):
-        return None, agent_id, agent_environment
+        # A configured project travels with the agent so the endpoint refuses
+        # the pair; only the `default` fallback is suppressed.
+        return (
+            utils.get_tracer_project(return_default_value=False),
+            agent_id,
+            agent_environment,
+        )
     return explicit_project or utils.get_tracer_project(), None, None
 
 
