@@ -1794,6 +1794,12 @@ class TestGenAIMessageAttributes:
             "output_tokens": 5,
             "total_tokens": 25,
         }
+        assert not {
+            "gen_ai.input.messages",
+            "gen_ai.output.messages",
+            "gen_ai.system_instructions",
+        }.intersection(span._attributes)
+        # Translating the exported copy must not mutate the source span attributes.
         assert attrs["gen_ai.input.messages"] == json.dumps(inputs)
 
     @pytest.mark.parametrize(
@@ -1859,6 +1865,8 @@ class TestGenAIMessageAttributes:
             json.loads(span._attributes["gen_ai.completion"])["messages"][0]["content"]
             == "New answer"
         )
+        assert "gen_ai.input.messages" not in span._attributes
+        assert "gen_ai.output.messages" not in span._attributes
 
     def test_new_fields_prevent_duplicates_and_empty_arrays_are_authoritative(self):
         diagnostic = self._event("diagnostic", detail="kept")
@@ -1881,6 +1889,11 @@ class TestGenAIMessageAttributes:
             {"role": "system", "content": "New instructions"}
         ]
         assert json.loads(span._attributes["gen_ai.completion"])["messages"] == []
+        assert not {
+            "gen_ai.input.messages",
+            "gen_ai.output.messages",
+            "gen_ai.system_instructions",
+        }.intersection(span._attributes)
         assert list(span.events) == [diagnostic]
 
     def test_instructions_only_and_legacy_output(self):
