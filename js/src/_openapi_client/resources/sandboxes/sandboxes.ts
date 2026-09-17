@@ -855,6 +855,12 @@ export interface SandboxListUsageCostsParams extends ItemsCursorGetPaginationPar
   start_time: string;
 
   /**
+   * HOUR returns hourly buckets. RESOURCE sums each resource over the requested
+   * interval and sets period_start to start_time.
+   */
+  granularity?: 'HOUR' | 'RESOURCE';
+
+  /**
    * Resource UUID filter; repeat this parameter up to 100 times
    */
   resource_ids?: Array<string>;

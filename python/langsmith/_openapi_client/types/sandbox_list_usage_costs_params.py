@@ -22,6 +22,13 @@ class SandboxListUsageCostsParams(TypedDict, total=False):
     cursor: str
     """Opaque pagination cursor"""
 
+    granularity: Literal["HOUR", "RESOURCE"]
+    """HOUR returns hourly buckets.
+
+    RESOURCE sums each resource over the requested interval and sets period_start to
+    start_time.
+    """
+
     page_size: int
     """Maximum rows to return"""
 

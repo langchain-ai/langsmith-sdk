@@ -87,6 +87,7 @@ class SandboxesResource(SyncAPIResource):
         end_time: Union[str, datetime],
         start_time: Union[str, datetime],
         cursor: str | Omit = omit,
+        granularity: Literal["HOUR", "RESOURCE"] | Omit = omit,
         page_size: int | Omit = omit,
         resource_ids: SequenceNotStr[str] | Omit = omit,
         resource_type: Literal["SANDBOX", "SNAPSHOT"] | Omit = omit,
@@ -112,6 +113,9 @@ class SandboxesResource(SyncAPIResource):
           start_time: Inclusive RFC3339 start time
 
           cursor: Opaque pagination cursor
+
+          granularity: HOUR returns hourly buckets. RESOURCE sums each resource over the requested
+              interval and sets period_start to start_time.
 
           page_size: Maximum rows to return
 
@@ -140,6 +144,7 @@ class SandboxesResource(SyncAPIResource):
                         "end_time": end_time,
                         "start_time": start_time,
                         "cursor": cursor,
+                        "granularity": granularity,
                         "page_size": page_size,
                         "resource_ids": resource_ids,
                         "resource_type": resource_type,
@@ -189,6 +194,7 @@ class AsyncSandboxesResource(AsyncAPIResource):
         end_time: Union[str, datetime],
         start_time: Union[str, datetime],
         cursor: str | Omit = omit,
+        granularity: Literal["HOUR", "RESOURCE"] | Omit = omit,
         page_size: int | Omit = omit,
         resource_ids: SequenceNotStr[str] | Omit = omit,
         resource_type: Literal["SANDBOX", "SNAPSHOT"] | Omit = omit,
@@ -214,6 +220,9 @@ class AsyncSandboxesResource(AsyncAPIResource):
           start_time: Inclusive RFC3339 start time
 
           cursor: Opaque pagination cursor
+
+          granularity: HOUR returns hourly buckets. RESOURCE sums each resource over the requested
+              interval and sets period_start to start_time.
 
           page_size: Maximum rows to return
 
@@ -242,6 +251,7 @@ class AsyncSandboxesResource(AsyncAPIResource):
                         "end_time": end_time,
                         "start_time": start_time,
                         "cursor": cursor,
+                        "granularity": granularity,
                         "page_size": page_size,
                         "resource_ids": resource_ids,
                         "resource_type": resource_type,
