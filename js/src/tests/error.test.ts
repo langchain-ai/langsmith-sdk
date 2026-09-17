@@ -27,14 +27,25 @@ describe("raiseForStatus", () => {
     );
   });
 
-  it("throws a bare status error for a non-JSON 403 body", async () => {
+  it("surfaces a non-JSON 403 body", async () => {
     const response = new Response("nginx denied this", {
       status: 403,
       statusText: "Forbidden",
     });
 
     await expect(raiseForStatus(response, "create run")).rejects.toThrow(
-      "403 Forbidden",
+      "Failed to create run. Received status [403]: Forbidden. Message: nginx denied this",
+    );
+  });
+
+  it("surfaces an empty 403 body", async () => {
+    const response = new Response(null, {
+      status: 403,
+      statusText: "Forbidden",
+    });
+
+    await expect(raiseForStatus(response, "create run")).rejects.toThrow(
+      "Failed to create run. Received status [403]: Forbidden. Message: ",
     );
   });
 
