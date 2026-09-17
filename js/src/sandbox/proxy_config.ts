@@ -63,6 +63,10 @@ function requireProxyRules(
 }
 
 function validateProxyProviderRule(rule: SandboxProxyRule): void {
+  if (rule.type === "aws") {
+    getAwsRoleArn(rule.aws);
+    return;
+  }
   if ((rule as Record<string, unknown>).type !== "gcp") {
     return;
   }
@@ -71,6 +75,22 @@ function validateProxyProviderRule(rule: SandboxProxyRule): void {
     throw new Error("gcp proxy auth rules require scopes");
   }
   requireNonEmptyStringArray(gcp.scopes, "scopes");
+}
+
+/** Validate role-only descriptors without tightening legacy static inputs. */
+export function getAwsRoleArn(aws: unknown): string | undefined {
+  if (aws === null || typeof aws !== "object" || Array.isArray(aws)) {
+    return undefined;
+  }
+  const config = aws as Record<string, unknown>;
+  if (!("role_arn" in config) || config.role_arn === "") {
+    return undefined;
+  }
+  const roleArn = requireNonEmptyString(config.role_arn as string, "roleArn");
+  if (Object.keys(config).some((key) => key !== "role_arn")) {
+    throw new Error("AWS role auth must contain only role_arn");
+  }
+  return roleArn;
 }
 
 /** Reference a LangSmith workspace secret in a sandbox proxy configuration. */
@@ -117,28 +137,78 @@ export function proxyConfig({
   return config;
 }
 
-/** Build a sandbox proxy rule that signs AWS HTTPS requests with SigV4. */
-export function awsAuth({
-  accessKeyId,
-  secretAccessKey,
-  name = "aws",
-  enabled = true,
-  envVars,
-}: {
-  accessKeyId: SandboxProxySecret;
-  secretAccessKey: SandboxProxySecret;
+interface AwsAuthCommonOptions {
   name?: string;
   enabled?: boolean;
   envVars?: Record<string, string>;
-}): SandboxAwsAuthRule {
+}
+
+type AwsStaticAuthConfig = Extract<
+  SandboxAwsAuthRule["aws"],
+  { access_key_id: SandboxProxySecret }
+>;
+
+type AwsRoleAuthConfig = Extract<
+  SandboxAwsAuthRule["aws"],
+  { role_arn: string }
+>;
+
+type AwsStaticAuthOptions = AwsAuthCommonOptions & {
+  accessKeyId: SandboxProxySecret;
+  secretAccessKey: SandboxProxySecret;
+  roleArn?: "";
+};
+
+type AwsRoleAuthOptions = AwsAuthCommonOptions & {
+  roleArn: string;
+  accessKeyId?: never;
+  secretAccessKey?: never;
+};
+
+/**
+ * Sign supported AWS HTTPS requests using static keys or an IAM role.
+ * Role auth requires backend support and is configured at sandbox creation.
+ * LangSmith supplies the workspace External ID and renews credentials.
+ * A role in proxyConfig uses its effective IAM permissions; the same helper
+ * in mountConfig.auth uses the backend's mount-scoped S3 permissions.
+ */
+export function awsAuth(
+  options: AwsStaticAuthOptions,
+): SandboxAwsAuthRule<AwsStaticAuthConfig>;
+export function awsAuth(
+  options: AwsRoleAuthOptions,
+): SandboxAwsAuthRule<AwsRoleAuthConfig>;
+export function awsAuth(
+  options: AwsStaticAuthOptions | AwsRoleAuthOptions,
+): SandboxAwsAuthRule;
+export function awsAuth({
+  accessKeyId,
+  secretAccessKey,
+  roleArn,
+  name = "aws",
+  enabled = true,
+  envVars,
+}: AwsStaticAuthOptions | AwsRoleAuthOptions): SandboxAwsAuthRule {
+  const candidate: Record<string, unknown> = {};
+  if (roleArn !== undefined) candidate.role_arn = roleArn;
+  if (accessKeyId !== undefined) candidate.access_key_id = accessKeyId;
+  if (secretAccessKey !== undefined)
+    candidate.secret_access_key = secretAccessKey;
+  const normalizedRole = getAwsRoleArn(candidate);
+  let aws: SandboxAwsAuthRule["aws"];
+  if (normalizedRole !== undefined) {
+    aws = { role_arn: normalizedRole };
+  } else {
+    if (accessKeyId === undefined || secretAccessKey === undefined) {
+      throw new Error("AWS auth requires roleArn or both static credentials");
+    }
+    aws = { access_key_id: accessKeyId, secret_access_key: secretAccessKey };
+  }
   const rule: SandboxAwsAuthRule = {
     name: requireNonEmptyString(name, "name"),
     type: "aws",
     enabled,
-    aws: {
-      access_key_id: accessKeyId,
-      secret_access_key: secretAccessKey,
-    },
+    aws,
   };
   if (envVars !== undefined) {
     rule.env_vars = requireEnvVars(envVars);
