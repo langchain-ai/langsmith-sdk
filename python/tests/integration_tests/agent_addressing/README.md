@@ -23,8 +23,9 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 
 ## FAQ
 
-- **A test fails. Is that expected?** One does, on purpose. Its comment in
-  `test_create_update_run.py` says which bug it pins. Nothing else should fail.
+- **A test fails. Is that expected?** A few do, on purpose. Each one's comment
+  starts with `KNOWN FAILURE` and says which bug it pins. Nothing else should
+  fail.
 - **Why won't it run against production?** Every test creates an agent and
   four tracing projects. Use dev or a local LangSmith.
 - **Does it clean up after itself?** It tries, and logs what it cannot remove.
@@ -58,6 +59,10 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
   `Harness.agents_url` and its hand-built `/api/v1` prefix. These routes are
   `x-internal`, so they may never be public; the suite then needs another way
   to read back where a run landed.
-- **Add the missing files**: `test_traceable.py`, `test_run_tree.py` (including
+- **Decide whether `@traceable(agent_id=, agent_environment=)` is wanted.**
+  `decorator_agent` in `test_traceable.py` assumes yes; delete it if not.
+- **Add the missing files**: `test_trace.py`, `test_run_tree.py` (including
   replicas and the baggage hop), `test_legacy_endpoints.py`. Then cassettes
-  and a cross-check of the langchainplus Go tests.
+  and a cross-check of the langchainplus Go tests. For the baggage hop: on the
+  `@traceable` path `_get_parent_run` always hands `from_headers` a project,
+  defaulting to `default`, so a baggage agent is always ignored there.

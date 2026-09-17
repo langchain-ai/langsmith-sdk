@@ -14,6 +14,7 @@ import logging
 import time
 import urllib.parse
 import uuid
+import warnings
 from typing import Any, Callable, Iterator, Optional, TypeVar, Union
 
 import pytest
@@ -22,6 +23,8 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith.client import Client
+from langsmith.run_helpers import get_current_run_tree, traceable, tracing_context
+from langsmith.run_trees import configure as ls_configure
 
 logger = logging.getLogger(__name__)
 
@@ -89,13 +92,32 @@ Destination = Union[InAgent, InProject, Rejected]
 
 
 @dataclasses.dataclass(frozen=True)
+class Child:
+    """A nested `@traceable` call. Lands with the root unless `lands_in` says."""
+
+    extra: dict[str, Any] = dataclasses.field(default_factory=dict)
+    context: dict[str, Any] = dataclasses.field(default_factory=dict)
+    lands_in: Optional[Destination] = None
+
+
+@dataclasses.dataclass(frozen=True)
 class Case:
-    """One SDK configuration and the destination it should resolve to."""
+    """One SDK configuration and the destination it should resolve to.
+
+    `env` and `kwargs` apply to any method. The rest are `@traceable` only:
+    `decorator` is `@traceable(...)`, `extra` is `langsmith_extra`, `context`
+    is the surrounding `tracing_context(...)`, `configure` is `ls.configure`.
+    """
 
     id: str
     lands_in: Destination
     env: dict[str, str] = dataclasses.field(default_factory=dict)
     kwargs: dict[str, Any] = dataclasses.field(default_factory=dict)
+    decorator: dict[str, Any] = dataclasses.field(default_factory=dict)
+    extra: dict[str, Any] = dataclasses.field(default_factory=dict)
+    context: dict[str, Any] = dataclasses.field(default_factory=dict)
+    configure: dict[str, Any] = dataclasses.field(default_factory=dict)
+    child: Optional[Child] = None
 
     def __str__(self) -> str:
         return self.id
@@ -111,6 +133,14 @@ class CallArgs:
 
     create: dict[str, Any]
     update: dict[str, Any]
+
+
+@dataclasses.dataclass(frozen=True)
+class TracedIds:
+    """The run ids a `Harness.trace` call produced."""
+
+    root: uuid.UUID
+    child: Optional[uuid.UUID]
 
 
 class Harness:
@@ -141,9 +171,13 @@ class Harness:
 
     # -- configuration -----------------------------------------------------
 
-    def format(self, value: str) -> str:
+    def format(self, value: Any) -> Any:
         """Substitute this test's names into a case's placeholders."""
-        return value.format(agent=self.agent_key, project=self.project_name)
+        if isinstance(value, str):
+            return value.format(agent=self.agent_key, project=self.project_name)
+        if isinstance(value, dict):
+            return {key: self.format(item) for key, item in value.items()}
+        return value
 
     def configure(self, case: Case) -> CallArgs:
         """Apply the case's environment and return its call arguments."""
@@ -171,6 +205,50 @@ class Harness:
             "trace_id": run_id,
             "dotted_order": f"{self.start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}",
         }
+
+    # -- @traceable ----------------------------------------------------------
+
+    def trace(self, case: Case) -> TracedIds:
+        """Call a `@traceable` root, and a nested one if the case has a child.
+
+        The client travels in `langsmith_extra` because every `tracing_context`
+        resets the context client, and the default client would not report
+        rejections to this harness.
+        """
+        self.configure(case)
+        if case.configure:
+            ls_configure(**self.format(case.configure))
+        ids: dict[str, uuid.UUID] = {}
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+
+            @traceable
+            def child() -> None:
+                ids["child"] = _current_run_id()
+
+            @traceable(**self.format(case.decorator))
+            def root() -> None:
+                ids["root"] = _current_run_id()
+                if case.child is not None:
+                    with tracing_context(**self.format(case.child.context)):
+                        child(
+                            langsmith_extra={
+                                "client": self.client,
+                                **self.format(case.child.extra),
+                            }
+                        )
+
+            with (
+                tracing_context(enabled=True),
+                tracing_context(**self.format(case.context)),
+            ):
+                root(langsmith_extra={"client": self.client, **self.format(case.extra)})
+        self.client.flush()
+        # An argument the decorator does not know is dropped with a warning, so
+        # the case would silently test something else.
+        ignored = [str(w.message) for w in caught if "not recognized" in str(w.message)]
+        assert not ignored, f"the decorator ignored part of the case: {ignored}"
+        return TracedIds(root=ids["root"], child=ids.get("child"))
 
     # -- lookups -----------------------------------------------------------
 
@@ -234,7 +312,7 @@ class Harness:
         destination: Destination,
         *,
         patched: bool = True,
-    ) -> None:
+    ) -> Optional[ls_schemas.Run]:
         """Assert the run reached `destination`, waiting for it to show up.
 
         `patched` also requires the update to have landed in the same place.
@@ -243,7 +321,7 @@ class Harness:
         """
         if isinstance(destination, Rejected):
             self.assert_rejected(destination)
-            return
+            return None
 
         expected = self._expected_project(destination)
         assert not self.errors, f"the SDK reported ingestion errors: {self.errors}"
@@ -255,6 +333,19 @@ class Harness:
         assert run.session_id == expected, (
             f"the run landed in project {run.session_id}, not {expected}"
         )
+        return run
+
+    def assert_traced(self, ids: TracedIds, case: Case) -> None:
+        """Assert the root landed, and the child landed under it."""
+        self.assert_landed(ids.root, case.lands_in)
+        if case.child is None:
+            return
+        assert ids.child is not None, "the child was not traced"
+        child = self.assert_landed(ids.child, case.child.lands_in or case.lands_in)
+        if child is not None:
+            assert child.parent_run_id == ids.root, (
+                f"the child's parent is {child.parent_run_id}, not the root {ids.root}"
+            )
 
     def assert_rejected(self, rejected: Rejected) -> None:
         """Assert the endpoint refused this, said why, logged it, created nothing."""
@@ -362,6 +453,12 @@ class Harness:
             logger.warning("Could not %s: %s", what, error)
 
 
+def _current_run_id() -> uuid.UUID:
+    run = get_current_run_tree()
+    assert run is not None, "the call was not traced"
+    return run.id
+
+
 def _clear_env_caches() -> None:
     """Make the SDK re-read the environment. Each of these is cached for the
     life of the process."""
@@ -412,5 +509,7 @@ def ls(
     try:
         yield harness
     finally:
+        # `ls.configure` is process-wide, not a context var.
+        ls_configure(project_name=None)
         harness.cleanup()
         _clear_env_caches()
