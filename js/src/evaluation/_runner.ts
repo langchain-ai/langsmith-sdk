@@ -145,6 +145,7 @@ interface _ExperimentManagerArgs {
   _runsArray?: Run[];
   resultRows?: AsyncGenerator<_ExperimentResultRowWithIndex>;
   includeAttachments?: boolean;
+  disableEvaluatorTracing?: boolean;
 }
 
 type BaseEvaluateOptions = {
@@ -214,6 +215,16 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * @default false
    */
   includeAttachments?: boolean;
+  /**
+   * Whether to skip tracing evaluator invocations to the `evaluators` project.
+   *
+   * When `true`, evaluators run without creating evaluator traces. Feedback is
+   * still created and attached to the experiment runs, but it won't link back
+   * to an evaluator run, which also means it can't be corrected from the UI.
+   * Tracing of the target itself is unaffected.
+   * @default false
+   */
+  disableEvaluatorTracing?: boolean;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -310,6 +321,7 @@ export class _ExperimentManager {
   _metadata: KVMap;
   _description?: string;
   _includeAttachments?: boolean;
+  _disableEvaluatorTracing?: boolean;
 
   get experimentName(): string {
     if (this._experimentName) {
@@ -431,6 +443,7 @@ export class _ExperimentManager {
     this._numExamples = args.numExamples;
     this._evaluatorKeys = args.evaluatorKeys;
     this._includeAttachments = args.includeAttachments;
+    this._disableEvaluatorTracing = args.disableEvaluatorTracing;
   }
 
   _getExperiment(): TracerSession {
@@ -542,6 +555,7 @@ export class _ExperimentManager {
       numExamples: this._numExamples,
       evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
+      disableEvaluatorTracing: this._disableEvaluatorTracing,
     });
   }
 
@@ -580,6 +594,7 @@ export class _ExperimentManager {
       numExamples: this._numExamples,
       evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
+      disableEvaluatorTracing: this._disableEvaluatorTracing,
     });
   }
 
@@ -617,6 +632,7 @@ export class _ExperimentManager {
       numExamples: this._numExamples,
       evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
+      disableEvaluatorTracing: this._disableEvaluatorTracing,
     });
   }
 
@@ -639,6 +655,7 @@ export class _ExperimentManager {
       numExamples: this._numExamples,
       evaluatorKeys: this._evaluatorKeys,
       includeAttachments: this._includeAttachments,
+      disableEvaluatorTracing: this._disableEvaluatorTracing,
     });
   }
 
@@ -793,13 +810,18 @@ export class _ExperimentManager {
               : new Date(example.created_at).toISOString(),
           },
           client: fields.client,
-          tracingEnabled: true,
+          tracingEnabled: !this._disableEvaluatorTracing,
         };
-        const evaluatorResponse = await evaluator.evaluateRun(
+        const rawEvaluatorResponse = await evaluator.evaluateRun(
           run,
           example,
           options,
         );
+        // With tracing off there is no evaluator run for the feedback to point
+        // at, so drop the link rather than leaving it dangling.
+        const evaluatorResponse = this._disableEvaluatorTracing
+          ? _withoutSourceRunIds(rawEvaluatorResponse)
+          : rawEvaluatorResponse;
         evaluationResults.results.push(
           ...(await fields.client.logEvaluationFeedback({
             evaluatorResponse,
@@ -874,6 +896,7 @@ export class _ExperimentManager {
     const wrappedEvaluators = await wrapSummaryEvaluators(
       summaryEvaluators,
       options,
+      !this._disableEvaluatorTracing,
     );
 
     yield async function* (
@@ -1087,6 +1110,7 @@ async function _evaluate(
     numRepetitions: fields.numRepetitions ?? 1,
     evaluatorKeys: _collectEvaluatorKeys(standardFields.evaluators),
     includeAttachments: standardFields.includeAttachments,
+    disableEvaluatorTracing: standardFields.disableEvaluatorTracing,
   }).start();
 
   const targetConcurrency =
@@ -1327,9 +1351,31 @@ function _resolveData(
   return data as AsyncGenerator<Example>;
 }
 
+/**
+ * Strip evaluator-run links from an evaluator response.
+ *
+ * Used when evaluator tracing is disabled: no evaluator run is created, so a
+ * `sourceRunId` on the feedback would point at a run that does not exist.
+ */
+function _withoutSourceRunIds(
+  response: EvaluationResult | EvaluationResults,
+): EvaluationResult | EvaluationResults {
+  if ("results" in response) {
+    return {
+      ...response,
+      results: response.results.map((result) => ({
+        ...result,
+        sourceRunId: undefined,
+      })),
+    };
+  }
+  return { ...response, sourceRunId: undefined };
+}
+
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
   optionsArray?: Partial<RunTreeConfig>[],
+  tracingEnabled?: boolean,
 ): Promise<
   Array<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator>
 > {
@@ -1378,7 +1424,11 @@ async function wrapSummaryEvaluators(
             (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples),
           );
         },
-        { ...optionsArray, name: evalName },
+        {
+          ...optionsArray,
+          name: evalName,
+          ...(tracingEnabled === undefined ? {} : { tracingEnabled }),
+        },
       );
 
       return Promise.resolve(
