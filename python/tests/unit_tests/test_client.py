@@ -48,6 +48,7 @@ from requests import HTTPError
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
+from langsmith import run_helpers as rh
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import (
@@ -8265,3 +8266,71 @@ class TestRemoteInputNeverRaises:
             f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas)}"
         )
         assert parsed.replicas == [{"project_name": "p-remote"}]
+
+
+class TestPatchInheritsThePostsTarget:
+    """A patch must not be addressed to the agent when its post named a project."""
+
+    def test_an_update_does_not_fill_the_agent_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The post established the target; the patch inherits it by omission.
+
+        An update carries a project only when the caller passed one, and most
+        callers don't -- so filling the agent in here addressed the two halves
+        of one run to two different projects.
+        """
+        _clean_agent_env(
+            monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
+        )
+        post: dict = {"session_name": "myproj"}
+        Client._apply_agent_addressing(post)
+        patch: dict = {"session_name": None, "session_id": None}
+        Client._apply_agent_addressing(patch, update=True)
+        assert post == {"session_name": "myproj"}
+        # No agent fields added. The null session keys are left exactly as
+        # `update_run` built them, which is what `main` sends today.
+        assert "agent_id" not in patch
+        assert "agent_environment" not in patch
+        assert patch == {"session_name": None, "session_id": None}
+
+    def test_an_update_keeps_agent_fields_the_caller_supplied(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`RunTree.patch()` forwards its own addressing, and that must survive."""
+        _clean_agent_env(monkeypatch)
+        patch: dict = {
+            "session_name": None,
+            "agent_id": "from-the-run",
+            "agent_environment": "env",
+        }
+        Client._apply_agent_addressing(patch, update=True)
+        assert patch == {"agent_id": "from-the-run", "agent_environment": "env"}
+
+
+class TestEitherAgentFieldAddressesTheRun:
+    """One rule across every entry point: either field means agent-addressed.
+
+    The design doc settles it -- "a lone `agent_environment` cannot fall through
+    to a project the caller never named". Before this, `RunTree` treated a lone
+    environment as agent-addressed while `create_run` and `_get_addressing`
+    defaulted a project in, so one typo lost tracing on one path and did
+    nothing on another.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _lone_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
+
+    def test_the_payload_boundary(self) -> None:
+        payload: dict = {"session_name": None}
+        Client._apply_agent_addressing(payload)
+        assert payload == {"agent_environment": "staging"}
+
+    def test_the_run_tree(self) -> None:
+        run = run_trees.RunTree(name="r")
+        assert run.session_name is None
+        assert run.agent_environment == "staging"
+
+    def test_run_helpers(self) -> None:
+        assert rh._get_addressing(None) == (None, None, "staging")

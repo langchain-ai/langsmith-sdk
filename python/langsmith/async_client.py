@@ -626,7 +626,11 @@ class AsyncClient:
             project_name is None
             and kwargs.get("session_name") is None
             and kwargs.get("session_id") is None
-            and (kwargs.get("agent_id") or ls_utils.get_tracer_agent_id())
+            and ls_utils.is_agent_addressed(
+                *ls_utils.resolve_agent_addressing(
+                    kwargs.get("agent_id"), kwargs.get("agent_environment")
+                )
+            )
         ):
             # Agent-addressed: don't default a project in, or the run would be
             # addressed twice. An explicit project takes precedence, below.
@@ -654,7 +658,7 @@ class AsyncClient:
     ) -> None:
         """Update a run."""
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
-        ls_client.Client._apply_agent_addressing(data)
+        ls_client.Client._apply_agent_addressing(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
             f"/runs/{ls_client._as_uuid(run_id)}",

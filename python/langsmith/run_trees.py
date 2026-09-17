@@ -203,6 +203,7 @@ def _exclude_inputs_on_patch() -> bool:
 # Every way a caller can name a project. The agent-conflict check and the
 # `baggage` guard both key off this, so they cannot drift apart.
 _PROJECT_ADDRESSING_KEYS = ("project_name", "session_name", "project_id", "session_id")
+_AGENT_ADDRESSING_KEYS = ("agent_id", "agent_environment")
 
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
@@ -404,11 +405,10 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         values["agent_id"] = None
         values["agent_environment"] = None
         return
-    agent_id = values.get("agent_id") or utils.get_tracer_agent_id()
-    agent_environment = (
-        values.get("agent_environment") or utils.get_tracer_agent_environment()
+    agent_id, agent_environment = utils.resolve_agent_addressing(
+        values.get("agent_id"), values.get("agent_environment")
     )
-    if not agent_id and not agent_environment:
+    if not utils.is_agent_addressed(agent_id, agent_environment):
         values["agent_environment"] = None
         return
     values["agent_id"] = agent_id
@@ -1328,16 +1328,30 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-        if baggage.project_name:
+        caller_named_agent = any(
+            init_args.get(key) is not None for key in _AGENT_ADDRESSING_KEYS
+        )
+        caller_named_project = any(
+            init_args.get(key) is not None for key in _PROJECT_ADDRESSING_KEYS
+        )
+        if baggage.project_name and not caller_named_agent:
+            # A baggage project outranks a caller-supplied one, so a child joins
+            # the project its parent traced to.
             init_args["project_name"] = baggage.project_name
-        elif any(init_args.get(key) is not None for key in _PROJECT_ADDRESSING_KEYS):
-            # The caller named a project -- by name or by ID -- so ignore any
-            # agent the header carries. Injecting it would conflict with that
-            # project, and untrusted input must never raise.
+        elif caller_named_agent and baggage.project_name:
+            # Writing it in would conflict with the agent the caller named, and
+            # untrusted input must never raise.
+            logger.warning(
+                "Ignoring the project in a distributed-tracing `baggage` header:"
+                " this run is addressed to agent %r.",
+                init_args.get("agent_id"),
+            )
+        elif caller_named_project or caller_named_agent:
+            # The caller named a destination, so ignore any agent the header
+            # carries -- injecting it would conflict with what they named.
             pass
         elif baggage.agent_id and baggage.agent_environment:
-            # One mode survives the hop, and a baggage project takes
-            # precedence over a baggage agent. Both members or neither: a header
+            # One mode survives the hop. Both members or neither: a header
             # carrying half a pair is ignored rather than raised on, since
             # baggage is untrusted input and a malformed one must not take down
             # the receiving service.
