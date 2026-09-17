@@ -896,7 +896,9 @@ export class _ExperimentManager {
     const wrappedEvaluators = await wrapSummaryEvaluators(
       summaryEvaluators,
       options,
-      !this._disableEvaluatorTracing,
+      // Only override when disabling. Passing `true` here would force tracing
+      // on for callers who have it switched off via the environment.
+      this._disableEvaluatorTracing ? false : undefined,
     );
 
     yield async function* (
