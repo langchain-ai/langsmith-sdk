@@ -337,7 +337,7 @@ export type SandboxProxyRule =
 export interface SandboxProxyConfig {
   /** Header-injection rules keyed by host pattern. */
   rules?: SandboxProxyRule[];
-  /** Hosts that bypass the proxy entirely. */
+  /** @deprecated Ignored by the server. The sandbox runtime has no proxy bypass list. */
   no_proxy?: string[];
   /** Allow/deny list enforced at the proxy sidecar. */
   access_control?: SandboxAccessControl;

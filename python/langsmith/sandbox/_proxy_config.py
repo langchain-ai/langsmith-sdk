@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict
 
@@ -106,10 +107,19 @@ def proxy_config(
 
     Use provider-specific rule helpers such as ``aws_auth`` and ``gcp_auth``
     when a sandbox needs multiple auth flows.
+
+    Args:
+        no_proxy: Deprecated and ignored. The sandbox runtime intercepts
+            egress transparently and has no proxy bypass list.
     """
-    config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
     if no_proxy is not None:
-        config["no_proxy"] = _require_non_empty_string_list(no_proxy, "no_proxy")
+        warnings.warn(
+            "no_proxy is deprecated and ignored; the sandbox runtime has no "
+            "proxy bypass list",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
     if access_control is not None:
         if not isinstance(access_control, dict):
             raise ValueError("access_control must be a dictionary")

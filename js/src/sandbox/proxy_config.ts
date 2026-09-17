@@ -101,19 +101,16 @@ export function opaqueSecret(value: string): SandboxProxySecret {
 /** Build a sandbox proxy config from one or more proxy rules. */
 export function proxyConfig({
   rules,
-  noProxy,
   accessControl,
 }: {
   rules?: SandboxProxyRule[];
+  /** @deprecated Ignored. The sandbox runtime has no proxy bypass list. */
   noProxy?: string[];
   accessControl?: SandboxAccessControl;
 } = {}): SandboxProxyConfig {
   const config: SandboxProxyConfig = {
     rules: requireProxyRules(rules),
   };
-  if (noProxy !== undefined) {
-    config.no_proxy = requireNonEmptyStringArray(noProxy, "noProxy");
-  }
   if (accessControl !== undefined) {
     config.access_control = { ...accessControl };
   }
