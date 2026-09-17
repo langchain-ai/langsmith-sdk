@@ -15,12 +15,11 @@ import pytest
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
     PROJECT,
-    REJECTED_AGENT_WITH_PROJECT,
-    REJECTED_PAIR_REQUIRED,
     Case,
     Harness,
     InAgent,
     InProject,
+    Rejected,
 )
 
 CASES = [
@@ -53,7 +52,13 @@ CASES = [
             "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             "LANGSMITH_PROJECT": PROJECT,
         },
-        lands_in=REJECTED_AGENT_WITH_PROJECT,
+        lands_in=Rejected(
+            reason="agent_id cannot be combined with session_id or session_name",
+            remedy=(
+                "Address the run by agent_id, or by session_id or session_name,"
+                " but not both"
+            ),
+        ),
     ),
     # Addressing passed per call rather than configured in the environment.
     Case(
@@ -76,7 +81,10 @@ CASES = [
     Case(
         "env_agent_id_only",
         env={"LANGSMITH_AGENT_ID": AGENT},
-        lands_in=REJECTED_PAIR_REQUIRED,
+        lands_in=Rejected(
+            reason="agent_id and agent_environment must be sent together",
+            remedy="Send agent_id and agent_environment together",
+        ),
     ),
     # The legacy path, unchanged: a project by name, and no addressing at all.
     Case(
