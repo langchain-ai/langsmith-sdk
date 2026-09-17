@@ -399,18 +399,14 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     """Settle on one addressing mode for a run tree, in place.
 
     A run is addressed either by project (`session_name` / `session_id`) or by
-    agent (`agent_id` / `agent_environment`). An explicitly provided project
-    always wins: the agent env vars only replace the project the SDK would
-    otherwise default in.
+    agent (`agent_id` / `agent_environment`). `utils.resolve_addressing` settles
+    which, so this shares one rule with `create_run` and `@traceable`.
 
-    Runs against the raw validator input, so "provided" means the caller passed
-    a non-`None` value rather than letting a default fill it in.
-
-    An agent needs both an ID and an environment, but the endpoint is the one
-    that enforces it: half a pair travels as far as the payload and comes back
-    as a 400 rather than being judged here. A per-call value can complete a
-    half set in the environment, so there is no point at which the SDK knows
-    the pair is incomplete before it sends it.
+    Runs against the raw validator input, so a value here was passed by the
+    caller or copied down from a parent run, rather than filled in by a
+    default. Every key this reads it also writes, which keeps the fields'
+    `default_factory` from reaching for the environment afterwards and
+    overriding what was settled.
     """
     named_project = next(
         (
@@ -420,29 +416,36 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         ),
         None,
     )
-    if named_project is not None:
-        # Only the *ambient* agent yields to a project on the values. An agent
-        # already there came from the caller or from the parent run, and travels
-        # alongside the project so the endpoint refuses the pair. Pinning both
-        # keys to what is already there keeps their `default_factory` from
-        # reading the environment after this validator returns.
-        values["agent_id"] = values.get("agent_id")
-        values["agent_environment"] = values.get("agent_environment")
-        return
-    agent_id, agent_environment = utils.resolve_agent_addressing(
+    if utils.is_agent_addressed(
         values.get("agent_id"), values.get("agent_environment")
-    )
-    if not utils.is_agent_addressed(agent_id, agent_environment):
-        values["agent_environment"] = None
+    ):
+        # Already addressed by agent, either by the caller or by the resolution
+        # that built these values -- `_setup_run` settles a trace's addressing
+        # before constructing the tree, and `create_child` copies the parent's
+        # down. Both keys are written back as they are so their
+        # `default_factory` cannot reach for the environment afterwards, and a
+        # project beside the agent is left in place to travel with it. A half
+        # named here is completed from the environment, which fills the pair
+        # out rather than competing with it.
+        (
+            values["agent_id"],
+            values["agent_environment"],
+        ) = utils.resolve_agent_addressing(
+            values.get("agent_id"), values.get("agent_environment")
+        )
+        if named_project is None:
+            values.pop("project_name", None)
+            values["session_name"] = None
         return
+    project, agent_id, agent_environment = utils.resolve_addressing(named_project)
     values["agent_id"] = agent_id
     values["agent_environment"] = agent_environment
-    # Agent-addressed: the backend resolves the project from the agent, so the
-    # defaulted project comes off. A project the caller *configured* stays, and
-    # travels with the agent so the endpoint refuses the pair -- dropping it
-    # would move their traces without asking.
-    values.pop("project_name", None)
-    values["session_name"] = utils.get_tracer_project(return_default_value=False)
+    if named_project is None:
+        # Nothing was named, so whatever the resolution chose is the answer.
+        # `project_name` is an alias of `session_name`; leaving it set would
+        # win over what is written here.
+        values.pop("project_name", None)
+        values["session_name"] = project
 
 
 class RunTree(ls_schemas.RunBase):
