@@ -205,6 +205,7 @@ class ThreadsResource(SyncAPIResource):
                 "COMPLETION_COST_DETAILS",
                 "NAME",
                 "ERROR_PREVIEW",
+                "TURN_NUMBER",
             ]
         ]
         | Omit = omit,
@@ -621,6 +622,7 @@ class AsyncThreadsResource(AsyncAPIResource):
                 "COMPLETION_COST_DETAILS",
                 "NAME",
                 "ERROR_PREVIEW",
+                "TURN_NUMBER",
             ]
         ]
         | Omit = omit,

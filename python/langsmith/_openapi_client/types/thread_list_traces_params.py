@@ -59,6 +59,7 @@ class ThreadListTracesParams(TypedDict, total=False):
             "COMPLETION_COST_DETAILS",
             "NAME",
             "ERROR_PREVIEW",
+            "TURN_NUMBER",
         ]
     ]
     """

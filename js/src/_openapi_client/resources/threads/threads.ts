@@ -703,6 +703,13 @@ export interface ThreadTrace {
    * in `selects`, or when `selects` is omitted entirely (sole fallback field).
    */
   trace_id?: string;
+
+  /**
+   * `turn_number` is the 1-based position in the whole thread, ordered by start_time
+   * then trace_id ascending, before filtering or pagination. Updates and deletions
+   * can change this position. Omitted unless TURN_NUMBER is included in `selects`.
+   */
+  turn_number?: number;
 }
 
 export namespace ThreadTrace {
@@ -1057,6 +1064,7 @@ export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
     | 'COMPLETION_COST_DETAILS'
     | 'NAME'
     | 'ERROR_PREVIEW'
+    | 'TURN_NUMBER'
   >;
 }
 
