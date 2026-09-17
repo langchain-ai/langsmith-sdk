@@ -470,6 +470,11 @@ def get_tracer_agent_environment() -> Optional[str]:
     agent addressing rejects the runs, so tracing is lost rather than falling
     back to a project.
 
+    Must be one of ``local``, ``development``, ``staging`` or ``production``
+    -- matched case-insensitively, surrounding space ignored. The endpoint
+    rejects anything else rather than defaulting it, so a near miss like
+    ``prod`` fails the whole batch.
+
     Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
     variables there is no legacy ``LANGCHAIN_`` alias: the legacy namespace is
     not taking new members. There is also no default -- an agent-addressed run
@@ -487,6 +492,8 @@ def get_tracer_agent_id() -> Optional[str]:
     Experimental: in beta and enabled per workspace. A workspace without
     agent addressing rejects the runs, so tracing is lost rather than falling
     back to a project.
+
+    Must be 1 to 255 characters.
 
     Read from ``LANGSMITH_AGENT_ID`` only -- there is no legacy ``LANGCHAIN_``
     alias, since that namespace is not taking new members. This is an agent

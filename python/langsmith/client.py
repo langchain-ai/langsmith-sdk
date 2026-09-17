@@ -2664,7 +2664,9 @@ class Client:
                 per workspace; a workspace without it rejects the run, so the
                 trace is lost rather than falling back to a project.
             agent_environment (Optional[str]): (experimental) Narrows
-                `agent_id`; required alongside it. Defaults to
+                `agent_id`; required alongside it. One of `local`,
+                `development`, `staging` or `production` -- anything else is
+                rejected rather than defaulted. Defaults to
                 `LANGSMITH_AGENT_ENVIRONMENT`.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
