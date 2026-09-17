@@ -108,6 +108,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    disable_evaluator_tracing: bool = False,
     **kwargs: Any,
 ) -> ExperimentResults: ...
 
@@ -128,6 +129,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    disable_evaluator_tracing: bool = False,
     **kwargs: Any,
 ) -> ComparativeExperimentResults: ...
 
@@ -149,6 +151,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    disable_evaluator_tracing: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
@@ -193,6 +196,13 @@ def evaluate(
             `'log'` will trace the runs with the error message as part of the
             experiment, `'ignore'` will not count the run as part of the experiment at
             all.
+        disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+            evaluator invocations to the `evaluators` project in LangSmith.
+
+            Set to `True` to run evaluators without creating evaluator traces.
+            Feedback is still created and attached to the experiment runs, but it
+            won't link back to an evaluator run, which also means it can't be
+            corrected from the UI. Tracing of the target itself is unaffected.
 
     Returns:
         ExperimentResults: If target is a function, `Runnable`, or existing experiment.
@@ -321,6 +331,7 @@ def evaluate(
             max_concurrency=max_concurrency,
             client=client,
             blocking=blocking,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
     elif isinstance(target, (list, tuple)):
@@ -328,6 +339,7 @@ def evaluate(
             "num_repetitions": num_repetitions > 1,
             "experiment": bool(experiment),
             "upload_results": not upload_results,
+            "disable_evaluator_tracing": disable_evaluator_tracing,
             "summary_evaluators": bool(summary_evaluators),
             "data": bool(data),
         }
@@ -410,6 +422,7 @@ def evaluate(
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
         )
 
 
@@ -423,6 +436,7 @@ def evaluate_existing(
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
+    disable_evaluator_tracing: bool = False,
 ) -> ExperimentResults:
     r"""Evaluate existing experiment runs.
 
@@ -441,6 +455,8 @@ def evaluate_existing(
 
             Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
+        disable_evaluator_tracing (bool): Whether to skip tracing evaluator
+            invocations to the `evaluators` project in LangSmith. Defaults to `False`.
 
     Returns:
         The evaluation results.
@@ -522,6 +538,7 @@ def evaluate_existing(
         client=client,
         blocking=blocking,
         experiment=project,
+        disable_evaluator_tracing=disable_evaluator_tracing,
     )
 
 
@@ -1100,6 +1117,7 @@ def _evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    disable_evaluator_tracing: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
 ) -> ExperimentResults:
     # Initialize the experiment manager.
@@ -1121,6 +1139,7 @@ def _evaluate(
         include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
         error_handling=error_handling,
+        disable_evaluator_tracing=disable_evaluator_tracing,
     ).start()
     if cache_dir := ls_utils.get_cache_dir(None):
         cache_path = pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
@@ -1395,6 +1414,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
     ):
         super().__init__(
@@ -1420,6 +1440,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
+        self._disable_evaluator_tracing = disable_evaluator_tracing
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1676,7 +1697,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": "local" if not self._upload_results else True,
+                "enabled": _evaluator_tracing_mode(
+                    self._upload_results, self._disable_evaluator_tracing
+                ),
                 "client": self.client,
             }
         ):
@@ -1692,9 +1715,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         evaluator_run_id=evaluator_run_id,
                     )
 
-                    eval_results["results"].extend(
-                        self.client._select_eval_results(evaluator_response)
+                    selected_results = self.client._select_eval_results(
+                        evaluator_response
                     )
+                    if self._disable_evaluator_tracing:
+                        evaluator_response = _without_source_run_ids(selected_results)
+                    eval_results["results"].extend(selected_results)
                     if self._upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
@@ -1711,7 +1737,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             results=[
                                 EvaluationResult(
                                     key=key,
-                                    source_run_id=evaluator_run_id,
+                                    source_run_id=(
+                                        None
+                                        if self._disable_evaluator_tracing
+                                        else evaluator_run_id
+                                    ),
                                     comment=repr(e),
                                     extra={"error": True},
                                 )
@@ -1817,7 +1847,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "project_name": "evaluators",
                     "metadata": metadata,
                     "client": self.client,
-                    "enabled": "local" if not self._upload_results else True,
+                    "enabled": _evaluator_tracing_mode(
+                        self._upload_results, self._disable_evaluator_tracing
+                    ),
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1906,10 +1938,31 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "upload_results": self._upload_results,
             "attachment_raw_data_dict": self._attachment_raw_data_dict,
             "error_handling": self._error_handling,
+            "disable_evaluator_tracing": self._disable_evaluator_tracing,
         }
         full_args = list(args) + list(default_args[len(args) :])
         full_kwargs = {**default_kwargs, **kwargs}
         return self.__class__(*full_args, **full_kwargs)
+
+
+def _evaluator_tracing_mode(
+    upload_results: bool, disable_evaluator_tracing: bool
+) -> Union[bool, Literal["local"]]:
+    """Resolve the tracing mode used while invoking evaluators."""
+    if disable_evaluator_tracing:
+        return False
+    return "local" if not upload_results else True
+
+
+def _without_source_run_ids(results: list[EvaluationResult]) -> EvaluationResults:
+    """Drop evaluator-run links from results.
+
+    When evaluators aren't traced there is no evaluator run for the feedback to
+    point at, so the link is removed rather than left dangling.
+    """
+    for res in results:
+        res.source_run_id = None
+    return EvaluationResults(results=results)
 
 
 def _resolve_evaluators(
