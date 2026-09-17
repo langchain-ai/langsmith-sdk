@@ -104,6 +104,8 @@ export function proxyConfig({
   accessControl,
 }: {
   rules?: SandboxProxyRule[];
+  /** @deprecated Ignored. The sandbox runtime has no proxy bypass list. */
+  noProxy?: string[];
   accessControl?: SandboxAccessControl;
 } = {}): SandboxProxyConfig {
   const config: SandboxProxyConfig = {

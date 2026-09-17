@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict
 
@@ -99,13 +100,25 @@ def _validate_proxy_provider_rule(rule: SandboxProxyRule) -> None:
 def proxy_config(
     *,
     rules: Sequence[SandboxProxyRule] | None = None,
+    no_proxy: Sequence[str] | None = None,
     access_control: dict[str, Any] | None = None,
 ) -> SandboxProxyConfig:
     """Build a sandbox proxy config from one or more proxy rules.
 
     Use provider-specific rule helpers such as ``aws_auth`` and ``gcp_auth``
     when a sandbox needs multiple auth flows.
+
+    Args:
+        no_proxy: Deprecated and ignored. The sandbox runtime intercepts
+            egress transparently and has no proxy bypass list.
     """
+    if no_proxy is not None:
+        warnings.warn(
+            "no_proxy is deprecated and ignored; the sandbox runtime has no "
+            "proxy bypass list",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
     if access_control is not None:
         if not isinstance(access_control, dict):

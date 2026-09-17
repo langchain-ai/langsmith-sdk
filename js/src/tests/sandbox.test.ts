@@ -213,6 +213,12 @@ describe("sandbox proxy config helpers", () => {
     });
   });
 
+  it("proxyConfig ignores the deprecated noProxy option", () => {
+    expect(
+      proxyConfig({ rules: [], noProxy: ["metadata.google.internal"] }),
+    ).toEqual({ rules: [] });
+  });
+
   it("mountConfig nests mounts and provider auth", () => {
     const awsAuthRule = awsAuth({
       accessKeyId: workspaceSecret("AWS_KEY_ID_REF"),
