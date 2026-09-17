@@ -8332,6 +8332,33 @@ class TestAConfiguredProjectTravelsWithTheAgent:
         assert child.session_name == "my-proj"
         assert (child.agent_id, child.agent_environment) == ("my-agent", "staging")
 
+    def test_a_run_tree_post_does_not_raise_on_its_own_resolution(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`RunTree.post` sends the tree's resolved fields as `create_run` kwargs.
+
+        A project beside an agent there is the pair this resolution built, not a
+        caller naming two destinations, so it must reach the endpoint rather
+        than trip the caller-conflict check.
+        """
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+            LANGSMITH_PROJECT="my-proj",
+        )
+        session = mock.Mock()
+        session.request = mock.Mock()
+        client = _multipart_client(session)
+        run_trees.RunTree(name="r", inputs={"a": 1}, ls_client=client).post()
+
+        body = _wait_for_part(session, "post")
+        assert (body.get("agent_id"), body.get("agent_environment")) == (
+            "my-agent",
+            "staging",
+        )
+        assert body.get("session_name") == "my-proj"
+
     def test_the_client_warns_once_at_construction(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
