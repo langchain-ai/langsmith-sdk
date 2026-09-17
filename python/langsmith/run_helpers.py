@@ -1378,20 +1378,17 @@ def _get_addressing(
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Resolve `(project_name, agent_id, agent_environment)` for a new run.
 
-    Mirrors `_get_project_name`, but stops short of defaulting a project in when
-    an agent addresses the run instead -- a run carries one mode, not both.
-
-    The two chains are walked in the same order, so an agent named where a
-    project would have been named takes effect at the same point.
+    Mirrors `_get_project_name`, but for both addressing modes. The two chains
+    are walked in the same order, so an agent named where a project would have
+    been named takes effect at the same point; `resolve_addressing` settles
+    which of the two the run ends up carrying.
     """
     prt = get_current_run_tree()
-    explicit_project = (
+    return utils.resolve_addressing(
         project_name
         or _context._PROJECT_NAME.get()
         or (prt.session_name if prt else None)
-        or _context._GLOBAL_PROJECT_NAME
-    )
-    agent_id, agent_environment = utils.resolve_agent_addressing(
+        or _context._GLOBAL_PROJECT_NAME,
         agent_id
         or _context._AGENT_ID.get()
         or (prt.agent_id if prt else None)
@@ -1401,17 +1398,6 @@ def _get_addressing(
         or (prt.agent_environment if prt else None)
         or _context._GLOBAL_AGENT_ENVIRONMENT,
     )
-    if explicit_project is None and utils.is_agent_addressed(
-        agent_id, agent_environment
-    ):
-        # A configured project travels with the agent so the endpoint refuses
-        # the pair; only the `default` fallback is suppressed.
-        return (
-            utils.get_tracer_project(return_default_value=False),
-            agent_id,
-            agent_environment,
-        )
-    return explicit_project or utils.get_tracer_project(), None, None
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
@@ -1735,47 +1721,33 @@ def _setup_run(
         agent_environment=langsmith_extra.get("agent_environment"),
     )
     project_cv = _context._PROJECT_NAME.get()
-    explicit_project = (
+    # Both chains walk the same tiers in the same order, so an agent named
+    # where a project would have been named takes effect at that point. Only
+    # values named in code go in; `resolve_addressing` consults the
+    # environment below them and settles which mode the run carries.
+    (
+        selected_project,
+        selected_agent_id,
+        selected_agent_environment,
+    ) = utils.resolve_addressing(
         project_cv  # From parent trace
         or (
             parent_run_.session_name if parent_run_ else None
         )  # from parent run attempt 2 (not managed by traceable)
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
-        or _context._GLOBAL_PROJECT_NAME  # global fallback from ls.configure
-    )
-    # The same tiers as `explicit_project`, in the same order, so an agent
-    # named where a project would have been named takes effect at that point.
-    selected_agent_id = (
+        or _context._GLOBAL_PROJECT_NAME,  # global fallback from ls.configure
         _context._AGENT_ID.get()
         or (parent_run_.agent_id if parent_run_ else None)
         or langsmith_extra.get("agent_id")
         or container_input.get("agent_id")
-        or _context._GLOBAL_AGENT_ID
-        or utils.get_tracer_agent_id()
-    )
-    selected_agent_environment = (
+        or _context._GLOBAL_AGENT_ID,
         _context._AGENT_ENVIRONMENT.get()
         or (parent_run_.agent_environment if parent_run_ else None)
         or langsmith_extra.get("agent_environment")
         or container_input.get("agent_environment")
-        or _context._GLOBAL_AGENT_ENVIRONMENT
-        or utils.get_tracer_agent_environment()
+        or _context._GLOBAL_AGENT_ENVIRONMENT,
     )
-    if explicit_project is None and utils.is_agent_addressed(
-        selected_agent_id, selected_agent_environment
-    ):
-        # Agent-addressed: don't default a project in, or the run would carry
-        # both addressing modes. An explicit project anywhere above wins.
-        #
-        # Either half addresses the run. A lone `agent_environment` is
-        # incomplete and the endpoint says so, but falling through to `default`
-        # here would send the run somewhere else instead of reporting it.
-        selected_project = None
-    else:
-        selected_project = explicit_project or utils.get_tracer_project()
-        selected_agent_id = None
-        selected_agent_environment = None
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
     enabled = container_input.get("enabled")

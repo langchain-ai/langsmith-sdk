@@ -630,25 +630,21 @@ class AsyncClient:
             agent_environment=kwargs.get("agent_environment"),
         )
         if (
-            project_name is None
-            and kwargs.get("session_name") is None
-            and kwargs.get("session_id") is None
-            and ls_utils.is_agent_addressed(
-                *(
-                    agent_addressing := ls_utils.resolve_agent_addressing(
-                        kwargs.get("agent_id"), kwargs.get("agent_environment")
-                    )
-                )
-            )
+            kwargs.get("session_name") is not None
+            or kwargs.get("session_id") is not None
         ):
-            # Agent-addressed: don't default a project in, or the run would be
-            # addressed twice. An explicit project takes precedence, below. A
-            # project the caller *configured* travels alongside the agent so
-            # the endpoint refuses the pair rather than the SDK dropping one.
-            session_name = ls_utils.get_tracer_project(return_default_value=False)
-            kwargs["agent_id"], kwargs["agent_environment"] = agent_addressing
+            # Already addressed by an incoming run body; leave it alone.
+            session_name = project_name
         else:
-            session_name = project_name or ls_utils.get_tracer_project()
+            (
+                session_name,
+                kwargs["agent_id"],
+                kwargs["agent_environment"],
+            ) = ls_utils.resolve_addressing(
+                project_name,
+                kwargs.get("agent_id"),
+                kwargs.get("agent_environment"),
+            )
         run_create = {
             "name": name,
             "id": kwargs.get("id") or uuid.uuid4(),

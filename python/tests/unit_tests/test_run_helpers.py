@@ -2843,6 +2843,72 @@ class TestEveryEntryPointTakesAnAgent:
 
         assert seen["value"] == ("cfg-agent", "staging", None)
 
+    @pytest.mark.parametrize(
+        "where",
+        ["context", "decorator", "langsmith_extra", "configure"],
+    )
+    def test_an_agent_named_in_code_beats_a_project_in_the_environment(
+        self, where: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The mirror of a project in code beating an agent in the environment.
+
+        Both modes travel together only when both come from the environment,
+        where there is no tier to choose between. Forwarding an env project
+        beside an agent named in code would earn a 400 and lose the trace.
+        """
+        _clean_agent_addressing_env(monkeypatch, LANGSMITH_PROJECT="env-proj")
+        mock_client = _get_mock_client()
+        agent = {"agent_id": "code-agent", "agent_environment": "staging"}
+        seen: dict = {}
+
+        def record() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        foo = traceable(**agent)(record) if where == "decorator" else traceable(record)
+        if where == "configure":
+            langsmith.configure(**agent)
+        try:
+            with tracing_context(
+                enabled=True,
+                client=mock_client,
+                **(agent if where == "context" else {}),
+            ):
+                if where == "langsmith_extra":
+                    foo(langsmith_extra=agent)
+                else:
+                    foo()
+        finally:
+            if where == "configure":
+                langsmith.configure(agent_id=None, agent_environment=None)
+
+        assert seen["value"] == ("code-agent", "staging", None)
+
+    def test_both_from_the_environment_travel_together(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Neither is named in code, so the endpoint arbitrates, not the SDK."""
+        _clean_agent_addressing_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="env-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+            LANGSMITH_PROJECT="env-proj",
+        )
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo()
+
+        assert seen["value"] == ("env-agent", "staging", "env-proj")
+
     def test_a_project_named_in_the_same_call_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

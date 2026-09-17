@@ -537,6 +537,43 @@ def is_agent_addressed(
     return agent_id is not None or agent_environment is not None
 
 
+def resolve_addressing(
+    project: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Settle a run's single destination, as `(project, agent_id, environment)`.
+
+    The arguments are the values named in code -- a parameter, a context
+    variable, a parent run, `ls.configure`. The environment fills in below
+    them, so callers pass their own chain of code-level tiers and leave the
+    env vars to this function.
+
+    Code beats the environment in both directions: a project named in code
+    drops the ambient agent, and an agent named in code drops the ambient
+    project. Half an agent named in code is completed from the environment
+    rather than competing with it.
+
+    When only the environment addresses the run, both modes travel and the
+    endpoint refuses the pair -- there is no tier to choose between, and
+    picking one would move the caller's traces without telling them. Only the
+    `default` project the SDK would otherwise invent is suppressed.
+    """
+    if project is not None:
+        return project, None, None
+    if is_agent_addressed(agent_id, agent_environment):
+        return None, *resolve_agent_addressing(agent_id, agent_environment)
+    env_agent_id = get_tracer_agent_id()
+    env_agent_environment = get_tracer_agent_environment()
+    if is_agent_addressed(env_agent_id, env_agent_environment):
+        return (
+            get_tracer_project(return_default_value=False),
+            env_agent_id,
+            env_agent_environment,
+        )
+    return get_tracer_project(), None, None
+
+
 def warn_on_agent_and_project_env() -> None:
     """Warn when the environment configures both an agent and a project.
 

@@ -2745,27 +2745,17 @@ class Client:
             # Passed through, even as None: a caller that says "no project"
             # gets no project.
             project_name = kwargs.pop("session_name")
-        elif kwargs.get("session_id") is None and ls_utils.is_agent_addressed(
-            *(
-                agent_addressing := ls_utils.resolve_agent_addressing(
-                    kwargs.get("agent_id"), kwargs.get("agent_environment")
-                )
-            )
-        ):
-            # Agent-addressed: the backend resolves the project from the agent,
-            # so don't default one in -- a project here would address the run
-            # twice. An explicitly provided project takes precedence, above.
-            #
-            # A project the caller *configured* is different from a defaulted
-            # one: it travels alongside the agent so the endpoint refuses the
-            # pair. Dropping either would move their traces without telling
-            # them, and the warning at client construction names the variable
-            # to unset.
-            project_name = ls_utils.get_tracer_project(return_default_value=False)
-            kwargs["agent_id"], kwargs["agent_environment"] = agent_addressing
+        elif kwargs.get("session_id") is not None:
+            # Already addressed by project id; leave it alone.
+            project_name = None
         else:
-            # if the project is not provided, use the environment's project
-            project_name = ls_utils.get_tracer_project()
+            (
+                project_name,
+                kwargs["agent_id"],
+                kwargs["agent_environment"],
+            ) = ls_utils.resolve_addressing(
+                None, kwargs.get("agent_id"), kwargs.get("agent_environment")
+            )
         run_create = {
             **kwargs,
             "session_name": project_name,
