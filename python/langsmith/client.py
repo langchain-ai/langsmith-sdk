@@ -2465,7 +2465,7 @@ class Client:
         )
 
     @staticmethod
-    def _apply_agent_addressing(payload: dict) -> None:
+    def _apply_agent_addressing(payload: dict, *, update: bool = False) -> None:
         """Leave exactly one addressing mode on a run payload.
 
         A project already on the payload wins -- whether it was passed
@@ -2473,6 +2473,14 @@ class Client:
         its own, so the agent fields come off. Otherwise the agent env vars fill
         in and the now-redundant project keys are dropped, so the payload never
         carries both modes (nor a null for the one it isn't using).
+
+        On an update the environment is not consulted: a patch inherits its
+        target from the post that established it. Filling it in here would
+        address a patch to the agent while its post went to a project, because
+        an update carries a project only when the caller passed one and most
+        callers don't -- the endpoint resolves the run by id. A patch that
+        names nothing falls to that same lookup, which is how every patch is
+        resolved today.
 
         Both members are required, but the endpoint is the one that says so:
         whatever resolved is forwarded, and a partial pair comes back as a 400
@@ -2493,11 +2501,11 @@ class Client:
             or payload.get("session_name") is not None
         ):
             return
-        if agent_id is None:
-            agent_id = ls_utils.get_tracer_agent_id()
-        if agent_environment is None:
-            agent_environment = ls_utils.get_tracer_agent_environment()
-        if agent_id is None and agent_environment is None:
+        if not update:
+            agent_id, agent_environment = ls_utils.resolve_agent_addressing(
+                agent_id, agent_environment
+            )
+        if not ls_utils.is_agent_addressed(agent_id, agent_environment):
             # Neither mode is addressed; leave the server-side fallback to it.
             return
         if agent_id is not None:
@@ -2715,8 +2723,10 @@ class Client:
             # Passed through, even as None: a caller that says "no project"
             # gets no project.
             project_name = kwargs.pop("session_name")
-        elif kwargs.get("session_id") is None and (
-            kwargs.get("agent_id") or ls_utils.get_tracer_agent_id()
+        elif kwargs.get("session_id") is None and ls_utils.is_agent_addressed(
+            *ls_utils.resolve_agent_addressing(
+                kwargs.get("agent_id"), kwargs.get("agent_environment")
+            )
         ):
             # Agent-addressed: the backend resolves the project from the agent,
             # so don't default one in -- a project here would address the run
@@ -3982,7 +3992,7 @@ class Client:
             "agent_environment": kwargs.pop("agent_environment", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
-        self._apply_agent_addressing(data)
+        self._apply_agent_addressing(data, update=True)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:

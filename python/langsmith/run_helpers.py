@@ -1344,17 +1344,13 @@ def _get_addressing(
         or (prt.session_name if prt else None)
         or _context._GLOBAL_PROJECT_NAME
     )
-    agent_id = (
-        _context._AGENT_ID.get()
-        or (prt.agent_id if prt else None)
-        or utils.get_tracer_agent_id()
+    agent_id, agent_environment = utils.resolve_agent_addressing(
+        _context._AGENT_ID.get() or (prt.agent_id if prt else None),
+        _context._AGENT_ENVIRONMENT.get() or (prt.agent_environment if prt else None),
     )
-    if explicit_project is None and agent_id:
-        agent_environment = (
-            _context._AGENT_ENVIRONMENT.get()
-            or (prt.agent_environment if prt else None)
-            or utils.get_tracer_agent_environment()
-        )
+    if explicit_project is None and utils.is_agent_addressed(
+        agent_id, agent_environment
+    ):
         return None, agent_id, agent_environment
     return explicit_project or utils.get_tracer_project(), None, None
 

@@ -499,6 +499,36 @@ def get_tracer_agent_id() -> Optional[str]:
     return get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
 
 
+def resolve_agent_addressing(
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Fill each half of the agent pair from its env var unless given.
+
+    An explicitly provided value is left alone, including when the other half
+    comes from the environment -- that combination is a complete pair.
+    """
+    return (
+        agent_id if agent_id is not None else get_tracer_agent_id(),
+        agent_environment
+        if agent_environment is not None
+        else get_tracer_agent_environment(),
+    )
+
+
+def is_agent_addressed(
+    agent_id: Optional[str], agent_environment: Optional[str]
+) -> bool:
+    """Whether a run is addressed by agent rather than by project.
+
+    Either half is enough. A lone ``agent_environment`` is incomplete and the
+    endpoint rejects it, but it must not fall through to a project the caller
+    never named -- that would quietly send the run somewhere else instead of
+    reporting the mistake.
+    """
+    return agent_id is not None or agent_environment is not None
+
+
 class FilterPoolFullWarning(logging.Filter):
     """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 

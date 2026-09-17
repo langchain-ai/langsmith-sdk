@@ -1106,3 +1106,38 @@ class TestBaggageAgentAddressing:
         replica = parsed.replicas[0]
         assert "api_key" not in replica
         assert "api_url" not in replica
+
+
+class TestBaggageProjectVersusCallerAgent:
+    """A header must not be able to raise on the receiver, in either direction."""
+
+    def test_a_baggage_project_is_ignored_when_the_caller_named_an_agent(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        """The mirror of the guard for a baggage agent vs a caller project.
+
+        Without this, any caller passing `agent_id=` to `from_headers` handed a
+        remote peer a one-header way to break the request handler.
+        """
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        headers = dict(RunTree(name="p", project_name="p-local").to_headers())
+        headers["baggage"] = f"{run_trees.LANGSMITH_PROJECT}=attacker"
+        child = RunTree.from_headers(
+            headers, name="c", agent_id="a", agent_environment="e"
+        )
+        assert child is not None
+        assert child.agent_id == "a"
+        assert child.session_name is None
+
+    def test_a_baggage_project_still_wins_over_a_caller_project(
+        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
+    ) -> None:
+        """Unchanged, and deliberately so: a child joins its parent's project."""
+        _agent_env(monkeypatch)
+        _reset_agent_addressing_cache()
+        headers = dict(RunTree(name="p", project_name="p-local").to_headers())
+        headers["baggage"] = f"{run_trees.LANGSMITH_PROJECT}=from-parent"
+        child = RunTree.from_headers(headers, name="c", project_name="p-caller")
+        assert child is not None
+        assert child.session_name == "from-parent"
