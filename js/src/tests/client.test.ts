@@ -11,6 +11,7 @@ import {
   _checkBackendVersion,
 } from "../client.js";
 import { v4 as uuid } from "../utils/uuid/src/index.js";
+import type { KVMap, RunCreate } from "../schemas.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import {
@@ -1749,6 +1750,103 @@ describe("Client", () => {
       expect(result.extra).toBeDefined();
       expect(result.extra.runtime).toBeDefined();
       expect(result.extra.metadata).toBeDefined();
+    });
+  });
+
+  describe("tracingSamplingRate is reported on runs", () => {
+    const metadataOf = (run: RunCreate, rate?: number) =>
+      mergeRuntimeEnvIntoRun(run, undefined, false, rate).extra?.metadata as
+        | Record<string, unknown>
+        | undefined;
+
+    const run = (): RunCreate => ({
+      id: uuid(),
+      name: "test-run",
+      run_type: "llm",
+      inputs: {},
+    });
+
+    // Sampled in at rate 0.5 per the cross-SDK golden table above, so the
+    // client-level cases below survive `_filterForSampling`.
+    const sampledId = "00000000-0000-0000-0000-000000000015";
+
+    // Body of the one request the mock fetch saw with this method.
+    const sentBody = (callSpy: any, method: string): KVMap => {
+      const calls = callSpy.mock.calls.filter(
+        (call: unknown[]) =>
+          (call[call.length - 1] as { method?: string })?.method === method,
+      );
+      expect(calls.length).toBe(1);
+      const { body } = calls[0][calls[0].length - 1] as {
+        body: string | Uint8Array;
+      };
+      return JSON.parse(
+        typeof body === "string" ? body : new TextDecoder().decode(body),
+      );
+    };
+
+    it("should report the rate on a created run", () => {
+      expect(metadataOf(run(), 0.25)?.ls_tracing_sample_rate).toBe(0.25);
+    });
+
+    it("should omit the key when no rate is configured", () => {
+      // Absent, not null: a consumer reads absence as "no sampling".
+      expect(metadataOf(run(), undefined)).not.toHaveProperty(
+        "ls_tracing_sample_rate",
+      );
+    });
+
+    it("should let the client's own rate beat one already on the run", () => {
+      // `RunTree.createChild` copies the parent's metadata onto every child, so
+      // a run can arrive carrying the rate of a differently-configured client.
+      // Reporting that one would make the extrapolation wrong, not just absent.
+      const withOwnRate: RunCreate = {
+        ...run(),
+        extra: { metadata: { ls_tracing_sample_rate: 0.9, user: "x" } },
+      };
+      const metadata = metadataOf(withOwnRate, 0.25);
+
+      expect(metadata?.ls_tracing_sample_rate).toBe(0.25);
+      expect(metadata?.user).toBe("x");
+    });
+
+    it("should wire the client's configured rate into a posted run", async () => {
+      // The helper above is pure; this pins the client actually feeding it
+      // `this.tracingSampleRate`, which no unit on the helper can catch.
+      const { client, callSpy } = mockClient({ tracingSamplingRate: 0.5 });
+      await client.createRun({
+        id: sampledId,
+        name: "traced",
+        run_type: "llm",
+        inputs: { in: "put" },
+      });
+
+      expect(
+        sentBody(callSpy, "POST").extra.metadata.ls_tracing_sample_rate,
+      ).toBe(0.5);
+    });
+
+    it("should re-stamp the rate on a non-batched patch carrying extra", async () => {
+      // The server replaces `extra` wholesale on update, so a patch that brings
+      // its own would drop what the create stamped.
+      const { client, callSpy } = mockClient({ tracingSamplingRate: 0.5 });
+      await client.updateRun(sampledId, {
+        end_time: Date.now(),
+        extra: { metadata: { user: "x" } },
+      });
+
+      const metadata = sentBody(callSpy, "PATCH").extra.metadata;
+      expect(metadata.ls_tracing_sample_rate).toBe(0.5);
+      expect(metadata.user).toBe("x");
+    });
+
+    it("should not introduce extra on a patch that omits it", async () => {
+      // Sending one here would replace the create's `extra` with a stub and
+      // erase every metadata key the caller set at create time.
+      const { client, callSpy } = mockClient({ tracingSamplingRate: 0.5 });
+      await client.updateRun(sampledId, { end_time: Date.now() });
+
+      expect(sentBody(callSpy, "PATCH")).not.toHaveProperty("extra");
     });
   });
 

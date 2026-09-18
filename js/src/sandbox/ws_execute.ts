@@ -158,10 +158,15 @@ export class WSStreamControl {
   private _ws: WsWebSocket = null;
   private _closed = false;
   private _killed = false;
+  private _closeStdinPending = false;
 
   /** Bind to the active WebSocket. Called inside the generator. */
   _bind(ws: WsWebSocket): void {
     this._ws = ws;
+    if (this._closeStdinPending) {
+      this._closeStdinPending = false;
+      this.sendCloseStdin();
+    }
   }
 
   /** Mark as closed. Called when the generator exits. */
@@ -188,6 +193,22 @@ export class WSStreamControl {
     if (this._ws && !this._closed && this._ws.readyState === 1) {
       this._ws.send(JSON.stringify({ type: "input", data }));
     }
+  }
+
+  /**
+   * Half-close the command's stdin so it reads EOF.
+   *
+   * A reconnected stream binds its socket only once iteration starts, so a
+   * close arriving before that is queued and sent on bind — dropping it would
+   * leave the command waiting for an EOF that never comes.
+   */
+  sendCloseStdin(): void {
+    if (this._closed) return;
+    if (this._ws && this._ws.readyState === 1) {
+      this._ws.send(JSON.stringify({ type: "close_stdin" }));
+      return;
+    }
+    this._closeStdinPending = true;
   }
 }
 
@@ -429,6 +450,8 @@ export async function runWsStream(
     killOnDisconnect = false,
     ttlSeconds = 600,
     pty,
+    runConfig,
+    closeStdin,
     headers: extraHeaders,
     openTimeout = WS_OPEN_TIMEOUT,
   } = options;
@@ -455,6 +478,8 @@ export async function runWsStream(
       };
       if (env) payload.env = env;
       if (cwd) payload.cwd = cwd;
+      if (runConfig) payload.run_config = runConfig;
+      if (closeStdin) payload.close_stdin = true;
       if (commandId) payload.command_id = commandId;
       if (pty) payload.pty = true;
 

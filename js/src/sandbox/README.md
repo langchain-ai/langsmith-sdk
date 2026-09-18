@@ -885,7 +885,7 @@ try {
 | `memBytes?` | Memory allocation in bytes |
 | `fsCapacityBytes?` | Root filesystem capacity in bytes |
 | `mountConfig?` | High-level mount config from `mountConfig({ mounts, auth })`; sent as `mount_config` and expanded by the backend at runtime |
-| `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, `no_proxy`) |
+| `proxyConfig?` | Per-sandbox proxy configuration (access control, rules, callbacks) |
 
 ### ListSnapshotsOptions
 

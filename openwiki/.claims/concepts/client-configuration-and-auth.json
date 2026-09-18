@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:abe98b98dbc0943ea47ac58fe365f77052ebaf86d365811ec8adff0b445fcea9",
+  "claims": [
+    {
+      "id": "claim_b35c279bba0a4ca69b373cef0e54b2eb",
+      "statement": "For API endpoint and workspace resolution, constructor values override LANGSMITH environment values, which override legacy LANGCHAIN aliases, which override the selected profile; the hosted API URL is the final endpoint default.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1376-L1401",
+          "version": "repo-lines-v1:sha256:7f0d0ea8b064231a2f877762de02a83388ca07f6962f70ecdb37b517a73a4311:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhY2E4NGI0NWViZTNmYWIxNTdiNWU5NWY4NjcyZDRkZGQ2MWRmZGI4ODc2NzY3NTFkYzEyNzdmNjJlMjY1NDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZDExY2FmNDNlOTdlZjM2OWU2YmVlZDFhMjY4YmQwNTgzOGYyOWI5ZGQyNTRiZjY5YmE2NDg4NDE0NzIzNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3N2M0ZWI1N2YwOGJlYjQ1MjdhMTI0ZDM0OGUxZWVlNjQ4NjVmOTE4NWRlYjgzN2NhZjliYTU0ZjcwNzdkMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkNDc4NjNiMjdkYjdkNGI2NzEzZmU1MDE1YzBjMDU4N2M3Y2I2NzlhNTQwMTg5YjA5ZjQ3YzVlMjIxZTFkZTcifQ"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L1500-L1529",
+          "version": "repo-lines-v1:sha256:1600903bc06902ddeaf39a9340619aa41c9d8eeb674768a783439c51f4ba62ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MmNiODNiMmM4ZDkxNDZmZDEyMjlhMzFlNTc5OTJhY2VmNmJkNTE3NmEwMDcyNmJkOGNhMzk2MzQ2MzFhN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkOWUxMjU0NjQyNTU3NmQzZGVhZThjOWI5ZGJmMTI4ZDVkNmRkYWY1ZDdmZTg1NzkzNDkyN2RlZmZhM2I5ZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjZjA0YTJlNmMxM2E5MjI3NWY4ZmUzNGY0ODE3NThjYzJhODk1ZGRjMDk4NjdlMTc4OWM5YTI0M2ExZTYzNzcifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/env.ts#L175-L195",
+          "version": "repo-lines-v1:sha256:181476096eadbbcdd6f0a29fbbbae3983c491590be68f59db8cdf2be63f24dd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZGY2NmRkOWFlZjE1YzAzZjc0NjE3M2Q1Njg3MTA3N2FjYzdhZTZlNWVjNjFkNDAyODU0MzFjMjYxY2RmNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyY2E3YWU4OWIyOGE2YjRiMWEzNWE2NjRjNjllYjI5MzA1MzIxNzFkNDY0NTNmYzkxNjBiOThhNGZkNjYzYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlNmY2OWM5MGQ0OTE2YWE5MzM3ZWM5ZTYwYzYzYjk1NzNkM2IwNzYzNjQzNzI5YzlmZmYzNTI3YzE0YmQyMGMifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1261-L1287",
+          "version": "repo-lines-v1:sha256:ce18720f2faf470aa592474fc215aa69e305d4430ab1d4739e36d40387d84f8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlNDc5N2JiMjM2YWZhMzI5MWYyZDI1MzUzODdlZmFjMTVmZGMzMTJhMjM2YTczNzI3NzlhYzgxMDJiN2EyYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyN2IxNjRiYTM0YjNhNTRiN2Y0ZWYzNGY4ZDYwOTMzMjFlZGU0N2M1OTc4NjZmOWY3MTcxOTBjOWNjYjhmMTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5ODAxNGUxZjExYzRhNThiMDgwMDU0N2QzMWI1Y2M3NDI1OGU4NTM5NjJlNDhkYzVkYzM4NWJiMjE0MGU3MWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e9919a77747843f99685e8021b6aaaae",
+      "statement": "An API key supplied by the constructor or environment disables profile-managed authentication while still allowing the profile to supply endpoint and workspace configuration; workspace IDs are sent as tenant headers and are required for organization-scoped keys when the server reports that condition.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1500-L1529",
+          "version": "repo-lines-v1:sha256:1600903bc06902ddeaf39a9340619aa41c9d8eeb674768a783439c51f4ba62ab:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4MmNiODNiMmM4ZDkxNDZmZDEyMjlhMzFlNTc5OTJhY2VmNmJkNTE3NmEwMDcyNmJkOGNhMzk2MzQ2MzFhN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkOWUxMjU0NjQyNTU3NmQzZGVhZThjOWI5ZGJmMTI4ZDVkNmRkYWY1ZDdmZTg1NzkzNDkyN2RlZmZhM2I5ZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjZjA0YTJlNmMxM2E5MjI3NWY4ZmUzNGY0ODE3NThjYzJhODk1ZGRjMDk4NjdlMTc4OWM5YTI0M2ExZTYzNzcifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/error.ts#L147-L176",
+          "version": "repo-lines-v1:sha256:874f8dc04c4a42e4021641fe07226bd6251f9f234df6abb85cda493fbfdbe7d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5MzFiM2I5MDhlZWE2NGFhMjkwOWNlNjU3NTBiYjY1OGZjNWU4Y2IzZmY0ZjY2ZDY2MzFlZmU1OGRlMjJkMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyZDA1NDVmNTcxMWI1MTM3ZWFkOTc2ZTJiOTQxY2EyZmIxYTlkMTRmNDA0ZTNkNGI0ZWJmZWFmNjc3ZjFkM2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2ZTUxZTBkMDA4ZjE2YzdhMmI3MDAyZThiYzQ2NTQ4N2FlMmY1YTMzYjA4ZjczZjUzNWQwMGJmMjhiODdmZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg2MjkyOTEwMWI4M2U5ZTIyZGZiOWJjNGE2MDM3NGVkZDE3MjA5OGE3ZjgzNTJhZmVjMmYxN2E0ZDc2MWQ3MjEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1263-L1327",
+          "version": "repo-lines-v1:sha256:01d3d2ed836a332c97309da5528d66d4b83af6f30743223b33cec8105b7d42da:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNGY0NTYwNjUyYWI3ZWJmMmIzZWY3ODgwMjIwOGY4ZDk4ODRmMjgzNGUwNjA0YWUxOGI4YmU0NWRmYjFiNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiZWU5YTQ0N2Y2NjAxOWVkNjFmZThkMjBmYjdiYTk0OGQ0ZjM0NjdkMWQyNGZlZjQyMzdmZDhkYTk0MTc5NjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiYjkxZmJkNjE2OWNiMjdjNmUxMTAwOWNlODc0MTFjN2MzMjg2MTgzYTAwZjIxYzFiMDU0NGVhMTVkZGIxNjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4YzBiNzM4ODRiMjkyYWEwMTMwMDNlZGEzNTg5ZDk2NDZkNjVjOWJjOTgzNTRjNjBmZmI4NDQxZjM1MGJhMTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_562db387945745e18ea51963a3dc1702",
+      "statement": "Profiles are loaded from LANGSMITH_CONFIG_FILE or ~/.langsmith/config.json and selected by LANGSMITH_PROFILE, current_profile, then default; invalid or absent profile state is treated as no profile, and JavaScript skips profile loading in browser and web-worker runtimes.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L52-L107",
+          "version": "repo-lines-v1:sha256:85f12e57e55498a69609d3b29c45f3edd85ffc828486d01c58e7387a6d695006:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4N2QzYjc5YjkwNTRiNmQyODk3YzAzNTAzM2ExMzc3OWZlYzI3ZjU3Mzc1OGFlZjU1OGUxODU1NjI3Mzg1YmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxYzY2YzVhYTNmYzM3Y2MyM2RlYjk5ZWJkYzI1Y2E4ZTEwYTI4NzI5MTU5NGQyMGI4NTg3MWU5YmE4MzI3NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmMzRmZmM4ZjRiZjQzMTc2ZWJkYzBhZjQxMzI0ZjY3ZmQxZDI0NmZlMGM4YzQyZWJmYjYyMzgzNDAxMWE2ZWUifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L71-L129",
+          "version": "repo-lines-v1:sha256:70acdc703da50c2b4fd6e2ab484983c690200e9c200098da1f5396ad2f0f4197:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxZTU5YWJiYzQzMjYyN2JiNjExZjA3NDlmMWQyOGQ1NmE4MTEzYTZiOGEwMGQyNzNlY2IxOWNlYzAzZjY3OGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MGM1MTBjZjg1M2ZiOWI5MmJmNjVmMjZkNmM0ZDNmZjEzYmY5ZDU0ZDNiOWY3NTZkYzdlNmE4ODJmY2FkNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5M2VkMjVjYTNhM2FhMjg3NjJmMzcyNzM3NWZmNzliZjQ2YTM5MWYyNzM1NTkxZTNkOTAwYzI4ZGVmNjE2MTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4669338400dc45dcb5f487ebad0b15a2",
+      "statement": "When a profile contains both credential kinds, Python profile auth prefers api_key, whereas JavaScript profile auth prefers the OAuth access token.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/tests/client.test.ts#L598-L617",
+          "version": "repo-lines-v1:sha256:c102cfcacc6e704a98f39bb0273b33d3be757ae979387a5e72ac4f71be2e5707:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMWYyMDFjMTZiYmI0NDFiZDA4YmRkOTNmYzQ4NmVjZGRjMzVmYTRlOGZiZGUwOWNlNWNiYmQ5NDU3ZTNkMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZDExY2FmNDNlOTdlZjM2OWU2YmVlZDFhMjY4YmQwNTgzOGYyOWI5ZGQyNTRiZjY5YmE2NDg4NDE0NzIzNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZjk3MDU1ZGM5N2Q1OGFjY2ViOTNlZTk4MTk1NzM4MTRiODhiMDlkMjk4OWYzZmY3ZDk1Mjk1ZjY1NjczNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5OTFhNWMyYzY1ZThiNzllYzFlYzUyNmU0MjQ3N2U2OGMzNmQ1NjU2YjY1OGZmMjM4NWI5MzFmZmJkYzI5ZDEifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L485-L509",
+          "version": "repo-lines-v1:sha256:2cc50568f966034746006a1ac098446faef9a72405b7fd85aa8a164b48bc249c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMyZDk5ODk4MTYwMzU5NGMyNDZjODg5MjA0NjM5MDQ2MDhmZjAzMjNkMzhmNGE4ZTgyMTkzYjIyZDhjOGFhZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1YTYzYTRjNjJjYzYwMTQyMDQ3NDFkYWVlZDBhZmRlNmVlMTgyMTc3ZmU3M2MwOWM2MWI5ZmNmYTZjMzczZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L456-L467",
+          "version": "repo-lines-v1:sha256:2d1d42dda91c8c623a0ae58071b6244ebaa8a12a51c26c07a477afb4f180bc07:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZmM4NjgzNDQ0MmUyYjhlOGNjYTMwNDQ3NGUzOWI3ZTU1ZmQ2ZDRlNzM4NWUzZWI2NzgwMTM5M2FhOTVjNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMjhlMTA2Y2I3M2E4NDJmZjhlMDg4MzA4MzdkNTIwZjk1NWI0YzA5NGE5NzBkMGU2M2Y0MDUyNWMxOGZjMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiNzIxOWVkMmJmMzMxMzAwNDc0NmZmZGRlNTJmYTg5MTI2N2EzYTY4YTBhMjcwNGFiODRkNzYwMTczZTcyNTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2YTc3ZjI5MzgyMTY2NDIzZGY3ZDYwNzYzYTVjN2FmNTUwMjg4NTI0ZTlhMjY5NGNjOWQ1N2JhNjBkNjlhYjIifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_client.py#L315-L339",
+          "version": "repo-lines-v1:sha256:e5dac36afbbf346e79e600255555efb19c0a9d74a058973327b26f759ece8953:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1YjgyNmIzZDNlYTk0MjYxODJiNDM5ZjA4NTNlMmNiMDU5YzFlMWU0MDkwNGY5MDZiNmI5MzcwYjk1MWY3MzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMjUwOGQyMDlmMTRjMjExYTBiMmM5MmMxOTBiYTMyNmI2YzMwZjU2NTE2YWE1MDQwMGM3NjQ4MzA5ZGY0NDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhODExZWY0YTYwYmNiYmVkMTIzYzhmNmZiZTcwZjhhMzBhMmVlYzNjZjVhMjFhMzZmYTAyN2YxNTBjN2I3ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViODQ2YzIwN2FjODA3MDE0OTViZjE1ZDM1ZjgwY2M4NTE1ZTc1MjM0NDhhZGIwMmYzNzJiNjM2NTc1OTQ0M2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1c65ba3fbe6a4ae3a52ca7c5ed05db6f",
+      "statement": "Profile OAuth refresh is attempted only with a refresh token when the access token is missing or expires within one minute; refresh failures are best effort and leave the available profile credential in use.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L117-L133",
+          "version": "repo-lines-v1:sha256:bae5a4215e8e8eb6945f0e095aadc5fc5d272f11ca253d4da1bd7779edb621e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiN2M1NzA5NzAzMThiMTIzOGVhOTZjMmI4ZDkyNmRiYTU5Y2UzMDhlNDljNzVhMjI4OTcyMGYxZjIwNzNkNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMwMzI1ZjYwYzcxNDhmYmI2ZDU2NWNlMjFlYjBhMDlhYWZkYTcyYmY3ZDM2OTEyODMzMWQyNTNjNDY0MjNmMGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZmMWJmYzk1YzMyNzU0YjMyZWMyYmYxYzA1ZmEyODc2NjIxYWNjYmEwNGM0N2M4YTY1YTg5ZjAxOTAwZDhlYzAifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L418-L475",
+          "version": "repo-lines-v1:sha256:48d75b3e8f5a27a62a61d7377063f6a0346851e21252f799635e43993c268aba:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNDBhNmYyOWI5M2I4YmI1NjA0NzgwMDg3NjRjODQyMzVjYWUzOGRjYTlhNGY4MmEzYTFlYzlkZTgzMmQ1ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE3NDY3OWE5YzA0Y2Y2NDUxYzVlYjRjYzg1MDA5NTFjYjk2NDMyNTE5YTY5MDQ3YWQzN2Y0OGFlNTFkOTJmYTEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L238-L294",
+          "version": "repo-lines-v1:sha256:0f8ec541e128f3139fc8c1770657f076e8d8045486a2dc839b0b38e553ab8541:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiMmI1Y2RkNGE3ZDM1MWMzYzFiYmUzOGE5MDE4NTUxMTkxZWUyNjA4N2U4YThmYmU4ODljN2IzZTI4YTk0NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMDU2N2YxN2E5MWVjYTU0MTM4ODk2YjBkNTUwYjhjYzBiNWIzMDhiNmEzYTY2ODFhOTA0YzE4NTA1YmI0N2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmZjAxNDhhMTY5OGYyZGQ1MTMzMzExOGRkMWIyNzFlZmQxNDI3Mjg4ZTc4ZDBmYzE2YTVkNWEwZGU0YTRlN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3NTU4N2E1YjAyNDg1MzhiMzBiYTI1MGQ5NWY0ZWJhMGVlZDFhNjNkMTM1ZDg3ODYzMGJmOTlmNWU5ZWQ5MWYifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L421-L454",
+          "version": "repo-lines-v1:sha256:8b835af8b4e3393c7d6ea934f7b24b401cea33b7945cc4d56ed6a1a070cefb11:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmNTMyNTc3ZGIxM2Q1ZjRiMjUxY2EyMGY3OTljNTZhMTkwNzlkM2NmMmRkMjMyZGExOTVjNWYyYzI5NzIxOGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmODA4YTgzZGQ4MDU1OGYyYjQ3MDhjM2M3YjFlMWI0MmM1YzhiMmEwYTEwNzIzMmNiODI3Njk0NzgwN2M5NjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiMjE0MDRiOTU2YmRmZWRhMWVkNjc4NjEwYzc0OTM5ZjdkMTExNzBmZjMxMDZmNDY2OTlkODlkOTg1ZTFiYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFkMzQ3MDg2NTU2ZGFiZjczYjVlNmM5NDg5MGVmMjMyMDM1NmI4NGJlMDViODZhMTc3ZDAxYjIxMWZjYWNiYjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_18f43ae701d2450d991a66f2b4d6e771",
+      "statement": "OAuth refresh is coalesced in-process and serialized across processes by a filesystem lock; after locking the refresher reloads disk state, skips duplicate network refresh, and atomically persists recognized token fields on success.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/utils/profile-lock.ts#L64-L118",
+          "version": "repo-lines-v1:sha256:366a6b9dc057a5dcb749c70b4c3a81d4f53e5b1a724a21b19333f1b763838f9d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmMGQxMzk5Mjg4YmY2ODVhZTgzOWJkNzhmYjhhNGMyYWVmZWRiM2U5MmVjMjRkNDQ1MjE3MGUyODFjODg1OWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzOWE2MzVhYzA5ODk2MTA0MTdmZDNmOWVhZTU4Yzc3ZTlkMGVlYjFjMzZkYTFmMDAxYzk5NmMyYjA1Zjg4M2IifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L363-L475",
+          "version": "repo-lines-v1:sha256:9a9f8f6d87a72e7d279967f7c32a92136e4710279e10edae8475a8e1eed15636:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMDVjYWMzNzQ1ZTJiNTMxNDQ3MTI0ZmVjMmQxZWZkZTA4OWI0M2VkMTJiMmNjZWE5ODM0MzBiMzQzZjgyMzdkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIyN2U1Nzg4ZDVkOWQ3M2QyNGE4MWRiYzBhNWE3NGJmYTgyYzljM2IzYWY5OWU1MmFmNzk2ZTkwYjQ2OGE4YTNkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5MjA0MGUwOTVhOTRlMmFkYTc0ZTQyMWYzNzE4NzUxYTkxYTgxMGJmZDY2ZjQ4ZjRlOTM5YzdiNzQ4MGViNjcwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxNzQ2NzlhOWMwNGNmNjQ1MWM1ZWI0Y2M4NTAwOTUxY2I5NjQzMjUxOWE2OTA0N2FkMzdmNDhhZTUxZDkyZmExIn0"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_oauth_refresh_lock.py#L95-L160",
+          "version": "repo-lines-v1:sha256:2a6cdc21fea12ce65a9825287b64b3894b3b1cf96a83ada6472c4059142bfffb:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNzI5ZWU3MjczMDVjMTI1NjAzOWZkNWRlYjc4Zjc3ZTE5N2FiNGE0ODA2MTVmMWYwNmI3YjM3ZTVhNTQ1OWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxYWM1MTM5ODRkMTk5NzA3Yzc0ZmYxYmM5NDhmYjVjMWQwZjZkNTM0MDRiNzJhODdhMDk3NWIwYTBiZGQwYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkOGIwMTM4NDcwMDI5MDM5YTM2NmRjN2M3YjA1NDYzMGFlZTczMjgwZjhkY2I1N2E0OGEwZmIxNGY2YjQ4YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L327-L451",
+          "version": "repo-lines-v1:sha256:4e0013cb40f78c3d3ce55fcaf2d5f8523831764128fd2e8e3b95c507055d0a98:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzMjcwMmNlNTA0ZTk1YWQzM2U5ZTEyYzAzMDMwZDk1NjY3YTYwOTFkMDFmYzc5MmE4OTI0MWU4ZDhlYmY1NWUyIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlMDNhNjdhMDhlOWI5OWRhZDhiMWU4NDYxYmE2NTNlYmI0YTk3Y2FhMmMzYmZiMTcwNWM1ZDc3MzEzZjUyNzhjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1ZWQwNjU1NDRiYjkxZmYxZTYyYzY4ZGM3YWY5YjE4MjczNmI1N2Y3MDM2NTljOGY0YzgwNjVkNGVmNzAxMDAwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2Y2U5ZGI1NTE0MWExYTkzOTRiOGVkMWE0ZjgyYTk1N2JlZjY0YjcwZDI1Y2UzNTMyYTNhMDUzMDI5MjZlYWI1In0"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_oauth_refresh_lock.py#L124-L158",
+          "version": "repo-lines-v1:sha256:0e00a2f19d7a2d553e39f8afb25ae9a9a3b1f7e225c878804c2e39d6eb31c0db:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5NDQyYmNkZGY2ZDE4N2E3NjZiYTJjNTQ1MmNhMDk0YWQwMmU5NWJjNjU2MjlkNTY3MjE5M2U0NjlmNjBmN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjNDRlMDJlNTVmMzhlZmJlOTE0NDJiOGYxZTgyYzk0MGI5ZWNlNGZlOGQ0MjI5ZWM2NjY5MzZkOGZlNDNkZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2d2a0df5180c41958e1728dbf6cc0f19",
+      "statement": "OAuth discovery supports root and self-hosted /api issuers and RFC 8414 path insertion, but metadata is accepted only if the issuer matches the probed base and advertised endpoints share its origin; otherwise refresh falls back to the normalized profile API URL plus /oauth/token, stripping /api/v1 but retaining /api.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/tests/profile-oauth-discovery.test.ts#L98-L179",
+          "version": "repo-lines-v1:sha256:8335fa90cdcd6cc2fc3e5fbd8fa16507282e46aa7a8af3ef02731d4e13bc2366:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4M2RhNTFlMWQwZWM0OGVjNjQwYmE5YzQxMDg2YWNmYjczNWYzMGQyOTg3YzI1MjU2NDZiNmU4OWU3OTg0MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyMGZjOWU2N2RiMDdlZDIzOWJiM2FkMjMxMmVhYWI5YTcwZTFmNmZiYTAxMjg4YjBiYTZlNjFkN2Y4ZWU3ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L135-L282",
+          "version": "repo-lines-v1:sha256:656c8dc6224c05652480f24ad1d3a3a0c06ec96d6c148937e3044bf1541d016b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyOTc4YWRiMGY2NjhhZGY5Yjg0ZTkwNGIxMjQ2NTM4ZWI4ZDQxMzVhY2QyMTE2YzhhYTVmZDFiN2QwZWUzODYwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI2NmNlZWE0Yzg4MTA5NjUxOTI4MmJkNmI3NzM4MzEzMzNkY2NkNTBjMTA0ZTY0MjkzZmNhYzEwN2MwMTE1Y2JiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIzZTk2YWI4MTg0MTE3NTQ4YzRkZWEzOTNlYWM3OGFjN2MyMmJkMTQ1ODIzYmM4NTNjNDQ3ZDViNGMzYjNjZmVhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwYzdiMDE0NDYzZTI0ZDdhNzdjZDhmNWM0MjU4YmZkZTZlYzQ2MzBiNzE3NzFkMWQ2ZDk1ZjJjYjFmNmFkZDU0In0"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L132-L235",
+          "version": "repo-lines-v1:sha256:379319003bdbd0af420ff44e1ea0e3f2368f3dd7590abe935b2a540a395790b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiMTg0Mjk3NTQ0NThiOGEzNGU2YzdhYWI4ZDNkZmQwNTZlMjllYzg5NjI2MTRkYWEyMWI5MTcxNTBhODU4MTZiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1OTVhZTFhZjQ0MjI2YjNmMTA2YWY3NmE2ZWY2ZjZjNjg4YWU2MGIwY2FiNTUyZWY0NTk2NjJlZmEzYjgwZTg1IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4Y2M0YTdkMWNjNzk2YWJhM2U0NjcyMzMyN2Y1MTdlOWY4MTE5ODJkMjUwZjA3MDI5ODZlNGI1NzY0YWQ5NTg5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3ZGI4NjJlN2M2Nzk2MTIxYzM4ZWE5NjJhMTk4N2MzYmRhNmQ5NTNiNjJkMjhiMWFmMWEwYmZhZmJhOTkwNmQyIn0"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_profiles_oauth_discovery.py#L91-L160",
+          "version": "repo-lines-v1:sha256:768233e3b67afb30b12f690a8da6a55b854219742d6c7076ec32f3d8b49654a3:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNzZkNWI4OWU5ZDY3MjFhNGFkNTAyMTlkMWMyZjdkZmFhM2IyMGU3ZjNkMzk0OTYyMDYyNjc4MzQwNDkwZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4N2Y3NzYyYjQyN2E1YWNiYmRlMWQ0ODNlOWM3YjhlZTNjMmY1OGI1NGJkMzEzNGMzYTRmZjAyOWZhYTExZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmMDg2ZmQ1NGY5ZjUwZmM2OTc3NDIwMDUzYmQ3ZmE0N2IzYjYxMmZjMTk5ZWZhOGEzY2M4NzhmOTExZWE0ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d185868c4a14527a608cd880b1113c6",
+      "statement": "OAuth token refresh targets the profile's api_url rather than a constructor-level endpoint override.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/tests/client.test.ts#L785-L842",
+          "version": "repo-lines-v1:sha256:3b36db56cd53159b6a338d42965f3f4b469b45965feb9aab3a947ef62be04abb:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjNzMyOTI1YzYzN2E0MzA0NTBmOGE3YzRmNDc3MTM3MmNiZGMyMDBmNzIwZjNmOTNmMGMyNDE2ZjM2N2RkNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhNTkwMGQzMzAzZGUxNjE3MzQ0MThkZjZiM2IwMjBkNmY1MWE0MTNhOTI2OWMyY2E4ZDYzZGI0ZGIxM2UxNWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlMDYxMGU0NmM3MTRhNWQ4ZjU1Y2I5ZDBiODM0MzcyYWEzMGQxMTM0NmRhYmNhZDA5NjMzYmQzZjQ4NmQ5ZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxNjQ4YmMyYWEyODlkNmM2YzcwZmQ2ZjIxMmY1OGQwMDU5YmYzMjUzMWU0YTQ1M2RlNzc2NjMyOTZmZDE1MzAifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L418-L443",
+          "version": "repo-lines-v1:sha256:879f48c824b7a5dd1bde3396c2d666d6e0cd7c2998b356994336dd83c106c061:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNDBhNmYyOWI5M2I4YmI1NjA0NzgwMDg3NjRjODQyMzVjYWUzOGRjYTlhNGY4MmEzYTFlYzlkZTgzMmQ1ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZjY5MDA3YTdlNzVjY2RiMmMxOWVmYTlkOTVjNDNiZjc4N2YzM2EyYjljODI2NWM0YTVjZTY0MmZlNmRiZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhYzIyYjVmNmEyNTE2ZjVmZWIyN2VkOWNkM2QyMTk3YmM3MGY4Mzk5MjdjNWJkNjYxZTU3NTYyYWY1YzNmYmQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_087c659c14144496857f04c1814755a4",
+      "statement": "Configured endpoints may already end in /api or /api/v1, so generated clients normalize those suffixes and handwritten platform operations must use platform path helpers that avoid adding a second /v1.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1693-L1750",
+          "version": "repo-lines-v1:sha256:596075644a1125607274828bf07c19c51a86636d4488e5a6ce3a987076c212fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwOTA4MDIxMjBjZDdiNmUyMDI5ZWE4MmQ3Y2FiYjRkMWNjZTUyNjYwM2JkNDA4YjFkOTU5Mjc3NDIxNWU2OWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyNzJiOWYzMTJmMTk2ZDE5ZDZiYTg0NDUwYmYyOTJiZjY0YmU3N2I3NWQ2YmJlMjViODUwOWZmZmU2MzI0N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3NDQzMjFjYjJmNDZiZjk3MzBmZmZlMTZhNjhlYmZjMzcyNzAyMTU4OTg5NTU2NjE2Y2Q5ZmU2ODllYjk0MDEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L11775-L11787",
+          "version": "repo-lines-v1:sha256:ddba92d64b57517de520a6ffa30afa7a07172cc77f19f55e40d1373fd559da04:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4OTBkNWQ2ZmI2MjA3NWFhYmE0MWZhMjhmYTQwZTlmNWY3NjVmNDlhZWY2OWQ1OTMxOGMyYzkxMmE5OGIwZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyOWM5NjNkM2U4YjdmZmViZjMxYjE1MTY4MWY2M2M0YjY2NmViOTVmNmMxMjcxOTA2MjE3MmM3ZTJiM2MxYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3NDVhM2FjMmM5MDk0Y2MyZDQzNWE1ZjFmYzFlYjc1MmI3YjIyZDc1ZjVkOTIwNWFmZjBjMjVjY2Y3ZDFjYjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkMmJmM2U1MDE3Njk1NDQ1Y2U0M2ZkZjhlNDVjOTExYWRhYmNiMmQ4MjViNjM1MTBlNTkwMTVkYmRiYWMwMGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4c93ed5276ed485f98a312a44b6e3f47",
+      "statement": "Client-wide custom headers are merged beneath SDK-owned authentication and workspace headers; JavaScript reconciles case-insensitive collisions across headers and fetchOptions.headers and rebuilds its generated client when effective headers or profile auth change.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1568-L1721",
+          "version": "repo-lines-v1:sha256:d1c3f1679d58673f7514b59add39a485ec20f7099c1c8d413175c4a471477e47:eyJzZWxlY3RlZExpbmVDb3VudCI6MTU0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0ZjJhMmY5OTZmMDhlNjgwYmQyOTIxMzVhNmZhNDk3OGJkYTI2ZTYwMmQ4NGYzM2NiMWQ1OTQ3NzVkNDMwNGI1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5Y2QxZmE2ZTUyZWMwZjNkYTczMGRhNzNmOWFhNGFmZWZkNzRlNGRiMDI1NWQwNmNiZWYxYTNhYzgwYzIzZGJhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5N2Q4NjMyZTU0ZTkyOThhYmI5NTg3MjdlMmQ1MTQwOGFiYWYxMzY2MDM1Mzc5MTAxNDBhYmY2NWIzMGFiNjEzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmOTU4ODdiZTgzNWVkMWMyMTQ3OTYyODJhM2E2OGU5ZWVhZjk1NmY5MmFhOWNiZWViZDc3NWVhMjEzZTcyOTdhIn0"
+        },
+        {
+          "resource": "repo://js/src/tests/client_headers.test.ts#L34-L108",
+          "version": "repo-lines-v1:sha256:1a9bb1be2ea602a58316ebfad3c6d76c8b0b18195bd8675a3dd54b170fc75c30:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMjI0ZDI5ZDgxNTYwN2Q3YTQwYjZmZWUwNWI5ODFjZWUyYjQ1Yzg2Y2FiMjVmMDE0MzM1N2MxNmJhNGFhYzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmNjViNTQ0ODJiMjU0YWFiZDUxNmVhMmE2YjU4ZjY1MDdkNzczNDk4ZTFmYjY5MTA2M2JjMjlkYWNiNGY5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiNDBmMzA1ODJkNzBmZjYzZjU0MjZiMzQ2ZGFlZTEzMGY1ZDU4NThhZmExZDg5ZTA5N2NiYzUwZDlkZDk1NDUifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1822-L1880",
+          "version": "repo-lines-v1:sha256:132b314ff785eaed6ba42bc1273e488fbb5e53e987f5524796d9935b893225d8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNmJmOTJmYWI1MGVkYWM1YTQwZTE5M2FkNWNkY2UxN2QyNzc2YWVmMWUzMGRkN2VhY2YyZWZkMTlkMzg1MmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2NmQwODkzMzgxNzdhMTk2MjgwMjI2YzRiODM3NWU2ZWE0MDhkOTY3ODFlMzI5NmIxNzliMTg1OWIyY2NkYTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2ZWEzZTdjMTE1MGJlMDEzMTMyYTBkYzRmYmQ3OWQ0ZDVhNDIyYjdjZGU5NTIzY2M2MmE2ZTY4NmJkMjBhZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlYjUwZGQyZmYyMTQ3NTY2YzVjZmE1MjIwNWYyOWU3Yjg3MzNjMGY5YjliZGU2NTA3YjEyNTZiOTk2NmUwNWEifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_custom_headers.py#L20-L78",
+          "version": "repo-lines-v1:sha256:be8064b03209ed2dc46ee7d1a4671ebdd824ba08301b165525109c4b441381f4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZTY1NjI1MWJhNDRjYTc2ZjQ0MjhlMmQ5OTYwOGI0YzE1MjMxMTMyNjkyZDFhMzcwY2I0ZDg0NGIyMDdkYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNWJkOTgwYWY0OWM4MWJkOWUyOTkyOGViZTI1NzljM2ZkOGQ0NWJiZTBmMzVhMjk0NTdmZmEyNjdjNjU5NjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhMjhmMzA0MGRmYmViNjhjYzk0NjA4NDdiODVkYjU5ZDNlMGFkNzA5Nzk5NzFhNzM0YzQ5NWEyMTBiOWViN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZkZjBlZGM1NGIwOTMzNWE1MzBjZjI3YTQxODIxZmQ1M2QyZTVlZGFkOWViYTM3N2U1N2M4OWRiMDVjMzQxOTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c9b8424b76e4d5aad0e9b7a330025f0",
+      "statement": "Per-request explicit Authorization or x-api-key headers can survive profile refresh, while a configured JavaScript client API key remains SDK-owned and replaces Authorization.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1116-L1240",
+          "version": "repo-lines-v1:sha256:fc2d22f15c0a655deae87dd2a4f7432ade770e75d4ba70babb9e702fd1528cfc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlN2Q5M2ZjNThiMmM5YjFjZDQ0NWUxOWJmYWU4MjhhNWUxNDUwZjBjNGJlMjcyYjNhMGQ4MzlmZmI1Mjc2MzY3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhZDllMTI1NDY0MjU1NzZkM2RlYWU4YzliOWRiZjEyOGQ1ZDZkZGFmNWQ3ZmU4NTc5MzQ5MjdkZWZmYTNiOWRkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkMjJlNzFhMGNkZmQ0NGVlNGViMzFmYzlkZWE4NjRkYTUzMjFiYTA4ODk0ODNjOTljNWFiOThkNjM1NDk1MGUxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyZmIxZWE5YmE5NDFkODRmZmZiOGEzMGI0ODI3ZGEwMTJmN2QxMTM0ODBiYjY2MmJhN2U1NWVhOWE2YTY0ZTgyIn0"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_profiles.py#L368-L381",
+          "version": "repo-lines-v1:sha256:118a87ea49189d490bc7f675b2eed100a03ed1b51c9a910d8e0326f1687fd243:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkYTdhNGY3MGI3MjI4YzFjMzYwZjBiYTVmYzUwNDBlMGI2OTBlYzFmMzFkOGE3YjQzZDUyZTUyYjU5MjIxNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1Y2FkM2Q2OGZkNTQyMzZhOWQxMTI1OWY2MDlhMTA4OTRmNTU1MDE2YjNjOWZmOGMyY2M2ZDM1OTMwNGVjMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3MmZiN2YyZDkxZGQ3MzNkNWM1ZjNiOWQ4MGM4ZDk2MDc3ZDliYTI0OGQ1MWQ0MjhjYjhmNDkwMzg0OGI5NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmOTZhZmFiNzVjN2NiYWJhNjZlNGJkMDkxYTk0YTgwZTkyNjc0YjJiY2M3ZjcyZjc3MDdlZDE0YmMzM2Q4NzgifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1945-L1998",
+          "version": "repo-lines-v1:sha256:a6082037f4d6ee83371241abe0298ee17122cffcf59f2a7f952ce0c10e659e99:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MTIxMjRkN2ViNWRlZTg4ZWRmMWZmYTEyNGQ5MmIzYjI1ZmU1OGE3OWQ5OGYzYzBkZDc2ZDBjNTFmMzMxZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkNmM0NTMxODJkNmViMmY0N2RhZDM0MGIwMDQ3MWRhYmIwY2FmMjE4MzU0NTQ3ODg1NTEzYWJmYTFhOGYyYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2YTc4OTQ1OTMzOTY0YjBiY2NkNGE2MmViZjc2MTcwZDQzOGM0NDMyYWU5ZDJjM2ZhMDZjNThjMzg5MzEwOWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f8d9b8138933447b8f2bfdaa773e3435",
+      "statement": "JavaScript AsyncCaller retries statuses 408, 425, 429, 500, 502, 503, and 504 with randomized exponential backoff, rejects ordinary non-retryable statuses, and does not retry cancellation or timeout/abort errors; the ordinary client caller fixes four retries while trace-ingest callerOptions can override its four-retry default.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1396-L1433",
+          "version": "repo-lines-v1:sha256:f10e9b7147b0a591059f5b524a2d8fa1ce1329af70eced036f20cfdfdd24eca8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyNmVmMGYwMjUxMTM5ZTIyODNjZjE4NjZiZTRiNDdlNDg2NGI0Njc1OGEwNGY4MzE1ODEwY2YzMDA3NmQ3NDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZDExY2FmNDNlOTdlZjM2OWU2YmVlZDFhMjY4YmQwNTgzOGYyOWI5ZGQyNTRiZjY5YmE2NDg4NDE0NzIzNGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlZTM3NzVjYjc5YzI0ZDNkYmM5M2FkODFmZjY4Y2VlMDc0MThiY2YwMmQ5ODQzNjA2NzZhYmQ5Zjc1NTNmNTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk1ZWE2ZDA4OWEzMWIxNjFjYzY0YTljZTZiOTk0OWZiMjBhMTEwYWUyMTEwZjhhYmJhYmFkYzA0ZjA5OGI1OTMifQ"
+        },
+        {
+          "resource": "repo://js/src/tests/client_retry.test.ts#L76-L160",
+          "version": "repo-lines-v1:sha256:db61d7656a2479a6ad0cee57f3c89625ef6c0f64461aac00a938b7597eb44a9e:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlNGE4OTcxY2Y4ZjU0NTk5ODY4ZTEyMzBmYjNiNmZkOGM1YTM1YWU5MTE0NjA0Y2MwN2NkNDA0MmMyMWQwNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxODY4N2EyYTZmOWFjZjlhM2YwMjI1ZTViOGMxMDZlN2M0MWUwNDE1MzdjMWI4YTU4ZTNhZGNlNGM3MTY4YTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwOGU2YjUwMjcwNGFiNzQ4YjE3NWM3YWRkYmFjM2U5Y2ZiNWUzMWU3NDQ5NzI4Y2E0NmVjNDdkNDQ2NGVhNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4MTdmYmI3M2M5MmIzNmQ1ZTQ4OTZmZjUxYzFiNThlZWMzMzBiYmU5NjFiYTA1ZmM2MjA1Zjg2N2VhMWJjZjYifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/async_caller.ts#L119-L206",
+          "version": "repo-lines-v1:sha256:dce91ec81ac8cd742d3bd516cf55e0c386a6bf6ddb67b37bc82cc7cb0b41680f:eyJzZWxlY3RlZExpbmVDb3VudCI6ODgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiYzZkMTI3MWJkN2RlNmI3ZDc2ZjdkZTFmZjczYTAyZDAyYWJjZGM1OGQzNjYwZjEzMTk1ZDRiMjIyODJhN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4ZTg3NWEwYTFkMWI0MjY2MjA1M2EyYzdlNjFjZDcwNWEzYmY3NTc0NjU2ZTAwYmMxYmJmZDRlODM3YjhhY2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjNDQ2NjBmOTU1YmZmNDIyZjQ4OWE4YWJhMzQyNGI0YTcwYTIwYzk1NmYzMWVmOTdlYTgzNzk2MGFjNGExYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNzM5YTA2YzFjYmIxMjQ0ZTMzNjNkMzhiY2Y5ZmE1MGNlODRmZWQzOTljMjE5M2EzYzdmMDhkNTk5MThiMmEifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/async_caller.ts#L5-L13",
+          "version": "repo-lines-v1:sha256:1caefe3d4cb6fef2357dab6b9b179812231a9a6c7c7a0e451f0967c8acd374bb:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzg1YWZlMGVlM2UwODNjMjU1MjY2MjgxYjg0ZTA5ZTU5YzgzZDU2OGZkMDk5ZTVmNTExM2JmM2M0YzNmYzg0NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjAyZDJjMGQ2ZGM1ZTc0ZDkyZmExNGI5MWRiZWEyNjQwOTBiZWIzNWZkYjkxODhkOWIzNDExODFkY2U5ZjRjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjczNWFiMTI2Yjg5ZjQ1YTNlMGM5OWI1Y2RjYzFhMzFjYmRmOTBiODNiYmIzOGRlOTRmMjU0ZjlmNDc4OGE2ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjA3OTY5YWFlZWIxOTU4NjMyNDZmNGYxMGE0OWE2NjU1MDI1YTQxODQxNTBlOWY1NWRlYTQ3MjllNTM5OGJhYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b9f45713ff4945f8877133e157f959e2",
+      "statement": "Python's synchronous client mounts a three-retry urllib3 policy for 408, 425, 429, 500, 502, 503, and 504 with Retry-After support, while AsyncClient defaults to three attempts for connection, timeout, and server API errors and permits call sites to extend retry exception classes.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/async_client.py#L450-L507",
+          "version": "repo-lines-v1:sha256:a61ffa9093fce1124b9b973cdd0da1e08d81b6a31790c568f7550bd3426f5e33:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3M2UyYTRhNDRlNGU0OGVjNjM4ZDE3OGVjMTBjOTJjNWQ3NmFhOWU1NDRlZGQ1NjE5YjYxZjExZGQ2ZjljY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkMTU2OWUxZDM1NDg5ZWIyYTllMjlhN2ZjY2RhNmIyNjZkOTZmN2EwN2EwYmRiNzI1ZTdhMTdhMDdiZWM2YTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyZWM1ZGEyNzJlOTk1NjU2NjRjYzJkZTQwODA5ZDQ1MjI4OGY0Mjk2MmUxNzQ3NjkzNjUyM2ExNTJiNTgwODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyNDZlNGNjM2VlZGUzMTMxMmM4Nzg4MmUyZjhlZmVmNWUxYmE2NDgyODNiZDQwYTM1YTNjYjM0NGE3N2M2NWUifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1945-L2017",
+          "version": "repo-lines-v1:sha256:46fc5bf768ac18b9876721648c60b4846f8bfebcdcc3701818cd0db77ff4a8bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MTIxMjRkN2ViNWRlZTg4ZWRmMWZmYTEyNGQ5MmIzYjI1ZmU1OGE3OWQ5OGYzYzBkZDc2ZDBjNTFmMzMxZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkNmM0NTMxODJkNmViMmY0N2RhZDM0MGIwMDQ3MWRhYmIwY2FmMjE4MzU0NTQ3ODg1NTEzYWJmYTFhOGYyYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkODcyMzRiMjAxZjc0MWI0MTcxMmY1OTU3Yzg0YjkzZjZkMDQ1YjQ5YzhkZjc0MTkyY2VhODliYTAwNGI4YTAifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L664-L693",
+          "version": "repo-lines-v1:sha256:f5098cbd941cdf755fc66a9ce1e7d77eaabf8537a95a1757b723cbd96328063a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5MjA1Y2NhN2FiYzY3OTQ3ZjE1NzNjZjdlZjkwYTkzOGRiNjBjMjBlNTAxOGIxZGQ3MjQyNTI5ZDg4MzVmYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1NzYwZDQ5MTgwMmM4NzRjNTY5NTdmYTI4MDI2NDdmNWZmOTI5ODc1YWU4MGExZjY2OTIxZDA3YzliZjBiNmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZDE3MWRlNzU0MzFhMDIxYTBkOTRmYTc2ZmFiZjBkNzEzOWM4OThjMWEwYjQ0YjQzY2E2MDkwM2ZhMWI4NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmN2UwNThkNzJjY2JmNjMxYjdjNDFlZjgwOWY0YzZiODA5ZmU2ZjYyODExNTRiNWNhY2VhNTA3MDMxNjBjYzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a1bf321e9684486b3b600afc59aebbd",
+      "statement": "Browser JavaScript builds do not use filesystem profiles or on-disk OAuth persistence, environment access is guarded for runtimes without process access, and filesystem APIs are replaced with no-op safe defaults.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/utils/env.ts#L175-L185",
+          "version": "repo-lines-v1:sha256:d70ccdad564e63bb5b73dd8524a6a383ec73fb31fb8190755431ad985f1c9096:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZGY2NmRkOWFlZjE1YzAzZjc0NjE3M2Q1Njg3MTA3N2FjYzdhZTZlNWVjNjFkNDAyODU0MzFjMjYxY2RmNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyY2E3YWU4OWIyOGE2YjRiMWEzNWE2NjRjNjllYjI5MzA1MzIxNzFkNDY0NTNmYzkxNjBiOThhNGZkNjYzYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNjdiYWU4ZWY0NTQ5YjA5MjMyOWIzYzJmOTZjMzgyNWMyNzU0ODQxMmI2MmU3NTE3MGM1YzRhNjEyZmJjODQifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/env.ts#L5-L50",
+          "version": "repo-lines-v1:sha256:8db0cd91ae9e7dbc7b8043bbe0fefd44507eec28a6633e5afe07a24a5c5dff63:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNWZkMTllMzJkMWE1MmIxNTJkOTc4NjVkMzYzNTliZjE2OTM5YjZhY2QyOTVlMTczMzc1YzRhYzg3NmU5YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2NmU5OWU5NGRlZDk1YzM4OWY1Mzc2OTNmYmZjMDQ2Yjc3Y2Q3MDA0YzYyZGMxZDUzMGU0NDE1NmJlZDgxNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5NjlhZWZkZDY1NDM4NTgwOWQ0NzY4ZjhkYmU4YmMyOTc0ZDBmN2ZkYzRhMGVkZTcyMTIxMGMzMzlkNThkMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwZjg5ZDA3ZGFhOWE1Y2NkNjdhNTA1ODc1NDNjNjhkZDUyZmM1YmRlMDg0OTlhYWVlYTdlMDYzODJiZmRjNDEifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/fs.browser.ts#L1-L66",
+          "version": "repo-lines-v1:sha256:7bf997e1ab9cb07616dbf45de2781b0d98117c6d89a6164035bb0fa08cfbafa4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2NTM1ZWE1MGRlZjhlYzZjNTljNjE0YzUyNWY0NTY5ZmNlODZmNDI0NzA5Y2VjOTY4MjY2YzAwMGFlZDBmZmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://js/src/utils/profiles.ts#L52-L107",
+          "version": "repo-lines-v1:sha256:85f12e57e55498a69609d3b29c45f3edd85ffc828486d01c58e7387a6d695006:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4N2QzYjc5YjkwNTRiNmQyODk3YzAzNTAzM2ExMzc3OWZlYzI3ZjU3Mzc1OGFlZjU1OGUxODU1NjI3Mzg1YmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxYzY2YzVhYTNmYzM3Y2MyM2RlYjk5ZWJkYzI1Y2E4ZTEwYTI4NzI5MTU5NGQyMGI4NTg3MWU5YmE4MzI3NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmMzRmZmM4ZjRiZjQzMTc2ZWJkYzBhZjQxMzI0ZjY3ZmQxZDI0NmZlMGM4YzQyZWJmYjYyMzgzNDAxMWE2ZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4cbf829966a549dda97e9797e381a1d5",
+      "statement": "A caller-supplied Python requests.Session configures handwritten calls, but generated v2 calls translate only selected session transport settings and do not inherit custom adapters, session.auth, or hooks.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/client.py#L1083-L1091",
+          "version": "repo-lines-v1:sha256:f64d9beb9c2782a7b17b9ced7ad04c65584d2aa6eb2cf3e909b68fb2114201ee:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2QzNGNiZTlmYmQ1NzczNGQxZDIyMzg0ZmQ5NzJlMTIzZDlmYWRjMzdlZTk4YWNlNWU2M2ZkODY4ZGUwZDMxZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDk0ZjkxOGZmMGFhNDkyYWQ0OGJlMWRmNzc2MzliOTkzNjljYTgzMmUxMTUwMjk0Y2M5MzY4MjIyYmNlMGJlZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjM2NDI0ZDY5MTkwNmI1Y2MzYjFkMmEyNjE3NjBhZTdhY2MyZDc2MzZiNzJmZjdlOWE2NTgwMWNhMTk5MjgzNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjAxYTZjMTVmNjhmNzA2OWMxNmE1NDViNWMzMzA3NzFjMDdjYTRmZDlhYTUyNzBjZjkwMjViMDFkMDUwNWQ1ZSJ9"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1337-L1343",
+          "version": "repo-lines-v1:sha256:020b2f28550d0136cd30f7a6460dabacd876e6cd6d25e729db4e6433fa96f721:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc5MThhMTRjZWNiNDM2M2FlYTA2YzgwZTA2NWNlZmNjZDZiNGI0ODYxMDJlZmZiMDM3MTBmYTFiZTQ4OGUxNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzI4NWQzMzJjMzJiNmYyZTk3ODJhNmRhMTRkNzBhNDQzZmE2ZTE3OTE1YTI4ZmMyZDlkNGYxYzIzYjQ0NDMxOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDcxYmY4YTlmZDBiZTgxYWNmYzk3YmRmMzhiZjBhOWY4MWNhNWI1MmM5NmIwZmI0MjViYzA4N2EyZmQ5MDc3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzFjYTU2ZGUxMTk4NTg3ZmUzNjg3MmNlOGRlMjU1ZTgxYTk4ODZlNTQwYmZiOTI0Y2MwMjk0YTQ4ZGNhZDhhYSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T08:28:54.852Z"
+  }
+}

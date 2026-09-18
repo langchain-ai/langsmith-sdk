@@ -11,6 +11,11 @@ from bench.dumps_json import (
     create_nested_instance,
 )
 from bench.hybrid_tracing import handle_hybrid_batches, make_batches
+from bench.wrapped_llm_calls import (
+    make_anthropic_case,
+    make_openai_case,
+    run_wrapped_calls,
+)
 from langsmith.client import _dumps_json
 
 
@@ -86,5 +91,35 @@ BENCHMARKS = (
         "dumps_pydanticv1_nested_50x100",
         lambda x: _dumps_json({"input": x}),
         create_nested_instance(50, 100, branch_constructor=DeeplyNestedModelV1),
+    ),
+    (
+        "openai_wrapped_200_calls_baseline",
+        run_wrapped_calls,
+        make_openai_case("baseline", 200),
+    ),
+    (
+        "openai_wrapped_200_calls_secret_anonymizer",
+        run_wrapped_calls,
+        make_openai_case("secret_anonymizer", 200),
+    ),
+    (
+        "openai_wrapped_200_calls_langsmith_secret",
+        run_wrapped_calls,
+        make_openai_case("langsmith_secret", 200),
+    ),
+    (
+        "anthropic_wrapped_200_calls_baseline",
+        run_wrapped_calls,
+        make_anthropic_case("baseline", 200),
+    ),
+    (
+        "anthropic_wrapped_200_calls_secret_anonymizer",
+        run_wrapped_calls,
+        make_anthropic_case("secret_anonymizer", 200),
+    ),
+    (
+        "anthropic_wrapped_200_calls_langsmith_secret",
+        run_wrapped_calls,
+        make_anthropic_case("langsmith_secret", 200),
     ),
 )

@@ -266,6 +266,22 @@ class TestCommandHandle:
         assert result.stdout == "output"
         assert result.exit_code == 0
 
+    def test_result_finishes_stream_generator(self):
+        """The stream's cleanup runs before result returns, not at GC."""
+        closed = False
+
+        def stream() -> Iterator[dict]:
+            nonlocal closed
+            try:
+                yield _started_msg()
+                yield _exit_msg(0)
+            finally:
+                closed = True
+
+        handle = CommandHandle(stream(), None, self._make_sandbox_mock())
+        assert handle.result.exit_code == 0
+        assert closed
+
     def test_no_started_message(self):
         stream = _make_stream([_stdout_msg("data")])
         sandbox = self._make_sandbox_mock()
@@ -652,6 +668,8 @@ class TestCommandHandle:
             "cmd-123",
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
+            stdin_closed=handle._stdin_closed,
+            pty=handle._pty,
         )
 
     def test_reconnect_with_explicit_command_id(self):
@@ -878,6 +896,7 @@ class TestSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 

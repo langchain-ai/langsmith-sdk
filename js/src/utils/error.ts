@@ -144,32 +144,26 @@ export async function raiseForStatus(
     return;
   }
 
-  if (response.status === 403) {
-    try {
-      const errorData = await response.json();
-      const errorCode = errorData?.error;
-      if (errorCode === "org_scoped_key_requires_workspace") {
-        errorBody =
-          "This API key is org-scoped and requires workspace specification. " +
-          "Please provide 'workspaceId' parameter, " +
-          "or set LANGSMITH_WORKSPACE_ID environment variable.";
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (_e: any) {
-      const errorWithStatus = new Error(
-        `${response.status} ${response.statusText}`,
-      );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (errorWithStatus as any).status = response?.status;
-      throw errorWithStatus;
-    }
+  try {
+    errorBody = await response.text();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (_e: any) {
+    errorBody = "";
   }
-  if (errorBody === undefined) {
+
+  if (response.status === 403) {
+    let errorData;
     try {
-      errorBody = await response.text();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (_e: any) {
-      errorBody = "";
+      errorData = JSON.parse(errorBody);
+    } catch {
+      // Non-JSON body (e.g. a proxy in front of a self-hosted instance):
+      // fall through and surface the raw body like every other status.
+    }
+    if (errorData?.error === "org_scoped_key_requires_workspace") {
+      errorBody =
+        "This API key is org-scoped and requires workspace specification. " +
+        "Please provide 'workspaceId' parameter, " +
+        "or set LANGSMITH_WORKSPACE_ID environment variable.";
     }
   }
 

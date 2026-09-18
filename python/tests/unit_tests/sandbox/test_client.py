@@ -15,12 +15,14 @@ from langsmith.sandbox import (
     ResourceTimeoutError,
     SandboxClient,
     SandboxConnectionError,
+    SandboxNotReadyError,
     ServiceURL,
     Snapshot,
     aws_auth,
     gcp_auth,
     gcs_mount,
     mount_config,
+    proxy_config,
     s3_mount,
     workspace_secret,
 )
@@ -486,6 +488,62 @@ class TestSandboxOperations:
             client.update_sandbox("my-sandbox", new_name="existing-sandbox")
 
         assert exc_info.value.resource_type == "sandbox"
+
+    def test_update_sandbox_proxy_config(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """Test replacing a sandbox's proxy config."""
+        config = proxy_config(
+            rules=[
+                {
+                    "name": "github",
+                    "match_hosts": ["github.com"],
+                    "headers": [
+                        {
+                            "name": "Authorization",
+                            "type": "opaque",
+                            "value": "Basic rotated",
+                        }
+                    ],
+                }
+            ]
+        )
+        httpx_mock.add_response(
+            method="PATCH",
+            url="http://test-server:8080/boxes/my-sandbox",
+            json={
+                "id": "550e8400-e29b-41d4-a716-446655440003",
+                "name": "my-sandbox",
+                "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
+            },
+        )
+
+        client.update_sandbox("my-sandbox", proxy_config=config)
+
+        request = httpx_mock.get_requests()[-1]
+        assert json.loads(request.content) == {"proxy_config": config}
+
+    def test_update_sandbox_proxy_config_not_ready(
+        self, client: SandboxClient, httpx_mock: HTTPXMock
+    ):
+        """A proxy-config update on a stopped sandbox is a typed not-ready error."""
+        httpx_mock.add_response(
+            method="PATCH",
+            url="http://test-server:8080/boxes/my-sandbox",
+            json={
+                "detail": {
+                    "error": "InvalidRequest",
+                    "message": (
+                        'sandbox "my-sandbox" is in "stopped" state, '
+                        'must be "ready" to update proxy config'
+                    ),
+                }
+            },
+            status_code=400,
+        )
+
+        with pytest.raises(SandboxNotReadyError, match="stopped"):
+            client.update_sandbox("my-sandbox", proxy_config={"rules": []})
 
     def test_create_sandbox_async_returns_provisioning(
         self, client: SandboxClient, httpx_mock: HTTPXMock

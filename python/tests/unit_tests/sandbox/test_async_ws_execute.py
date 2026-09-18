@@ -148,6 +148,23 @@ class TestAsyncCommandHandle:
         assert result.exit_code == 0
 
     @pytest.mark.asyncio
+    async def test_result_finishes_stream_generator(self):
+        """The stream's cleanup runs before result returns, not at GC."""
+        closed = False
+
+        async def stream() -> AsyncIterator[dict]:
+            nonlocal closed
+            try:
+                yield _started_msg()
+                yield _exit_msg(0)
+            finally:
+                closed = True
+
+        handle = AsyncCommandHandle(stream(), None, self._make_sandbox_mock())
+        assert (await handle.result).exit_code == 0
+        assert closed
+
+    @pytest.mark.asyncio
     async def test_no_started_message(self):
         stream = _make_async_stream([_stdout_msg("data")])
         sandbox = self._make_sandbox_mock()
@@ -663,6 +680,8 @@ class TestAsyncCommandHandle:
             "cmd-123",
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
+            stdin_closed=handle._stdin_closed,
+            pty=handle._pty,
         )
 
 
@@ -914,6 +933,7 @@ class TestAsyncSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 

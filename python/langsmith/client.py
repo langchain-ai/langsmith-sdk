@@ -2473,6 +2473,7 @@ class Client:
         if self._omit_traced_runtime_info:
             return
         runtime_env = ls_env.get_runtime_environment()
+        sample_rate = self.tracing_sample_rate
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
@@ -2482,6 +2483,8 @@ class Client:
             metadata: dict = run_extra.setdefault("metadata", {})
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
             added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            if sample_rate is not None:
+                added["ls_tracing_sample_rate"] = sample_rate
             if added:
                 metadata.update(self._hide_run_metadata(added))
 
@@ -5778,7 +5781,7 @@ class Client:
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_orjson.dumps(dataset),
+            data=_dumps_json(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -10623,6 +10626,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ExperimentResults: ...
 
@@ -10642,6 +10646,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ComparativeExperimentResults: ...
 
@@ -10664,6 +10669,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
@@ -10708,6 +10714,11 @@ class Client:
                 `'log'` will trace the runs with the error message as part of the
                 experiment, `'ignore'` will not count the run as part of the experiment at
                 all.
+            disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+                evaluator invocations to the `evaluators` project in LangSmith. Set to
+                `True` to run evaluators without creating evaluator traces; feedback is
+                still created and attached to the experiment runs, but can't be
+                corrected from the UI.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -10870,6 +10881,7 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
 
@@ -10897,6 +10909,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
@@ -10938,6 +10951,11 @@ class Client:
                 `'log'` will trace the runs with the error message as part of the
                 experiment, `'ignore'` will not count the run as part of the experiment at
                 all.
+            disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+                evaluator invocations to the `evaluators` project in LangSmith. Set to
+                `True` to run evaluators without creating evaluator traces; feedback is
+                still created and attached to the experiment runs, but can't be
+                corrected from the UI.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -11121,6 +11139,7 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
 

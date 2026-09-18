@@ -15,6 +15,13 @@ from typing import Any
 from pydantic import BaseModel
 
 from langsmith._internal import _orjson
+from langsmith.secret import (
+    _NOT_HANDLED,
+    LANGSMITH_SECRET_MASK,
+    LangSmithSecret,
+    _coerce_builtin_subclass,
+    _redact_secrets,
+)
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -30,6 +37,8 @@ _ORJSON_OPTIONS = (
     | _orjson.OPT_SERIALIZE_DATACLASS
     | _orjson.OPT_SERIALIZE_UUID
     | _orjson.OPT_NON_STR_KEYS
+    # Routes builtin subclasses to `default`, the only way to catch a secret.
+    | _orjson.OPT_PASSTHROUGH_SUBCLASS
 )
 # Turn off OPT_NON_STR_KEYS, trading better speed in the general case where
 # all dict keys are strings for worse speed in the exceptional case
@@ -162,6 +171,12 @@ def _serialize_json(obj: Any) -> Any:
         if isinstance(obj, type):
             return _simple_default(obj)
 
+        # Must precede the method paths below: a `dict`/`str` subclass carrying
+        # `.dict()` would otherwise serialize as that method's output.
+        coerced = _coerce_builtin_subclass(obj)
+        if coerced is not _NOT_HANDLED:
+            return coerced
+
         # Try using the speedier Pydantic serialization first
         fast_serialized = _pydantic_json_dump(obj)
         if fast_serialized is not _MISSING:
@@ -206,12 +221,19 @@ def _normalize_json_keys(obj: Any) -> Any:
     literal ``"(1, 2)"`` and a coerced ``(1, 2)``). When that happens one entry
     overwrites the other (last-in-iteration-order wins); the collision is
     logged at debug level so the data loss is traceable.
+
+    Secrets are masked here too: the ``json.dumps`` fallback this walk feeds
+    writes ``str`` subclasses natively, without ever calling ``default``.
     """
+    if isinstance(obj, LangSmithSecret):
+        return LANGSMITH_SECRET_MASK
     if isinstance(obj, dict):
         new: dict[Any, Any] = {}
         for key, value in obj.items():
             norm_key: Any = (
-                key if isinstance(key, _JSON_KEY_TYPES) else str(_simple_default(key))
+                _normalize_json_keys(key)
+                if isinstance(key, _JSON_KEY_TYPES)
+                else str(_simple_default(key))
             )
             if norm_key in new:
                 logger.debug(
@@ -263,11 +285,13 @@ def dumps_json(obj: Any) -> bytes:
     except TypeError as e:
         # Usually caused by UTF surrogate characters or non-str dict keys
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        # OPT_NON_STR_KEYS makes orjson accept a `str` subclass key verbatim.
+        obj = _redact_secrets(obj)
         try:
             # Let orjson coerce non-str keys. Only stringify the ones it can't handle.
             return _orjson.dumps(
                 obj,
-                default=_serialize_json,
+                default=_serialize_json_with_normalized_keys,
                 option=_ORJSON_OPTIONS,
             )
         except TypeError:

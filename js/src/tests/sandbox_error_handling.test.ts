@@ -4,6 +4,7 @@ import { SandboxClient } from "../sandbox/client.js";
 import {
   LangSmithValidationError,
   LangSmithSandboxCreationError,
+  LangSmithSandboxAPIError,
 } from "../sandbox/errors.js";
 
 let server: Server;
@@ -36,6 +37,29 @@ function makeClient(): SandboxClient {
 }
 
 describe("handleClientHttpError body consumption", () => {
+  it("preserves the server error ID", async () => {
+    nextResponse = {
+      status: 500,
+      body: {
+        detail: {
+          error: "SandboxSnapshotFailed",
+          message: "Snapshot capture failed.",
+          error_id: "6a39f608-e9aa-4247-8e61-846870563681",
+        },
+      },
+    };
+
+    const client = makeClient();
+
+    await expect(
+      client.captureSnapshot("test-sandbox", "my-snapshot"),
+    ).rejects.toThrow(
+      new LangSmithSandboxAPIError(
+        "Snapshot capture failed. (error_id=6a39f608-e9aa-4247-8e61-846870563681)",
+      ),
+    );
+  });
+
   it("handles 422 with pydantic validation details without crashing", async () => {
     nextResponse = {
       status: 422,

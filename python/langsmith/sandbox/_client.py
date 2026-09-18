@@ -27,6 +27,7 @@ from langsmith.sandbox._helpers import (
     handle_client_http_error,
     handle_sandbox_creation_error,
     merge_headers,
+    raise_if_not_ready,
     validate_service_params,
     validate_ttl,
 )
@@ -34,9 +35,11 @@ from langsmith.sandbox._models import (
     DownloadContentDisposition,
     DownloadURL,
     ResourceStatus,
+    RunConfig,
     ServiceURL,
     Snapshot,
     SnapshotTag,
+    _run_config_payload,
 )
 from langsmith.sandbox._mounts import (
     SandboxMountConfig,
@@ -382,6 +385,7 @@ class SandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
@@ -422,13 +426,17 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            run_config: User, working directory and environment the sandbox
+                boots with, overriding the snapshot's: ``user`` and
+                ``work_dir`` replace, ``env_vars`` merge. The sandbox's own
+                ``env_vars`` remain a layer above this one.
             mount_config: Mount configuration forwarded to the server as
                 ``mount_config``. The backend expands mount auth into runtime
                 proxy rules. Explicit AWS/GCP proxy rules in ``proxy_config``
                 conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
-                ``{"rules": [...], "no_proxy": [...], "access_control":
+                ``{"rules": [...], "access_control":
                 {"allow_list": [...]}}`` or ``{"access_control":
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
@@ -460,6 +468,7 @@ class SandboxClient:
             fs_capacity_bytes=fs_capacity_bytes,
             mount_config=mount_config,
             proxy_config=proxy_config,
+            run_config=run_config,
             headers=headers,
         )
         sb._auto_delete = True
@@ -481,6 +490,7 @@ class SandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
@@ -515,13 +525,17 @@ class SandboxClient:
             vcpus: Number of vCPUs.
             mem_bytes: Memory in bytes.
             fs_capacity_bytes: Root filesystem capacity in bytes.
+            run_config: User, working directory and environment the sandbox
+                boots with, overriding the snapshot's: ``user`` and
+                ``work_dir`` replace, ``env_vars`` merge. The sandbox's own
+                ``env_vars`` remain a layer above this one.
             mount_config: Mount configuration forwarded to the server as
                 ``mount_config``. The backend expands mount auth into runtime
                 proxy rules. Explicit AWS/GCP proxy rules in ``proxy_config``
                 conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
-                ``{"rules": [...], "no_proxy": [...], "access_control":
+                ``{"rules": [...], "access_control":
                 {"allow_list": [...]}}`` or ``{"access_control":
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
@@ -581,6 +595,8 @@ class SandboxClient:
             payload["mount_config"] = mount_config
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
@@ -658,6 +674,8 @@ class SandboxClient:
         new_name: Optional[str] = None,
         idle_ttl_seconds: Optional[int] = None,
         delete_after_stop_seconds: Optional[int] = None,
+        proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Update a sandbox's properties.
@@ -672,6 +690,18 @@ class SandboxClient:
                 before deletion. Must be a multiple of 60. ``0`` disables
                 stop-anchored deletion. ``None`` leaves the existing value
                 unchanged.
+            proxy_config: Replacement proxy configuration, forwarded to the
+                server as-is (same shape as ``create_sandbox``). Rules replace
+                the existing set rather than merging into it, so include every
+                rule the sandbox should keep. Opaque header values carry over
+                from the current config, so rotating one credential does not
+                mean re-supplying secrets that can no longer be read. The
+                sandbox must be ``ready``; start a stopped one first.
+            run_config: Merge into the sandbox's stored run configuration:
+                ``user`` and ``work_dir`` replace, ``env_vars`` merge. Takes
+                effect for subsequent commands; commands already running are
+                unaffected, and a stopped sandbox picks it up on its next
+                start. Omitting it leaves the stored value untouched.
 
         Returns:
             Updated Sandbox.
@@ -679,6 +709,8 @@ class SandboxClient:
         Raises:
             ResourceNotFoundError: If sandbox not found.
             ResourceNameConflictError: If new_name is already in use.
+            SandboxNotReadyError: If ``proxy_config`` was given and the sandbox
+                is not ``ready``.
             SandboxClientError: For other errors.
             ValueError: If TTL values are invalid.
         """
@@ -693,6 +725,10 @@ class SandboxClient:
             payload["idle_ttl_seconds"] = idle_ttl_seconds
         if delete_after_stop_seconds is not None:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
+        if proxy_config is not None:
+            payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = self._http.patch(
@@ -710,6 +746,8 @@ class SandboxClient:
                     f"Sandbox name '{new_name}' already in use",
                     resource_type="sandbox",
                 ) from e
+            if proxy_config is not None:
+                raise_if_not_ready(e, name)
             handle_client_http_error(e)
             raise  # pragma: no cover
 
@@ -1014,6 +1052,7 @@ class SandboxClient:
         *,
         tag: Optional[str] = None,
         registry_id: Optional[str] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -1030,6 +1069,12 @@ class SandboxClient:
                 addressable by id. Defaults server-side to the Docker image's
                 own tag, else ``latest``.
             registry_id: Private registry ID.
+            run_config: Override the Docker image's ``USER``, ``WORKDIR`` and
+                ``ENV`` for sandboxes built from this snapshot: ``user`` and
+                ``work_dir`` replace the image's, ``env_vars`` merge over it
+                key by key. Omitting it adopts the image's own configuration.
+                Pass ``{"user": "0"}`` to keep the pre-``run_config``
+                behaviour of running as root.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -1051,6 +1096,8 @@ class SandboxClient:
             payload["tag"] = tag
         if registry_id is not None:
             payload["registry_id"] = registry_id
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = self._http.post(
@@ -1166,6 +1213,7 @@ class SandboxClient:
         tag: Optional[str] = None,
         docker_image: Optional[str] = None,
         fs_capacity_bytes: Optional[int] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -1182,6 +1230,10 @@ class SandboxClient:
             docker_image: Optional Docker image tag inside the sandbox to export
                 into the snapshot instead of capturing the live root filesystem.
             fs_capacity_bytes: Filesystem capacity in bytes for Docker image export.
+            run_config: Override applied over the configuration the captured
+                sandbox was running with: ``user`` and ``work_dir`` replace,
+                ``env_vars`` merge. The captured sandbox's own ``env_vars``
+                are a per-sandbox layer and are not carried into the snapshot.
             timeout: Timeout in seconds when waiting for ready.
 
         Returns:
@@ -1202,6 +1254,8 @@ class SandboxClient:
             payload["docker_image"] = docker_image
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = self._http.post(

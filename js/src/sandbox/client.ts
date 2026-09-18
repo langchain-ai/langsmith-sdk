@@ -36,6 +36,7 @@ import {
 import {
   handleClientHttpError,
   handleSandboxCreationError,
+  throwIfNotReady,
   validateTtl,
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
@@ -563,6 +564,7 @@ export class SandboxClient {
       fsCapacityBytes,
       mountConfig,
       proxyConfig,
+      runConfig,
     } = resolvedOptions;
 
     if (snapshotId && snapshotName) {
@@ -612,6 +614,9 @@ export class SandboxClient {
     }
     if (proxyConfig !== undefined) {
       payload.proxy_config = proxyConfig;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
@@ -695,8 +700,8 @@ export class SandboxClient {
    */
   async updateSandbox(name: string, newName: string): Promise<Sandbox>;
   /**
-   * Update a sandbox's name and/or retention settings (idle stop and
-   * delete-after-stop).
+   * Update a sandbox's name, retention settings (idle stop and
+   * delete-after-stop), and/or proxy config.
    *
    * @param name - Current sandbox name.
    * @param options - Fields to update. Omit a field to leave it unchanged.
@@ -704,6 +709,8 @@ export class SandboxClient {
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
    * @throws LangSmithValidationError if retention values are invalid.
+   * @throws LangSmithSandboxNotReadyError if proxyConfig was given and the
+   * sandbox is not `ready`.
    */
   async updateSandbox(
     name: string,
@@ -718,14 +725,22 @@ export class SandboxClient {
         ? { newName: newNameOrOptions }
         : newNameOrOptions;
 
-    const { newName, idleTtlSeconds, deleteAfterStopSeconds } = options;
+    const {
+      newName,
+      idleTtlSeconds,
+      deleteAfterStopSeconds,
+      proxyConfig,
+      runConfig,
+    } = options;
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
     validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     if (
       newName === undefined &&
       idleTtlSeconds === undefined &&
-      deleteAfterStopSeconds === undefined
+      deleteAfterStopSeconds === undefined &&
+      proxyConfig === undefined &&
+      runConfig === undefined
     ) {
       return this.getSandbox(name);
     }
@@ -740,6 +755,12 @@ export class SandboxClient {
     }
     if (deleteAfterStopSeconds !== undefined) {
       payload.delete_after_stop_seconds = deleteAfterStopSeconds;
+    }
+    if (proxyConfig !== undefined) {
+      payload.proxy_config = proxyConfig;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._fetch(url, {
@@ -762,6 +783,9 @@ export class SandboxClient {
             : "Sandbox update conflict (name may already be in use)",
           "sandbox",
         );
+      }
+      if (proxyConfig !== undefined) {
+        await throwIfNotReady(response, name);
       }
       await handleClientHttpError(response);
     }
@@ -987,7 +1011,7 @@ export class SandboxClient {
     fsCapacityBytes: number,
     options: CreateSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const { registryId, timeout = 60, signal } = options;
+    const { registryId, runConfig, timeout = 60, signal } = options;
     const url = `${this._baseUrl}/snapshots`;
 
     const payload: Record<string, unknown> = {
@@ -997,6 +1021,9 @@ export class SandboxClient {
     };
     if (registryId !== undefined) {
       payload.registry_id = registryId;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._postJson(url, payload, { signal });
@@ -1130,7 +1157,13 @@ export class SandboxClient {
     name: string,
     options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const { dockerImage, fsCapacityBytes, timeout = 60, signal } = options;
+    const {
+      dockerImage,
+      fsCapacityBytes,
+      runConfig,
+      timeout = 60,
+      signal,
+    } = options;
     const url = this._boxUrl(sandboxName, "snapshot");
 
     const payload: Record<string, unknown> = { name };
@@ -1139,6 +1172,9 @@ export class SandboxClient {
     }
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._postJson(url, payload, { signal });
