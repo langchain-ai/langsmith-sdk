@@ -61,6 +61,7 @@ def reconcile_from_transcripts(
         session = _current_session_or_default()
     _create_missing_subagent_llm_runs(tracker, session)
     _patch_usage_on_llm_runs(tracker, session)
+    _patch_stop_reasons_on_llm_runs(tracker, session)
 
 
 # ── Step 1: synthetic subagent LLM runs ─────────────────────────────
@@ -103,6 +104,8 @@ def _create_missing_subagent_llm_runs(
                 llm_run.outputs = {
                     "content": turn.get("content", []),
                     "role": "assistant",
+                    "id": mid,
+                    "stop_reason": turn["stop_reason"],
                 }
 
                 raw_usage = turn.get("usage")
@@ -158,6 +161,39 @@ def _patch_usage_on_llm_runs(
 
     if patched:
         logger.debug(f"Set usage on {patched} LLM run(s) from transcripts")
+
+
+# ── Step 3: stop reasons ────────────────────────────────────────────
+
+
+def _patch_stop_reasons_on_llm_runs(
+    tracker: "TurnLifecycle",
+    session: SessionState,
+) -> None:
+    """Patch ``stop_reason`` onto LLM runs from the JSONL transcripts.
+
+    The live stream relays ``stop_reason: null``, so for every turn but the
+    last this is the only source.  The last turn is covered by
+    ``ResultMessage`` instead — its transcript entry is usually not on disk
+    yet when this runs.
+    """
+    if not tracker.llm_runs_by_message_id:
+        return
+
+    paths = [path for path, _run in session.subagent_transcript_paths]
+    if session.main_transcript_path:
+        paths.insert(0, session.main_transcript_path)
+
+    stop_reasons = {
+        turn["message_id"]: turn["stop_reason"]
+        for path in paths
+        for turn in read_llm_turns_from_transcript(path)
+    }
+
+    for message_id, run in tracker.llm_runs_by_message_id.items():
+        stop_reason = stop_reasons.get(message_id)
+        if stop_reason and isinstance(run.outputs, dict):
+            run.outputs["stop_reason"] = stop_reason
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
