@@ -24,3 +24,9 @@ class UpdateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
     language: str
 
     managed_code_evaluator_settings: Dict[str, ManagedCodeEvaluatorSettings]
+
+    require_attachments: bool
+    """
+    RequireAttachments is fetch-time config: updating it does not rebuild the
+    sandbox snapshot.
+    """

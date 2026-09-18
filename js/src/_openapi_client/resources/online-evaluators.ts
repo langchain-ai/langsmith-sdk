@@ -138,6 +138,12 @@ export interface CreateOnlineCodeEvaluatorRequest {
   managed_code_evaluator_settings?: {
     [key: string]: CreateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
   };
+
+  /**
+   * RequireAttachments opts the evaluator into selecting/presigning run attachments
+   * (s3_urls) at evaluation time. Default false.
+   */
+  require_attachments?: boolean;
 }
 
 export namespace CreateOnlineCodeEvaluatorRequest {
@@ -204,6 +210,12 @@ export interface OnlineCodeEvaluator {
   managed_code_evaluator_key?: string;
 
   managed_code_evaluator_settings?: { [key: string]: OnlineCodeEvaluator.ManagedCodeEvaluatorSettings };
+
+  /**
+   * RequireAttachments opts the evaluator into selecting/presigning run attachments
+   * (s3_urls) at evaluation time. Default false.
+   */
+  require_attachments?: boolean;
 }
 
 export namespace OnlineCodeEvaluator {
@@ -369,6 +381,12 @@ export interface UpdateOnlineCodeEvaluatorRequest {
   managed_code_evaluator_settings?: {
     [key: string]: UpdateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
   };
+
+  /**
+   * RequireAttachments is fetch-time config: updating it does not rebuild the
+   * sandbox snapshot.
+   */
+  require_attachments?: boolean;
 }
 
 export namespace UpdateOnlineCodeEvaluatorRequest {

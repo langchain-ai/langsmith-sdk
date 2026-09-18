@@ -27,3 +27,9 @@ class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
     managed_code_evaluator_key: str
 
     managed_code_evaluator_settings: Dict[str, ManagedCodeEvaluatorSettings]
+
+    require_attachments: bool
+    """
+    RequireAttachments opts the evaluator into selecting/presigning run attachments
+    (s3_urls) at evaluation time. Default false.
+    """

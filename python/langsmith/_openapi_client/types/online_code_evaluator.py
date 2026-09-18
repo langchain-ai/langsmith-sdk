@@ -33,3 +33,9 @@ class OnlineCodeEvaluator(BaseModel):
     managed_code_evaluator_key: Optional[str] = None
 
     managed_code_evaluator_settings: Optional[Dict[str, ManagedCodeEvaluatorSettings]] = None
+
+    require_attachments: Optional[bool] = None
+    """
+    RequireAttachments opts the evaluator into selecting/presigning run attachments
+    (s3_urls) at evaluation time. Default false.
+    """
