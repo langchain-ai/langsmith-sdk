@@ -717,7 +717,7 @@ def _api_url_source(
     profile_api_url: Optional[str],
 ) -> str:
     """Name where the API URL came from, so a wrong region is easy to spot in logs."""
-    if api_url_arg is not None:
+    if api_url_arg:
         return "api_url argument"
     if env_api_url:
         return "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
