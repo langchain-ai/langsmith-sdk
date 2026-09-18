@@ -30,15 +30,16 @@ Use a snapshot when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 
-The sandbox module is included with `langsmith`, and running commands needs
-the `websockets` package from the `sandbox` extra:
+The sandbox module is included with `langsmith` by default — no extra
+install step is required. The `websockets` package is a core dependency,
+so streaming output, `timeout=0`, and TCP tunnels work out of the box.
 
 ```bash
-pip install 'langsmith[sandbox]'
+pip install langsmith
 ```
 
-It carries command execution, streaming output, `timeout=0`, stdin, PTYs,
-`kill()` and TCP tunnels.
+> The `langsmith[sandbox]` extra is still accepted for backward
+> compatibility, but it no longer installs anything extra.
 
 ## Configuration
 
@@ -382,7 +383,7 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 ## Streaming Output
 
 For long-running commands, you can stream output in real time. This uses the
-`websockets` package from the `sandbox` extra.
+`websockets` package, which ships with `langsmith` by default.
 
 ### Callbacks
 
@@ -512,8 +513,10 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle.kill()  # stop when done
 ```
 
-> **Note:** `timeout=0` and `handle.kill()` need the `websockets` package
-> from the `sandbox` extra.
+> **Note:** `timeout=0` requires WebSocket support, which is enabled by
+> default via the bundled `websockets` dependency. If `websockets` is not
+> available, `run()` falls back to HTTP, which has its own request-level
+> timeout.
 
 ## Command Lifecycle & TTL
 
@@ -673,7 +676,7 @@ etc.) as if it were running on your local machine. The tunnel opens a local TCP
 port and forwards connections through a multiplexed WebSocket to the target port
 inside the sandbox.
 
-Needs the `websockets` package from the `sandbox` extra.
+Uses the `websockets` package, which ships with `langsmith` by default.
 
 ### Basic Usage — PostgreSQL
 
