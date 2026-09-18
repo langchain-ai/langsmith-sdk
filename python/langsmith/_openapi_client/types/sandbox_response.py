@@ -7,6 +7,7 @@ from .._models import BaseModel
 
 __all__ = [
     "SandboxResponse",
+    "AccessDelegation",
     "MountConfig",
     "MountConfigAuth",
     "MountConfigAuthAws",
@@ -60,6 +61,16 @@ __all__ = [
     "ProxyConfigRuleHeader",
     "RunConfig",
 ]
+
+
+class AccessDelegation(BaseModel):
+    """
+    AccessDelegation is the LangSmith access this sandbox was granted, absent when it has none. Either mode can appear: a grant is reported as requested, except that INHERIT requested by a creator who is itself delegated is stored as EXPLICIT carrying that creator's own ceiling, so the value always describes what this sandbox can reach rather than what was asked for.
+    """
+
+    mode: Literal["INHERIT", "EXPLICIT"]
+
+    permissions: Optional[List[str]] = None
 
 
 class MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig(BaseModel):
@@ -590,6 +601,15 @@ class RunConfig(BaseModel):
 
 class SandboxResponse(BaseModel):
     id: Optional[str] = None
+
+    access_delegation: Optional[AccessDelegation] = None
+    """
+    AccessDelegation is the LangSmith access this sandbox was granted, absent when
+    it has none. Either mode can appear: a grant is reported as requested, except
+    that INHERIT requested by a creator who is itself delegated is stored as
+    EXPLICIT carrying that creator's own ceiling, so the value always describes what
+    this sandbox can reach rather than what was asked for.
+    """
 
     cpu_millicores: Optional[int] = None
 

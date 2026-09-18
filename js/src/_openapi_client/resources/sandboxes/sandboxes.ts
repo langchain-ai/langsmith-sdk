@@ -106,6 +106,15 @@ export interface SandboxListResponse {
 export interface SandboxResponse {
   id?: string;
 
+  /**
+   * AccessDelegation is the LangSmith access this sandbox was granted, absent when
+   * it has none. Either mode can appear: a grant is reported as requested, except
+   * that INHERIT requested by a creator who is itself delegated is stored as
+   * EXPLICIT carrying that creator's own ceiling, so the value always describes what
+   * this sandbox can reach rather than what was asked for.
+   */
+  access_delegation?: SandboxResponse.AccessDelegation;
+
   cpu_millicores?: number;
 
   created_at?: string;
@@ -156,6 +165,19 @@ export interface SandboxResponse {
 }
 
 export namespace SandboxResponse {
+  /**
+   * AccessDelegation is the LangSmith access this sandbox was granted, absent when
+   * it has none. Either mode can appear: a grant is reported as requested, except
+   * that INHERIT requested by a creator who is itself delegated is stored as
+   * EXPLICIT carrying that creator's own ceiling, so the value always describes what
+   * this sandbox can reach rather than what was asked for.
+   */
+  export interface AccessDelegation {
+    mode: 'INHERIT' | 'EXPLICIT';
+
+    permissions?: Array<string>;
+  }
+
   export interface MountConfig {
     auth?: MountConfig.Auth;
 

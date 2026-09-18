@@ -159,6 +159,12 @@ export class Boxes extends APIResource {
 
 export interface BoxCreateParams {
   /**
+   * AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+   * with at most the permissions granted here. Omit for no access.
+   */
+  access_delegation?: BoxCreateParams.AccessDelegation;
+
+  /**
    * CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
    * vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
    * available for every sandbox.
@@ -240,6 +246,16 @@ export interface BoxCreateParams {
 }
 
 export namespace BoxCreateParams {
+  /**
+   * AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+   * with at most the permissions granted here. Omit for no access.
+   */
+  export interface AccessDelegation {
+    mode: 'INHERIT' | 'EXPLICIT';
+
+    permissions?: Array<string>;
+  }
+
   export interface MountConfig {
     auth?: MountConfig.Auth;
 

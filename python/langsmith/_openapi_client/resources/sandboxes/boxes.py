@@ -58,6 +58,7 @@ class BoxesResource(SyncAPIResource):
     def create(
         self,
         *,
+        access_delegation: box_create_params.AccessDelegation | Omit = omit,
         cpu_millicores: int | Omit = omit,
         delete_after_stop_seconds: int | Omit = omit,
         env_vars: Dict[str, str] | Omit = omit,
@@ -91,6 +92,9 @@ class BoxesResource(SyncAPIResource):
         name resolves to `name:latest`).
 
         Args:
+          access_delegation: AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+              with at most the permissions granted here. Omit for no access.
+
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
               vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
               available for every sandbox.
@@ -140,6 +144,7 @@ class BoxesResource(SyncAPIResource):
             "/api/v2/sandboxes/boxes",
             body=maybe_transform(
                 {
+                    "access_delegation": access_delegation,
                     "cpu_millicores": cpu_millicores,
                     "delete_after_stop_seconds": delete_after_stop_seconds,
                     "env_vars": env_vars,
@@ -744,6 +749,7 @@ class AsyncBoxesResource(AsyncAPIResource):
     async def create(
         self,
         *,
+        access_delegation: box_create_params.AccessDelegation | Omit = omit,
         cpu_millicores: int | Omit = omit,
         delete_after_stop_seconds: int | Omit = omit,
         env_vars: Dict[str, str] | Omit = omit,
@@ -777,6 +783,9 @@ class AsyncBoxesResource(AsyncAPIResource):
         name resolves to `name:latest`).
 
         Args:
+          access_delegation: AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+              with at most the permissions granted here. Omit for no access.
+
           cpu_millicores: CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
               vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
               available for every sandbox.
@@ -826,6 +835,7 @@ class AsyncBoxesResource(AsyncAPIResource):
             "/api/v2/sandboxes/boxes",
             body=await async_maybe_transform(
                 {
+                    "access_delegation": access_delegation,
                     "cpu_millicores": cpu_millicores,
                     "delete_after_stop_seconds": delete_after_stop_seconds,
                     "env_vars": env_vars,

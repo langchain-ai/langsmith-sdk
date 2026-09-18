@@ -9,6 +9,7 @@ from ..._types import SequenceNotStr
 
 __all__ = [
     "BoxCreateParams",
+    "AccessDelegation",
     "MountConfig",
     "MountConfigAuth",
     "MountConfigAuthAws",
@@ -65,6 +66,12 @@ __all__ = [
 
 
 class BoxCreateParams(TypedDict, total=False):
+    access_delegation: AccessDelegation
+    """
+    AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+    with at most the permissions granted here. Omit for no access.
+    """
+
     cpu_millicores: int
     """CPUMillicores optionally requests CPU at millicore granularity (e.g.
 
@@ -144,6 +151,16 @@ class BoxCreateParams(TypedDict, total=False):
     tag_value_ids: SequenceNotStr[str]
 
     vcpus: int
+
+
+class AccessDelegation(TypedDict, total=False):
+    """
+    AccessDelegation lets code inside the sandbox call the LangSmith API as you, with at most the permissions granted here. Omit for no access.
+    """
+
+    mode: Required[Literal["INHERIT", "EXPLICIT"]]
+
+    permissions: SequenceNotStr[str]
 
 
 class MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig(TypedDict, total=False):
