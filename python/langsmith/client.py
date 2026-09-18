@@ -2510,11 +2510,12 @@ class Client:
             payload.get("session_id") is not None
             or payload.get("session_name") is not None
         )
-        if not ls_utils.is_agent_addressed(agent_id, agent_environment):
-            if update or named_project:
-                # A patch inherits its post's target, and a project already on
-                # the payload addresses the run on its own.
-                return
+        if not (update or named_project):
+            # A patch inherits its post's target, and a project already on the
+            # payload addresses the run on its own; neither consults the
+            # environment. Every other create does, including one that named
+            # half an agent in code -- the missing half comes from the env var
+            # rather than reaching the endpoint as an incomplete pair.
             agent_id, agent_environment = ls_utils.resolve_agent_addressing(
                 agent_id, agent_environment
             )

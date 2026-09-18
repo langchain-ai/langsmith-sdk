@@ -8753,3 +8753,51 @@ def test_batch_update_does_not_resolve_the_ambient_agent(
     # The patch inherits the post's target by naming nothing at all.
     assert "agent_id" not in patch
     assert "agent_environment" not in patch
+
+
+def test_batch_create_completes_a_half_named_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A create that names one half gets the other from the environment.
+
+    `create_run` settles this upstream in `resolve_addressing`, but the public
+    batch methods only pass through `_run_transform`, so the helper has to
+    complete the pair itself. Skipping it there sent `agent_id` alone and the
+    endpoint answered 400 instead of recording the run.
+    """
+    _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    id_ = uuid.uuid4()
+    dotted = run_trees._create_current_dotted_order(datetime.now(timezone.utc), id_)
+    client.multipart_ingest(
+        create=[
+            {
+                "id": id_,
+                "trace_id": id_,
+                "dotted_order": dotted,
+                "name": "r",
+                "run_type": "llm",
+                "inputs": {"a": 1},
+                "agent_id": "explicit",
+            }
+        ]
+    )
+    post = _wait_for_part(session, "post")
+
+    assert post.get("agent_id") == "explicit"
+    assert post.get("agent_environment") == "staging"
+    assert "session_name" not in post
+
+
+def test_a_complete_pair_survives_a_second_transform() -> None:
+    """Resolving twice must not let the environment displace an explicit pair."""
+    payload: dict = {
+        "session_name": None,
+        "agent_id": "explicit",
+        "agent_environment": "prod",
+    }
+    Client._apply_agent_addressing(payload)
+    Client._apply_agent_addressing(payload)
+    assert payload == {"agent_id": "explicit", "agent_environment": "prod"}
