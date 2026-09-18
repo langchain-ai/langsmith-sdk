@@ -30,16 +30,27 @@ Use a snapshot when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 
-The sandbox module is included with `langsmith` by default — no extra
-install step is required. The `websockets` package is a core dependency,
-so streaming output, `timeout=0`, and TCP tunnels work out of the box.
+The sandbox module is included with `langsmith`. Running commands needs a
+transport, and the default one — the exec WebSocket, which also carries
+streaming output, `timeout=0`, stdin, PTYs, `kill()` and TCP tunnels — comes
+from the `sandbox` extra:
 
 ```bash
-pip install langsmith
+pip install 'langsmith[sandbox]'
 ```
 
-> The `langsmith[sandbox]` extra is still accepted for backward
-> compatibility, but it no longer installs anything extra.
+Without it, `run()` raises unless you opt into the Server-Sent Events exec
+transport, which needs no extra package:
+
+```bash
+export LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec
+```
+
+SSE streams output over plain HTTP and resumes itself whenever the sandbox
+needs an acknowledgement, so commands of any length and size work. Because it
+is one-way, it cannot send input or signals to a running command: `pty=True`,
+`close_input=False`, `kill_on_disconnect=True`, `send_input()` and `kill()`
+all need the WebSocket. Tunnels always need it.
 
 ## Configuration
 
@@ -383,7 +394,8 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 ## Streaming Output
 
 For long-running commands, you can stream output in real time. This uses the
-`websockets` package, which ships with `langsmith` by default.
+`websockets` package from the `sandbox` extra, or the SSE transport when
+`LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec` is set.
 
 ### Callbacks
 
@@ -513,10 +525,9 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle.kill()  # stop when done
 ```
 
-> **Note:** `timeout=0` requires WebSocket support, which is enabled by
-> default via the bundled `websockets` dependency. If `websockets` is not
-> available, `run()` falls back to HTTP, which has its own request-level
-> timeout.
+> **Note:** `handle.kill()` needs the WebSocket transport. Under
+> `LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec` there is no control
+> channel, so it raises; bound the command with `timeout` instead.
 
 ## Command Lifecycle & TTL
 
@@ -676,7 +687,8 @@ etc.) as if it were running on your local machine. The tunnel opens a local TCP
 port and forwards connections through a multiplexed WebSocket to the target port
 inside the sandbox.
 
-Uses the `websockets` package, which ships with `langsmith` by default.
+Needs the `websockets` package from the `sandbox` extra: a tunnel is
+bidirectional, so the SSE transport cannot serve it.
 
 ### Basic Usage — PostgreSQL
 
