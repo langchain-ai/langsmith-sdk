@@ -613,7 +613,7 @@ class AsyncClient:
             "id": kwargs.get("id") or uuid.uuid4(),
             "inputs": inputs,
             "run_type": run_type,
-            "session_name": project_name or ls_utils.get_tracer_project(),
+            "session_name": project_name or ls_utils.get_tracer_project_or_agent(),
             "revision_id": revision_id,
             **kwargs,
         }

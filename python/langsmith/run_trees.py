@@ -363,7 +363,7 @@ class RunTree(ls_schemas.RunBase):
         exclude=True,
     )
     session_name: str = Field(
-        default_factory=lambda: utils.get_tracer_project() or "default",
+        default_factory=lambda: utils.get_tracer_project_or_agent() or "default",
         alias="project_name",
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
@@ -1000,11 +1000,15 @@ class RunTree(ls_schemas.RunBase):
                 # The v2 endpoint doesn't exist on ClickHouse-only backends, which
                 # may predate it; build the URL locally there instead.
                 return client._construct_run_url(run=self)
-            session_id = self.session_id or (
-                client.read_project(
-                    project_name=self.session_name or utils.get_tracer_project()
-                ).id
-            )
+            session_id = self.session_id
+            if session_id is None:
+                project_name = self.session_name or utils.get_tracer_project()
+                if utils.parse_agent_address(project_name):
+                    # The agent's project is the backend's to resolve, so there
+                    # is nothing to look up here and nothing to ask the v2
+                    # endpoint with. The local builder reports why.
+                    return client._construct_run_url(run=self)
+                session_id = client.read_project(project_name=project_name).id
             response = client._get_langsmith_api_sync().runs.get_url(
                 str(self.id),
                 project_id=str(session_id),

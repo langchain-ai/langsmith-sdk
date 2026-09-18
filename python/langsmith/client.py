@@ -755,6 +755,32 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
+def _decode_agent_address(run_payload: dict) -> None:
+    """Replace an agent address in the project slot with the fields that carry it.
+
+    !!! warning "Experimental"
+        Agent addressing is in beta and enabled per workspace. A workspace
+        without it rejects these runs, so tracing is lost rather than falling
+        back to a project.
+
+    This is the one boundary the address crosses out of the project slot, so
+    everything upstream of it — inheritance, replicas, patch payloads,
+    `baggage` — carries the address as an ordinary project name and needs to
+    know nothing about agents, and the request itself carries the two fields
+    the endpoint documents.
+
+    A project named by id wins, the same way a project named by name does: it
+    is explicit, and the endpoint refuses a run that names both.
+    """
+    address = ls_utils.parse_agent_address(run_payload.get("session_name"))
+    if address is None:
+        return
+    run_payload.pop("session_name", None)
+    if run_payload.get("session_id") is not None:
+        return
+    run_payload["agent_id"], run_payload["agent_environment"] = address
+
+
 def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
     """Raise on SmithDB-only deployments, warn elsewhere.
 
@@ -2467,6 +2493,8 @@ class Client:
                 # Drop graph
                 run_create["serialized"].pop("graph", None)
 
+        _decode_agent_address(run_create)
+
         return run_create
 
     def _insert_runtime_env(self, runs: Sequence[dict]) -> None:
@@ -2601,7 +2629,8 @@ class Client:
         project_name = project_name or kwargs.pop(
             "session_name",
             # if the project is not provided, use the environment's project
-            ls_utils.get_tracer_project(),
+            # or the agent address configured for it
+            ls_utils.get_tracer_project_or_agent(),
         )
         run_create = {
             **kwargs,
@@ -4846,6 +4875,17 @@ class Client:
         if session_id := getattr(run, "session_id", None):
             pass
         elif session_name := getattr(run, "session_name", None):
+            # An agent-addressed run names no project, and which project its
+            # agent environment resolves to is the backend's to know. Looking
+            # the address up as a project name would 404, and falling through
+            # to the environment's project would return a URL into the wrong
+            # one, so neither is attempted.
+            if ls_utils.parse_agent_address(session_name):
+                raise ls_utils.LangSmithUserError(
+                    "Cannot build a run URL locally for a run addressed to an "
+                    "agent: it names no project. Use client.runs.get_url() "
+                    "with the project_id the run was ingested into."
+                )
             session_id = self.read_project(project_name=session_name).id
         elif project_id is not None:
             session_id = project_id

@@ -462,6 +462,99 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
     )
 
 
+AGENT_ADDRESS_PREFIX = "lsagent/v1:"
+"""Marks a project slot that holds an agent address rather than a project name.
+
+The address is carried in the project slot so it survives everything a project
+name already survives — a nested run inheriting its parent's, a replica routed
+elsewhere, a `langsmith-project` baggage header crossing a service boundary —
+and is translated to the `agent_id` / `agent_environment` request fields on the
+way out. The prefix is reserved server-side: a project is never created from
+one, so a token that escapes untranslated is refused rather than misfiled.
+"""
+
+_AGENT_ADDRESS_SEPARATOR = ";"
+
+_AGENT_ENVIRONMENTS = ("local", "development", "staging", "production")
+"""The environments an agent has. There is no default: a run that names an agent
+names the environment too, so traces cannot reach `production` unasked.
+"""
+
+
+def encode_agent_address(agent_id: str, agent_environment: str) -> str:
+    """Encode an agent address for the project slot."""
+    return (
+        f"{AGENT_ADDRESS_PREFIX}{agent_id}{_AGENT_ADDRESS_SEPARATOR}{agent_environment}"
+    )
+
+
+def parse_agent_address(project_name: Optional[str]) -> Optional[tuple[str, str]]:
+    """Decode an agent address, or `None` for an ordinary project name.
+
+    The separator is the rightmost one: an environment name never contains one
+    and an agent id may.
+    """
+    if not project_name or not project_name.startswith(AGENT_ADDRESS_PREFIX):
+        return None
+    address = project_name[len(AGENT_ADDRESS_PREFIX) :]
+    agent_id, separator, agent_environment = address.rpartition(
+        _AGENT_ADDRESS_SEPARATOR
+    )
+    if not separator or not agent_id or not agent_environment:
+        return None
+    return agent_id, agent_environment
+
+
+@functools.lru_cache(maxsize=1)
+def get_tracer_agent_address() -> Optional[str]:
+    """Get the agent address configured for this process, encoded for the project slot.
+
+    !!! warning "Experimental"
+        Agent addressing is in beta and enabled per workspace. A workspace
+        without it rejects these runs, so tracing is lost rather than falling
+        back to a project.
+
+    Both `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` are required:
+    neither addresses a project alone, and defaulting either would pick a
+    target nobody named. A half-configured or misspelled pair is logged and
+    ignored rather than raised, because it is read while a run is being traced.
+    """
+    agent_id = get_env_var("AGENT_ID")
+    agent_environment = get_env_var("AGENT_ENVIRONMENT")
+    if not agent_id and not agent_environment:
+        return None
+    if not agent_id or not agent_environment:
+        _LOGGER.warning(
+            "Ignoring a partial agent address: LANGSMITH_AGENT_ID and "
+            "LANGSMITH_AGENT_ENVIRONMENT must both be set. Tracing to the "
+            "project instead."
+        )
+        return None
+    if agent_environment not in _AGENT_ENVIRONMENTS:
+        _LOGGER.warning(
+            "Ignoring LANGSMITH_AGENT_ENVIRONMENT=%r: expected one of %s. "
+            "Tracing to the project instead.",
+            agent_environment,
+            ", ".join(_AGENT_ENVIRONMENTS),
+        )
+        return None
+    return encode_agent_address(agent_id, agent_environment)
+
+
+def get_tracer_project_or_agent(return_default_value=True) -> Optional[str]:
+    """Get what a run with no project named of its own is addressed to.
+
+    This is the bottom of every project-resolution chain in the SDK, and the
+    only place an agent address enters one. Everything that names a project —
+    `tracing_context`, `@traceable`, `langsmith_extra`, `ls.configure`, an
+    evaluation's experiment name — sits above it and therefore wins without
+    any precedence rule of its own.
+    """
+    return get_tracer_agent_address() or get_tracer_project(
+        return_default_value=return_default_value
+    )
+
+
 class FilterPoolFullWarning(logging.Filter):
     """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 

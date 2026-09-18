@@ -190,6 +190,12 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_TRACING_V2",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
+        # Addressing, like the project vars above: where a run goes, not
+        # metadata about the run.
+        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGCHAIN_AGENT_ID",
+        "LANGCHAIN_AGENT_ENVIRONMENT",
         "LANGSMITH_RUNS_ENDPOINTS",
         # Control-plane signing secrets the substring filter misses; excluded here.
         "LANGSMITH_SIGNING_JWKS",

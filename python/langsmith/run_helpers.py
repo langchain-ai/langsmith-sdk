@@ -1294,8 +1294,9 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
         or (prt.session_name if prt else None)
         # Global fallback configured via ls.configure(...)
         or _context._GLOBAL_PROJECT_NAME
-        # fallback to the default for the environment
-        or utils.get_tracer_project()
+        # fallback to the default for the environment, which is where an
+        # agent address configured for this process enters
+        or utils.get_tracer_project_or_agent()
     )
 
 
@@ -1621,7 +1622,7 @@ def _setup_run(
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
         or _context._GLOBAL_PROJECT_NAME  # global fallback from ls.configure
-        or utils.get_tracer_project()  # default
+        or utils.get_tracer_project_or_agent()  # default, or the agent address
     )
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
