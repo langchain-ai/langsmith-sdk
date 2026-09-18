@@ -30,27 +30,15 @@ Use a snapshot when you want to boot from a reusable custom filesystem image.
 
 ## Installation
 
-The sandbox module is included with `langsmith`. Running commands needs a
-transport, and the default one — the exec WebSocket, which also carries
-streaming output, `timeout=0`, stdin, PTYs, `kill()` and TCP tunnels — comes
-from the `sandbox` extra:
+The sandbox module is included with `langsmith`, and running commands needs
+the `websockets` package from the `sandbox` extra:
 
 ```bash
 pip install 'langsmith[sandbox]'
 ```
 
-Without it, `run()` raises unless you opt into the Server-Sent Events exec
-transport, which needs no extra package:
-
-```bash
-export LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec
-```
-
-SSE streams output over plain HTTP and resumes itself whenever the sandbox
-needs an acknowledgement, so commands of any length and size work. Because it
-is one-way, it cannot send input or signals to a running command: `pty=True`,
-`close_input=False`, `kill_on_disconnect=True`, `send_input()` and `kill()`
-all need the WebSocket. Tunnels always need it.
+It carries command execution, streaming output, `timeout=0`, stdin, PTYs,
+`kill()` and TCP tunnels.
 
 ## Configuration
 
@@ -394,8 +382,7 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 ## Streaming Output
 
 For long-running commands, you can stream output in real time. This uses the
-`websockets` package from the `sandbox` extra, or the SSE transport when
-`LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec` is set.
+`websockets` package from the `sandbox` extra.
 
 ### Callbacks
 
@@ -525,9 +512,8 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle.kill()  # stop when done
 ```
 
-> **Note:** `handle.kill()` needs the WebSocket transport. Under
-> `LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec` there is no control
-> channel, so it raises; bound the command with `timeout` instead.
+> **Note:** `timeout=0` and `handle.kill()` need the `websockets` package
+> from the `sandbox` extra.
 
 ## Command Lifecycle & TTL
 
@@ -687,8 +673,7 @@ etc.) as if it were running on your local machine. The tunnel opens a local TCP
 port and forwards connections through a multiplexed WebSocket to the target port
 inside the sandbox.
 
-Needs the `websockets` package from the `sandbox` extra: a tunnel is
-bidirectional, so the SSE transport cannot serve it.
+Needs the `websockets` package from the `sandbox` extra.
 
 ### Basic Usage — PostgreSQL
 
