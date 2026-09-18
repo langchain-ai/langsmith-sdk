@@ -70,6 +70,7 @@ class TestToolUseSuccessFlow:
         assert tool_run.name == "Bash"
         assert tool_run.run_type == "tool"
         assert tool_run.inputs == {"input": {"command": "echo hi"}}
+        assert tool_run.extra["metadata"]["tool_call_id"] == "tu_1"
 
         asyncio.run(
             post_tool_use_hook(
