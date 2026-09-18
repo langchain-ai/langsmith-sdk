@@ -224,12 +224,22 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
+    current_context = get_tracing_context()
+    if project_name is not None and (agent_id, agent_environment) == (
+        current_context.get("agent_id"),
+        current_context.get("agent_environment"),
+    ):
+        # Restoring a snapshot, not naming a second destination:
+        # `tracing_context(**get_tracing_context(), project_name=...)` is how
+        # the SDK and its callers carry a context across a thread or task, and
+        # arrives here looking exactly like typing both. The project named here
+        # wins, as it does over any other ambient agent.
+        agent_id = agent_environment = None
     ls_client._reject_conflicting_addressing(
         project=project_name,
         agent_id=agent_id,
         agent_environment=agent_environment,
     )
-    current_context = get_tracing_context()
     parent_run = (
         _get_parent_run(
             {"parent": parent or kwargs.get("parent_run"), "replicas": replicas}

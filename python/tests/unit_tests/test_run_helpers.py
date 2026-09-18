@@ -41,6 +41,7 @@ from langsmith.run_helpers import (
     _processing_failed,
     as_runnable,
     get_current_run_tree,
+    get_tracing_context,
     is_traceable_function,
     trace,
     traceable,
@@ -2763,6 +2764,68 @@ def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) 
     ls_utils.get_tracer_agent_id.cache_clear()
     ls_utils.get_tracer_agent_environment.cache_clear()
     ls_utils.get_tracer_project.cache_clear()
+
+
+class TestRestoringAContextSnapshot:
+    """`tracing_context(**get_tracing_context(), project_name=...)` must work.
+
+    It is how the SDK carries a context across a thread or task -- `evaluate`
+    does it at four sites -- and it reaches `tracing_context` looking exactly
+    like a caller typing a project and an agent in one call.
+    """
+
+    def test_a_restored_snapshot_under_an_agent_does_not_raise(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        with tracing_context(agent_id="ambient", agent_environment="staging"):
+            snapshot = get_tracing_context()
+            with tracing_context(**{**snapshot, "project_name": "evaluators"}):
+                inner = get_tracing_context()
+
+        # The project named here wins, as it does over any other ambient agent.
+        assert inner["project_name"] == "evaluators"
+        assert (inner["agent_id"], inner["agent_environment"]) == (None, None)
+
+    def test_a_snapshot_without_a_project_keeps_its_agent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(monkeypatch)
+        with tracing_context(agent_id="ambient", agent_environment="staging"):
+            with tracing_context(**{**get_tracing_context(), "tags": ["t"]}):
+                inner = get_tracing_context()
+
+        assert inner["agent_id"] == "ambient"
+        assert inner["project_name"] is None
+
+    @pytest.mark.parametrize(
+        "ambient",
+        [{}, {"agent_id": "ambient", "agent_environment": "staging"}],
+        ids=["no_ambient_agent", "a_different_ambient_agent"],
+    )
+    def test_a_different_agent_beside_a_project_still_raises(
+        self, ambient: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only the pair already in the context is treated as inherited."""
+        _clean_agent_addressing_env(monkeypatch)
+        with tracing_context(**ambient):
+            with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+                with tracing_context(project_name="p", agent_id="named-here"):
+                    pass
+
+
+def test_an_evaluation_snapshot_drops_the_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An evaluation is project-addressed end to end, so no agent leaks in."""
+    from langsmith.evaluation._runner import _addressed_to_project
+
+    _clean_agent_addressing_env(monkeypatch)
+    with tracing_context(agent_id="ambient", agent_environment="staging"):
+        addressed = _addressed_to_project(get_tracing_context(), "evaluators")
+
+    assert addressed["project_name"] == "evaluators"
+    assert (addressed["agent_id"], addressed["agent_environment"]) == (None, None)
 
 
 class TestEveryEntryPointTakesAnAgent:
