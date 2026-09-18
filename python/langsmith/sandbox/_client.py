@@ -11,7 +11,6 @@ import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
-from urllib.parse import quote
 
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import Langsmith
@@ -19,10 +18,8 @@ from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox import _client_effects as client_effects
 from langsmith.sandbox._effects import run_sync
 from langsmith.sandbox._exceptions import (
-    ResourceCreationError,
     ResourceNameConflictError,
     ResourceNotFoundError,
-    ResourceTimeoutError,
     SandboxAPIError,
 )
 from langsmith.sandbox._helpers import (
@@ -75,28 +72,7 @@ def _get_default_api_key() -> Optional[str]:
 RequestHeaders = Optional[Mapping[str, str]]
 
 
-def _quote_path_segment(value: str) -> str:
-    """Quote a user-controlled value for use as a single URL path segment."""
-    if not value:
-        raise ValueError("URL path segment must be a non-empty string")
-    return quote(value, safe="")
-
-
-def _quote_reference_segment(value: str) -> str:
-    """Quote a Docker-style ``name[:tag]`` reference as one URL path segment.
-
-    The colon is left literal: it is a legal path character and the server splits
-    the reference on it, so percent-encoding would hide the tag.
-    """
-    if not value:
-        raise ValueError("URL path segment must be a non-empty string")
-    return quote(value, safe=":")
-
-
-def _box_url(base_url: str, name: str, *segments: str) -> str:
-    """Build the URL for a sandbox, optionally with trailing path segments."""
-    suffix = "/" + "/".join(segments) if segments else ""
-    return f"{base_url}/boxes/{_quote_path_segment(name)}{suffix}"
+_box_url = client_effects._box_url
 
 
 def _make_docker_context_tar(context_path: Path) -> bytes:
@@ -794,19 +770,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "status")
-
-        try:
-            response = self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return ResourceStatus.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
+        return run_sync(client_effects.get_sandbox_status(self, name, headers=headers))
 
     def service(
         self,
@@ -959,24 +923,16 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        deadline = time.monotonic() + timeout
-        while True:
-            status = self.get_sandbox_status(name, headers=headers)
-            if status.status == "ready":
-                return self.get_sandbox(name, headers=headers)
-            if status.status == "failed":
-                raise ResourceCreationError(
-                    status.status_message or "Sandbox provisioning failed",
-                    resource_type="sandbox",
-                )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ResourceTimeoutError(
-                    f"Sandbox '{name}' not ready after {timeout}s",
-                    resource_type="sandbox",
-                    last_status=status.status,
-                )
-            time.sleep(min(poll_interval, remaining))
+        return run_sync(
+            client_effects.wait_for_sandbox(
+                self,
+                name,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                headers=headers,
+                sleep=time.sleep,
+            )
+        )
 
     def start_sandbox(
         self,
@@ -1000,21 +956,9 @@ class SandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "start")
-
-        try:
-            response = self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-
-        return self.wait_for_sandbox(name, timeout=timeout, headers=headers)
+        return run_sync(
+            client_effects.start_sandbox(self, name, timeout=timeout, headers=headers)
+        )
 
     def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Stop a running sandbox (preserves sandbox files for later restart).
@@ -1026,19 +970,7 @@ class SandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "stop")
-
-        try:
-            response = self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
+        run_sync(client_effects.stop_sandbox(self, name, headers=headers))
 
     # ========================================================================
     # Snapshot Operations

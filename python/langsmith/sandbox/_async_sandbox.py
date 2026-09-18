@@ -750,13 +750,16 @@ class AsyncSandbox:
         Returns:
             GlobResult; check ``truncated`` before treating it as complete.
         """
-        payload: dict[str, Any] = {"pattern": pattern, "path": path}
-        if limit is not None:
-            payload["limit"] = limit
-        data = await self._file_search(
-            "glob", payload, timeout=timeout, headers=headers
+        return await run_async(
+            _sandbox_effects.glob(
+                self,
+                pattern,
+                path,
+                limit=limit,
+                timeout=timeout,
+                headers=headers,
+            )
         )
-        return GlobResult.from_dict(data)
 
     async def ls(
         self,
@@ -779,7 +782,11 @@ class AsyncSandbox:
         Returns:
             GlobResult holding the directory's files and subdirectories.
         """
-        return await self.glob("*", path, limit=limit, timeout=timeout, headers=headers)
+        return await run_async(
+            _sandbox_effects.ls(
+                self, path, limit=limit, timeout=timeout, headers=headers
+            )
+        )
 
     async def grep(
         self,
@@ -806,28 +813,15 @@ class AsyncSandbox:
         Returns:
             GrepResult; check ``truncated`` before treating it as complete.
         """
-        payload: dict[str, Any] = {"pattern": pattern, "path": path}
-        if glob is not None:
-            payload["glob"] = glob
-        if limit is not None:
-            payload["limit"] = limit
-        data = await self._file_search(
-            "grep", payload, timeout=timeout, headers=headers
-        )
-        return GrepResult.from_dict(data)
-
-    async def _file_search(
-        self,
-        operation: str,
-        payload: dict[str, Any],
-        *,
-        timeout: int,
-        headers: RequestHeaders,
-    ) -> dict[str, Any]:
-        """POST one of the read-only filesystem search endpoints."""
         return await run_async(
-            _sandbox_effects.file_search(
-                self, operation, payload, timeout=timeout, headers=headers
+            _sandbox_effects.grep(
+                self,
+                pattern,
+                path,
+                glob=glob,
+                limit=limit,
+                timeout=timeout,
+                headers=headers,
             )
         )
 

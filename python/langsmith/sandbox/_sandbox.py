@@ -746,11 +746,16 @@ class Sandbox:
         Returns:
             GlobResult; check ``truncated`` before treating it as complete.
         """
-        payload: dict[str, Any] = {"pattern": pattern, "path": path}
-        if limit is not None:
-            payload["limit"] = limit
-        data = self._file_search("glob", payload, timeout=timeout, headers=headers)
-        return GlobResult.from_dict(data)
+        return run_sync(
+            _sandbox_effects.glob(
+                self,
+                pattern,
+                path,
+                limit=limit,
+                timeout=timeout,
+                headers=headers,
+            )
+        )
 
     def ls(
         self,
@@ -773,7 +778,11 @@ class Sandbox:
         Returns:
             GlobResult holding the directory's files and subdirectories.
         """
-        return self.glob("*", path, limit=limit, timeout=timeout, headers=headers)
+        return run_sync(
+            _sandbox_effects.ls(
+                self, path, limit=limit, timeout=timeout, headers=headers
+            )
+        )
 
     def grep(
         self,
@@ -800,26 +809,15 @@ class Sandbox:
         Returns:
             GrepResult; check ``truncated`` before treating it as complete.
         """
-        payload: dict[str, Any] = {"pattern": pattern, "path": path}
-        if glob is not None:
-            payload["glob"] = glob
-        if limit is not None:
-            payload["limit"] = limit
-        data = self._file_search("grep", payload, timeout=timeout, headers=headers)
-        return GrepResult.from_dict(data)
-
-    def _file_search(
-        self,
-        operation: str,
-        payload: dict[str, Any],
-        *,
-        timeout: int,
-        headers: RequestHeaders,
-    ) -> dict[str, Any]:
-        """POST one of the read-only filesystem search endpoints."""
         return run_sync(
-            _sandbox_effects.file_search(
-                self, operation, payload, timeout=timeout, headers=headers
+            _sandbox_effects.grep(
+                self,
+                pattern,
+                path,
+                glob=glob,
+                limit=limit,
+                timeout=timeout,
+                headers=headers,
             )
         )
 

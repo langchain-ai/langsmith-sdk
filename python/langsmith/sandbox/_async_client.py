@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Optional, Union
 
@@ -22,10 +21,8 @@ from langsmith.sandbox._client import (
 )
 from langsmith.sandbox._effects import run_async
 from langsmith.sandbox._exceptions import (
-    ResourceCreationError,
     ResourceNameConflictError,
     ResourceNotFoundError,
-    ResourceTimeoutError,
     SandboxAPIError,
 )
 from langsmith.sandbox._helpers import (
@@ -674,19 +671,9 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "status")
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return ResourceStatus.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
+        return await run_async(
+            client_effects.get_sandbox_status(self, name, headers=headers)
+        )
 
     async def service(
         self,
@@ -840,24 +827,16 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        deadline = time.monotonic() + timeout
-        while True:
-            status = await self.get_sandbox_status(name, headers=headers)
-            if status.status == "ready":
-                return await self.get_sandbox(name, headers=headers)
-            if status.status == "failed":
-                raise ResourceCreationError(
-                    status.status_message or "Sandbox provisioning failed",
-                    resource_type="sandbox",
-                )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ResourceTimeoutError(
-                    f"Sandbox '{name}' not ready after {timeout}s",
-                    resource_type="sandbox",
-                    last_status=status.status,
-                )
-            await asyncio.sleep(min(poll_interval, remaining))
+        return await run_async(
+            client_effects.wait_for_sandbox(
+                self,
+                name,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                headers=headers,
+                sleep=asyncio.sleep,
+            )
+        )
 
     async def start_sandbox(
         self,
@@ -881,21 +860,9 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "start")
-
-        try:
-            response = await self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-
-        return await self.wait_for_sandbox(name, timeout=timeout, headers=headers)
+        return await run_async(
+            client_effects.start_sandbox(self, name, timeout=timeout, headers=headers)
+        )
 
     async def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Stop a running sandbox (preserves sandbox files for later restart).
@@ -907,19 +874,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "stop")
-
-        try:
-            response = await self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
+        await run_async(client_effects.stop_sandbox(self, name, headers=headers))
 
     # ========================================================================
     # Snapshot Operations

@@ -21,7 +21,12 @@ from langsmith.sandbox._exceptions import (
     SandboxAPIError,
 )
 from langsmith.sandbox._helpers import handle_client_http_error
-from langsmith.sandbox._models import Snapshot, SnapshotTag, _run_config_payload
+from langsmith.sandbox._models import (
+    ResourceStatus,
+    Snapshot,
+    SnapshotTag,
+    _run_config_payload,
+)
 
 RequestHeaders = Optional[Mapping[str, str]]
 
@@ -36,6 +41,112 @@ def _quote_reference_segment(value: str) -> str:
     if not value:
         raise ValueError("URL path segment must be a non-empty string")
     return quote(value, safe=":")
+
+
+def _box_url(base_url: str, name: str, *segments: str) -> str:
+    suffix = "/" + "/".join(segments) if segments else ""
+    return f"{base_url}/boxes/{_quote_path_segment(name)}{suffix}"
+
+
+def get_sandbox_status(
+    client: Any, name: str, *, headers: RequestHeaders
+) -> Generator[Call[Any], Any, ResourceStatus]:
+    """Get the provisioning status of a sandbox."""
+    url = _box_url(client._base_url, name, "status")
+    try:
+        response = yield from Call(
+            lambda: client._http.get(url, headers=client._request_headers(headers))
+        )
+        response.raise_for_status()
+        return ResourceStatus.from_dict(response.json())
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:
+            raise ResourceNotFoundError(
+                f"Sandbox '{name}' not found", resource_type="sandbox"
+            ) from error
+        handle_client_http_error(error)
+        raise
+
+
+def wait_for_sandbox(
+    client: Any,
+    name: str,
+    *,
+    timeout: int,
+    poll_interval: float,
+    headers: RequestHeaders,
+    sleep: Callable[[float], Any],
+) -> Generator[Call[Any], Any, Any]:
+    """Poll until a sandbox reaches a terminal status."""
+    deadline = time.monotonic() + timeout
+    while True:
+        status = yield from Call(
+            lambda: client.get_sandbox_status(name, headers=headers)
+        )
+        if status.status == "ready":
+            return (yield from Call(lambda: client.get_sandbox(name, headers=headers)))
+        if status.status == "failed":
+            raise ResourceCreationError(
+                status.status_message or "Sandbox provisioning failed",
+                resource_type="sandbox",
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ResourceTimeoutError(
+                f"Sandbox '{name}' not ready after {timeout}s",
+                resource_type="sandbox",
+                last_status=status.status,
+            )
+        yield from Call(lambda: sleep(min(poll_interval, remaining)))
+
+
+def start_sandbox(
+    client: Any,
+    name: str,
+    *,
+    timeout: int,
+    headers: RequestHeaders,
+) -> Generator[Call[Any], Any, Any]:
+    """Start a stopped sandbox and wait until ready."""
+    url = _box_url(client._base_url, name, "start")
+    try:
+        response = yield from Call(
+            lambda: client._http.post(
+                url, json={}, headers=client._request_headers(headers)
+            )
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:
+            raise ResourceNotFoundError(
+                f"Sandbox '{name}' not found", resource_type="sandbox"
+            ) from error
+        handle_client_http_error(error)
+    return (
+        yield from Call(
+            lambda: client.wait_for_sandbox(name, timeout=timeout, headers=headers)
+        )
+    )
+
+
+def stop_sandbox(
+    client: Any, name: str, *, headers: RequestHeaders
+) -> Generator[Call[Any], Any, None]:
+    """Stop a running sandbox."""
+    url = _box_url(client._base_url, name, "stop")
+    try:
+        response = yield from Call(
+            lambda: client._http.post(
+                url, json={}, headers=client._request_headers(headers)
+            )
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:
+            raise ResourceNotFoundError(
+                f"Sandbox '{name}' not found", resource_type="sandbox"
+            ) from error
+        handle_client_http_error(error)
 
 
 def create_snapshot(

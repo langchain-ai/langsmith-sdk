@@ -19,6 +19,8 @@ from langsmith.sandbox._models import (
     ExecutionResult,
     FileChunk,
     FileStat,
+    GlobResult,
+    GrepResult,
 )
 
 RequestHeaders = Optional[Mapping[str, str]]
@@ -204,7 +206,64 @@ def read_range(
     return file_chunk_from_response(response)
 
 
-def file_search(
+def glob(
+    sandbox: SandboxLike,
+    pattern: str,
+    path: str,
+    *,
+    limit: Optional[int],
+    timeout: int,
+    headers: RequestHeaders,
+) -> Generator[Call[Any], Any, GlobResult]:
+    """Find sandbox files and directories matching a pattern."""
+    payload: dict[str, Any] = {"pattern": pattern, "path": path}
+    if limit is not None:
+        payload["limit"] = limit
+    data = yield from _file_search(
+        sandbox, "glob", payload, timeout=timeout, headers=headers
+    )
+    return GlobResult.from_dict(data)
+
+
+def ls(
+    sandbox: SandboxLike,
+    path: str,
+    *,
+    limit: Optional[int],
+    timeout: int,
+    headers: RequestHeaders,
+) -> Generator[Call[Any], Any, GlobResult]:
+    """List a sandbox directory's immediate entries."""
+    return (
+        yield from glob(
+            sandbox, "*", path, limit=limit, timeout=timeout, headers=headers
+        )
+    )
+
+
+def grep(
+    sandbox: SandboxLike,
+    pattern: str,
+    path: str,
+    *,
+    glob: Optional[str],
+    limit: Optional[int],
+    timeout: int,
+    headers: RequestHeaders,
+) -> Generator[Call[Any], Any, GrepResult]:
+    """Search sandbox file contents for a literal string."""
+    payload: dict[str, Any] = {"pattern": pattern, "path": path}
+    if glob is not None:
+        payload["glob"] = glob
+    if limit is not None:
+        payload["limit"] = limit
+    data = yield from _file_search(
+        sandbox, "grep", payload, timeout=timeout, headers=headers
+    )
+    return GrepResult.from_dict(data)
+
+
+def _file_search(
     sandbox: SandboxLike,
     operation: str,
     payload: dict[str, Any],
