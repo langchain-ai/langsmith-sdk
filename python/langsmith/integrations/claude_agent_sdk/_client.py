@@ -98,6 +98,9 @@ class TurnLifecycle:
                             break
                 elif isinstance(content, list):
                     self.current_run.outputs["content"] = content
+            # Update outputs with provider-specific keys
+            if isinstance(self.current_run.outputs, dict):
+                self.current_run.outputs.update(_anthropic_response_fields(message))
             self._set_usage_from_message(message, self.current_run)
             return None
 
@@ -137,6 +140,15 @@ class TurnLifecycle:
             meta = run.extra.setdefault("metadata", {})
             meta["usage_metadata"] = usage_meta
 
+    def set_stop_reason_from_result(self, message: Any) -> None:
+        """Apply a ``ResultMessage`` stop reason to the turn still in flight."""
+        stop_reason = getattr(message, "stop_reason", None)
+        if not stop_reason or self.current_run is None:
+            return
+        outputs = self.current_run.outputs
+        if isinstance(outputs, dict) and not outputs.get("stop_reason"):
+            outputs["stop_reason"] = stop_reason
+
     def mark_next_start(self) -> None:
         """Mark when the next assistant message will start."""
         self.next_start_time = time.time()
@@ -156,6 +168,18 @@ class TurnLifecycle:
             except Exception as e:
                 logger.warning(f"Failed to patch LLM run: {e}")
         self._pending_patch.clear()
+
+
+def _anthropic_response_fields(message: Any) -> dict[str, Any]:
+    """Return Anthropic-native response fields for an LLM run."""
+    fields: dict[str, Any] = {}
+    message_id = getattr(message, "message_id", None)
+    if message_id:
+        fields["id"] = message_id
+    stop_reason = getattr(message, "stop_reason", None)
+    if stop_reason:
+        fields["stop_reason"] = stop_reason
+    return fields
 
 
 def begin_llm_run_from_assistant_messages(
@@ -178,7 +202,11 @@ def begin_llm_run_from_assistant_messages(
 
     inputs = build_llm_input(prompt, history)
     outputs = [
-        {"content": flatten_content_blocks(m.content), "role": "assistant"}
+        {
+            "content": flatten_content_blocks(m.content),
+            "role": "assistant",
+            **_anthropic_response_fields(m),
+        }
         for m in messages
         if hasattr(m, "content")
     ]
@@ -636,6 +664,7 @@ def instrument_claude_client(original_class: Any) -> None:
                                 )
                         tracker.mark_next_start()
                     elif msg_type == "ResultMessage":
+                        tracker.set_stop_reason_from_result(msg)
                         session_id_val = getattr(msg, "session_id", None)
                         meta = {
                             k: v

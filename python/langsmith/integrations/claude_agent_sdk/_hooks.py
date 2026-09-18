@@ -232,6 +232,9 @@ async def pre_tool_use_hook(
             name=tool_name,
             run_type="tool",
             inputs={"input": tool_input} if tool_input else {},
+            # The provider's tool-call id is the join key back to the
+            # ``tool_use`` block in the LLM turn that requested this call.
+            extra={"metadata": {"tool_call_id": tool_use_id}},
             start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
         )
 
