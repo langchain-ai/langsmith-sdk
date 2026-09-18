@@ -1004,9 +1004,8 @@ class RunTree(ls_schemas.RunBase):
             if session_id is None:
                 project_name = self.session_name or utils.get_tracer_project()
                 if utils.parse_agent_address(project_name):
-                    # The agent's project is the backend's to resolve, so there
-                    # is nothing to look up here and nothing to ask the v2
-                    # endpoint with. The local builder reports why.
+                    # Nothing to look up, and nothing to ask the v2 endpoint
+                    # with. The local builder reports why.
                     return client._construct_run_url(run=self)
                 session_id = client.read_project(project_name=project_name).id
             response = client._get_langsmith_api_sync().runs.get_url(

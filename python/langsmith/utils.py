@@ -465,19 +465,17 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 AGENT_ADDRESS_PREFIX = "lsagent/v1:"
 """Marks a project slot that holds an agent address rather than a project name.
 
-The address is carried in the project slot so it survives everything a project
-name already survives — a nested run inheriting its parent's, a replica routed
-elsewhere, a `langsmith-project` baggage header crossing a service boundary —
-and is translated to the `agent_id` / `agent_environment` request fields on the
-way out. The prefix is reserved server-side: a project is never created from
-one, so a token that escapes untranslated is refused rather than misfiled.
+Carrying the address here means it survives everything a project name already
+survives — inheritance, replicas, patch payloads, `baggage`. It is translated
+to the `agent_id` / `agent_environment` request fields on the way out, and the
+prefix is reserved server-side, so one that escapes is refused, not misfiled.
 """
 
 _AGENT_ADDRESS_SEPARATOR = ";"
 
 _AGENT_ENVIRONMENTS = ("local", "development", "staging", "production")
-"""The environments an agent has. There is no default: a run that names an agent
-names the environment too, so traces cannot reach `production` unasked.
+"""The environments an agent has. There is no default, so traces cannot reach
+`production` unasked.
 """
 
 
@@ -491,8 +489,8 @@ def encode_agent_address(agent_id: str, agent_environment: str) -> str:
 def parse_agent_address(project_name: Optional[str]) -> Optional[tuple[str, str]]:
     """Decode an agent address, or `None` for an ordinary project name.
 
-    The separator is the rightmost one: an environment name never contains one
-    and an agent id may.
+    The rightmost separator wins: an environment name never contains one, an
+    agent id may.
     """
     if not project_name or not project_name.startswith(AGENT_ADDRESS_PREFIX):
         return None
@@ -514,14 +512,10 @@ def get_tracer_agent_address() -> Optional[str]:
         without it rejects these runs, so tracing is lost rather than falling
         back to a project.
 
-    Both `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT` are required:
-    neither addresses a project alone, and defaulting either would pick a
-    target nobody named. A half-configured or misspelled pair is logged and
-    ignored rather than raised, because it is read while a run is being traced.
-
-    Only the `LANGSMITH_` namespace is read. The `LANGCHAIN_` alternatives the
-    older settings carry exist for compatibility with a name that predates
-    LangSmith, which a setting introduced now has no reason to inherit.
+    Both vars are required: neither addresses a project alone. A
+    half-configured or misspelled pair is logged and ignored rather than
+    raised, since it is read while a run is being traced. Only the
+    `LANGSMITH_` namespace is read.
     """
     agent_id = get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
     agent_environment = get_env_var("AGENT_ENVIRONMENT", namespaces=("LANGSMITH",))
@@ -546,13 +540,11 @@ def get_tracer_agent_address() -> Optional[str]:
 
 
 def get_tracer_project_or_agent(return_default_value=True) -> Optional[str]:
-    """Get what a run with no project named of its own is addressed to.
+    """Get what a run with no project of its own is addressed to.
 
-    This is the bottom of every project-resolution chain in the SDK, and the
-    only place an agent address enters one. Everything that names a project —
-    `tracing_context`, `@traceable`, `langsmith_extra`, `ls.configure`, an
-    evaluation's experiment name — sits above it and therefore wins without
-    any precedence rule of its own.
+    The bottom of every project-resolution chain, and the only place an agent
+    address enters one. Everything that names a project sits above it and so
+    wins without a precedence rule of its own.
     """
     return get_tracer_agent_address() or get_tracer_project(
         return_default_value=return_default_value
