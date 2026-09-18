@@ -2522,6 +2522,7 @@ class Client:
         if not ls_utils.is_agent_addressed(agent_id, agent_environment):
             # Neither mode is addressed; leave the server-side fallback to it.
             return
+        ls_utils.warn_agent_addressing_is_beta()
         if agent_id is not None:
             payload["agent_id"] = agent_id
         if agent_environment is not None:
