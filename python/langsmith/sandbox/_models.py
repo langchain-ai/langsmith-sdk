@@ -32,6 +32,15 @@ class StreamControl(Protocol):
     @property
     def killed(self) -> bool: ...
 
+    @property
+    def resumes_itself(self) -> bool:
+        """Whether the transport already retries and resumes on its own.
+
+        A handle must not add its own reattach loop on top of one, or the two
+        budgets multiply into an unbounded retry.
+        """
+        ...
+
     def send_kill(self) -> None: ...
 
     def send_input(self, data: str) -> None: ...
@@ -44,6 +53,9 @@ class AsyncStreamControl(Protocol):
 
     @property
     def killed(self) -> bool: ...
+
+    @property
+    def resumes_itself(self) -> bool: ...
 
     def send_kill(self) -> Awaitable[None]: ...
 
@@ -996,7 +1008,9 @@ class CommandHandle:
                 return  # Stream ended normally (exit message received)
 
             except SandboxConnectionError as e:
-                if self._control and self._control.killed:
+                if self._control and (
+                    self._control.killed or self._control.resumes_itself
+                ):
                     raise
 
                 self._reconnect_attempts += 1
@@ -1284,7 +1298,9 @@ class AsyncCommandHandle:
                 return  # Stream ended normally
 
             except SandboxConnectionError as e:
-                if self._control and self._control.killed:
+                if self._control and (
+                    self._control.killed or self._control.resumes_itself
+                ):
                     raise
 
                 self._reconnect_attempts += 1

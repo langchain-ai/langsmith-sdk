@@ -161,6 +161,10 @@ class _SSEStreamControl:
     def killed(self) -> bool:
         return False
 
+    @property
+    def resumes_itself(self) -> bool:
+        return True
+
     def send_kill(self) -> None:
         raise SandboxOperationError(_NO_CONTROL_CHANNEL, operation="kill")
 
@@ -177,6 +181,10 @@ class _AsyncSSEStreamControl:
     @property
     def killed(self) -> bool:
         return False
+
+    @property
+    def resumes_itself(self) -> bool:
+        return True
 
     async def send_kill(self) -> None:
         raise SandboxOperationError(_NO_CONTROL_CHANNEL, operation="kill")
@@ -254,6 +262,21 @@ class _ChunkDecoder:
         self._pending_offset = start + len(buf) - len(self._pending)
         return (start, text) if text else None
 
+    def flush(self) -> Optional[tuple[int, str]]:
+        """Emit a character left incomplete by the stream ending, as U+FFFD.
+
+        Held-back bytes are waiting for a continuation that a finished stream
+        will never send, so they become a replacement character rather than
+        vanishing. Idempotent, which matters because the server repeats
+        ``stream_end`` to a client that resumes at the stream's final offset.
+        """
+        if not self._pending:
+            return None
+        pending, start = self._pending, self._pending_offset
+        self._pending = b""
+        self._pending_offset = start + len(pending)
+        return start, pending.decode("utf-8", errors="replace")
+
 
 class _EventPump:
     """Turns SSE events into the message dicts CommandHandle consumes.
@@ -303,7 +326,12 @@ class _EventPump:
             if stream in self.offsets:
                 end = int(payload.get("offset") or 0)
                 self.offsets[stream] = max(self.offsets[stream], end)
+                yield from self._flush(stream)
         elif event == "exit":
+            # Also flushed here because exit is what ends the command; a stream
+            # whose end marker never arrived must not swallow its last bytes.
+            yield from self._flush(_STDOUT)
+            yield from self._flush(_STDERR)
             self.exited = True
             yield {"type": "exit", "exit_code": int(payload.get("exit_code", -1))}
         elif event == "ack_required":
@@ -314,6 +342,12 @@ class _EventPump:
             )
         elif event == "error":
             self._fail(payload)
+
+    def _flush(self, stream: str) -> Iterator[dict]:
+        flushed = self._decoders[stream].flush()
+        if flushed is not None:
+            at, text = flushed
+            yield {"type": stream, "data": text, "offset": at}
 
     def _fail(self, payload: dict) -> None:
         if payload.get("error_type") == "ServerShuttingDown":
@@ -510,13 +544,18 @@ def _sse_messages(
         url = dataplane_url + (_RESUME_PATH if resuming else _START_PATH)
         body = pump.resume_payload() if resuming else start_body
         assert body is not None
+        # Only output clears the retry budget. Every resumed response opens with
+        # "started", so crediting that would let a stream that delivers nothing
+        # else retry forever.
+        cursors = dict(pump.offsets)
 
         try:
             with http.stream("POST", url, **_stream_kwargs(body, headers)) as response:
                 _check_status(response, command_id=pump.command_id, resuming=resuming)
                 for event, raw in _iter_sse(response.iter_lines()):
                     for message in pump.feed(event, raw):
-                        attempt = 0
+                        if pump.offsets != cursors:
+                            attempt = 0
                         yield message
                     if pump.exited:
                         return
@@ -602,6 +641,7 @@ async def _asse_messages(
         url = dataplane_url + (_RESUME_PATH if resuming else _START_PATH)
         body = pump.resume_payload() if resuming else start_body
         assert body is not None
+        cursors = dict(pump.offsets)
 
         try:
             async with http.stream(
@@ -612,7 +652,8 @@ async def _asse_messages(
                 )
                 async for event, raw in _aiter_sse(response.aiter_lines()):
                     for message in pump.feed(event, raw):
-                        attempt = 0
+                        if pump.offsets != cursors:
+                            attempt = 0
                         yield message
                     if pump.exited:
                         return

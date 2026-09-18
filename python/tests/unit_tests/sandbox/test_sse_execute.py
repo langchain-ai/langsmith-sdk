@@ -122,6 +122,19 @@ class TestChunkDecoder:
         decoder = _ChunkDecoder()
         assert decoder.feed(0, b"a\xffb") == (0, "a�b")
 
+    def test_flush_emits_a_character_the_stream_never_completed(self):
+        decoder = _ChunkDecoder()
+        assert decoder.feed(0, b"ab\xc3") == (0, "ab")
+
+        assert decoder.flush() == (2, "�")
+
+    def test_flush_is_idempotent_and_empty_when_nothing_is_held(self):
+        decoder = _ChunkDecoder()
+        assert decoder.flush() is None
+        assert decoder.feed(0, b"\xc3") is None
+        assert decoder.flush() == (0, "�")
+        assert decoder.flush() is None
+
 
 class TestRun:
     def test_streams_output_and_exit(self, server: Server, sandbox):
@@ -255,6 +268,33 @@ class TestRun:
 
         with pytest.raises(SandboxOperationError, match="offset 5 is gone"):
             sandbox.run("x")
+
+    def test_trailing_partial_character_is_not_swallowed(self, server: Server, sandbox):
+        """A command whose last byte starts a character it never finishes."""
+        server.on(
+            START_PATH,
+            sse(
+                started(),
+                ("stdout", out(0, b"ab\xc3")),
+                ("stream_end", {"stream": "stdout", "offset": 3}),
+                ("exit", {"exit_code": 0}),
+            ),
+        )
+
+        assert sandbox.run("x").stdout == "ab�"
+
+    def test_acknowledgement_without_output_still_spends_the_budget(
+        self, server: Server, sandbox
+    ):
+        """A resume that only re-acknowledges must not retry forever."""
+        server.on(START_PATH, sse(started(), ("stdout", out(0, b"a"))))
+        server.on(RESUME_PATH, sse(started()))
+
+        with pytest.raises(SandboxConnectionError, match="without an exit|giving up"):
+            sandbox.run("x")
+
+        # Bounded by the retry budget rather than looping on the ack.
+        assert len(server.requests) <= 2 + 5
 
     def test_gives_up_after_repeated_truncated_streams(self, server: Server, sandbox):
         server.on(START_PATH, sse(started(), ("stdout", out(0, b"a"))))
