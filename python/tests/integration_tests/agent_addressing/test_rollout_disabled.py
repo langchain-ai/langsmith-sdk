@@ -21,6 +21,12 @@ from tests.integration_tests.agent_addressing.conftest import (
     Rejected,
 )
 
+REFUSED = Rejected(
+    reason="agent addressing is not enabled for this workspace",
+    remedy="Address the part by session_id, or by session_name on a run part",
+    status=403,
+)
+
 
 def _refusal_body(part: str, refused: Rejected) -> bytes:
     """The real body: status phrase, then the sentinel, then remedy and reason."""
@@ -73,11 +79,6 @@ def test_a_refused_workspace_loses_the_run_without_raising(
             lands_in=InAgent("STAGING"),
         )
     )
-    refused = Rejected(
-        reason="agent addressing is not enabled for this workspace",
-        remedy="Address the run by session_id or session_name",
-        status=403,
-    )
     sent: dict = {}
 
     @traceable
@@ -94,7 +95,7 @@ def test_a_refused_workspace_loses_the_run_without_raising(
     # Read lazily: the run id exists only after the call, the refusal only on
     # flush.
     _refuse_agent_addressing(
-        ls.client, monkeypatch, lambda: f"post.{sent.get('id')}", refused
+        ls.client, monkeypatch, lambda: f"post.{sent.get('id')}", REFUSED
     )
 
     assert traced_function(langsmith_extra={"client": ls.client}) == "ok"
@@ -107,4 +108,28 @@ def test_a_refused_workspace_loses_the_run_without_raising(
         "staging",
         None,
     )
-    ls.assert_rejected(refused)
+    ls.assert_rejected(REFUSED)
+
+
+def test_a_refused_workspace_loses_the_feedback_without_raising(
+    ls: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same for a feedback part, whose remedy names the part, not the run."""
+    run = ls.ingest(InAgent("STAGING"))
+    sent: dict = {}
+    _refuse_agent_addressing(
+        ls.client, monkeypatch, lambda: f"feedback.{sent.get('id')}", REFUSED
+    )
+
+    feedback = ls.client.create_feedback(
+        run.id,
+        key="quality",
+        score=1,
+        trace_id=run.trace_id,
+        agent_id=ls.agent_key,
+        agent_environment="staging",
+    )
+    sent["id"] = feedback.id
+    ls.client.flush()
+
+    ls.assert_feedback_landed(feedback.id, REFUSED)

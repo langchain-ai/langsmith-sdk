@@ -141,10 +141,12 @@ environment variables, despite the names.
 
 ## Inconsistencies, each pinned by a case
 
-1. `@traceable(project_name=X)` inside `tracing_context(agent_id=A)`: the agent
-   sits at the higher tier, and the SDK's stated rule is that the higher tier
-   wins, as with two projects. The project wins anyway, because each chain is
-   resolved on its own first. `context_agent_and_decorator_project`.
+1. `@traceable(project_name=X)` inside `tracing_context(agent_id=A)`: the
+   project wins whatever tier each came from, because each chain is resolved
+   on its own first. Commit `6157cfbc` says the higher tier wins; the code is
+   right and the message is wrong, since `evaluate()` names its experiment on
+   the call and must keep working under an ambient agent.
+   `context_agent_and_decorator_project`, `test_evaluate.py`.
 2. A child joins its parent's trace whatever it names: `create_child` copies
    the parent's addressing and ignores what `_setup_run` resolved for the
    child. `child_of_agent_root_with_extra_project`.
