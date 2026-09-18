@@ -53,6 +53,10 @@ from langsmith import run_helpers as rh
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import (
+    LangSmithBetaWarning,
+    _warn_once,
+)
+from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
 from langsmith._internal._multipart import MultipartPartsAndContext
@@ -7905,6 +7909,9 @@ def _clear_agent_addressing_caches() -> None:
     ls_utils.get_tracer_agent_id.cache_clear()
     ls_utils.get_tracer_agent_environment.cache_clear()
     ls_utils.get_tracer_project.cache_clear()
+    # The beta warning fires once per process, so without this the first test
+    # to address a run to an agent would silence every test after it.
+    _warn_once.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -8588,6 +8595,59 @@ def test_batch_create_completes_a_half_named_agent(
     assert post.get("agent_id") == "explicit"
     assert post.get("agent_environment") == "staging"
     assert "session_name" not in post
+
+
+class TestAgentAddressingWarnsOnce:
+    """The beta disclaimer has to reach a caller who never read a docstring.
+
+    Emitted where the addressing is settled, so it tracks runs that are
+    actually agent-addressed rather than an env var that may go unused.
+    """
+
+    def test_an_agent_addressed_run_warns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(
+            monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
+        )
+        payload: dict = {"session_name": None}
+        with pytest.warns(LangSmithBetaWarning, match="Agent addressing"):
+            Client._apply_agent_addressing(payload)
+        assert payload == {"agent_id": "ag", "agent_environment": "env"}
+
+    def test_a_project_addressed_run_stays_quiet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch, LANGSMITH_PROJECT="proj")
+        payload: dict = {"session_name": "proj"}
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LangSmithBetaWarning)
+            Client._apply_agent_addressing(payload)
+        assert payload == {"session_name": "proj"}
+
+    def test_a_patch_that_names_nothing_stays_quiet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An update never consults the environment, so it never warns."""
+        _clean_agent_env(
+            monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LangSmithBetaWarning)
+            Client._apply_agent_addressing({"session_name": None}, update=True)
+
+    def test_a_second_run_does_not_warn_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Once per process, not once per run -- a trace posts many."""
+        _clean_agent_env(
+            monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
+        )
+        with pytest.warns(LangSmithBetaWarning):
+            Client._apply_agent_addressing({"session_name": None})
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LangSmithBetaWarning)
+            Client._apply_agent_addressing({"session_name": None})
 
 
 def test_a_complete_pair_survives_a_second_transform() -> None:

@@ -35,6 +35,7 @@ from typing_extensions import ParamSpec
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith._openapi_client._httpx import httpx
 
 _LOGGER = logging.getLogger(__name__)
@@ -535,6 +536,29 @@ def is_agent_addressed(
     reporting the mistake.
     """
     return agent_id is not None or agent_environment is not None
+
+
+def warn_agent_addressing_is_beta() -> None:
+    """Warn the first time a run is actually addressed to an agent.
+
+    The docstrings say the feature is in beta, but a caller who reaches it
+    through an env var never read them, and the first sign of trouble would
+    otherwise be a 400 from a workspace without the flag. Emitted where the
+    addressing is settled rather than at client construction: a process that
+    configures an agent and never traces to one has nothing to hear about.
+
+    `_warn_once` caches on the message, so this fires once per process no
+    matter how many runs are addressed. The call site's depth varies by entry
+    point -- `create_run`, `update_run`, and the two batch methods all arrive
+    here through `_run_transform` -- so the warning points at the SDK rather
+    than guessing a `stacklevel` that would be wrong for most of them.
+    """
+    _warn_once(
+        "Agent addressing (`agent_id` / `agent_environment`) is in beta and is "
+        "enabled per workspace. A workspace without it rejects the run, so the "
+        "trace is lost rather than falling back to a project. The behavior may "
+        "change without notice."
+    )
 
 
 def resolve_addressing(
