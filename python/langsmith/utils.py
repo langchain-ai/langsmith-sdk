@@ -518,9 +518,13 @@ def get_tracer_agent_address() -> Optional[str]:
     neither addresses a project alone, and defaulting either would pick a
     target nobody named. A half-configured or misspelled pair is logged and
     ignored rather than raised, because it is read while a run is being traced.
+
+    Only the `LANGSMITH_` namespace is read. The `LANGCHAIN_` alternatives the
+    older settings carry exist for compatibility with a name that predates
+    LangSmith, which a setting introduced now has no reason to inherit.
     """
-    agent_id = get_env_var("AGENT_ID")
-    agent_environment = get_env_var("AGENT_ENVIRONMENT")
+    agent_id = get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
+    agent_environment = get_env_var("AGENT_ENVIRONMENT", namespaces=("LANGSMITH",))
     if not agent_id and not agent_environment:
         return None
     if not agent_id or not agent_environment:
