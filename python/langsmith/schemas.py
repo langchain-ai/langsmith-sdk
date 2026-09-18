@@ -538,7 +538,14 @@ class RunTypeEnum(str, Enum):
 
 
 class RunLikeDict(TypedDict, total=False):
-    """Run-like dictionary, for type-hinting."""
+    """Run-like dictionary, for type-hinting.
+
+    !!! warning "Experimental"
+        `agent_id` and `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the runs, so
+        tracing is lost rather than falling back to a project. Both keys may
+        change without notice.
+    """
 
     name: str
     run_type: RunTypeEnum
@@ -558,6 +565,8 @@ class RunLikeDict(TypedDict, total=False):
     id: Optional[UUID]
     session_id: Optional[UUID]
     session_name: Optional[str]
+    agent_id: Optional[str]
+    agent_environment: Optional[str]
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
