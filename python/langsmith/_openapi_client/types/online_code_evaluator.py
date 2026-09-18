@@ -1,11 +1,17 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from typing import Optional
+from typing import Dict, Optional
 from typing_extensions import Literal
 
 from .._models import BaseModel
 
-__all__ = ["OnlineCodeEvaluator"]
+__all__ = ["OnlineCodeEvaluator", "ManagedCodeEvaluatorSettings"]
+
+
+class ManagedCodeEvaluatorSettings(BaseModel):
+    is_enabled: Optional[bool] = None
+
+    key_name: Optional[str] = None
 
 
 class OnlineCodeEvaluator(BaseModel):
@@ -23,3 +29,7 @@ class OnlineCodeEvaluator(BaseModel):
 
     language: Optional[str] = None
     """Default: "python" """
+
+    managed_code_evaluator_key: Optional[str] = None
+
+    managed_code_evaluator_settings: Optional[Dict[str, ManagedCodeEvaluatorSettings]] = None

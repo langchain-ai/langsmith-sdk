@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Dict, Optional
 from typing_extensions import TypedDict
 
-__all__ = ["UpdateOnlineCodeEvaluatorRequestParam"]
+__all__ = ["UpdateOnlineCodeEvaluatorRequestParam", "ManagedCodeEvaluatorSettings"]
+
+
+class ManagedCodeEvaluatorSettings(TypedDict, total=False):
+    is_enabled: bool
+
+    key_name: str
 
 
 class UpdateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
@@ -16,3 +22,5 @@ class UpdateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
     dependencies: Optional[str]
 
     language: str
+
+    managed_code_evaluator_settings: Dict[str, ManagedCodeEvaluatorSettings]

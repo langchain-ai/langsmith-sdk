@@ -132,6 +132,20 @@ export interface CreateOnlineCodeEvaluatorRequest {
    * Default: "python"
    */
   language?: string;
+
+  managed_code_evaluator_key?: string;
+
+  managed_code_evaluator_settings?: {
+    [key: string]: CreateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
+  };
+}
+
+export namespace CreateOnlineCodeEvaluatorRequest {
+  export interface ManagedCodeEvaluatorSettings {
+    is_enabled?: boolean;
+
+    key_name?: string;
+  }
 }
 
 export interface CreateOnlineEvaluatorRequest {
@@ -186,6 +200,18 @@ export interface OnlineCodeEvaluator {
    * Default: "python"
    */
   language?: string;
+
+  managed_code_evaluator_key?: string;
+
+  managed_code_evaluator_settings?: { [key: string]: OnlineCodeEvaluator.ManagedCodeEvaluatorSettings };
+}
+
+export namespace OnlineCodeEvaluator {
+  export interface ManagedCodeEvaluatorSettings {
+    is_enabled?: boolean;
+
+    key_name?: string;
+  }
 }
 
 export interface OnlineEvaluator {
@@ -339,6 +365,18 @@ export interface UpdateOnlineCodeEvaluatorRequest {
   dependencies?: string | null;
 
   language?: string;
+
+  managed_code_evaluator_settings?: {
+    [key: string]: UpdateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
+  };
+}
+
+export namespace UpdateOnlineCodeEvaluatorRequest {
+  export interface ManagedCodeEvaluatorSettings {
+    is_enabled?: boolean;
+
+    key_name?: string;
+  }
 }
 
 export interface UpdateOnlineEvaluatorRequest {
