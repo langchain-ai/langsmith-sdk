@@ -8096,3 +8096,22 @@ def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         monkeypatch.undo()
         _reload()
+
+
+def test_has_project_uses_project_id_when_given() -> None:
+    """`project_id` must be forwarded, not silently ignored in favour of the name."""
+    client = Client(api_url="http://localhost:1984", api_key="test")
+    project_id = str(uuid.uuid4())
+    with patch.object(Client, "read_project") as mock_read_project:
+        assert client.has_project("some-name", project_id=project_id) is True
+    mock_read_project.assert_called_once_with(
+        project_id=project_id, project_name="some-name"
+    )
+
+
+def test_has_project_returns_false_when_not_found() -> None:
+    client = Client(api_url="http://localhost:1984", api_key="test")
+    with patch.object(
+        Client, "read_project", side_effect=ls_utils.LangSmithNotFoundError("nope")
+    ):
+        assert client.has_project("missing") is False
