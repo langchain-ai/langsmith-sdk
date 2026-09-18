@@ -209,6 +209,8 @@ class ThreadsResource(SyncAPIResource):
             ]
         ]
         | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -241,6 +243,12 @@ class ThreadsResource(SyncAPIResource):
               Properties not listed are omitted from each trace object; `trace_id` is always
               returned.
 
+          trace_filter: `trace_filter` narrows traces by applying a LangSmith filter expression to each
+              trace's root run.
+
+          tree_filter: `tree_filter` narrows traces to those containing at least one run that matches
+              the LangSmith filter expression.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -266,6 +274,8 @@ class ThreadsResource(SyncAPIResource):
                         "filter": filter,
                         "page_size": page_size,
                         "selects": selects,
+                        "trace_filter": trace_filter,
+                        "tree_filter": tree_filter,
                     },
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
@@ -626,6 +636,8 @@ class AsyncThreadsResource(AsyncAPIResource):
             ]
         ]
         | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -658,6 +670,12 @@ class AsyncThreadsResource(AsyncAPIResource):
               Properties not listed are omitted from each trace object; `trace_id` is always
               returned.
 
+          trace_filter: `trace_filter` narrows traces by applying a LangSmith filter expression to each
+              trace's root run.
+
+          tree_filter: `tree_filter` narrows traces to those containing at least one run that matches
+              the LangSmith filter expression.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -683,6 +701,8 @@ class AsyncThreadsResource(AsyncAPIResource):
                         "filter": filter,
                         "page_size": page_size,
                         "selects": selects,
+                        "trace_filter": trace_filter,
+                        "tree_filter": tree_filter,
                     },
                     thread_list_traces_params.ThreadListTracesParams,
                 ),

@@ -68,3 +68,15 @@ class ThreadListTracesParams(TypedDict, total=False):
     Properties not listed are omitted from each trace object; `trace_id` is always
     returned.
     """
+
+    trace_filter: str
+    """
+    `trace_filter` narrows traces by applying a LangSmith filter expression to each
+    trace's root run.
+    """
+
+    tree_filter: str
+    """
+    `tree_filter` narrows traces to those containing at least one run that matches
+    the LangSmith filter expression.
+    """

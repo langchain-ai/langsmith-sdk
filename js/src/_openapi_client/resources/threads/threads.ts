@@ -1066,6 +1066,18 @@ export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
     | 'ERROR_PREVIEW'
     | 'TURN_NUMBER'
   >;
+
+  /**
+   * `trace_filter` narrows traces by applying a LangSmith filter expression to each
+   * trace's root run.
+   */
+  trace_filter?: string;
+
+  /**
+   * `tree_filter` narrows traces to those containing at least one run that matches
+   * the LangSmith filter expression.
+   */
+  tree_filter?: string;
 }
 
 export interface ThreadQueryParams extends ItemsCursorPostPaginationParams {
