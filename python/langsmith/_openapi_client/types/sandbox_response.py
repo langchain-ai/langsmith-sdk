@@ -65,7 +65,7 @@ __all__ = [
 
 class AccessDelegation(BaseModel):
     """
-    AccessDelegation is the LangSmith access this sandbox was granted, absent when it has none. Either mode can appear: a grant is reported as requested, except that INHERIT requested by a creator who is itself delegated is stored as EXPLICIT carrying that creator's own ceiling, so the value always describes what this sandbox can reach rather than what was asked for.
+    AccessDelegation is the LangSmith access this sandbox was granted, absent when it has none. It is reported exactly as it was requested at create.
     """
 
     mode: Literal["INHERIT", "EXPLICIT"]
@@ -605,10 +605,7 @@ class SandboxResponse(BaseModel):
     access_delegation: Optional[AccessDelegation] = None
     """
     AccessDelegation is the LangSmith access this sandbox was granted, absent when
-    it has none. Either mode can appear: a grant is reported as requested, except
-    that INHERIT requested by a creator who is itself delegated is stored as
-    EXPLICIT carrying that creator's own ceiling, so the value always describes what
-    this sandbox can reach rather than what was asked for.
+    it has none. It is reported exactly as it was requested at create.
     """
 
     cpu_millicores: Optional[int] = None
