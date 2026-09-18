@@ -118,6 +118,16 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
     """Warning for missing API key."""
 
 
+class LangSmithWorkspaceEndpointWarning(LangSmithWarning):
+    """Warning when a workspace is configured but the endpoint defaulted.
+
+    A workspace lives in a single region/endpoint. If a workspace is pinned but
+    no endpoint is configured, the client silently falls back to the default US
+    endpoint and may connect to a different accessible tenant, returning
+    correct-looking data from the wrong workspace.
+    """
+
+
 def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
     # Access global fallbacks via context module to avoid stale references.

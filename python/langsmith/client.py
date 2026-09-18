@@ -740,6 +740,38 @@ def _validate_api_key_if_hosted(
             )
 
 
+def _warn_if_workspace_without_endpoint(
+    workspace_id: Optional[str],
+    explicit_api_url: Optional[str],
+    resolved_api_url: str,
+) -> None:
+    """Warn when a workspace is pinned but no endpoint was configured.
+
+    A workspace lives behind a single endpoint/region. When a workspace is
+    expected but no endpoint is set (``explicit_api_url is None``), the client
+    silently falls back to the default US endpoint. If the workspace lives in
+    another region the credentials may still resolve to a different accessible
+    tenant, so reads succeed but return data from the wrong workspace with no
+    error. Surface this loudly so it can be caught at configuration time.
+
+    Args:
+        workspace_id: The workspace expectation, if any.
+        explicit_api_url: The endpoint explicitly provided via argument, env
+            var, or profile (``None`` means it defaulted).
+        resolved_api_url: The endpoint the client actually resolved to.
+    """
+    if workspace_id and explicit_api_url is None:
+        warnings.warn(
+            f"A workspace is configured (workspace_id={workspace_id!r}) but no "
+            "LangSmith endpoint was set, so the client defaulted to "
+            f"{resolved_api_url!r}. If this workspace lives in another region, "
+            "set LANGSMITH_ENDPOINT (or pass api_url) before creating the client. "
+            "Call client.validate_workspace() to fail loudly on a mismatch.",
+            ls_utils.LangSmithWorkspaceEndpointWarning,
+            stacklevel=3,
+        )
+
+
 def _format_feedback_score(score: Union[float, int, bool, None]):
     """Format a feedback score by truncating numerical values to 4 decimal places.
 
@@ -1325,6 +1357,9 @@ class Client:
                 tracing_mode=resolved_mode,
             )
             self._write_api_urls = {self.api_url: self.api_key}
+            _warn_if_workspace_without_endpoint(
+                self._workspace_id, api_url_, self.api_url
+            )
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -1912,18 +1947,58 @@ class Client:
 
         return self._info
 
-    def _get_settings(self) -> ls_schemas.LangSmithSettings:
-        """Get the settings for the current tenant.
-
-        Returns:
-            The settings for the current tenant.
-        """
+    def get_current_workspace(self) -> ls_schemas.LangSmithSettings:
+        """Get the workspace selected by the client's endpoint and credentials."""
         if self._settings is None:
             response = self.request_with_retries("GET", "/settings")
             ls_utils.raise_for_status_with_text(response)
             self._settings = ls_schemas.LangSmithSettings(**response.json())
 
         return self._settings
+
+    def _get_settings(self) -> ls_schemas.LangSmithSettings:
+        """Get the settings for the current tenant."""
+        return self.get_current_workspace()
+
+    def validate_workspace(
+        self, expected_workspace_id: Optional[str] = None
+    ) -> ls_schemas.LangSmithSettings:
+        """Fail loudly if the client is not connected to the expected workspace.
+
+        The endpoint and workspace are resolved when the client is created. A
+        misconfigured endpoint/region can silently connect to a different
+        accessible tenant and return correct-looking data from the wrong
+        workspace. Call this before reading data to turn that silent mismatch
+        into an explicit error.
+
+        Args:
+            expected_workspace_id: The workspace ID you expect to be connected
+                to. Defaults to the client's configured ``workspace_id`` (from
+                the ``workspace_id`` argument or ``LANGSMITH_WORKSPACE_ID``).
+
+        Returns:
+            The resolved workspace settings when they match the expectation.
+
+        Raises:
+            LangSmithUserError: If no expectation is available, or if the
+                connected workspace does not match the expected one.
+        """
+        expected = expected_workspace_id or self._workspace_id
+        if not expected:
+            raise ls_utils.LangSmithUserError(
+                "validate_workspace() requires an expected workspace ID. Pass "
+                "expected_workspace_id, set the workspace_id argument, or set the "
+                "LANGSMITH_WORKSPACE_ID environment variable."
+            )
+        workspace = self.get_current_workspace()
+        if str(workspace.id) != str(expected):
+            raise ls_utils.LangSmithUserError(
+                f"LangSmith workspace mismatch: expected workspace {expected!r} "
+                f"but connected to {workspace.id!r} via {self.api_url!r}. Check "
+                "LANGSMITH_ENDPOINT / api_url and LANGSMITH_WORKSPACE_ID / "
+                "workspace_id."
+            )
+        return workspace
 
     def _content_above_size(self, content_length: Optional[int]) -> Optional[str]:
         if content_length is None or self._info is None:
