@@ -240,7 +240,11 @@ class AsyncClient:
             else env_workspace_id or profile_config.workspace_id
         )
         api_key = ls_utils.get_api_key(api_key_)
+        api_url_source = ls_client._api_url_source(
+            api_url, env_api_url, profile_config.api_url
+        )
         api_url = ls_utils.get_api_url(api_url_)
+        logger.debug("LangSmith API URL %s resolved from %s", api_url, api_url_source)
         self._workspace_id = ls_utils.get_workspace_id(workspace_id_)
         self._profile_auth = None
         self._profile_auth_headers = {}
