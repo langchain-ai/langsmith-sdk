@@ -2,24 +2,6 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
-## Internal sync/async effects
-
-File HTTP operations and snapshot workflows share generator programs in
-`_sandbox_effects.py` and `_client_effects.py`. Inspired by
-[Effect's generators](https://effect.website/docs/getting-started/using-generators/),
-they describe deferred I/O with `yield from Call(lambda: ...)`. The sync facade
-uses `run_sync`; the async facade uses `await run_async` with native async HTTP
-and sleep implementations. The interpreter needs no worker threads or nested
-event loops; Docker build-context packing retains its existing thread offload.
-
-The private `_effects.py` interpreter sends results and throws failures back into
-the generator, preserving ordinary `try`/`except`/`finally`, including cleanup on
-cancellation. `run_sync` rejects awaitables rather than silently blocking on them.
-Programs are single-use; create a fresh generator for each execution. This is a
-small Effect-inspired example, not a port of Effect's typed error channels,
-fibers, dependency injection, or structured concurrency. WebSocket streaming,
-tunnels, and sandbox provisioning remain separate sync/async implementations.
-
 ## Quick Start
 
 ```python
