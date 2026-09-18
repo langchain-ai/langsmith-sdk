@@ -23,9 +23,8 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 
 ## FAQ
 
-- **A test fails. Is that expected?** A few do, on purpose. Each one's comment
-  starts with `KNOWN FAILURE` and says which bug it pins. Nothing else should
-  fail.
+- **A test fails. Is that expected?** One does, on purpose. Its comment starts
+  with `KNOWN FAILURE` and says which bug it pins. Nothing else should fail.
 - **Why won't it run against production?** Every test creates an agent and
   four tracing projects. Use dev or a local LangSmith.
 - **Does it clean up after itself?** It tries, and logs what it cannot remove.
@@ -46,8 +45,9 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 
 ## TODO
 
-- **Fix the SDK**: `LANGSMITH_PROJECT` plus `LANGSMITH_AGENT_ID` should get a
-  400, not silently pick the agent. One test pins today's behavior.
+- **Fix the SDK**: an agent named at a higher tier (`tracing_context`) should
+  beat a project named at a lower one (`@traceable(project_name=)`), as two
+  projects would. `context_agent_and_decorator_project` pins it.
 - **Bring back `test_create_feedback.py`**, removed on 2026-09-17. It had five
   cases and passed. Two questions first: does `create_feedback` read the agent
   env vars, and does a resolved pair actually decide where feedback is written?
@@ -59,8 +59,6 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
   `Harness.agents_url` and its hand-built `/api/v1` prefix. These routes are
   `x-internal`, so they may never be public; the suite then needs another way
   to read back where a run landed.
-- **Decide whether `@traceable(agent_id=, agent_environment=)` is wanted.**
-  `decorator_agent` in `test_traceable.py` assumes yes; delete it if not.
 - **Add the missing files**: `test_trace.py`, `test_run_tree.py` (including
   replicas and the baggage hop), `test_legacy_endpoints.py`. Then cassettes
   and a cross-check of the langchainplus Go tests. For the baggage hop: on the

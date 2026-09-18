@@ -39,7 +39,7 @@ Python SDK: the only project-shaped names read are the five above.
 |---|---|
 | `project_name` | Explicit project. Loses to the context var and to the parent run. |
 | `client` | Which client flushes. `Client` itself carries no addressing. |
-| `agent_id` / `agent_environment` | TO-BE-FIXED: not accepted. Today the only way to address a `@traceable` run to an agent in code is `tracing_context` or a parent that is already addressed. |
+| `agent_id` / `agent_environment` | Explicit agent, at the same tier as `project_name`. |
 
 ## Invocation-time `langsmith_extra={...}`
 
@@ -51,7 +51,7 @@ Python SDK: the only project-shaped names read are the five above.
 | `replicas` | Per-replica addressing, below. |
 | `client` | As above. |
 | `config` | An ordinary kwarg, not part of `langsmith_extra`: a LangChain `RunnableConfig` becomes the parent through `RunTree.from_runnable_config`, carrying the LangChain tracer's project. |
-| `agent_id` / `agent_environment` | TO-BE-FIXED: not accepted. |
+| `agent_id` / `agent_environment` | Explicit agent, at the same tier as `project_name`. |
 | `config` carrying an agent | TO-BE-FIXED: `RunTree.from_runnable_config` reads the LangChain tracer's project only, so a LangChain parent can never hand down an agent. |
 
 ## Context and globals
@@ -60,10 +60,10 @@ Python SDK: the only project-shaped names read are the five above.
 |---|---|
 | `tracing_context(project_name=, agent_id=, agent_environment=, parent=, replicas=, client=)` | The `_PROJECT_NAME`, `_AGENT_ID`, `_AGENT_ENVIRONMENT` and `_REPLICAS` context vars. Raises `LangSmithUserError` when a project and an agent are passed in the same call. |
 | `ls.configure(project_name=)` | `_PROJECT_NAME` and `_GLOBAL_PROJECT_NAME`. |
-| `ls.configure(agent_id=, agent_environment=)` | TO-BE-FIXED: no agent parameter, so a process-wide agent can only come from the environment. |
+| `ls.configure(agent_id=, agent_environment=)` | `_GLOBAL_AGENT_ID` / `_GLOBAL_AGENT_ENVIRONMENT`, the same tier as its `project_name`. |
 | An enclosing `@traceable` | Its own `_setup_run` sets all three context vars for its children. |
 | An enclosing `with trace(project_name=, parent=)` | The same context vars, resolved by `_get_addressing` rather than `_setup_run`. |
-| `with trace(agent_id=, agent_environment=)` | TO-BE-FIXED: not accepted, the same gap as `@traceable`. |
+| `with trace(agent_id=, agent_environment=)` | The same context vars, resolved by `_get_addressing`. |
 | A parent `RunTree`, through `create_child` | Copies `session_name`, `agent_id` and `agent_environment` verbatim. |
 
 ## Replicas
@@ -105,22 +105,26 @@ but not on patches.
 From `run_helpers._setup_run`:
 
 ```
-explicit_project = _PROJECT_NAME cv          # outer traceable / tracing_context / configure
-                or parent_run.session_name
-                or langsmith_extra["project_name"]
-                or @traceable(project_name=)
-                or _GLOBAL_PROJECT_NAME
-agent_id        = _AGENT_ID cv or parent_run.agent_id or LANGSMITH_AGENT_ID
-agent_env       = _AGENT_ENVIRONMENT cv or parent_run.agent_environment or LANGSMITH_AGENT_ENVIRONMENT
+project   = _PROJECT_NAME cv or parent.session_name or langsmith_extra["project_name"]
+            or @traceable(project_name=) or _GLOBAL_PROJECT_NAME
+agent_id  = _AGENT_ID cv or parent.agent_id or langsmith_extra["agent_id"]
+            or @traceable(agent_id=) or _GLOBAL_AGENT_ID
+agent_env = the same chain for the environment
 
-if explicit_project is None and agent_id:  agent-addressed, no project
-else:                                      project = explicit_project or get_tracer_project()
-                                           agent pair dropped, silently
+utils.resolve_addressing(project, agent_id, agent_env):
+  project named in code           -> project alone, whatever tier the agent came from
+  agent named in code             -> agent alone, half a pair completed from the env
+  agent in the env only           -> agent, plus any *configured* env project (not "default")
+                                     so the endpoint answers 400 on the pair
+  nothing                         -> get_tracer_project()
 ```
 
-The `RunTree` validator then re-runs `resolve_agent_addressing` against the
-environment, and `Client.create_run` runs `_reject_conflicting_addressing`
-followed by its own `_apply_agent_addressing`.
+Each chain picks its own winner before `resolve_addressing` compares them, so a
+project always beats an agent named in code, whichever tier each came from.
+The `RunTree` validator keeps values that already carry an agent and completes
+a half pair from the environment; `Client.create_run` rejects a project and an
+agent named in the same call, then `_apply_agent_addressing` forwards whatever
+travels together.
 
 ## OTel span attributes
 
@@ -135,24 +139,24 @@ The `LANGSMITH_SESSION_ID` / `LANGSMITH_SESSION_NAME` constants in
 `_internal/otel/_otel_exporter.py` hold these attribute keys. They are not
 environment variables, despite the names.
 
-## Inconsistencies to pin with a case each
+## Inconsistencies, each pinned by a case
 
-1. With only `LANGSMITH_AGENT_ENVIRONMENT` set, `_setup_run` tests
-   `selected_agent_id` alone and falls back to `default` in silence, while
-   `trace()` and `RunTree` use `is_agent_addressed`, which accepts either half,
-   and send the run for the endpoint to refuse with a 400. One configuration,
-   two outcomes, decided by the entry point.
-2. `@traceable(project_name=X)` inside `tracing_context(agent_id=A)`: no
-   conflict check spans the two, so the project wins and the agent is dropped
-   without a word. The same holds for `langsmith_extra={"project_name"}` inside
-   `tracing_context(agent_id=)`, and for `ls.configure(project_name=)` beside
-   an agent in the environment.
-3. `LANGSMITH_PROJECT` beside `LANGSMITH_AGENT_ID`: the bug already pinned in
-   `test_create_update_run.py`, reachable from this path too. An environment
-   project is not "explicit", so the agent wins.
-4. A child of an agent-addressed root that passes
-   `langsmith_extra={"project_name": ...}` lands in that project, because the
-   inherited context var is `None` and the inner explicit project wins over the
-   inherited agent. Intended or not, it should be pinned.
-5. `trace()` and `@traceable` resolve through two different functions, so every
+1. `@traceable(project_name=X)` inside `tracing_context(agent_id=A)`: the agent
+   sits at the higher tier, and the SDK's stated rule is that the higher tier
+   wins, as with two projects. The project wins anyway, because each chain is
+   resolved on its own first. `context_agent_and_decorator_project`.
+2. A child joins its parent's trace whatever it names: `create_child` copies
+   the parent's addressing and ignores what `_setup_run` resolved for the
+   child. `child_of_agent_root_with_extra_project`.
+3. `trace()` and `@traceable` resolve through two different functions, so every
    case worth having should run through both.
+4. `_get_parent_run` hands `from_headers` and `from_dotted_order` a
+   `project_name` that defaults to `"default"`, so on the `@traceable` path a
+   baggage agent is always ignored and a dotted-order parent drops an env
+   agent in silence. Not yet pinned: distributed tracing is a later file.
+
+Fixed since first written, kept green by a case each: a lone
+`LANGSMITH_AGENT_ENVIRONMENT` reaching the endpoint (`env_environment_only`),
+an env project beside an env agent travelling together
+(`env_agent_and_env_project`, `env_agent_and_hosted_project`), and the
+decorator's agent arguments (`decorator_agent`).

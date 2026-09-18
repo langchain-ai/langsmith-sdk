@@ -266,23 +266,17 @@ class Harness:
         """An agent as the API reports it, or None.
 
         Defaults to this test's key. The legacy path registers an agent under
-        the *project* name instead, hence the argument.
+        the *project* name instead, hence the argument. Read by key: the list
+        route's `agent_key` filter is not honored and returns every agent.
         """
         try:
             response = self.client.request_with_retries(
-                "GET", self.agents_url(), params={"agent_key": key or self.agent_key}
+                "GET", self.agents_url(f"/{key or self.agent_key}")
             )
-        except ls_utils.LangSmithNotFoundError as error:
-            # A key with no agent is an empty list, so a 404 means the route
-            # itself is missing. Raised, so the caller fails now instead of
-            # polling for a route that will not appear.
-            raise AssertionError(
-                f"No agent API at {self.agents_url()}. This deployment predates"
-                f" agent addressing, or does not serve it: {error}"
-            ) from error
+        except ls_utils.LangSmithNotFoundError:
+            return None
         ls_utils.raise_for_status_with_text(response)
-        items = response.json().get("items") or []
-        return items[0] if items else None
+        return response.json()
 
     def agent_project_id(self, environment: str) -> Optional[uuid.UUID]:
         """The tracing project bound to (this test's agent, `environment`)."""
@@ -320,10 +314,10 @@ class Harness:
         different projects before, so checking the create alone says half.
         """
         if isinstance(destination, Rejected):
-            self.assert_rejected(destination)
+            self.assert_rejected(destination, run_id)
             return None
 
-        expected = self._expected_project(destination)
+        expected = self._expected_project(destination, run_id)
         assert not self.errors, f"the SDK reported ingestion errors: {self.errors}"
         run = _wait_for(
             lambda: self._read_run(run_id, expected, patched=patched),
@@ -347,14 +341,21 @@ class Harness:
                 f"the child's parent is {child.parent_run_id}, not the root {ids.root}"
             )
 
-    def assert_rejected(self, rejected: Rejected) -> None:
-        """Assert the endpoint refused this, said why, logged it, created nothing."""
+    def assert_rejected(
+        self, rejected: Rejected, run_id: Optional[uuid.UUID] = None
+    ) -> None:
+        """Assert the endpoint refused this, said why, logged it, created nothing.
+
+        `run_id` only improves the failure message: it says where the run went
+        instead.
+        """
         wanted = (str(rejected.status), rejected.reason, rejected.remedy)
         reported = [str(error) for error in self.errors]
         assert reported, (
             "the endpoint accepted what it should have refused with"
             f" {rejected.status} {rejected.reason!r}, since the SDK reported"
             " no error at all"
+            + (f"; {self._describe_run(run_id)}" if run_id is not None else "")
         )
         assert any(all(part in error for part in wanted) for error in reported), (
             f"expected the reported error to carry {wanted}; got {reported}"
@@ -374,20 +375,26 @@ class Harness:
             f"a rejected run must not create an agent, but {self.agent_key!r} exists"
         )
 
-    def _expected_project(self, destination: Destination) -> uuid.UUID:
+    def _expected_project(
+        self, destination: Destination, run_id: uuid.UUID
+    ) -> uuid.UUID:
+        where = lambda: self._describe_run(run_id)  # noqa: E731 - for the message
         if isinstance(destination, InProject):
             # Before the wait below, because it is the faster and more specific
             # failure when a payload reached the agent anyway.
             self._assert_no_agent_created()
             name = self.format(destination.name)
             return _wait_for(
-                lambda: self.project_id(name), what=f"project {name!r} to exist"
+                lambda: self.project_id(name),
+                what=f"project {name!r} to exist",
+                on_timeout=where,
             )
         assert isinstance(destination, InAgent)
         return _wait_for(
             lambda: self.agent_project_id(destination.environment),
             what=f"agent {self.agent_key!r} to have a"
             f" {destination.environment} project",
+            on_timeout=where,
         )
 
     def _assert_no_agent_created(self) -> None:
@@ -420,11 +427,22 @@ class Harness:
 
     def _describe_run(self, run_id: uuid.UUID) -> str:
         """Where the run actually went, for the failure message."""
+
+        def read() -> Optional[ls_schemas.Run]:
+            try:
+                return self.client.read_run(run_id)
+            except ls_utils.LangSmithNotFoundError:
+                return None
+
         try:
-            run = self.client.read_run(run_id)
+            run = _wait_for(read, what="the run to be ingested anywhere", timeout=30)
+            name = self.client.read_project(project_id=run.session_id).name
         except Exception as error:  # noqa: BLE001 - diagnostics only
-            return f"could not read the run to say where it landed: {error}"
-        return f"the run is in project {run.session_id} with end_time {run.end_time!r}"
+            return f"could not say where the run landed: {error}"
+        return (
+            f"the run is in project {name!r} ({run.session_id}) with end_time"
+            f" {run.end_time!r}"
+        )
 
     # -- teardown ----------------------------------------------------------
 

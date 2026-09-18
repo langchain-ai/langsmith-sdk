@@ -37,14 +37,9 @@ CASES = [
         kwargs={"project_name": PROJECT},
         lands_in=InProject(PROJECT),
     ),
-    # KNOWN FAILURE, on purpose. Setting `LANGSMITH_PROJECT` and
-    # `LANGSMITH_AGENT_ID` together is a misconfiguration the design doc says
-    # the endpoint answers with a 400, so the user is told which of the two to
-    # drop. The SDK instead reads `LANGSMITH_PROJECT` through the same default
-    # that agent addressing suppresses, so the project loses and nothing is
-    # reported: a customer who adds `LANGSMITH_AGENT_ID` to existing tracing
-    # has their traces moved without being asked. The fix is for the SDK to
-    # forward both and let the endpoint answer, rather than to pick one.
+    # Both from the environment, the same tier: the SDK forwards both and the
+    # endpoint says which to drop. It used to pick the agent in silence, moving
+    # a customer's traces without asking.
     Case(
         "env_agent_and_env_project",
         env={
@@ -157,9 +152,9 @@ def test_an_unknown_agent_is_created_with_every_environment(ls: Harness) -> None
 
     agent = ls.agent()
     assert agent is not None
-    assert agent["agent_key"] == ls.agent_key
     # An ingestion-created agent is EXTERNAL, and has no name to take but its
     # own key.
+    assert agent["id"] == ls.agent_key
     assert agent["name"] == ls.agent_key
     assert agent["source_type"] == "EXTERNAL"
     environments = {
