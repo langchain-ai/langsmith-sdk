@@ -289,15 +289,19 @@ def test_client_logs_where_api_url_came_from(
 
     with caplog.at_level(logging.DEBUG, logger="langsmith.client"):
         Client(api_key="123")
-    assert "https://api.smith.langchain.com" in caplog.text
-    assert "built-in default" in caplog.text
+    assert (
+        "LangSmith API URL https://api.smith.langchain.com "
+        "resolved from built-in default"
+    ) in caplog.messages
 
     caplog.clear()
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://eu.api.smith.langchain.com")
     with caplog.at_level(logging.DEBUG, logger="langsmith.client"):
         Client(api_key="123")
-    assert "https://eu.api.smith.langchain.com" in caplog.text
-    assert "environment variable" in caplog.text
+    assert (
+        "LangSmith API URL https://eu.api.smith.langchain.com resolved from "
+        "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
+    ) in caplog.messages
 
 
 def test_profile_config_loads_api_key_and_workspace(
