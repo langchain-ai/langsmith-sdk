@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import warnings
 from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
@@ -459,6 +460,142 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
                 "SESSION", default="default" if return_default_value else None
             ),
         ),
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def get_tracer_agent_environment() -> Optional[str]:
+    """Get the agent environment for a LangSmith tracer.
+
+    Experimental: in beta and enabled per workspace. A workspace without
+    agent addressing rejects the runs, so tracing is lost rather than falling
+    back to a project.
+
+    Must be one of ``local``, ``development``, ``staging`` or ``production``
+    -- matched case-insensitively, surrounding space ignored. The endpoint
+    rejects anything else rather than defaulting it, so a near miss like
+    ``prod`` fails the whole batch.
+
+    Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
+    variables there is no legacy ``LANGCHAIN_`` alias: the legacy namespace is
+    not taking new members. There is also no default -- an agent-addressed run
+    must name its environment.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    return get_env_var("AGENT_ENVIRONMENT", namespaces=("LANGSMITH",))
+
+
+@functools.lru_cache(maxsize=1)
+def get_tracer_agent_id() -> Optional[str]:
+    """Get the agent ID for a LangSmith tracer.
+
+    Experimental: in beta and enabled per workspace. A workspace without
+    agent addressing rejects the runs, so tracing is lost rather than falling
+    back to a project.
+
+    Must be 1 to 255 characters.
+
+    Read from ``LANGSMITH_AGENT_ID`` only -- there is no legacy ``LANGCHAIN_``
+    alias, since that namespace is not taking new members. This is an agent
+    identifier, not a credential: the server resolves the agent by this ID and
+    creates one if it doesn't exist yet. When unset the run is addressed by
+    project instead.
+
+    Read once per process and cached; call ``.cache_clear()`` to re-read.
+    """
+    return get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
+
+
+def resolve_agent_addressing(
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Fill each half of the agent pair from its env var unless given.
+
+    An explicitly provided value is left alone, including when the other half
+    comes from the environment -- that combination is a complete pair.
+    """
+    return (
+        agent_id if agent_id is not None else get_tracer_agent_id(),
+        agent_environment
+        if agent_environment is not None
+        else get_tracer_agent_environment(),
+    )
+
+
+def is_agent_addressed(
+    agent_id: Optional[str], agent_environment: Optional[str]
+) -> bool:
+    """Whether a run is addressed by agent rather than by project.
+
+    Either half is enough. A lone ``agent_environment`` is incomplete and the
+    endpoint rejects it, but it must not fall through to a project the caller
+    never named -- that would quietly send the run somewhere else instead of
+    reporting the mistake.
+    """
+    return agent_id is not None or agent_environment is not None
+
+
+def resolve_addressing(
+    project: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Settle a run's single destination, as `(project, agent_id, environment)`.
+
+    The arguments are the values named in code -- a parameter, a context
+    variable, a parent run, `ls.configure`. The environment fills in below
+    them, so callers pass their own chain of code-level tiers and leave the
+    env vars to this function.
+
+    Code beats the environment in both directions: a project named in code
+    drops the ambient agent, and an agent named in code drops the ambient
+    project. Half an agent named in code is completed from the environment
+    rather than competing with it.
+
+    When only the environment addresses the run, both modes travel and the
+    endpoint refuses the pair -- there is no tier to choose between, and
+    picking one would move the caller's traces without telling them. Only the
+    `default` project the SDK would otherwise invent is suppressed.
+    """
+    if project is not None:
+        return project, None, None
+    if is_agent_addressed(agent_id, agent_environment):
+        return None, *resolve_agent_addressing(agent_id, agent_environment)
+    env_agent_id = get_tracer_agent_id()
+    env_agent_environment = get_tracer_agent_environment()
+    if is_agent_addressed(env_agent_id, env_agent_environment):
+        return (
+            get_tracer_project(return_default_value=False),
+            env_agent_id,
+            env_agent_environment,
+        )
+    return get_tracer_project(), None, None
+
+
+def warn_on_agent_and_project_env() -> None:
+    """Warn when the environment configures both an agent and a project.
+
+    Both go out on the payload and the endpoint answers 400, so the run is
+    lost either way; this says which variable to unset. Emitted at client
+    construction rather than per run, so it is seen once instead of drowned
+    out by the background flush's warnings.
+    """
+    agent_id = get_tracer_agent_id()
+    if agent_id is None:
+        return
+    project = get_tracer_project(return_default_value=False)
+    if project is None:
+        return
+    warnings.warn(
+        f"LANGSMITH_AGENT_ID ({agent_id!r}) and a configured project "
+        f"({project!r}) both address runs, and the API accepts only one. "
+        "Unset LANGSMITH_AGENT_ID to trace to the project, or unset "
+        "LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / LANGCHAIN_SESSION) to "
+        "trace to the agent.",
+        LangSmithWarning,
+        stacklevel=3,
     )
 
 

@@ -212,6 +212,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
+        ls_utils.warn_on_agent_and_project_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -607,16 +608,49 @@ class AsyncClient:
         revision_id: Optional[ls_client.ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
-        """Create a run."""
+        """Create a run.
+
+        !!! warning "Experimental"
+            `agent_id` / `agent_environment` address the run to an agent
+            instead of a project. Agent addressing is in beta and enabled per
+            workspace; a workspace without it rejects the run, so the trace is
+            lost rather than falling back to a project. Both may change
+            without notice.
+        """
+        # Only `project_name`, this method's own parameter, counts as a caller
+        # naming a project; `session_name` and `session_id` arrive in `kwargs`
+        # as part of an already-resolved run body.
+        ls_client._reject_conflicting_addressing(
+            project=project_name,
+            agent_id=kwargs.get("agent_id"),
+            agent_environment=kwargs.get("agent_environment"),
+        )
+        if (
+            kwargs.get("session_name") is not None
+            or kwargs.get("session_id") is not None
+        ):
+            # Already addressed by an incoming run body; leave it alone.
+            session_name = project_name
+        else:
+            (
+                session_name,
+                kwargs["agent_id"],
+                kwargs["agent_environment"],
+            ) = ls_utils.resolve_addressing(
+                project_name,
+                kwargs.get("agent_id"),
+                kwargs.get("agent_environment"),
+            )
         run_create = {
             "name": name,
             "id": kwargs.get("id") or uuid.uuid4(),
             "inputs": inputs,
             "run_type": run_type,
-            "session_name": project_name or ls_utils.get_tracer_project(),
+            "session_name": session_name,
             "revision_id": revision_id,
             **kwargs,
         }
+        ls_client.Client._apply_agent_addressing(run_create)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )
@@ -628,6 +662,7 @@ class AsyncClient:
     ) -> None:
         """Update a run."""
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
+        ls_client.Client._apply_agent_addressing(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
             f"/runs/{ls_client._as_uuid(run_id)}",
