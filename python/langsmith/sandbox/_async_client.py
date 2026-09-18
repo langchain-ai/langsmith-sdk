@@ -4,29 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import os
-import posixpath
-import uuid
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import AsyncLangsmith
 from langsmith._openapi_client._httpx import httpx
+from langsmith.sandbox import _client_effects as client_effects
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,
     _box_url,
     _make_docker_context_tar,
     _make_dockerfile_build_command,
-    _quote_path_segment,
-    _quote_reference_segment,
     _resolve_dockerfile_context,
 )
+from langsmith.sandbox._effects import run_async
 from langsmith.sandbox._exceptions import (
-    ResourceCreationError,
     ResourceNameConflictError,
     ResourceNotFoundError,
-    ResourceTimeoutError,
     SandboxAPIError,
 )
 from langsmith.sandbox._helpers import (
@@ -675,19 +671,9 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "status")
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return ResourceStatus.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
+        return await run_async(
+            client_effects.get_sandbox_status(self, name, headers=headers)
+        )
 
     async def service(
         self,
@@ -841,26 +827,16 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        import time
-
-        deadline = time.monotonic() + timeout
-        while True:
-            status = await self.get_sandbox_status(name, headers=headers)
-            if status.status == "ready":
-                return await self.get_sandbox(name, headers=headers)
-            if status.status == "failed":
-                raise ResourceCreationError(
-                    status.status_message or "Sandbox provisioning failed",
-                    resource_type="sandbox",
-                )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ResourceTimeoutError(
-                    f"Sandbox '{name}' not ready after {timeout}s",
-                    resource_type="sandbox",
-                    last_status=status.status,
-                )
-            await asyncio.sleep(min(poll_interval, remaining))
+        return await run_async(
+            client_effects.wait_for_sandbox(
+                self,
+                name,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                headers=headers,
+                sleep=asyncio.sleep,
+            )
+        )
 
     async def start_sandbox(
         self,
@@ -884,21 +860,9 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "start")
-
-        try:
-            response = await self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-
-        return await self.wait_for_sandbox(name, timeout=timeout, headers=headers)
+        return await run_async(
+            client_effects.start_sandbox(self, name, timeout=timeout, headers=headers)
+        )
 
     async def stop_sandbox(self, name: str, *, headers: RequestHeaders = None) -> None:
         """Stop a running sandbox (preserves sandbox files for later restart).
@@ -910,19 +874,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, name, "stop")
-
-        try:
-            response = await self._http.post(
-                url, json={}, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
+        await run_async(client_effects.stop_sandbox(self, name, headers=headers))
 
     # ========================================================================
     # Snapshot Operations
@@ -959,32 +911,18 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot build fails.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots"
-
-        payload: dict[str, Any] = {
-            "name": name,
-            "docker_image": docker_image,
-            "fs_capacity_bytes": fs_capacity_bytes,
-        }
-        if tag is not None:
-            payload["tag"] = tag
-        if registry_id is not None:
-            payload["registry_id"] = registry_id
-        if run_config is not None:
-            payload["run_config"] = _run_config_payload(run_config)
-
-        try:
-            response = await self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+        return await run_async(
+            client_effects.create_snapshot(
+                self,
+                name,
+                docker_image,
+                fs_capacity_bytes,
+                tag=tag,
+                registry_id=registry_id,
+                run_config=run_config,
+                timeout=timeout,
+                headers=headers,
             )
-            response.raise_for_status()
-            snapshot = Snapshot.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-        return await self.wait_for_snapshot(
-            snapshot.id, timeout=timeout, headers=headers
         )
 
     async def create_snapshot_from_dockerfile(
@@ -1010,76 +948,27 @@ class AsyncSandboxClient:
         it, which contend for a single core by default, so giving the builder
         an extra vCPU can cut a cold build's wall time substantially.
         """
-        context_path, dockerfile_rel = _resolve_dockerfile_context(dockerfile, context)
-
-        builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
-        # Stage the build on the capacity-backed root filesystem, not /tmp.
-        # Inside the sandbox /tmp is a RAM-backed tmpfs that fs_capacity_bytes
-        # does not size, and BuildKit's native snapshotter writes a full copy
-        # of every layer under its root, so a /tmp build exhausts guest RAM and
-        # fails with "No space left on device".
-        build_root = f"/var/lib/langsmith-build/{uuid.uuid4().hex[:12]}"
-        remote_context = posixpath.join(build_root, "context")
-        remote_tar = posixpath.join(build_root, "context.tar")
-        image_ref = f"langsmith-snapshot-build:{uuid.uuid4().hex}"
-        buildkit_root = posixpath.join(build_root, "buildkit-root")
-        buildkit_run = posixpath.join(build_root, "buildkit-run")
-
-        async with await self.sandbox(
-            name=builder_name,
-            timeout=timeout,
-            vcpus=vcpus,
-            mem_bytes=mem_bytes,
-            fs_capacity_bytes=fs_capacity_bytes,
-            headers=headers,
-        ) as sandbox:
-            await sandbox.write(
-                remote_tar,
-                await asyncio.to_thread(_make_docker_context_tar, context_path),
-                timeout=timeout,
-                headers=headers,
-            )
-            await sandbox.run(
-                "rm -rf "
-                + remote_context
-                + " && mkdir -p "
-                + remote_context
-                + " && tar -xf "
-                + remote_tar
-                + " -C "
-                + remote_context,
-                timeout=timeout,
-                headers=headers,
-            )
-
-            result = await sandbox.run(
-                _make_dockerfile_build_command(
-                    remote_context=remote_context,
-                    dockerfile_rel=dockerfile_rel,
-                    image_ref=image_ref,
-                    buildkit_root=buildkit_root,
-                    buildkit_run=buildkit_run,
-                    build_args=build_args,
-                    target=target,
-                ),
-                timeout=timeout,
-                on_stdout=on_build_log,
-                on_stderr=on_build_log,
-                headers=headers,
-            )
-            if result.exit_code != 0:
-                raise ResourceCreationError(
-                    "Dockerfile snapshot build failed",
-                    resource_type="snapshot",
-                )
-            return await self.capture_snapshot(
-                sandbox.name,
+        return await run_async(
+            client_effects.create_snapshot_from_dockerfile(
+                self,
                 name,
-                docker_image=image_ref,
-                fs_capacity_bytes=fs_capacity_bytes,
+                dockerfile,
+                fs_capacity_bytes,
+                context=context,
+                build_args=build_args,
+                target=target,
+                on_build_log=on_build_log,
+                vcpus=vcpus,
+                mem_bytes=mem_bytes,
                 timeout=timeout,
                 headers=headers,
+                resolve_context=_resolve_dockerfile_context,
+                make_context_tar=lambda path: asyncio.to_thread(
+                    _make_docker_context_tar, path
+                ),
+                make_build_command=_make_dockerfile_build_command,
             )
+        )
 
     async def capture_snapshot(
         self,
@@ -1114,34 +1003,18 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
-        url = _box_url(self._base_url, sandbox_name, "snapshot")
-
-        payload: dict[str, Any] = {"name": name}
-        if tag is not None:
-            payload["tag"] = tag
-        if docker_image is not None:
-            payload["docker_image"] = docker_image
-        if fs_capacity_bytes is not None:
-            payload["fs_capacity_bytes"] = fs_capacity_bytes
-        if run_config is not None:
-            payload["run_config"] = _run_config_payload(run_config)
-
-        try:
-            response = await self._http.post(
-                url, json=payload, headers=self._request_headers(headers)
+        return await run_async(
+            client_effects.capture_snapshot(
+                self,
+                sandbox_name,
+                name,
+                tag=tag,
+                docker_image=docker_image,
+                fs_capacity_bytes=fs_capacity_bytes,
+                run_config=run_config,
+                timeout=timeout,
+                headers=headers,
             )
-            response.raise_for_status()
-            snapshot = Snapshot.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Sandbox '{sandbox_name}' not found", resource_type="sandbox"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
-
-        return await self.wait_for_snapshot(
-            snapshot.id, timeout=timeout, headers=headers
         )
 
     async def get_snapshot(
@@ -1161,19 +1034,9 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{_quote_reference_segment(snapshot_id)}"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return Snapshot.from_dict(response.json())
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
+        return await run_async(
+            client_effects.get_snapshot(self, snapshot_id, headers=headers)
+        )
 
     async def list_snapshot_tags(
         self, name: str, *, headers: RequestHeaders = None
@@ -1191,21 +1054,9 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If nobody has published under the name.
             SandboxClientError: For other errors, including a name carrying a tag.
         """
-        url = f"{self._base_url}/snapshots-by-name/{_quote_path_segment(name)}"
-
-        try:
-            response = await self._http.get(url, headers=self._request_headers(headers))
-            response.raise_for_status()
-            return [
-                SnapshotTag.from_dict(tag) for tag in response.json().get("tags") or []
-            ]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Snapshot name '{name}' not found", resource_type="snapshot"
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
+        return await run_async(
+            client_effects.list_snapshot_tags(self, name, headers=headers)
+        )
 
     async def list_snapshots(
         self,
@@ -1237,33 +1088,15 @@ class AsyncSandboxClient:
         Returns:
             A single page of Snapshots matching the provided filters.
         """
-        url = f"{self._base_url}/snapshots"
-
-        params: dict[str, Any] = {}
-        if name_contains is not None:
-            params["name_contains"] = name_contains
-        if limit is not None:
-            params["limit"] = limit
-        if offset is not None:
-            params["offset"] = offset
-
-        try:
-            response = await self._http.get(
-                url,
-                params=params or None,
-                headers=self._request_headers(headers),
+        return await run_async(
+            client_effects.list_snapshots(
+                self,
+                name_contains=name_contains,
+                limit=limit,
+                offset=offset,
+                headers=headers,
             )
-            response.raise_for_status()
-            data = response.json()
-            return [Snapshot.from_dict(s) for s in data.get("snapshots", [])]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise SandboxAPIError(
-                    f"API endpoint not found: {url}. "
-                    f"Check that api_endpoint is correct."
-                ) from e
-            handle_client_http_error(e)
-            raise  # pragma: no cover
+        )
 
     async def delete_snapshot(
         self, snapshot_id: str, *, headers: RequestHeaders = None
@@ -1277,19 +1110,9 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        url = f"{self._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
-
-        try:
-            response = await self._http.delete(
-                url, headers=self._request_headers(headers)
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
-                ) from e
-            handle_client_http_error(e)
+        await run_async(
+            client_effects.delete_snapshot(self, snapshot_id, headers=headers)
+        )
 
     async def wait_for_snapshot(
         self,
@@ -1315,23 +1138,13 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If snapshot not found.
             SandboxClientError: For other errors.
         """
-        import time
-
-        deadline = time.monotonic() + timeout
-        while True:
-            snapshot = await self.get_snapshot(snapshot_id, headers=headers)
-            if snapshot.status == "ready":
-                return snapshot
-            if snapshot.status == "failed":
-                raise ResourceCreationError(
-                    snapshot.status_message or "Snapshot build failed",
-                    resource_type="snapshot",
-                )
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ResourceTimeoutError(
-                    f"Snapshot '{snapshot_id}' not ready after {timeout}s",
-                    resource_type="snapshot",
-                    last_status=snapshot.status,
-                )
-            await asyncio.sleep(min(poll_interval, remaining))
+        return await run_async(
+            client_effects.wait_for_snapshot(
+                self,
+                snapshot_id,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                headers=headers,
+                sleep=asyncio.sleep,
+            )
+        )

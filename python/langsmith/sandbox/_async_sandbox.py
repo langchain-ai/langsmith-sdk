@@ -8,26 +8,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
-from langsmith._openapi_client._httpx import httpx
+from langsmith.sandbox import _sandbox_effects
+from langsmith.sandbox._effects import run_async
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
-    ResourceNotFoundError,
     SandboxRetryableConnectionError,
-)
-from langsmith.sandbox._helpers import (
-    build_range_header as _build_range_header,
-)
-from langsmith.sandbox._helpers import (
-    file_chunk_from_response as _file_chunk_from_response,
-)
-from langsmith.sandbox._helpers import (
-    file_stat_from_response as _file_stat_from_response,
-)
-from langsmith.sandbox._helpers import (
-    handle_sandbox_http_error,
-)
-from langsmith.sandbox._helpers import (
-    raise_file_http_error as _raise_file_http_error,
 )
 from langsmith.sandbox._helpers import (
     resolve_close_input as _resolve_close_input,
@@ -543,37 +528,18 @@ class AsyncSandbox:
         headers: RequestHeaders,
     ) -> ExecutionResult:
         """Execute via HTTP POST /execute (existing implementation)."""
-        dataplane_url = self._require_dataplane_url()
-        url = f"{dataplane_url}/execute"
-        payload: dict[str, Any] = {
-            "command": command,
-            "timeout": timeout,
-            "shell": shell,
-        }
-        if env is not None:
-            payload["env"] = env
-        if cwd is not None:
-            payload["cwd"] = cwd
-        if run_config is not None:
-            payload["run_config"] = run_config
-
-        try:
-            response = await self._client._http.post(
-                url,
-                json=payload,
-                timeout=timeout + 10,
-                headers=self._client._request_headers(headers),
+        return await run_async(
+            _sandbox_effects.run_http(
+                self,
+                command,
+                timeout=timeout,
+                env=env,
+                cwd=cwd,
+                run_config=run_config,
+                shell=shell,
+                headers=headers,
             )
-            response.raise_for_status()
-            data = response.json()
-            return ExecutionResult(
-                stdout=data.get("stdout", ""),
-                stderr=data.get("stderr", ""),
-                exit_code=data.get("exit_code", -1),
-            )
-        except httpx.HTTPStatusError as e:
-            handle_sandbox_http_error(e)
-            raise  # pragma: no cover
+        )
 
     async def reconnect(
         self,
@@ -655,26 +621,11 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
-        dataplane_url = self._require_dataplane_url()
-        url = f"{dataplane_url}/upload"
-
-        # Ensure content is bytes for multipart upload
-        if isinstance(content, str):
-            content = content.encode("utf-8")
-
-        files = {"file": ("file", content)}
-
-        try:
-            response = await self._client._http.post(
-                url,
-                params={"path": path},
-                files=files,
-                timeout=timeout,
-                headers=self._client._request_headers(headers),
+        await run_async(
+            _sandbox_effects.write(
+                self, path, content, timeout=timeout, headers=headers
             )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            handle_sandbox_http_error(e)
+        )
 
     async def read(
         self, path: str, *, timeout: int = 60, headers: RequestHeaders = None
@@ -697,27 +648,9 @@ class AsyncSandbox:
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
         """
-        dataplane_url = self._require_dataplane_url()
-        url = f"{dataplane_url}/download"
-
-        try:
-            response = await self._client._http.get(
-                url,
-                params={"path": path},
-                timeout=timeout,
-                headers=self._client._request_headers(headers),
-            )
-            response.raise_for_status()
-            return response.content
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(
-                    f"File '{path}' not found in sandbox '{self.name}'",
-                    resource_type="file",
-                ) from e
-            handle_sandbox_http_error(e)
-            # This line should never be reached but satisfies type checker
-            raise  # pragma: no cover
+        return await run_async(
+            _sandbox_effects.read(self, path, timeout=timeout, headers=headers)
+        )
 
     async def stat(
         self, path: str, *, timeout: int = 60, headers: RequestHeaders = None
@@ -736,20 +669,9 @@ class AsyncSandbox:
         Raises:
             ResourceNotFoundError: If the file doesn't exist.
         """
-        dataplane_url = self._require_dataplane_url()
-        try:
-            response = await self._client._http.request(
-                "HEAD",
-                f"{dataplane_url}/download",
-                params={"path": path},
-                timeout=timeout,
-                headers=self._client._request_headers(headers),
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            _raise_file_http_error(e, path=path, sandbox_name=self.name)
-            raise  # pragma: no cover
-        return _file_stat_from_response(response)
+        return await run_async(
+            _sandbox_effects.stat(self, path, timeout=timeout, headers=headers)
+        )
 
     async def read_range(
         self,
@@ -791,30 +713,19 @@ class AsyncSandbox:
                 file (416).
             ResourceNotFoundError: If the file doesn't exist.
         """
-        range_header = _build_range_header(
-            start=start, end=end, suffix_bytes=suffix_bytes
-        )
-        request_headers = dict(self._client._request_headers(headers) or {})
-        request_headers["Range"] = range_header
-        if if_range:
-            request_headers["If-Range"] = if_range
-        if if_none_match:
-            request_headers["If-None-Match"] = if_none_match
-
-        dataplane_url = self._require_dataplane_url()
-        try:
-            response = await self._client._http.get(
-                f"{dataplane_url}/download",
-                params={"path": path},
+        return await run_async(
+            _sandbox_effects.read_range(
+                self,
+                path,
+                start=start,
+                end=end,
+                suffix_bytes=suffix_bytes,
+                if_range=if_range,
+                if_none_match=if_none_match,
                 timeout=timeout,
-                headers=request_headers,
+                headers=headers,
             )
-            if response.status_code != 304:
-                response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            _raise_file_http_error(e, path=path, sandbox_name=self.name)
-            raise  # pragma: no cover
-        return _file_chunk_from_response(response)
+        )
 
     async def glob(
         self,
@@ -839,13 +750,16 @@ class AsyncSandbox:
         Returns:
             GlobResult; check ``truncated`` before treating it as complete.
         """
-        payload: dict[str, Any] = {"pattern": pattern, "path": path}
-        if limit is not None:
-            payload["limit"] = limit
-        data = await self._file_search(
-            "glob", payload, timeout=timeout, headers=headers
+        return await run_async(
+            _sandbox_effects.glob(
+                self,
+                pattern,
+                path,
+                limit=limit,
+                timeout=timeout,
+                headers=headers,
+            )
         )
-        return GlobResult.from_dict(data)
 
     async def ls(
         self,
@@ -868,7 +782,11 @@ class AsyncSandbox:
         Returns:
             GlobResult holding the directory's files and subdirectories.
         """
-        return await self.glob("*", path, limit=limit, timeout=timeout, headers=headers)
+        return await run_async(
+            _sandbox_effects.ls(
+                self, path, limit=limit, timeout=timeout, headers=headers
+            )
+        )
 
     async def grep(
         self,
@@ -895,38 +813,17 @@ class AsyncSandbox:
         Returns:
             GrepResult; check ``truncated`` before treating it as complete.
         """
-        payload: dict[str, Any] = {"pattern": pattern, "path": path}
-        if glob is not None:
-            payload["glob"] = glob
-        if limit is not None:
-            payload["limit"] = limit
-        data = await self._file_search(
-            "grep", payload, timeout=timeout, headers=headers
-        )
-        return GrepResult.from_dict(data)
-
-    async def _file_search(
-        self,
-        operation: str,
-        payload: dict[str, Any],
-        *,
-        timeout: int,
-        headers: RequestHeaders,
-    ) -> dict[str, Any]:
-        """POST one of the read-only filesystem search endpoints."""
-        dataplane_url = self._require_dataplane_url()
-        try:
-            response = await self._client._http.post(
-                f"{dataplane_url}/{operation}",
-                json=payload,
+        return await run_async(
+            _sandbox_effects.grep(
+                self,
+                pattern,
+                path,
+                glob=glob,
+                limit=limit,
                 timeout=timeout,
-                headers=self._client._request_headers(headers),
+                headers=headers,
             )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            _raise_file_http_error(e, path=payload["path"], sandbox_name=self.name)
-            raise  # pragma: no cover
-        return response.json()
+        )
 
     async def tunnel(
         self,
