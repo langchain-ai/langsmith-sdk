@@ -36,10 +36,8 @@ CASES = [
             remedy="Send agent_id and agent_environment together",
         ),
     ),
-    # KNOWN FAILURE, on purpose. The other half. `_setup_run` tests the id
-    # alone, so this lands in `default` in silence, while `trace()` and
-    # `RunTree` forward it and get the 400 above. One misconfiguration, two
-    # outcomes, decided by the entry point.
+    # The other half. `_setup_run` used to test the id alone and drop this into
+    # `default` in silence; it now shares the predicate with `trace()`.
     Case(
         "env_environment_only",
         env={"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
@@ -52,8 +50,8 @@ CASES = [
         "env_project", env={"LANGSMITH_PROJECT": PROJECT}, lands_in=InProject(PROJECT)
     ),
     Case("no_addressing", lands_in=InProject("default")),
-    # KNOWN FAILURE, on purpose. The bug pinned in `test_create_update_run.py`,
-    # reached through `_setup_run` this time.
+    # Both from the environment, the same tier: both travel and the endpoint
+    # says which to drop. The SDK used to pick the agent in silence.
     Case(
         "env_agent_and_env_project",
         env={**ENV_AGENT, "LANGSMITH_PROJECT": PROJECT},
@@ -65,9 +63,8 @@ CASES = [
             ),
         ),
     ),
-    # KNOWN FAILURE, on purpose. `HOSTED_LANGSERVE_PROJECT_NAME` is documented
-    # as beating every other project variable, but it is read through the same
-    # default that agent addressing suppresses, so the agent wins in silence.
+    # `HOSTED_LANGSERVE_PROJECT_NAME` is a configured project too, not the
+    # `default` the SDK invents, so it travels with the agent like the one above.
     Case(
         "env_agent_and_hosted_project",
         env={**ENV_AGENT, "HOSTED_LANGSERVE_PROJECT_NAME": PROJECT},
@@ -114,26 +111,18 @@ CASES = [
         context=CONTEXT_AGENT,
         lands_in=InAgent("STAGING"),
     ),
-    # KNOWN FAILURE, on purpose. Two destinations named in code. In one
-    # `tracing_context` call they raise; split between the context and the
-    # decorator nothing checks, and the project wins in silence. The same holds
-    # for `langsmith_extra={"project_name"}` and for `ls.configure`.
+    # KNOWN FAILURE, on purpose. Two destinations named in code, at different
+    # tiers. The SDK's stated rule, the same as for two projects, is that the
+    # higher tier wins: here the context var over the decorator. Today the
+    # project wins whatever its tier, because `resolve_addressing` is handed
+    # the winner of each chain separately and prefers the project.
     Case(
         "context_agent_and_decorator_project",
         context=CONTEXT_AGENT,
         decorator={"project_name": PROJECT},
-        lands_in=Rejected(
-            reason="agent_id cannot be combined with session_id or session_name",
-            remedy=(
-                "Address the run by agent_id, or by session_id or session_name,"
-                " but not both"
-            ),
-        ),
+        lands_in=InAgent("STAGING"),
     ),
-    # KNOWN FAILURE, on purpose. `@traceable` takes `project_name` but no agent
-    # arguments: it warns that they are not recognized and drops them, so the
-    # only in-code way to address a `@traceable` run is `tracing_context`.
-    # Delete this case if that is the intended API.
+    # The decorator's own arguments, beside `project_name`.
     Case(
         "decorator_agent",
         decorator={"agent_id": AGENT, "agent_environment": "staging"},
