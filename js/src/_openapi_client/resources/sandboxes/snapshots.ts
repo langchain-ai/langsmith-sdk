@@ -16,24 +16,28 @@ import { path } from '../../internal/utils/path.js';
 
 export class Snapshots extends APIResource {
   /**
-   * Create a snapshot from a Docker image (async build).
+   * Create a snapshot from a Docker image (async build). Names use lowercase
+   * registry-style components separated by slashes, up to 255 characters. The
+   * system/ namespace is read-only.
    */
   create(body: SnapshotCreateParams, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
     return this._client.post('/api/v2/sandboxes/snapshots', { body, ...options });
   }
 
   /**
-   * Get a sandbox snapshot by ID or by a Docker-style reference. A bare name means
-   * name:latest, falling back to the newest ready untagged snapshot of that name. To
-   * list the tags under a name, use /api/v2/sandboxes/snapshots-by-name/{name}.
+   * Get a sandbox snapshot by ID or a registry-style reference, including
+   * system/default:latest. URL-encode references containing slashes. A bare name
+   * means name:latest, falling back to the newest ready untagged snapshot of that
+   * name. To list the tags under a name, use
+   * /api/v2/sandboxes/snapshots-by-name/{name}.
    */
   retrieve(snapshotID: string, options?: RequestOptions): APIPromise<SandboxesAPI.SnapshotResponse> {
     return this._client.get(path`/api/v2/sandboxes/snapshots/${snapshotID}`, options);
   }
 
   /**
-   * List sandbox snapshots for the authenticated tenant, with optional filtering,
-   * sorting, and pagination. Page with page_size and cursor: replay the response's
+   * List workspace and published system snapshots, with optional filtering, sorting,
+   * and pagination. Page with page_size and cursor: replay the response's
    * next_cursor until it comes back null, which is the only signal that no pages
    * remain. Cursors are opaque and only valid on this endpoint; do not parse or
    * construct one.
