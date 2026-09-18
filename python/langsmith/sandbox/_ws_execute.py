@@ -155,6 +155,11 @@ class _WSStreamControl:
         """True if kill() has been called on this stream."""
         return self._killed
 
+    @property
+    def resumes_itself(self) -> bool:
+        """False: the handle owns reattaching a broken WebSocket."""
+        return False
+
     def send_kill(self) -> None:
         """Send a kill message and immediately close the WebSocket."""
         self._killed = True
@@ -214,6 +219,10 @@ class _AsyncWSStreamControl:
     @property
     def killed(self) -> bool:
         return self._killed
+
+    @property
+    def resumes_itself(self) -> bool:
+        return False
 
     async def send_kill(self) -> None:
         self._killed = True
