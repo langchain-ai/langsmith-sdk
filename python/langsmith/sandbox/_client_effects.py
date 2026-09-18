@@ -6,14 +6,14 @@ import posixpath
 import shlex
 import time
 import uuid
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional, TypeVar, Union, cast
 from urllib.parse import quote
 
 from langsmith._openapi_client._httpx import httpx
-from langsmith.sandbox._effects import Call
+from langsmith.sandbox._effects import Call, Program
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNotFoundError,
@@ -29,6 +29,63 @@ from langsmith.sandbox._models import (
 )
 
 RequestHeaders = Optional[Mapping[str, str]]
+_StatusT = TypeVar("_StatusT", ResourceStatus, Snapshot)
+
+
+def _request(
+    client: Any,
+    method: str,
+    url: str,
+    headers: RequestHeaders,
+    not_found: Optional[Union[tuple[str, str], SandboxAPIError]] = None,
+    **kwargs: Any,
+) -> Program[httpx.Response]:
+    try:
+        response = yield from Call(
+            lambda: getattr(client._http, method)(
+                url, headers=client._request_headers(headers), **kwargs
+            )
+        )
+        response.raise_for_status()
+        return response
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404 and not_found is not None:
+            if isinstance(not_found, tuple):
+                resource_type, label = not_found
+                raise ResourceNotFoundError(
+                    f"{label} not found", resource_type=resource_type
+                ) from error
+            raise not_found from error
+        handle_client_http_error(error)
+        raise
+
+
+def _poll(
+    get_status: Call[_StatusT],
+    name: str,
+    resource_type: str,
+    failure_message: str,
+    timeout: int,
+    poll_interval: float,
+    sleep: Callable[[float], Any],
+) -> Program[_StatusT]:
+    deadline = time.monotonic() + timeout
+    while True:
+        status = yield from get_status
+        if status.status == "ready":
+            return status
+        if status.status == "failed":
+            raise ResourceCreationError(
+                status.status_message or failure_message, resource_type=resource_type
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ResourceTimeoutError(
+                f"{resource_type.capitalize()} '{name}' not ready after {timeout}s",
+                resource_type=resource_type,
+                last_status=status.status,
+            )
+        yield from Call(lambda: sleep(min(poll_interval, remaining)))
 
 
 def _quote_path_segment(value: str) -> str:
@@ -50,22 +107,13 @@ def _box_url(base_url: str, name: str, *segments: str) -> str:
 
 def get_sandbox_status(
     client: Any, name: str, *, headers: RequestHeaders
-) -> Generator[Call[Any], Any, ResourceStatus]:
+) -> Program[ResourceStatus]:
     """Get the provisioning status of a sandbox."""
     url = _box_url(client._base_url, name, "status")
-    try:
-        response = yield from Call(
-            lambda: client._http.get(url, headers=client._request_headers(headers))
-        )
-        response.raise_for_status()
-        return ResourceStatus.from_dict(response.json())
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Sandbox '{name}' not found", resource_type="sandbox"
-            ) from error
-        handle_client_http_error(error)
-        raise
+    response = yield from _request(
+        client, "get", url, headers, ("sandbox", f"Sandbox '{name}'")
+    )
+    return ResourceStatus.from_dict(response.json())
 
 
 def wait_for_sandbox(
@@ -76,28 +124,18 @@ def wait_for_sandbox(
     poll_interval: float,
     headers: RequestHeaders,
     sleep: Callable[[float], Any],
-) -> Generator[Call[Any], Any, Any]:
+) -> Program[Any]:
     """Poll until a sandbox reaches a terminal status."""
-    deadline = time.monotonic() + timeout
-    while True:
-        status = yield from Call(
-            lambda: client.get_sandbox_status(name, headers=headers)
-        )
-        if status.status == "ready":
-            return (yield from Call(lambda: client.get_sandbox(name, headers=headers)))
-        if status.status == "failed":
-            raise ResourceCreationError(
-                status.status_message or "Sandbox provisioning failed",
-                resource_type="sandbox",
-            )
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ResourceTimeoutError(
-                f"Sandbox '{name}' not ready after {timeout}s",
-                resource_type="sandbox",
-                last_status=status.status,
-            )
-        yield from Call(lambda: sleep(min(poll_interval, remaining)))
+    yield from _poll(
+        Call[ResourceStatus](lambda: client.get_sandbox_status(name, headers=headers)),
+        name,
+        "sandbox",
+        "Sandbox provisioning failed",
+        timeout,
+        poll_interval,
+        sleep,
+    )
+    return (yield from Call(lambda: client.get_sandbox(name, headers=headers)))
 
 
 def start_sandbox(
@@ -106,22 +144,12 @@ def start_sandbox(
     *,
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, Any]:
+) -> Program[Any]:
     """Start a stopped sandbox and wait until ready."""
     url = _box_url(client._base_url, name, "start")
-    try:
-        response = yield from Call(
-            lambda: client._http.post(
-                url, json={}, headers=client._request_headers(headers)
-            )
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Sandbox '{name}' not found", resource_type="sandbox"
-            ) from error
-        handle_client_http_error(error)
+    yield from _request(
+        client, "post", url, headers, ("sandbox", f"Sandbox '{name}'"), json={}
+    )
     return (
         yield from Call(
             lambda: client.wait_for_sandbox(name, timeout=timeout, headers=headers)
@@ -129,24 +157,12 @@ def start_sandbox(
     )
 
 
-def stop_sandbox(
-    client: Any, name: str, *, headers: RequestHeaders
-) -> Generator[Call[Any], Any, None]:
+def stop_sandbox(client: Any, name: str, *, headers: RequestHeaders) -> Program[None]:
     """Stop a running sandbox."""
     url = _box_url(client._base_url, name, "stop")
-    try:
-        response = yield from Call(
-            lambda: client._http.post(
-                url, json={}, headers=client._request_headers(headers)
-            )
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Sandbox '{name}' not found", resource_type="sandbox"
-            ) from error
-        handle_client_http_error(error)
+    yield from _request(
+        client, "post", url, headers, ("sandbox", f"Sandbox '{name}'"), json={}
+    )
 
 
 def create_snapshot(
@@ -160,7 +176,7 @@ def create_snapshot(
     run_config: Any,
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, Snapshot]:
+) -> Program[Snapshot]:
     """Build a snapshot from a Docker image."""
     payload: dict[str, Any] = {
         "name": name,
@@ -173,19 +189,10 @@ def create_snapshot(
         payload["registry_id"] = registry_id
     if run_config is not None:
         payload["run_config"] = _run_config_payload(run_config)
-    try:
-        response = yield from Call(
-            lambda: client._http.post(
-                f"{client._base_url}/snapshots",
-                json=payload,
-                headers=client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-        snapshot = Snapshot.from_dict(response.json())
-    except httpx.HTTPStatusError as error:
-        handle_client_http_error(error)
-        raise
+    response = yield from _request(
+        client, "post", f"{client._base_url}/snapshots", headers, json=payload
+    )
+    snapshot = Snapshot.from_dict(response.json())
     return (
         yield from Call(
             lambda: client.wait_for_snapshot(
@@ -227,7 +234,7 @@ def create_snapshot_from_dockerfile(
     resolve_context: Callable[[Any, Any], tuple[Path, str]],
     make_context_tar: Callable[[Path], Any],
     make_build_command: Callable[..., str],
-) -> Generator[Call[Any], Any, Snapshot]:
+) -> Program[Snapshot]:
     """Build a snapshot from a local Dockerfile context."""
     context_path, dockerfile_rel = resolve_context(dockerfile, context)
     builder_name = f"snapshot-builder-{uuid.uuid4().hex[:12]}"
@@ -326,7 +333,7 @@ def capture_snapshot(
     run_config: Any,
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, Snapshot]:
+) -> Program[Snapshot]:
     """Capture a snapshot from a running sandbox."""
     payload: dict[str, Any] = {"name": name}
     if tag is not None:
@@ -337,23 +344,15 @@ def capture_snapshot(
         payload["fs_capacity_bytes"] = fs_capacity_bytes
     if run_config is not None:
         payload["run_config"] = _run_config_payload(run_config)
-    try:
-        response = yield from Call(
-            lambda: client._http.post(
-                f"{client._base_url}/boxes/{_quote_path_segment(sandbox_name)}/snapshot",
-                json=payload,
-                headers=client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-        snapshot = Snapshot.from_dict(response.json())
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Sandbox '{sandbox_name}' not found", resource_type="sandbox"
-            ) from error
-        handle_client_http_error(error)
-        raise
+    response = yield from _request(
+        client,
+        "post",
+        _box_url(client._base_url, sandbox_name, "snapshot"),
+        headers,
+        ("sandbox", f"Sandbox '{sandbox_name}'"),
+        json=payload,
+    )
+    snapshot = Snapshot.from_dict(response.json())
     return (
         yield from Call(
             lambda: client.wait_for_snapshot(
@@ -365,42 +364,24 @@ def capture_snapshot(
 
 def get_snapshot(
     client: Any, snapshot_id: str, *, headers: RequestHeaders
-) -> Generator[Call[Any], Any, Snapshot]:
+) -> Program[Snapshot]:
     """Get a snapshot by ID or Docker-style reference."""
     url = f"{client._base_url}/snapshots/{_quote_reference_segment(snapshot_id)}"
-    try:
-        response = yield from Call(
-            lambda: client._http.get(url, headers=client._request_headers(headers))
-        )
-        response.raise_for_status()
-        return Snapshot.from_dict(response.json())
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
-            ) from error
-        handle_client_http_error(error)
-        raise
+    response = yield from _request(
+        client, "get", url, headers, ("snapshot", f"Snapshot '{snapshot_id}'")
+    )
+    return Snapshot.from_dict(response.json())
 
 
 def list_snapshot_tags(
     client: Any, name: str, *, headers: RequestHeaders
-) -> Generator[Call[Any], Any, list[SnapshotTag]]:
+) -> Program[list[SnapshotTag]]:
     """List every tag published under a snapshot name."""
     url = f"{client._base_url}/snapshots-by-name/{_quote_path_segment(name)}"
-    try:
-        response = yield from Call(
-            lambda: client._http.get(url, headers=client._request_headers(headers))
-        )
-        response.raise_for_status()
-        return [SnapshotTag.from_dict(tag) for tag in response.json().get("tags") or []]
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Snapshot name '{name}' not found", resource_type="snapshot"
-            ) from error
-        handle_client_http_error(error)
-        raise
+    response = yield from _request(
+        client, "get", url, headers, ("snapshot", f"Snapshot name '{name}'")
+    )
+    return [SnapshotTag.from_dict(tag) for tag in response.json().get("tags") or []]
 
 
 def list_snapshots(
@@ -410,7 +391,7 @@ def list_snapshots(
     limit: Optional[int],
     offset: Optional[int],
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, list[Snapshot]]:
+) -> Program[list[Snapshot]]:
     """List one page of snapshots."""
     url = f"{client._base_url}/snapshots"
     params: dict[str, Any] = {}
@@ -420,43 +401,27 @@ def list_snapshots(
         params["limit"] = limit
     if offset is not None:
         params["offset"] = offset
-    try:
-        response = yield from Call(
-            lambda: client._http.get(
-                url,
-                params=params or None,
-                headers=client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-        return [
-            Snapshot.from_dict(item) for item in response.json().get("snapshots", [])
-        ]
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise SandboxAPIError(
-                f"API endpoint not found: {url}. Check that api_endpoint is correct."
-            ) from error
-        handle_client_http_error(error)
-        raise
+    response = yield from _request(
+        client,
+        "get",
+        url,
+        headers,
+        SandboxAPIError(
+            f"API endpoint not found: {url}. Check that api_endpoint is correct."
+        ),
+        params=params or None,
+    )
+    return [Snapshot.from_dict(item) for item in response.json().get("snapshots", [])]
 
 
 def delete_snapshot(
     client: Any, snapshot_id: str, *, headers: RequestHeaders
-) -> Generator[Call[Any], Any, None]:
+) -> Program[None]:
     """Delete a snapshot."""
     url = f"{client._base_url}/snapshots/{_quote_path_segment(snapshot_id)}"
-    try:
-        response = yield from Call(
-            lambda: client._http.delete(url, headers=client._request_headers(headers))
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"Snapshot '{snapshot_id}' not found", resource_type="snapshot"
-            ) from error
-        handle_client_http_error(error)
+    yield from _request(
+        client, "delete", url, headers, ("snapshot", f"Snapshot '{snapshot_id}'")
+    )
 
 
 def wait_for_snapshot(
@@ -467,25 +432,16 @@ def wait_for_snapshot(
     poll_interval: float,
     headers: RequestHeaders,
     sleep: Callable[[float], Any],
-) -> Generator[Call[Any], Any, Snapshot]:
+) -> Program[Snapshot]:
     """Poll until a snapshot reaches a terminal status."""
-    deadline = time.monotonic() + timeout
-    while True:
-        snapshot = yield from Call(
-            lambda: client.get_snapshot(snapshot_id, headers=headers)
+    return (
+        yield from _poll(
+            Call[Snapshot](lambda: client.get_snapshot(snapshot_id, headers=headers)),
+            snapshot_id,
+            "snapshot",
+            "Snapshot build failed",
+            timeout,
+            poll_interval,
+            sleep,
         )
-        if snapshot.status == "ready":
-            return snapshot
-        if snapshot.status == "failed":
-            raise ResourceCreationError(
-                snapshot.status_message or "Snapshot build failed",
-                resource_type="snapshot",
-            )
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ResourceTimeoutError(
-                f"Snapshot '{snapshot_id}' not ready after {timeout}s",
-                resource_type="snapshot",
-                last_status=snapshot.status,
-            )
-        yield from Call(lambda: sleep(min(poll_interval, remaining)))
+    )

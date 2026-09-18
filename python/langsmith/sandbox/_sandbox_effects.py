@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator, Mapping
+from collections.abc import Mapping
 from typing import Any, Optional, Protocol, Union
 
 from langsmith._openapi_client._httpx import httpx
-from langsmith.sandbox._effects import Call
+from langsmith.sandbox._effects import Call, Program
 from langsmith.sandbox._exceptions import ResourceNotFoundError
 from langsmith.sandbox._helpers import (
     build_range_header,
@@ -39,6 +39,40 @@ class SandboxLike(Protocol):
         ...
 
 
+def _request(
+    sandbox: SandboxLike,
+    method: str,
+    endpoint: str,
+    *,
+    headers: RequestHeaders,
+    file_path: Optional[str] = None,
+    range_errors: bool = True,
+    allow_not_modified: bool = False,
+    **kwargs: Any,
+) -> Program[httpx.Response]:
+    url = f"{sandbox._require_dataplane_url()}/{endpoint}"
+    try:
+        response = yield from Call(
+            lambda: sandbox._client._http.request(
+                method, url, headers=sandbox._client._request_headers(headers), **kwargs
+            )
+        )
+        if not (allow_not_modified and response.status_code == 304):
+            response.raise_for_status()
+        return response
+    except httpx.HTTPStatusError as error:
+        if file_path is not None:
+            if range_errors:
+                raise_file_http_error(error, path=file_path, sandbox_name=sandbox.name)
+            elif error.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"File '{file_path}' not found in sandbox '{sandbox.name}'",
+                    resource_type="file",
+                ) from error
+        handle_sandbox_http_error(error)
+        raise
+
+
 def run_http(
     sandbox: SandboxLike,
     command: str,
@@ -49,9 +83,8 @@ def run_http(
     run_config: Optional[dict[str, Any]],
     shell: str,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, ExecutionResult]:
+) -> Program[ExecutionResult]:
     """Execute a command through the blocking HTTP endpoint."""
-    dataplane_url = sandbox._require_dataplane_url()
     payload: dict[str, Any] = {
         "command": command,
         "timeout": timeout,
@@ -63,19 +96,9 @@ def run_http(
         payload["cwd"] = cwd
     if run_config is not None:
         payload["run_config"] = run_config
-    try:
-        response = yield from Call(
-            lambda: sandbox._client._http.post(
-                f"{dataplane_url}/execute",
-                json=payload,
-                timeout=timeout + 10,
-                headers=sandbox._client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        handle_sandbox_http_error(error)
-        raise
+    response = yield from _request(
+        sandbox, "POST", "execute", json=payload, timeout=timeout + 10, headers=headers
+    )
     data = response.json()
     return ExecutionResult(
         stdout=data.get("stdout", ""),
@@ -91,24 +114,19 @@ def write(
     *,
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, None]:
+) -> Program[None]:
     """Write content to a sandbox file."""
-    dataplane_url = sandbox._require_dataplane_url()
     if isinstance(content, str):
         content = content.encode("utf-8")
-    try:
-        response = yield from Call(
-            lambda: sandbox._client._http.post(
-                f"{dataplane_url}/upload",
-                params={"path": path},
-                files={"file": ("file", content)},
-                timeout=timeout,
-                headers=sandbox._client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        handle_sandbox_http_error(error)
+    yield from _request(
+        sandbox,
+        "POST",
+        "upload",
+        params={"path": path},
+        files={"file": ("file", content)},
+        timeout=timeout,
+        headers=headers,
+    )
 
 
 def read(
@@ -117,28 +135,19 @@ def read(
     *,
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, bytes]:
+) -> Program[bytes]:
     """Read a sandbox file."""
-    dataplane_url = sandbox._require_dataplane_url()
-    try:
-        response = yield from Call(
-            lambda: sandbox._client._http.get(
-                f"{dataplane_url}/download",
-                params={"path": path},
-                timeout=timeout,
-                headers=sandbox._client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-        return response.content
-    except httpx.HTTPStatusError as error:
-        if error.response.status_code == 404:
-            raise ResourceNotFoundError(
-                f"File '{path}' not found in sandbox '{sandbox.name}'",
-                resource_type="file",
-            ) from error
-        handle_sandbox_http_error(error)
-        raise
+    response = yield from _request(
+        sandbox,
+        "GET",
+        "download",
+        params={"path": path},
+        timeout=timeout,
+        headers=headers,
+        file_path=path,
+        range_errors=False,
+    )
+    return response.content
 
 
 def stat(
@@ -147,23 +156,17 @@ def stat(
     *,
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, FileStat]:
+) -> Program[FileStat]:
     """Read sandbox file metadata."""
-    dataplane_url = sandbox._require_dataplane_url()
-    try:
-        response = yield from Call(
-            lambda: sandbox._client._http.request(
-                "HEAD",
-                f"{dataplane_url}/download",
-                params={"path": path},
-                timeout=timeout,
-                headers=sandbox._client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        raise_file_http_error(error, path=path, sandbox_name=sandbox.name)
-        raise
+    response = yield from _request(
+        sandbox,
+        "HEAD",
+        "download",
+        params={"path": path},
+        timeout=timeout,
+        headers=headers,
+        file_path=path,
+    )
     return file_stat_from_response(response)
 
 
@@ -178,9 +181,9 @@ def read_range(
     if_none_match: Optional[str],
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, FileChunk]:
+) -> Program[FileChunk]:
     """Read a range from a sandbox file."""
-    request_headers = dict(sandbox._client._request_headers(headers) or {})
+    request_headers = dict(headers or {})
     request_headers["Range"] = build_range_header(
         start=start, end=end, suffix_bytes=suffix_bytes
     )
@@ -188,21 +191,16 @@ def read_range(
         request_headers["If-Range"] = if_range
     if if_none_match:
         request_headers["If-None-Match"] = if_none_match
-    dataplane_url = sandbox._require_dataplane_url()
-    try:
-        response = yield from Call(
-            lambda: sandbox._client._http.get(
-                f"{dataplane_url}/download",
-                params={"path": path},
-                timeout=timeout,
-                headers=request_headers,
-            )
-        )
-        if response.status_code != 304:
-            response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        raise_file_http_error(error, path=path, sandbox_name=sandbox.name)
-        raise
+    response = yield from _request(
+        sandbox,
+        "GET",
+        "download",
+        params={"path": path},
+        timeout=timeout,
+        headers=request_headers,
+        file_path=path,
+        allow_not_modified=True,
+    )
     return file_chunk_from_response(response)
 
 
@@ -214,15 +212,21 @@ def glob(
     limit: Optional[int],
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, GlobResult]:
+) -> Program[GlobResult]:
     """Find sandbox files and directories matching a pattern."""
     payload: dict[str, Any] = {"pattern": pattern, "path": path}
     if limit is not None:
         payload["limit"] = limit
-    data = yield from _file_search(
-        sandbox, "glob", payload, timeout=timeout, headers=headers
+    response = yield from _request(
+        sandbox,
+        "POST",
+        "glob",
+        json=payload,
+        timeout=timeout,
+        headers=headers,
+        file_path=path,
     )
-    return GlobResult.from_dict(data)
+    return GlobResult.from_dict(response.json())
 
 
 def ls(
@@ -232,7 +236,7 @@ def ls(
     limit: Optional[int],
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, GlobResult]:
+) -> Program[GlobResult]:
     """List a sandbox directory's immediate entries."""
     return (
         yield from glob(
@@ -250,40 +254,20 @@ def grep(
     limit: Optional[int],
     timeout: int,
     headers: RequestHeaders,
-) -> Generator[Call[Any], Any, GrepResult]:
+) -> Program[GrepResult]:
     """Search sandbox file contents for a literal string."""
     payload: dict[str, Any] = {"pattern": pattern, "path": path}
     if glob is not None:
         payload["glob"] = glob
     if limit is not None:
         payload["limit"] = limit
-    data = yield from _file_search(
-        sandbox, "grep", payload, timeout=timeout, headers=headers
+    response = yield from _request(
+        sandbox,
+        "POST",
+        "grep",
+        json=payload,
+        timeout=timeout,
+        headers=headers,
+        file_path=path,
     )
-    return GrepResult.from_dict(data)
-
-
-def _file_search(
-    sandbox: SandboxLike,
-    operation: str,
-    payload: dict[str, Any],
-    *,
-    timeout: int,
-    headers: RequestHeaders,
-) -> Generator[Call[Any], Any, dict[str, Any]]:
-    """Run a read-only filesystem search."""
-    dataplane_url = sandbox._require_dataplane_url()
-    try:
-        response = yield from Call(
-            lambda: sandbox._client._http.post(
-                f"{dataplane_url}/{operation}",
-                json=payload,
-                timeout=timeout,
-                headers=sandbox._client._request_headers(headers),
-            )
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        raise_file_http_error(error, path=payload["path"], sandbox_name=sandbox.name)
-        raise
-    return response.json()
+    return GrepResult.from_dict(response.json())
