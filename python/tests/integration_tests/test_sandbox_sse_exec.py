@@ -1,10 +1,20 @@
 """End-to-end tests for the SSE exec transport against a live LangSmith API.
 
-Runs against whatever ``LANGSMITH_ENDPOINT`` points at, using the public
+Opt-in: these boot real sandboxes, so they only run with
+``LANGSMITH_SANDBOX_E2E=1``. Without it they skip, which keeps them out of the
+shared integration suite, where they would create a sandbox per shard on every
+push.
+
+They run against whatever ``LANGSMITH_ENDPOINT`` points at, using the public
 ``/v2/sandboxes`` API and the default snapshot. Credentials come from
 ``LANGSMITH_API_KEY``, or from ``LANGSMITH_SANDBOX_E2E_BEARER`` for an OAuth
 access token (``langsmith auth token``), which also needs
-``LANGSMITH_WORKSPACE_ID`` to name the tenant.
+``LANGSMITH_WORKSPACE_ID`` to name the tenant:
+
+    LANGSMITH_SANDBOX_E2E=1 \\
+    LANGSMITH_WORKSPACE_ID=<workspace> \\
+    LANGSMITH_SANDBOX_E2E_BEARER="$(langsmith auth token --profile prod)" \\
+    uv run pytest tests/integration_tests/test_sandbox_sse_exec.py
 
 The point of these cases is the part a mock cannot prove: that the ack/resume
 loop delivers every byte exactly once across however many resumes the sandbox's
@@ -18,6 +28,11 @@ import pytest
 
 from langsmith import _features
 from langsmith.sandbox import SandboxClient
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("LANGSMITH_SANDBOX_E2E"),
+    reason="Set LANGSMITH_SANDBOX_E2E=1 to boot real sandboxes",
+)
 
 # Comfortably more than the sandbox's 1 MiB output buffer, so the server has to
 # stop for an ack several times before the command can finish.
