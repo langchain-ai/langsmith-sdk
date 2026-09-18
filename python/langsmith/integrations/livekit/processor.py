@@ -622,6 +622,12 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         ):
             tspan.attributes.pop(attribute, None)
 
+        # Ingestion prefers this original history over gen_ai.prompt. Once the
+        # prompt is translated, it is authoritative and includes instructions
+        # supplied separately from the history as well as legacy event fallbacks.
+        if prompt is not None:
+            tspan.attributes.pop("gen_ai.input.messages", None)
+
         provider = extract_provider_from_lk_metrics(
             tspan.attributes.get("lk.llm_metrics")
         )
