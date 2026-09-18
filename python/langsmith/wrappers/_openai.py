@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import functools
 import logging
+import warnings
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -268,6 +269,48 @@ def _reduce_completions(all_chunks: list[Completion]) -> dict:
     return d
 
 
+def _is_parsed_response(response: Any) -> bool:
+    """Whether this response came from a `.parse()` call rather than `.create()`.
+
+    `ParsedChatCompletion` and `ParsedResponse` are generic over the caller's
+    response format, and the SDK builds them with the type variable left
+    unsubstituted - the runtime type really is
+    `ParsedChatCompletion[~ResponseFormatT]`. Pydantic resolves that variable to
+    its `None` default when dumping, so it reports the caller's own model as an
+    unexpected value for `parsed` / `output_parsed`.
+
+    Identified by the field the parse types add, as `_anthropic`'s
+    `_message_to_outputs` identifies `ParsedBetaMessage` by `parsed_output`
+    (issue #2737).
+    """
+    if hasattr(response, "output_parsed"):
+        return True
+    choices = getattr(response, "choices", None)
+    if not isinstance(choices, Sequence):
+        return False
+    return any(
+        hasattr(getattr(choice, "message", None), "parsed") for choice in choices
+    )
+
+
+def _dump_response(response: Any, **kwargs: Any) -> dict:
+    """`model_dump` without the serializer warning a parsed response provokes.
+
+    The dumped payload is right - `parsed` carries the caller's model, dumped as
+    a dict - so only the declared type is wrong, and the warning is noise: one
+    `PydanticSerializationUnexpectedValue` per traced `parse()` call (issue
+    #3490). Filtered by message rather than with a blanket `simplefilter`, so a
+    serializer warning about anything else in the same dump still surfaces.
+    """
+    if not _is_parsed_response(response):
+        return response.model_dump(**kwargs)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", category=UserWarning, message="Pydantic serializer warnings"
+        )
+        return response.model_dump(**kwargs)
+
+
 def _process_chat_completion(outputs: Any):
     try:
         # Check if outputs is an APIResponse wrapper (from with_raw_response).
@@ -280,7 +323,7 @@ def _process_chat_completion(outputs: Any):
             except Exception:
                 pass
 
-        rdict = outputs.model_dump()
+        rdict = _dump_response(outputs)
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
             _create_usage_metadata(oai_token_usage, rdict.get("service_tier"))
@@ -593,7 +636,7 @@ def _process_responses_api_output(response: Any) -> dict:
                 except Exception:
                     pass
 
-            output = response.model_dump(exclude_none=True, mode="json")
+            output = _dump_response(response, exclude_none=True, mode="json")
             if usage := output.pop("usage", None):
                 output["usage_metadata"] = _create_usage_metadata(
                     usage, output.get("service_tier")
