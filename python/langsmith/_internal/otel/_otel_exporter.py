@@ -92,6 +92,9 @@ GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
 GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
 
+# OpenInference attribute mapped to invocation_params by LangSmith OTLP ingestion.
+LLM_INVOCATION_PARAMETERS = "llm.invocation_parameters"
+
 
 # LangSmith custom attributes
 LANGSMITH_SESSION_ID = "langsmith.trace.session_id"
@@ -669,6 +672,13 @@ class OTELExporter:
             span: The span to set attributes on.
             run_info: The deserialized run info.
         """
+        # Preserve the full parameters so OTLP ingestion can restore the Tools tab.
+        params = (run_info.get("extra") or {}).get("invocation_params")
+        if isinstance(params, dict):
+            safe = otel_safe_attribute_value(params)
+            if safe is not None:
+                span.set_attribute(LLM_INVOCATION_PARAMETERS, safe)
+
         if not (run_info.get("extra") and run_info["extra"].get("metadata")):
             return
 
