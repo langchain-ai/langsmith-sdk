@@ -111,16 +111,14 @@ CASES = [
         context=CONTEXT_AGENT,
         lands_in=InAgent("STAGING"),
     ),
-    # KNOWN FAILURE, on purpose. Two destinations named in code, at different
-    # tiers. The SDK's stated rule, the same as for two projects, is that the
-    # higher tier wins: here the context var over the decorator. Today the
-    # project wins whatever its tier, because `resolve_addressing` is handed
-    # the winner of each chain separately and prefers the project.
+    # Two destinations named in code, at different tiers: a project named
+    # anywhere in code wins. `evaluate()` relies on this, since it names its
+    # experiment on the call and must keep working under an ambient agent.
     Case(
         "context_agent_and_decorator_project",
         context=CONTEXT_AGENT,
         decorator={"project_name": PROJECT},
-        lands_in=InAgent("STAGING"),
+        lands_in=InProject(PROJECT),
     ),
     # The decorator's own arguments, beside `project_name`.
     Case(

@@ -23,8 +23,9 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 
 ## FAQ
 
-- **A test fails. Is that expected?** One does, on purpose. Its comment starts
-  with `KNOWN FAILURE` and says which bug it pins. Nothing else should fail.
+- **A test fails. Is that expected?** A few do, on purpose. Each one's comment
+  starts with `KNOWN FAILURE` and says which bug it pins. Nothing else should
+  fail.
 - **Why won't it run against production?** Every test creates an agent and
   four tracing projects. Use dev or a local LangSmith.
 - **Does it clean up after itself?** It tries, and logs what it cannot remove.
@@ -45,14 +46,15 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 
 ## TODO
 
-- **Fix the SDK**: an agent named at a higher tier (`tracing_context`) should
-  beat a project named at a lower one (`@traceable(project_name=)`), as two
-  projects would. `context_agent_and_decorator_project` pins it.
-- **Bring back `test_create_feedback.py`**, removed on 2026-09-17. It had five
-  cases and passed. Two questions first: does `create_feedback` read the agent
-  env vars, and does a resolved pair actually decide where feedback is written?
-  The second matters because on SmithDB-only the run cannot be looked up, which
-  is the whole reason the pair exists there.
+- **Fix the commit message, not the code**: langsmith-sdk `6157cfbc` says an
+  agent at a higher tier beats a project at a lower one. The code makes a
+  project named anywhere in code win, and `evaluate()` depends on that.
+  `context_agent_and_decorator_project` and `test_evaluate.py` pin the code.
+- **Fix `create_feedback`**: the agent pair is accepted on paths that cannot
+  carry it (no `trace_id`, `AsyncClient`) and dropped in silence. Two
+  `TEMPORARY` tests pin today's behavior.
+- **Fix `evaluate()` under `tracing_context(agent_id=)`**: it raises at the
+  evaluator step. One test in `test_evaluate.py` is red until then.
 - **Delete the `TEMPORARY` test** in `test_create_update_run.py` once the
   non-multipart endpoints read the agent pair.
 - **Use SDK methods for the agent API** once they exist, replacing

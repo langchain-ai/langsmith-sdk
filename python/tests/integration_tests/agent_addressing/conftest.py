@@ -43,9 +43,11 @@ ADDRESSING_ENV_VARS = (
 )
 
 # Placeholders for the names a test owns. `Harness.format` substitutes this
-# run's unique values, so no case hard-codes a name.
+# run's unique values, so no case hard-codes a name. `OTHER_AGENT` is a key no
+# run is ever sent to: for what must not be created, and for unknown agents.
 AGENT = "{agent}"
 PROJECT = "{project}"
+OTHER_AGENT = "{other_agent}"
 
 PRODUCTION_HOSTS = frozenset({"api.smith.langchain.com", "eu.api.smith.langchain.com"})
 
@@ -155,7 +157,11 @@ class Harness:
         # Lower case and dashes only: an agent key becomes a project name, and
         # a key the backend cannot slug is rejected outright.
         self.agent_key = f"sdk-it-{token}"
+        self.other_agent_key = f"sdk-it-other-{token}"
         self.project_name = f"sdk-it-project-{token}"
+        # Created along the way and deleted in `cleanup`.
+        self._projects: list[str] = []
+        self._datasets: list[uuid.UUID] = []
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
         # Multipart flushes on a background thread, so a rejection is reported
         # here rather than raised.
@@ -171,25 +177,40 @@ class Harness:
 
     # -- configuration -----------------------------------------------------
 
-    def format(self, value: Any) -> Any:
-        """Substitute this test's names into a case's placeholders."""
+    def format(self, value: Any, **names: str) -> Any:
+        """Substitute this test's names into a case's placeholders.
+
+        `names` adds placeholders only a test knows, such as the project of a
+        run it just sent. An unknown placeholder is left as is.
+        """
         if isinstance(value, str):
-            return value.format(agent=self.agent_key, project=self.project_name)
+            return value.format_map(
+                _Names(
+                    agent=self.agent_key,
+                    project=self.project_name,
+                    other_agent=self.other_agent_key,
+                    **names,
+                )
+            )
         if isinstance(value, dict):
-            return {key: self.format(item) for key, item in value.items()}
+            return {key: self.format(item, **names) for key, item in value.items()}
         return value
 
     def configure(self, case: Case) -> CallArgs:
         """Apply the case's environment and return its call arguments."""
-        for name, value in case.env.items():
-            self._monkeypatch.setenv(name, self.format(value))
-        _clear_env_caches()
+        self.configure_env(case.env)
         create = {name: self.format(value) for name, value in case.kwargs.items()}
         update = {
             ("session_name" if name == "project_name" else name): value
             for name, value in create.items()
         }
         return CallArgs(create=create, update=update)
+
+    def configure_env(self, env: dict[str, str]) -> None:
+        """Set these variables, with placeholders substituted, for this test."""
+        for name, value in env.items():
+            self._monkeypatch.setenv(name, self.format(value))
+        _clear_env_caches()
 
     def root_run(self) -> dict[str, Any]:
         """A root run's identity fields.
@@ -205,6 +226,48 @@ class Harness:
             "trace_id": run_id,
             "dotted_order": f"{self.start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}",
         }
+
+    # -- runs, feedback, datasets ----------------------------------------------
+
+    def ingest(self, destination: Destination) -> ls_schemas.Run:
+        """Send one root run to `destination` and return it once ingested."""
+        run = self.root_run()
+        addressing: dict[str, Any]
+        if isinstance(destination, InAgent):
+            addressing = {
+                "agent_id": self.agent_key,
+                "agent_environment": destination.environment.lower(),
+            }
+        else:
+            assert isinstance(destination, InProject)
+            addressing = {"project_name": self.format(destination.name)}
+        self.client.create_run(
+            **run,
+            name="agent-addressing",
+            run_type="chain",
+            inputs={},
+            start_time=self.start_time,
+            **addressing,
+        )
+        self.client.flush()
+        ingested = self.assert_landed(run["id"], destination, patched=False)
+        assert ingested is not None
+        return ingested
+
+    def dataset(self) -> ls_schemas.Dataset:
+        """A dataset with one example, named after this test's project."""
+        dataset = self.client.create_dataset(self.project_name)
+        self._datasets.append(dataset.id)
+        self.client.create_example(
+            inputs={"question": "where does this run land?"},
+            outputs={"answer": "see the assertion"},
+            dataset_id=dataset.id,
+        )
+        return dataset
+
+    def remember_project(self, name: str) -> None:
+        """Delete this project too at the end, e.g. an experiment."""
+        self._projects.append(name)
 
     # -- @traceable ----------------------------------------------------------
 
@@ -329,6 +392,31 @@ class Harness:
         )
         return run
 
+    def assert_feedback_landed(
+        self, feedback_id: uuid.UUID, destination: Destination
+    ) -> Optional[ls_schemas.Feedback]:
+        """Assert the feedback reached `destination`, and created no agent.
+
+        The run the feedback describes lives in this test's agent already, so
+        "created nothing" is checked on `other_agent_key`.
+        """
+        if isinstance(destination, Rejected):
+            self.assert_rejected(destination, must_not_exist=self.other_agent_key)
+            return None
+        expected = self._expected_project(destination)
+        assert not self.errors, f"the SDK reported ingestion errors: {self.errors}"
+        feedback = _wait_for(
+            lambda: self._read_feedback(feedback_id),
+            what=f"feedback {feedback_id} to be ingested",
+        )
+        assert feedback.session_id == expected, (
+            f"the feedback landed in project {feedback.session_id}, not {expected}"
+        )
+        assert self.agent(self.other_agent_key) is None, (
+            f"feedback must not create an agent, but {self.other_agent_key!r} exists"
+        )
+        return feedback
+
     def assert_traced(self, ids: TracedIds, case: Case) -> None:
         """Assert the root landed, and the child landed under it."""
         self.assert_landed(ids.root, case.lands_in)
@@ -342,12 +430,17 @@ class Harness:
             )
 
     def assert_rejected(
-        self, rejected: Rejected, run_id: Optional[uuid.UUID] = None
+        self,
+        rejected: Rejected,
+        run_id: Optional[uuid.UUID] = None,
+        *,
+        must_not_exist: Optional[str] = None,
     ) -> None:
         """Assert the endpoint refused this, said why, logged it, created nothing.
 
         `run_id` only improves the failure message: it says where the run went
-        instead.
+        instead. `must_not_exist` is the agent key that must not have been
+        created, this test's own by default.
         """
         wanted = (str(rejected.status), rejected.reason, rejected.remedy)
         reported = [str(error) for error in self.errors]
@@ -371,14 +464,15 @@ class Harness:
             rejected.reason in message and rejected.remedy in message
             for message in logged
         ), f"expected the rejection logged at warning or above; got {logged}"
-        assert self.agent() is None, (
-            f"a rejected run must not create an agent, but {self.agent_key!r} exists"
+        key = must_not_exist or self.agent_key
+        assert self.agent(key) is None, (
+            f"a rejected part must not create an agent, but {key!r} exists"
         )
 
     def _expected_project(
-        self, destination: Destination, run_id: uuid.UUID
+        self, destination: Destination, run_id: Optional[uuid.UUID] = None
     ) -> uuid.UUID:
-        where = lambda: self._describe_run(run_id)  # noqa: E731 - for the message
+        where = (lambda: self._describe_run(run_id)) if run_id is not None else None
         if isinstance(destination, InProject):
             # Before the wait below, because it is the faster and more specific
             # failure when a payload reached the agent anyway.
@@ -425,6 +519,12 @@ class Harness:
             return None
         return run
 
+    def _read_feedback(self, feedback_id: uuid.UUID) -> Optional[ls_schemas.Feedback]:
+        try:
+            return self.client.read_feedback(feedback_id)
+        except ls_utils.LangSmithNotFoundError:
+            return None
+
     def _describe_run(self, run_id: uuid.UUID) -> str:
         """Where the run actually went, for the failure message."""
 
@@ -450,17 +550,21 @@ class Harness:
         """Delete what this test created, logging whatever will not go."""
         # Two keys: the one a test addressed, and the project name the legacy
         # path registers an agent under.
-        for key in (self.agent_key, self.project_name):
+        for key in (self.agent_key, self.other_agent_key, self.project_name):
             with self._quietly(f"delete agent {key}"):
                 agent = self.agent(key)
                 if agent is not None:
                     self.client.request_with_retries(
                         "DELETE", self.agents_url(f"/{agent['id']}")
                     )
-        with self._quietly(f"delete project {self.project_name}"):
-            project_id = self.project_id(self.project_name)
-            if project_id is not None:
-                self.client.delete_project(project_id=str(project_id))
+        for name in (*self._projects, self.project_name):
+            with self._quietly(f"delete project {name}"):
+                project_id = self.project_id(name)
+                if project_id is not None:
+                    self.client.delete_project(project_id=str(project_id))
+        for dataset_id in self._datasets:
+            with self._quietly(f"delete dataset {dataset_id}"):
+                self.client.delete_dataset(dataset_id=dataset_id)
 
     @contextlib.contextmanager
     def _quietly(self, what: str) -> Iterator[None]:
@@ -469,6 +573,13 @@ class Harness:
             yield
         except Exception as error:  # noqa: BLE001 - teardown is best effort
             logger.warning("Could not %s: %s", what, error)
+
+
+class _Names(dict):
+    """`format_map` names; an unknown placeholder survives for a later pass."""
+
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
 
 
 def _current_run_id() -> uuid.UUID:
