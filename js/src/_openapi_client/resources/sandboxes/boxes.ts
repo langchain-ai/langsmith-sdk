@@ -87,6 +87,25 @@ export class Boxes extends APIResource {
   }
 
   /**
+   * Removes the sharing grant for one port, or for every port when port is omitted.
+   * A LangSmith login URL stops working immediately. A previously minted service
+   * token is not revoked and stays valid until it expires, but no new one can be
+   * issued from the removed grant.
+   */
+  deleteServiceURL(
+    name: string,
+    params: BoxDeleteServiceURLParams | null | undefined = {},
+    options?: RequestOptions,
+  ): APIPromise<void> {
+    const { port } = params ?? {};
+    return this._client.delete(path`/api/v2/sandboxes/boxes/${name}/service-urls`, {
+      query: { port },
+      ...options,
+      headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
+    });
+  }
+
+  /**
    * Generate a tokenized link that downloads a single file from a sandbox with no
    * further authentication. This mints a token rather than creating an addressable
    * resource, so it returns 200 with no Location header. The token pins the sandbox,
@@ -139,6 +158,24 @@ export class Boxes extends APIResource {
   }
 
   /**
+   * Returns one entry per port the sandbox is currently reachable on, so a caller
+   * can see what is shared before turning it off. Expired token grants are omitted.
+   * Cursors are opaque and only valid on this endpoint; do not parse or construct
+   * one.
+   */
+  listServiceURLs(
+    name: string,
+    query: BoxListServiceURLsParams | null | undefined = {},
+    options?: RequestOptions,
+  ): PagePromise<BoxListServiceURLsResponsesItemsCursorGetPagination, BoxListServiceURLsResponse> {
+    return this._client.getAPIList(
+      path`/api/v2/sandboxes/boxes/${name}/service-urls`,
+      ItemsCursorGetPagination<BoxListServiceURLsResponse>,
+      { query, ...options },
+    );
+  }
+
+  /**
    * Start a stopped or failed sandbox. This endpoint is not idempotent.
    */
   start(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxResponse> {
@@ -155,6 +192,31 @@ export class Boxes extends APIResource {
       headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
     });
   }
+}
+
+export type BoxListServiceURLsResponsesItemsCursorGetPagination =
+  ItemsCursorGetPagination<BoxListServiceURLsResponse>;
+
+export interface BoxListServiceURLsResponse {
+  /**
+   * How the port is shared: "token" for a minted service token, or
+   * "restricted"/"workspace" for LangSmith login.
+   */
+  access: 'token' | 'restricted' | 'workspace';
+
+  created_at: string;
+
+  port: number;
+
+  /**
+   * The LangSmith user who first shared this port, when known.
+   */
+  created_by?: string;
+
+  /**
+   * When the share expires. Set only for "token"; a login grant does not expire.
+   */
+  expires_at?: string;
 }
 
 export interface BoxCreateParams {
@@ -1119,6 +1181,13 @@ export namespace BoxCreateSnapshotParams {
   }
 }
 
+export interface BoxDeleteServiceURLParams {
+  /**
+   * Port to stop sharing. Omit to stop sharing every port.
+   */
+  port?: number;
+}
+
 export interface BoxGenerateDownloadURLParams {
   path: string;
 
@@ -1170,14 +1239,20 @@ export interface BoxGenerateServiceURLParams {
   port?: number;
 }
 
+export interface BoxListServiceURLsParams extends ItemsCursorGetPaginationParams {}
+
 export declare namespace Boxes {
   export {
+    type BoxListServiceURLsResponse as BoxListServiceURLsResponse,
+    type BoxListServiceURLsResponsesItemsCursorGetPagination as BoxListServiceURLsResponsesItemsCursorGetPagination,
     type BoxCreateParams as BoxCreateParams,
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxDeleteServiceURLParams as BoxDeleteServiceURLParams,
     type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
+    type BoxListServiceURLsParams as BoxListServiceURLsParams,
   };
 }
 

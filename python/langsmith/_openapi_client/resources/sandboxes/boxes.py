@@ -23,6 +23,8 @@ from ...types.sandboxes import (
     box_create_params,
     box_update_params,
     box_create_snapshot_params,
+    box_list_service_urls_params,
+    box_delete_service_url_params,
     box_generate_service_url_params,
     box_generate_download_url_params,
 )
@@ -31,6 +33,7 @@ from ...types.snapshot_response import SnapshotResponse
 from ...types.service_url_response import ServiceURLResponse
 from ...types.download_url_response import DownloadURLResponse
 from ...types.sandbox_status_response import SandboxStatusResponse
+from ...types.sandboxes.box_list_service_urls_response import BoxListServiceURLsResponse
 
 __all__ = ["BoxesResource", "AsyncBoxesResource"]
 
@@ -477,6 +480,50 @@ class BoxesResource(SyncAPIResource):
             cast_to=SnapshotResponse,
         )
 
+    def delete_service_url(
+        self,
+        name: str,
+        *,
+        port: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> None:
+        """
+        Removes the sharing grant for one port, or for every port when port is omitted.
+        A LangSmith login URL stops working immediately. A previously minted service
+        token is not revoked and stays valid until it expires, but no new one can be
+        issued from the removed grant.
+
+        Args:
+          port: Port to stop sharing. Omit to stop sharing every port.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        extra_headers = {"Accept": "*/*", **(extra_headers or {})}
+        return self._delete(
+            path_template("/api/v2/sandboxes/boxes/{name}/service-urls", name=name),
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform({"port": port}, box_delete_service_url_params.BoxDeleteServiceURLParams),
+            ),
+            cast_to=NoneType,
+        )
+
     def generate_download_url(
         self,
         name: str,
@@ -653,6 +700,59 @@ class BoxesResource(SyncAPIResource):
                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
             ),
             cast_to=SandboxStatusResponse,
+        )
+
+    def list_service_urls(
+        self,
+        name: str,
+        *,
+        cursor: str | Omit = omit,
+        page_size: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> SyncItemsCursorGetPagination[BoxListServiceURLsResponse]:
+        """
+        Returns one entry per port the sandbox is currently reachable on, so a caller
+        can see what is shared before turning it off. Expired token grants are omitted.
+        Cursors are opaque and only valid on this endpoint; do not parse or construct
+        one.
+
+        Args:
+          cursor: Opaque pagination cursor from a prior response's next_cursor
+
+          page_size: Number of results per page
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        return self._get_api_list(
+            path_template("/api/v2/sandboxes/boxes/{name}/service-urls", name=name),
+            page=SyncItemsCursorGetPagination[BoxListServiceURLsResponse],
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {
+                        "cursor": cursor,
+                        "page_size": page_size,
+                    },
+                    box_list_service_urls_params.BoxListServiceURLsParams,
+                ),
+            ),
+            model=BoxListServiceURLsResponse,
         )
 
     def start(
@@ -1168,6 +1268,52 @@ class AsyncBoxesResource(AsyncAPIResource):
             cast_to=SnapshotResponse,
         )
 
+    async def delete_service_url(
+        self,
+        name: str,
+        *,
+        port: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> None:
+        """
+        Removes the sharing grant for one port, or for every port when port is omitted.
+        A LangSmith login URL stops working immediately. A previously minted service
+        token is not revoked and stays valid until it expires, but no new one can be
+        issued from the removed grant.
+
+        Args:
+          port: Port to stop sharing. Omit to stop sharing every port.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        extra_headers = {"Accept": "*/*", **(extra_headers or {})}
+        return await self._delete(
+            path_template("/api/v2/sandboxes/boxes/{name}/service-urls", name=name),
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=await async_maybe_transform(
+                    {"port": port}, box_delete_service_url_params.BoxDeleteServiceURLParams
+                ),
+            ),
+            cast_to=NoneType,
+        )
+
     async def generate_download_url(
         self,
         name: str,
@@ -1346,6 +1492,59 @@ class AsyncBoxesResource(AsyncAPIResource):
             cast_to=SandboxStatusResponse,
         )
 
+    def list_service_urls(
+        self,
+        name: str,
+        *,
+        cursor: str | Omit = omit,
+        page_size: int | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> AsyncPaginator[BoxListServiceURLsResponse, AsyncItemsCursorGetPagination[BoxListServiceURLsResponse]]:
+        """
+        Returns one entry per port the sandbox is currently reachable on, so a caller
+        can see what is shared before turning it off. Expired token grants are omitted.
+        Cursors are opaque and only valid on this endpoint; do not parse or construct
+        one.
+
+        Args:
+          cursor: Opaque pagination cursor from a prior response's next_cursor
+
+          page_size: Number of results per page
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        if not name:
+            raise ValueError(f"Expected a non-empty value for `name` but received {name!r}")
+        return self._get_api_list(
+            path_template("/api/v2/sandboxes/boxes/{name}/service-urls", name=name),
+            page=AsyncItemsCursorGetPagination[BoxListServiceURLsResponse],
+            options=make_request_options(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {
+                        "cursor": cursor,
+                        "page_size": page_size,
+                    },
+                    box_list_service_urls_params.BoxListServiceURLsParams,
+                ),
+            ),
+            model=BoxListServiceURLsResponse,
+        )
+
     async def start(
         self,
         name: str,
@@ -1439,6 +1638,9 @@ class BoxesResourceWithRawResponse:
         self.create_snapshot = to_raw_response_wrapper(
             boxes.create_snapshot,
         )
+        self.delete_service_url = to_raw_response_wrapper(
+            boxes.delete_service_url,
+        )
         self.generate_download_url = to_raw_response_wrapper(
             boxes.generate_download_url,
         )
@@ -1447,6 +1649,9 @@ class BoxesResourceWithRawResponse:
         )
         self.get_status = to_raw_response_wrapper(
             boxes.get_status,
+        )
+        self.list_service_urls = to_raw_response_wrapper(
+            boxes.list_service_urls,
         )
         self.start = to_raw_response_wrapper(
             boxes.start,
@@ -1478,6 +1683,9 @@ class AsyncBoxesResourceWithRawResponse:
         self.create_snapshot = async_to_raw_response_wrapper(
             boxes.create_snapshot,
         )
+        self.delete_service_url = async_to_raw_response_wrapper(
+            boxes.delete_service_url,
+        )
         self.generate_download_url = async_to_raw_response_wrapper(
             boxes.generate_download_url,
         )
@@ -1486,6 +1694,9 @@ class AsyncBoxesResourceWithRawResponse:
         )
         self.get_status = async_to_raw_response_wrapper(
             boxes.get_status,
+        )
+        self.list_service_urls = async_to_raw_response_wrapper(
+            boxes.list_service_urls,
         )
         self.start = async_to_raw_response_wrapper(
             boxes.start,
@@ -1517,6 +1728,9 @@ class BoxesResourceWithStreamingResponse:
         self.create_snapshot = to_streamed_response_wrapper(
             boxes.create_snapshot,
         )
+        self.delete_service_url = to_streamed_response_wrapper(
+            boxes.delete_service_url,
+        )
         self.generate_download_url = to_streamed_response_wrapper(
             boxes.generate_download_url,
         )
@@ -1525,6 +1739,9 @@ class BoxesResourceWithStreamingResponse:
         )
         self.get_status = to_streamed_response_wrapper(
             boxes.get_status,
+        )
+        self.list_service_urls = to_streamed_response_wrapper(
+            boxes.list_service_urls,
         )
         self.start = to_streamed_response_wrapper(
             boxes.start,
@@ -1556,6 +1773,9 @@ class AsyncBoxesResourceWithStreamingResponse:
         self.create_snapshot = async_to_streamed_response_wrapper(
             boxes.create_snapshot,
         )
+        self.delete_service_url = async_to_streamed_response_wrapper(
+            boxes.delete_service_url,
+        )
         self.generate_download_url = async_to_streamed_response_wrapper(
             boxes.generate_download_url,
         )
@@ -1564,6 +1784,9 @@ class AsyncBoxesResourceWithStreamingResponse:
         )
         self.get_status = async_to_streamed_response_wrapper(
             boxes.get_status,
+        )
+        self.list_service_urls = async_to_streamed_response_wrapper(
+            boxes.list_service_urls,
         )
         self.start = async_to_streamed_response_wrapper(
             boxes.start,
