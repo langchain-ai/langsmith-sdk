@@ -794,7 +794,7 @@ class DownloadURL:
         )
 
 
-ServiceAccess = Literal["restricted", "workspace", "off"]
+ServiceAccess = Literal["restricted", "workspace"]
 
 
 @dataclass

@@ -1,5 +1,5 @@
 /** How a service URL is gated. Omit for a minted token. */
-export type ServiceAccess = "restricted" | "workspace" | "off";
+export type ServiceAccess = "restricted" | "workspace";
 
 /** Header the sandbox router reads the minted service token from. */
 export const SERVICE_TOKEN_HEADER = "X-Langsmith-Sandbox-Service-Token";

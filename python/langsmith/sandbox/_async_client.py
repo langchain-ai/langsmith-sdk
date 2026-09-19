@@ -729,15 +729,13 @@ class AsyncSandboxClient:
             name: Sandbox name.
             port: Port the service is listening on inside the sandbox.
             expires_in_seconds: Token TTL in seconds (1--86400, default 600).
-            access: Gate the URL behind LangSmith login instead of a token.
-                ``"restricted"`` admits anyone with ``sandboxes:read`` on the
-                sandbox, ``"workspace"`` any member of the owning workspace;
-                both return a :class:`ServiceLoginURL` and ignore
-                ``expires_in_seconds``, since a login URL carries no token and
-                does not expire. ``"off"`` removes an existing login grant and
-                goes back to minting a token. Omit for token mode. A login
-                grant is durable, so token mode is refused with 409 while one
-                is in place.
+            access: Gate the URL behind LangSmith login instead of a token,
+                returning a :class:`ServiceLoginURL`. ``"restricted"`` admits
+                anyone with ``sandboxes:read`` on the sandbox, ``"workspace"``
+                any member of the owning workspace. Neither carries a token or
+                expires, so ``expires_in_seconds`` does not apply. Omit for
+                token mode; a login grant is durable, so token mode is refused
+                with 409 while one is in place.
             headers: Optional per-request header overrides.
 
         Returns:
@@ -749,12 +747,11 @@ class AsyncSandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
-        if access is not None and access not in ("restricted", "workspace", "off"):
+        if access is not None and access not in ("restricted", "workspace"):
             raise ValueError(
-                'access must be one of "restricted", "workspace", "off", '
-                f"got {access!r}"
+                f'access must be "restricted" or "workspace", got {access!r}'
             )
-        login_mode = access in ("restricted", "workspace")
+        login_mode = access is not None
         url = _box_url(self._base_url, name, "service-url")
         payload: dict[str, Any] = {"port": port}
         if not login_mode:

@@ -500,7 +500,6 @@ export class SandboxClient {
    * that refreshes it as it nears expiry. With `access` set to `"restricted"`
    * or `"workspace"` the URL is gated by LangSmith login instead and a
    * {@link ServiceLoginUrl} is returned: no token, no expiry, browser only.
-   * `"off"` removes an existing login grant and goes back to minting a token.
    *
    * A login grant is durable, so token mode is refused with 409 while one is
    * in place, and `expiresInSeconds` does not apply to the login modes.
@@ -524,15 +523,14 @@ export class SandboxClient {
     if (
       access !== undefined &&
       access !== "restricted" &&
-      access !== "workspace" &&
-      access !== "off"
+      access !== "workspace"
     ) {
       throw new LangSmithValidationError(
-        `access must be one of "restricted", "workspace", "off" (got ${String(access)})`,
+        `access must be "restricted" or "workspace" (got ${String(access)})`,
         "access",
       );
     }
-    const loginMode = access === "restricted" || access === "workspace";
+    const loginMode = access !== undefined;
     if (expiresInSeconds !== undefined && loginMode) {
       throw new LangSmithValidationError(
         `expiresInSeconds does not apply to access "${access}": a LangSmith ` +

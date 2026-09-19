@@ -106,11 +106,12 @@ describe("serviceUrl LangSmith login mode", () => {
     },
   );
 
-  it("access=off stays token mode and revokes the grant", async () => {
+  it("rejects off, which revokes a share rather than granting one", async () => {
     const { client, mockFetch } = clientWithMock();
-    const result = await client.serviceUrl("sb", { port: 8000, access: "off" });
-    expect(result).toBeInstanceOf(ServiceUrl);
-    expect(sentBody(mockFetch)).toEqual({ port: 8000, access: "off" });
+    await expect(
+      client.serviceUrl("sb", { port: 8000, access: "off" as any }),
+    ).rejects.toThrow(/"restricted" or "workspace"/);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
 
@@ -127,7 +128,7 @@ describe("serviceUrl validation", () => {
     const { client, mockFetch } = clientWithMock();
     await expect(
       client.serviceUrl("sb", { port: 8000, access: "maybe" as any }),
-    ).rejects.toThrow(/"restricted", "workspace", "off"/);
+    ).rejects.toThrow(/"restricted" or "workspace"/);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 

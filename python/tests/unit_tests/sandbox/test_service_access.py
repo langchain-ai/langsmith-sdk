@@ -47,16 +47,6 @@ class TestTokenMode:
         assert isinstance(result, ServiceURL)
         assert _payload(client) == {"port": 8000, "expires_in_seconds": 600}
 
-    def test_off_revokes_the_grant_and_stays_token_mode(self):
-        client = _client(TOKEN_BODY)
-        result = client.service("sb", 8000, access="off")
-        assert isinstance(result, ServiceURL)
-        assert _payload(client) == {
-            "port": 8000,
-            "expires_in_seconds": 600,
-            "access": "off",
-        }
-
 
 class TestLoginMode:
     @pytest.mark.parametrize("access", ["restricted", "workspace"])
@@ -75,6 +65,13 @@ class TestLoginMode:
 
 
 class TestValidation:
+    def test_rejects_off(self):
+        """`off` revokes a share as a side effect of minting; not exposed."""
+        client = _client(TOKEN_BODY)
+        with pytest.raises(ValueError, match="restricted"):
+            client.service("sb", 8000, access="off")
+        client._http.post.assert_not_called()
+
     def test_rejects_an_unknown_access_value(self):
         client = _client(TOKEN_BODY)
         with pytest.raises(ValueError, match="restricted"):
