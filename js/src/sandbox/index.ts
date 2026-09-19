@@ -39,6 +39,7 @@ export {
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
+export { validateAccessDelegation } from "./access_delegation.js";
 export {
   contextHubMount,
   gcsMount,
@@ -48,6 +49,10 @@ export {
 } from "./mounts.js";
 
 // Types
+export type {
+  AccessDelegation,
+  AccessDelegationMode,
+} from "./access_delegation.js";
 export type {
   ExecutionResult,
   FileChunk,

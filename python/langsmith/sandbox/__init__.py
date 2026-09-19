@@ -28,6 +28,10 @@ Example:
             print(result.stdout)
 """
 
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    AccessDelegationMode,
+)
 from langsmith.sandbox._async_client import AsyncSandboxClient
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import SandboxClient
@@ -140,6 +144,8 @@ __all__ = [
     "CommandHandle",
     "AsyncCommandHandle",
     "OutputChunk",
+    "AccessDelegation",
+    "AccessDelegationMode",
     "SandboxProxyConfig",
     "SandboxProxyRule",
     "SandboxProxySecret",

@@ -16,6 +16,10 @@ from urllib.parse import quote
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import Langsmith
 from langsmith._openapi_client._httpx import httpx
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    _validate_access_delegation,
+)
 from langsmith.sandbox._exceptions import (
     ResourceCreationError,
     ResourceNameConflictError,
@@ -491,6 +495,7 @@ class SandboxClient:
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
+        access_delegation: Optional[AccessDelegation] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
@@ -543,6 +548,14 @@ class SandboxClient:
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
                 such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
+
+            access_delegation: Optional grant letting code inside the sandbox
+                call the LangSmith API as you, with no API key of its own.
+                ``{"mode": "INHERIT"}`` grants everything you can do;
+                ``{"mode": "EXPLICIT", "permissions": [...]}`` grants only the
+                permissions listed, each of which you must already hold. The
+                grant belongs to the sandbox, so anyone who can exec into it
+                can make calls under it. Omit for no access.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -597,6 +610,10 @@ class SandboxClient:
             payload["proxy_config"] = proxy_config
         if run_config is not None:
             payload["run_config"] = _run_config_payload(run_config)
+        if access_delegation is not None:
+            payload["access_delegation"] = _validate_access_delegation(
+                access_delegation
+            )
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
