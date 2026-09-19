@@ -7,7 +7,7 @@ import os
 import posixpath
 import uuid
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, overload
 
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import AsyncLangsmith
@@ -707,6 +707,28 @@ class AsyncSandboxClient:
                 ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
+
+    @overload
+    async def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: None = None,
+        headers: RequestHeaders = None,
+    ) -> AsyncServiceURL: ...
+
+    @overload
+    async def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: ServiceAccess,
+        headers: RequestHeaders = None,
+    ) -> ServiceLoginURL: ...
 
     async def service(
         self,

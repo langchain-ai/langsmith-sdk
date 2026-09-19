@@ -10,7 +10,7 @@ import tarfile
 import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, overload
 from urllib.parse import quote
 
 from langsmith import utils as ls_utils
@@ -824,6 +824,28 @@ class SandboxClient:
                 ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
+
+    @overload
+    def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: None = None,
+        headers: RequestHeaders = None,
+    ) -> ServiceURL: ...
+
+    @overload
+    def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: ServiceAccess,
+        headers: RequestHeaders = None,
+    ) -> ServiceLoginURL: ...
 
     def service(
         self,
