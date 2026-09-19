@@ -221,6 +221,7 @@ class Sandbox:
             mem_bytes=self.mem_bytes,
             fs_capacity_bytes=self.fs_capacity_bytes,
             run_config=self.run_config,
+            access_delegation=self.access_delegation,
             _client=client if client is not None else self._client.to_async(),
             _auto_delete=False,
         )
