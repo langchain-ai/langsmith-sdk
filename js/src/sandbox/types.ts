@@ -4,6 +4,8 @@
  * Field names use snake_case to match API response format.
  */
 
+import type { AccessDelegation } from "./access_delegation.js";
+
 /**
  * Result of executing a command in a sandbox.
  */
@@ -263,6 +265,11 @@ export interface SandboxData {
    * Absent on sandboxes created before the server recorded it.
    */
   run_config?: RunConfig;
+  /**
+   * LangSmith access granted to code inside the sandbox. Absent when it has
+   * none.
+   */
+  access_delegation?: AccessDelegation;
 }
 
 /**
@@ -777,6 +784,15 @@ export interface CreateSandboxOptions {
    * merge. The sandbox's own env vars remain a layer above this one.
    */
   runConfig?: RunConfig;
+  /**
+   * Grant letting code inside the sandbox call the LangSmith API as you, with
+   * no API key of its own. `{ mode: "INHERIT" }` grants everything you can do;
+   * `{ mode: "EXPLICIT", permissions: [...] }` grants only the permissions
+   * listed, each of which you must already hold. The grant belongs to the
+   * sandbox, so anyone who can exec into it can make calls under it. Omit for
+   * no access.
+   */
+  accessDelegation?: AccessDelegation;
 }
 
 /**

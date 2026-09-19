@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
 from langsmith._openapi_client._httpx import httpx
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    _access_delegation_from_dict,
+)
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
@@ -140,6 +144,7 @@ class AsyncSandbox:
     mem_bytes: Optional[int] = None
     fs_capacity_bytes: Optional[int] = None
     run_config: Optional[RunConfig] = None
+    access_delegation: Optional[AccessDelegation] = None
 
     # Internal fields (not from API)
     _client: AsyncSandboxClient = field(repr=False, default=None)  # type: ignore
@@ -178,6 +183,9 @@ class AsyncSandbox:
             mem_bytes=data.get("mem_bytes"),
             fs_capacity_bytes=data.get("fs_capacity_bytes"),
             run_config=_run_config_from_dict(data.get("run_config")),
+            access_delegation=_access_delegation_from_dict(
+                data.get("access_delegation")
+            ),
             _client=client,
             _auto_delete=auto_delete,
         )
@@ -215,6 +223,7 @@ class AsyncSandbox:
             mem_bytes=self.mem_bytes,
             fs_capacity_bytes=self.fs_capacity_bytes,
             run_config=self.run_config,
+            access_delegation=self.access_delegation,
             _client=client if client is not None else self._client.to_sync(),
             _auto_delete=False,
         )

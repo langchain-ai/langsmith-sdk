@@ -2,6 +2,7 @@
  * Main SandboxClient class for interacting with the sandbox server API.
  */
 
+import { validateAccessDelegation } from "./access_delegation.js";
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -565,6 +566,7 @@ export class SandboxClient {
       mountConfig,
       proxyConfig,
       runConfig,
+      accessDelegation,
     } = resolvedOptions;
 
     if (snapshotId && snapshotName) {
@@ -617,6 +619,9 @@ export class SandboxClient {
     }
     if (runConfig !== undefined) {
       payload.run_config = runConfig;
+    }
+    if (accessDelegation !== undefined) {
+      payload.access_delegation = validateAccessDelegation(accessDelegation);
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
