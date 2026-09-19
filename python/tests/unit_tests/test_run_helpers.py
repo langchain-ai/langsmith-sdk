@@ -860,7 +860,7 @@ async def test_openai_stream_records_error_after_exhaustion(
     error: Optional[str] = run.get("error")
     logging.getLogger(__name__).info(
         "Collected stream run: error=%r end_time=%s body_error_at=%s output=%r",
-        error,
+        error.splitlines()[0] if error else None,
         run["end_time"],
         failed_at.isoformat(),
         run["outputs"]["choices"][0]["message"]["content"],
@@ -954,18 +954,27 @@ async def test_openai_stream_records_explicit_close(
                 sync_stream.close()
                 assert sync_stream.response.is_closed
 
-        [run] = [
+        completed_runs: list[dict[str, Any]] = [
             json.loads(body)
             for method, _, body in endpoint.requests
             if method == "PATCH"
         ]
         logging.getLogger(__name__).info(
             "Explicit close: async=%s context_error=%s transport_closed=True "
+            "completed_runs=%s",
+            async_mode,
+            context_error,
+            len(completed_runs),
+        )
+        [run] = completed_runs
+        error: Optional[str] = run.get("error")
+        logging.getLogger(__name__).info(
+            "Explicit close: async=%s context_error=%s transport_closed=True "
             "end_time=%s error=%r output=%r",
             async_mode,
             context_error,
             run.get("end_time"),
-            run.get("error"),
+            error.splitlines()[0] if error else None,
             run.get("outputs"),
         )
         assert run["end_time"] is not None
