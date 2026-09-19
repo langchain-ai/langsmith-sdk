@@ -47,6 +47,8 @@ from langsmith.sandbox._models import (
     DownloadURL,
     ResourceStatus,
     RunConfig,
+    ServiceAccess,
+    ServiceLoginURL,
     Snapshot,
     SnapshotTag,
     _run_config_payload,
@@ -712,8 +714,9 @@ class AsyncSandboxClient:
         port: int,
         *,
         expires_in_seconds: int = 600,
+        access: Optional[ServiceAccess] = None,
         headers: RequestHeaders = None,
-    ) -> AsyncServiceURL:
+    ) -> Union[AsyncServiceURL, ServiceLoginURL]:
         """Get an authenticated URL for a service running inside a sandbox.
 
         Returns an :class:`AsyncServiceURL` whose async accessors
@@ -726,6 +729,15 @@ class AsyncSandboxClient:
             name: Sandbox name.
             port: Port the service is listening on inside the sandbox.
             expires_in_seconds: Token TTL in seconds (1--86400, default 600).
+            access: Gate the URL behind LangSmith login instead of a token.
+                ``"restricted"`` admits anyone with ``sandboxes:read`` on the
+                sandbox, ``"workspace"`` any member of the owning workspace;
+                both return a :class:`ServiceLoginURL` and ignore
+                ``expires_in_seconds``, since a login URL carries no token and
+                does not expire. ``"off"`` removes an existing login grant and
+                goes back to minting a token. Omit for token mode. A login
+                grant is durable, so token mode is refused with 409 while one
+                is in place.
             headers: Optional per-request header overrides.
 
         Returns:
@@ -737,8 +749,18 @@ class AsyncSandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
+        if access is not None and access not in ("restricted", "workspace", "off"):
+            raise ValueError(
+                'access must be one of "restricted", "workspace", "off", '
+                f"got {access!r}"
+            )
+        login_mode = access in ("restricted", "workspace")
         url = _box_url(self._base_url, name, "service-url")
-        payload = {"port": port, "expires_in_seconds": expires_in_seconds}
+        payload: dict[str, Any] = {"port": port}
+        if not login_mode:
+            payload["expires_in_seconds"] = expires_in_seconds
+        if access is not None:
+            payload["access"] = access
 
         async def _refresher() -> AsyncServiceURL:
             return await self.service(
@@ -753,6 +775,8 @@ class AsyncSandboxClient:
                 url, json=payload, headers=self._request_headers(headers)
             )
             response.raise_for_status()
+            if login_mode:
+                return ServiceLoginURL.from_dict(response.json())
             return AsyncServiceURL.from_dict(response.json(), _refresher=_refresher)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
