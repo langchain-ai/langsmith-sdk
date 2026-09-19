@@ -553,8 +553,16 @@ export class SandboxClient {
     if (loginMode) {
       return new ServiceLoginUrl(data);
     }
-    return new ServiceUrl(data, () =>
-      this.serviceUrl(name, options) as Promise<ServiceUrl>,
+    // Refresh with the token parameters only. Carrying options.signal over
+    // would tie every later refresh to the first request's lifetime, so a
+    // caller-supplied timeout signal would leave the URL unable to refresh.
+    return new ServiceUrl(
+      data,
+      () =>
+        this.serviceUrl(name, {
+          port,
+          expiresInSeconds,
+        }) as Promise<ServiceUrl>,
     );
   }
 

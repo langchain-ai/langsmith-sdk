@@ -82,7 +82,11 @@ describe("serviceUrl token mode", () => {
   });
 
   it("refreshes a token that is past the margin", async () => {
-    const stale = { ...TOKEN_BODY, token: "stale", expires_at: "2000-01-01T00:00:00Z" };
+    const stale = {
+      ...TOKEN_BODY,
+      token: "stale",
+      expires_at: "2000-01-01T00:00:00Z",
+    };
     const { client, mockFetch } = clientWithMock();
     (mockFetch as any)
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(stale)))
@@ -90,6 +94,33 @@ describe("serviceUrl token mode", () => {
     const svc = (await client.serviceUrl("sb", { port: 8000 })) as ServiceUrl;
     expect(await svc.token()).toBe("tok");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes without the mint request's signal", async () => {
+    const stale = {
+      ...TOKEN_BODY,
+      token: "stale",
+      expires_at: "2000-01-01T00:00:00Z",
+    };
+    const { client, mockFetch } = clientWithMock();
+    (mockFetch as any)
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(stale)))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(TOKEN_BODY)));
+    const controller = new AbortController();
+    const svc = (await client.serviceUrl("sb", {
+      port: 8000,
+      expiresInSeconds: 3600,
+      signal: controller.signal,
+    })) as ServiceUrl;
+    controller.abort();
+
+    expect(await svc.token()).toBe("tok");
+    const [, refreshInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(refreshInit.signal).toBeUndefined();
+    expect(sentBody(mockFetch, 1)).toEqual({
+      port: 8000,
+      expires_in_seconds: 3600,
+    });
   });
 });
 
@@ -100,7 +131,9 @@ describe("serviceUrl LangSmith login mode", () => {
       const { client, mockFetch } = clientWithMock({ ...LOGIN_BODY, access });
       const result = await client.serviceUrl("sb", { port: 8000, access });
       expect(result).toBeInstanceOf(ServiceLoginUrl);
-      expect((result as ServiceLoginUrl).url).toBe("https://l-abc.example.dev/");
+      expect((result as ServiceLoginUrl).url).toBe(
+        "https://l-abc.example.dev/",
+      );
       expect((result as ServiceLoginUrl).access).toBe(access);
       expect(sentBody(mockFetch)).toEqual({ port: 8000, access });
     },
