@@ -3,6 +3,11 @@
  */
 
 import { validateAccessDelegation } from "./access_delegation.js";
+import {
+  ServiceLoginUrl,
+  ServiceUrl,
+  type ServiceAccess,
+} from "./service_url.js";
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -486,6 +491,79 @@ export class SandboxClient {
   private _boxUrl(name: string, ...segments: string[]): string {
     const suffix = segments.length ? `/${segments.join("/")}` : "";
     return `${this._baseUrl}/boxes/${encodeURIComponent(name)}${suffix}`;
+  }
+
+  /**
+   * Generate an authenticated URL for an HTTP service running in a sandbox.
+   *
+   * Without `access`, mints a short-lived token and returns a {@link ServiceUrl}
+   * that refreshes it as it nears expiry. With `access` set to `"restricted"`
+   * or `"workspace"` the URL is gated by LangSmith login instead and a
+   * {@link ServiceLoginUrl} is returned: no token, no expiry, browser only.
+   *
+   * A login grant is durable, so token mode is refused with 409 while one is
+   * in place, and `expiresInSeconds` does not apply to the login modes.
+   */
+  async serviceUrl(
+    name: string,
+    options: {
+      port: number;
+      expiresInSeconds?: number;
+      access?: ServiceAccess;
+      signal?: AbortSignal;
+    },
+  ): Promise<ServiceUrl | ServiceLoginUrl> {
+    const { port, expiresInSeconds, access, signal } = options;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new LangSmithValidationError(
+        `port must be between 1 and 65535 (got ${port})`,
+        "port",
+      );
+    }
+    if (
+      access !== undefined &&
+      access !== "restricted" &&
+      access !== "workspace"
+    ) {
+      throw new LangSmithValidationError(
+        `access must be "restricted" or "workspace" (got ${String(access)})`,
+        "access",
+      );
+    }
+    const loginMode = access !== undefined;
+    if (expiresInSeconds !== undefined && loginMode) {
+      throw new LangSmithValidationError(
+        `expiresInSeconds does not apply to access "${access}": a LangSmith ` +
+          "login URL carries no token and does not expire",
+        "expiresInSeconds",
+      );
+    }
+
+    const url = this._boxUrl(name, "service-url");
+    const payload: Record<string, unknown> = { port };
+    if (!loginMode && expiresInSeconds !== undefined) {
+      payload.expires_in_seconds = expiresInSeconds;
+    }
+    if (access !== undefined) {
+      payload.access = access;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    const data = await response.json();
+    if (loginMode) {
+      return new ServiceLoginUrl(data);
+    }
+    // Refresh with the token parameters only. Carrying options.signal over
+    // would tie every later refresh to the first request's lifetime, so a
+    // caller-supplied timeout signal would leave the URL unable to refresh.
+    return new ServiceUrl(
+      data,
+      () =>
+        this.serviceUrl(name, {
+          port,
+          expiresInSeconds,
+        }) as Promise<ServiceUrl>,
+    );
   }
 
   private async _postJson(

@@ -10,7 +10,7 @@ import tarfile
 import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, overload
 from urllib.parse import quote
 
 from langsmith import utils as ls_utils
@@ -40,6 +40,8 @@ from langsmith.sandbox._models import (
     DownloadURL,
     ResourceStatus,
     RunConfig,
+    ServiceAccess,
+    ServiceLoginURL,
     ServiceURL,
     Snapshot,
     SnapshotTag,
@@ -823,14 +825,37 @@ class SandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
+    @overload
     def service(
         self,
         name: str,
         port: int,
         *,
         expires_in_seconds: int = 600,
+        access: None = None,
         headers: RequestHeaders = None,
-    ) -> ServiceURL:
+    ) -> ServiceURL: ...
+
+    @overload
+    def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: ServiceAccess,
+        headers: RequestHeaders = None,
+    ) -> ServiceLoginURL: ...
+
+    def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: Optional[ServiceAccess] = None,
+        headers: RequestHeaders = None,
+    ) -> Union[ServiceURL, ServiceLoginURL]:
         """Get an authenticated URL for a service running inside a sandbox.
 
         Returns a :class:`ServiceURL` whose properties auto-refresh the
@@ -842,6 +867,13 @@ class SandboxClient:
             name: Sandbox name.
             port: Port the service is listening on inside the sandbox.
             expires_in_seconds: Token TTL in seconds (1--86400, default 600).
+            access: Gate the URL behind LangSmith login instead of a token,
+                returning a :class:`ServiceLoginURL`. ``"restricted"`` admits
+                anyone with ``sandboxes:read`` on the sandbox, ``"workspace"``
+                any member of the owning workspace. Neither carries a token or
+                expires, so ``expires_in_seconds`` does not apply. Omit for
+                token mode; a login grant is durable, so token mode is refused
+                with 409 while one is in place.
             headers: Optional per-request header overrides.
 
         Returns:
@@ -853,8 +885,17 @@ class SandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
+        if access is not None and access not in ("restricted", "workspace"):
+            raise ValueError(
+                f'access must be "restricted" or "workspace", got {access!r}'
+            )
+        login_mode = access is not None
         url = _box_url(self._base_url, name, "service-url")
-        payload = {"port": port, "expires_in_seconds": expires_in_seconds}
+        payload: dict[str, Any] = {"port": port}
+        if not login_mode:
+            payload["expires_in_seconds"] = expires_in_seconds
+        if access is not None:
+            payload["access"] = access
 
         def _refresher() -> ServiceURL:
             return self.service(
@@ -869,6 +910,8 @@ class SandboxClient:
                 url, json=payload, headers=self._request_headers(headers)
             )
             response.raise_for_status()
+            if login_mode:
+                return ServiceLoginURL.from_dict(response.json())
             return ServiceURL.from_dict(response.json(), _refresher=_refresher)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:

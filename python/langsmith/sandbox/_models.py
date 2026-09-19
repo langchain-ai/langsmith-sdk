@@ -794,6 +794,37 @@ class DownloadURL:
         )
 
 
+ServiceAccess = Literal["restricted", "workspace"]
+
+
+@dataclass
+class ServiceLoginURL:
+    """Service URL gated by LangSmith login rather than a token.
+
+    The grant is durable: there is no token to carry and no expiry, so the URL
+    is only usable from a browser signed in to LangSmith. That is also why this
+    carries none of :class:`ServiceURL`'s auth-injecting HTTP helpers — a
+    programmatic request cannot satisfy the login.
+
+    Attributes:
+        url: The URL to open in a browser.
+        access: Who may open it — ``"restricted"`` for anyone with
+            ``sandboxes:read`` on the sandbox, ``"workspace"`` for any member
+            of the owning workspace.
+    """
+
+    url: str
+    access: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ServiceLoginURL:
+        """Create a ServiceLoginURL from API response dict."""
+        return cls(
+            url=data.get("browser_url") or data.get("service_url", ""),
+            access=data.get("access", ""),
+        )
+
+
 # =============================================================================
 # WebSocket Command Execution Models
 # =============================================================================
