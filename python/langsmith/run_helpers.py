@@ -2095,10 +2095,11 @@ class _TracedStreamBase(Generic[T]):
         stream: Union[Iterator[T], AsyncIterator[T]],
         trace_container: _TraceableContainer,
         reduce_fn: Optional[Callable] = None,
-    ):
+    ) -> None:
         self.__ls_stream__ = stream
         self.__ls_trace_container__ = trace_container
         self.__ls_completed__ = False
+        self.__ls_context_depth__ = 0
         self.__ls_reduce_fn__ = reduce_fn
         self.__ls_accumulated_output__: list[T] = []
         self.__is_llm_run__ = (
@@ -2107,8 +2108,55 @@ class _TracedStreamBase(Generic[T]):
             else False
         )
 
-    def __getattr__(self, name: str):
-        return getattr(self.__ls_stream__, name)
+    def __getattr__(self, name: str) -> Any:
+        attribute: Any = getattr(self.__ls_stream__, name)
+        if name not in ("close", "aclose") or not callable(attribute):
+            return attribute
+
+        close: Callable[..., Any] = functools.partial(self._close_stream, attribute)
+        if inspect.iscoroutinefunction(attribute):
+
+            @functools.wraps(attribute)
+            async def async_close(*args: Any, **kwargs: Any) -> Any:
+                return await close(*args, **kwargs)
+
+            return async_close
+        return functools.wraps(attribute)(close)
+
+    def _close_stream(
+        self, close: Callable[..., Any], /, *args: Any, **kwargs: Any
+    ) -> Any:
+        try:
+            result: Any = close(*args, **kwargs)
+        except BaseException as error:
+            _cleanup_traceback(error)
+            if self.__ls_context_depth__ == 0:
+                self._end_trace(error=error)
+            raise
+        if inspect.isawaitable(result):
+            return self._await_close_result(result)
+        if self.__ls_context_depth__ == 0:
+            self._end_trace()
+        return result
+
+    async def _await_close_result(self, awaitable: Awaitable[Any]) -> Any:
+        try:
+            result: Any = await awaitable
+        except BaseException as error:
+            _cleanup_traceback(error)
+            if self.__ls_context_depth__ == 0:
+                await self._aend_trace(error=error)
+            raise
+        if self.__ls_context_depth__ == 0:
+            await self._aend_trace()
+        return result
+
+    async def _aend_trace(self, error: Optional[BaseException] = None) -> None:
+        ctx: contextvars.Context = copy_context()
+        await asyncio.shield(
+            aitertools.aio_to_thread(ctx, self._end_trace, error=error)
+        )
+        _set_tracing_context(get_tracing_context(ctx))
 
     def __dir__(self):
         return list(set(dir(self.__class__) + dir(self.__ls_stream__)))
@@ -2219,7 +2267,6 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             trace_container=trace_container,
             reduce_fn=reduce_fn,
         )
-        self.__ls_context_depth__ = 0
         self.__ls_stream__ = stream
         self.__ls_gen = _process_async_iterator(
             generator=self.__ls_stream__,
@@ -2229,11 +2276,6 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             results=self.__ls_accumulated_output__,
             process_chunk=process_chunk,
         )
-
-    async def _aend_trace(self, error: Optional[BaseException] = None):
-        ctx = copy_context()
-        await asyncio.shield(aitertools.aio_to_thread(ctx, self._end_trace, error))
-        _set_tracing_context(get_tracing_context(ctx))
 
     async def __anext__(self) -> T:
         try:

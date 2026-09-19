@@ -27,7 +27,7 @@ from typing import (
 from unittest.mock import MagicMock, patch
 
 import pytest
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from requests_toolbelt import MultipartEncoder
 from typing_extensions import Annotated, Literal
 
@@ -869,6 +869,168 @@ async def test_openai_stream_records_error_after_exhaustion(
     assert "RuntimeError('consumer failed after exhaustion')" in error
     assert datetime.fromisoformat(run["end_time"]) >= failed_at
     assert run["outputs"]["choices"][0]["message"]["content"] == "hello"
+
+
+@pytest.mark.allow_hosts(["127.0.0.1"])
+@pytest.mark.parametrize(
+    ("async_mode", "context_error"),
+    [(False, False), (True, False), (True, True)],
+)
+async def test_openai_stream_records_explicit_close(
+    endpoint: HttpEndpoint, async_mode: bool, context_error: bool
+) -> None:
+    chunk: dict[str, Any] = {
+        "id": "chatcmpl-local",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "local",
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": "hello"},
+                "finish_reason": None,
+            }
+        ],
+    }
+    endpoint.responses["/v1/chat/completions"] = (
+        "text/event-stream",
+        f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode(),
+    )
+    with (
+        closing(
+            Client(
+                api_url=endpoint.url,
+                api_key="test",
+                auto_batch_tracing=False,
+                info={},
+            )
+        ) as client,
+        tracing_context(enabled=True),
+    ):
+        if async_mode:
+            async with AsyncOpenAI(
+                base_url=f"{endpoint.url}/v1", api_key="test", max_retries=0
+            ) as async_provider:
+                wrap_openai(async_provider, tracing_extra={"client": client})
+                async_stream = await async_provider.chat.completions.create(
+                    model="local",
+                    messages=[{"role": "user", "content": "Say hello."}],
+                    stream=True,
+                )
+                assert inspect.iscoroutinefunction(async_stream.close)
+                if context_error:
+                    with pytest.raises(
+                        RuntimeError, match="consumer failed after close"
+                    ):
+                        async with async_stream:
+                            assert (await async_stream.__anext__()).choices[
+                                0
+                            ].delta.content == "hello"
+                            await async_stream.close()
+                            assert not [
+                                item for item in endpoint.requests if item[0] == "PATCH"
+                            ]
+                            raise RuntimeError("consumer failed after close")
+                else:
+                    assert (await async_stream.__anext__()).choices[
+                        0
+                    ].delta.content == "hello"
+                    await async_stream.close()
+                    await async_stream.close()
+                assert async_stream.response.is_closed
+        else:
+            with OpenAI(
+                base_url=f"{endpoint.url}/v1", api_key="test", max_retries=0
+            ) as sync_provider:
+                wrap_openai(sync_provider, tracing_extra={"client": client})
+                sync_stream = sync_provider.chat.completions.create(
+                    model="local",
+                    messages=[{"role": "user", "content": "Say hello."}],
+                    stream=True,
+                )
+                assert not inspect.iscoroutinefunction(sync_stream.close)
+                assert next(sync_stream).choices[0].delta.content == "hello"
+                sync_stream.close()
+                sync_stream.close()
+                assert sync_stream.response.is_closed
+
+        [run] = [
+            json.loads(body)
+            for method, _, body in endpoint.requests
+            if method == "PATCH"
+        ]
+        logging.getLogger(__name__).info(
+            "Explicit close: async=%s context_error=%s transport_closed=True "
+            "end_time=%s error=%r output=%r",
+            async_mode,
+            context_error,
+            run.get("end_time"),
+            run.get("error"),
+            run.get("outputs"),
+        )
+        assert run["end_time"] is not None
+        assert run["outputs"]["choices"][0]["message"]["content"] == "hello"
+        if context_error:
+            assert "consumer failed after close" in run["error"]
+        else:
+            assert run.get("error") is None
+
+
+async def test_traceable_async_generator_aclose_finalizes_trace(
+    mock_client: Client,
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    async def source() -> AsyncGenerator[str, None]:
+        yield "hello"
+        yield "later"
+
+    @traceable(client=mock_client, reduce_fn="".join)
+    def make_stream() -> AsyncGenerator[str, None]:
+        return source()
+
+    with tracing_context(enabled=True):
+        stream = make_stream(langsmith_extra={"on_end": ended_runs.append})
+        assert await stream.__anext__() == "hello"
+        await stream.aclose()
+        assert len(ended_runs) == 1
+        assert ended_runs[0].outputs == {"output": "hello"}
+        assert ended_runs[0].error is None
+
+
+@pytest.mark.parametrize("async_close", [False, True])
+async def test_traceable_stream_records_explicit_close_errors(
+    mock_client: Client, async_close: bool
+) -> None:
+    ended_runs: list[RunTree] = []
+
+    class FailingCloseStream:
+        def __iter__(self) -> "FailingCloseStream":
+            return self
+
+        def __next__(self) -> str:
+            return "hello"
+
+        def close(self) -> None:
+            raise RuntimeError("close failed")
+
+        async def aclose(self) -> None:
+            raise RuntimeError("close failed")
+
+    @traceable(client=mock_client, reduce_fn="".join)
+    def make_stream() -> FailingCloseStream:
+        return FailingCloseStream()
+
+    with tracing_context(enabled=True):
+        stream = make_stream(langsmith_extra={"on_end": ended_runs.append})
+        assert next(stream) == "hello"
+        with pytest.raises(RuntimeError, match="close failed"):
+            if async_close:
+                await stream.aclose()
+            else:
+                stream.close()
+        assert len(ended_runs) == 1
+        assert "close failed" in ended_runs[0].error
 
 
 @patch("langsmith.run_trees.Client", autospec=True)
