@@ -197,3 +197,10 @@ class ThreadTrace(BaseModel):
     Returned when `TRACE_ID` is in `selects`, or when `selects` is omitted entirely
     (sole fallback field).
     """
+
+    turn_number: Optional[int] = None
+    """
+    `turn_number` is the 1-based position in the whole thread, ordered by start_time
+    then trace_id ascending, before filtering or pagination. Updates and deletions
+    can change this position. Omitted unless TURN_NUMBER is included in `selects`.
+    """

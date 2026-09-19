@@ -46,8 +46,10 @@ export class Items extends APIResource {
   /**
    * List RUN and THREAD items in a single annotation queue for one review status
    * section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters
-   * the page. direction=backward returns items before the supplied cursor. The
-   * response contains item metadata only, not expanded run or thread payloads.
+   * the page. Optional min_start_time/max_start_time bound the item's trace start
+   * time; items with no start time are excluded when either bound is set.
+   * direction=backward returns items before the supplied cursor. The response
+   * contains item metadata only, not expanded run or thread payloads.
    * status=archived returns items whose queue review requirements have been
    * satisfied, not merely items the caller personally marked completed.
    */
@@ -93,8 +95,10 @@ export class Items extends APIResource {
   }
 
   /**
-   * Returns the number of annotation queue items for the requested reviewer-specific
-   * or archived bucket.
+   * Returns the number of annotation queue items in one status bucket. The two time
+   * windows are independent: start_time/end_time bound when an item was archived,
+   * min_start_time/max_start_time bound when its trace ran. Items with no trace
+   * start time are excluded when either of the latter is set.
    */
   retrieveCount(
     queueID: string,
@@ -109,7 +113,9 @@ export class Items extends APIResource {
 
   /**
    * Resolve a RUN or THREAD item to its current review section and zero-based
-   * position for deep linking.
+   * position for deep linking. The returned cursor counts RUN and THREAD items
+   * together, so it is only valid for a list request with no item_type or start-time
+   * filter.
    */
   retrievePlacement(
     itemID: string,
@@ -311,6 +317,18 @@ export interface ItemListParams extends ItemsCursorGetPaginationParams {
    * Filter to RUN or THREAD
    */
   item_type?: 'RUN' | 'THREAD';
+
+  /**
+   * Only items whose trace start time is at or before this timestamp. Omit or send
+   * the zero time for no bound
+   */
+  max_start_time?: string;
+
+  /**
+   * Only items whose trace start time is at or after this timestamp. Omit or send
+   * the zero time for no bound
+   */
+  min_start_time?: string;
 }
 
 export interface ItemCreateStatusParams {
@@ -330,12 +348,22 @@ export interface ItemRetrieveCountParams {
   status: string;
 
   /**
-   * Exclusive upper bound for archived item timestamp
+   * Archived strictly before this time. Only used when status=archived
    */
   end_time?: string;
 
   /**
-   * Exclusive lower bound for archived item timestamp
+   * Trace started at or before this time
+   */
+  max_start_time?: string;
+
+  /**
+   * Trace started at or after this time
+   */
+  min_start_time?: string;
+
+  /**
+   * Archived strictly after this time. Only used when status=archived
    */
   start_time?: string;
 }

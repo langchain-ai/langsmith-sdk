@@ -87,12 +87,43 @@ export class Boxes extends APIResource {
   }
 
   /**
+   * Removes the sharing grant for one port, or for every port when port is omitted.
+   * A LangSmith login URL stops working immediately. A previously minted service
+   * token is not revoked and stays valid until it expires, but no new one can be
+   * issued from the removed grant.
+   */
+  deleteServiceURL(
+    name: string,
+    params: BoxDeleteServiceURLParams | null | undefined = {},
+    options?: RequestOptions,
+  ): APIPromise<void> {
+    const { port } = params ?? {};
+    return this._client.delete(path`/api/v2/sandboxes/boxes/${name}/service-urls`, {
+      query: { port },
+      ...options,
+      headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
+    });
+  }
+
+  /**
    * Generate a tokenized link that downloads a single file from a sandbox with no
    * further authentication. This mints a token rather than creating an addressable
    * resource, so it returns 200 with no Location header. The token pins the sandbox,
-   * the file path, and the response content type and disposition, so a link cannot
-   * be repointed at another file. Links never expire unless expires_in_seconds is
-   * set. The link is served from the sandbox service domain, not the API host.
+   * the file path, the response content type and disposition, and the sandbox flags,
+   * so a link cannot be repointed at another file or served under a weaker policy.
+   * The file is always served with a Content-Security-Policy: a sandbox directive,
+   * plus a default-src holding every fetch to the sandbox's own download host and a
+   * set of pre-approved third-party origins. csp_sandbox_flags may loosen the
+   * sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+   * allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
+   * allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
+   * served file never shares an origin with anything. csp_source_bundles selects the
+   * third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
+   * when the field is omitted, and 'none' holds the file to the sandbox alone.
+   * Because every file of one sandbox is served from the same host, a page can load
+   * sibling files it has links for, but only by their own link URLs. Links never
+   * expire unless expires_in_seconds is set. The link is served from the sandbox
+   * service domain, not the API host.
    */
   generateDownloadURL(
     name: string,
@@ -106,7 +137,10 @@ export class Boxes extends APIResource {
    * Create a short-lived JWT for accessing an HTTP service running on a specific
    * port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a
    * service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw
-   * token, and its expiry.
+   * token, and its expiry. Set access=restricted|workspace to instead enable durable
+   * LangSmith login (no token; users authenticate with their normal LangSmith
+   * session), or access=off to disable it. LangSmith login and token access are
+   * mutually exclusive per service URL.
    */
   generateServiceURL(
     name: string,
@@ -121,6 +155,24 @@ export class Boxes extends APIResource {
    */
   getStatus(name: string, options?: RequestOptions): APIPromise<SandboxesAPI.SandboxStatusResponse> {
     return this._client.get(path`/api/v2/sandboxes/boxes/${name}/status`, options);
+  }
+
+  /**
+   * Returns one entry per port the sandbox is currently reachable on, so a caller
+   * can see what is shared before turning it off. Expired token grants are omitted.
+   * Cursors are opaque and only valid on this endpoint; do not parse or construct
+   * one.
+   */
+  listServiceURLs(
+    name: string,
+    query: BoxListServiceURLsParams | null | undefined = {},
+    options?: RequestOptions,
+  ): PagePromise<BoxListServiceURLsResponsesItemsCursorGetPagination, BoxListServiceURLsResponse> {
+    return this._client.getAPIList(
+      path`/api/v2/sandboxes/boxes/${name}/service-urls`,
+      ItemsCursorGetPagination<BoxListServiceURLsResponse>,
+      { query, ...options },
+    );
   }
 
   /**
@@ -142,7 +194,38 @@ export class Boxes extends APIResource {
   }
 }
 
+export type BoxListServiceURLsResponsesItemsCursorGetPagination =
+  ItemsCursorGetPagination<BoxListServiceURLsResponse>;
+
+export interface BoxListServiceURLsResponse {
+  /**
+   * How the port is shared: "token" for a minted service token, or
+   * "restricted"/"workspace" for LangSmith login.
+   */
+  access: 'token' | 'restricted' | 'workspace';
+
+  created_at: string;
+
+  port: number;
+
+  /**
+   * The LangSmith user who first shared this port, when known.
+   */
+  created_by?: string;
+
+  /**
+   * When the share expires. Set only for "token"; a login grant does not expire.
+   */
+  expires_at?: string;
+}
+
 export interface BoxCreateParams {
+  /**
+   * AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+   * with at most the permissions granted here. Omit for no access.
+   */
+  access_delegation?: BoxCreateParams.AccessDelegation;
+
   /**
    * CPUMillicores optionally requests CPU at millicore granularity (e.g. 500 = 0.5
    * vCPU); takes precedence over VCPUs. Fractional (sub-vCPU) values are not
@@ -199,6 +282,13 @@ export interface BoxCreateParams {
   restore_memory?: boolean;
 
   /**
+   * RunConfig overrides the snapshot's run config for this sandbox: user and
+   * work_dir replace the snapshot's, env_vars merge over it. The result is what the
+   * sandbox boots with, and what a snapshot captured from it carries.
+   */
+  run_config?: BoxCreateParams.RunConfig;
+
+  /**
    * Snapshot is a Docker-style name or name:tag reference to boot from. A bare name
    * resolves to name:latest.
    */
@@ -218,6 +308,16 @@ export interface BoxCreateParams {
 }
 
 export namespace BoxCreateParams {
+  /**
+   * AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+   * with at most the permissions granted here. Omit for no access.
+   */
+  export interface AccessDelegation {
+    mode: 'INHERIT' | 'EXPLICIT';
+
+    permissions?: Array<string>;
+  }
+
   export interface MountConfig {
     auth?: MountConfig.Auth;
 
@@ -231,19 +331,33 @@ export namespace BoxCreateParams {
 
   export namespace MountConfig {
     export interface Auth {
-      aws?: Auth.Aws;
+      aws?: Auth.SandboxesSandboxAwsMountRoleAuthConfig | Auth.SandboxesSandboxAwsMountStaticAuthConfig;
 
       gcp?: Auth.Gcp;
     }
 
     export namespace Auth {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesSandboxAwsMountRoleAuthConfig {
+        /**
+         * IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+         * exclusive with static credentials. Configure only at creation.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesSandboxAwsMountStaticAuthConfig {
+        access_key_id: SandboxesSandboxAwsMountStaticAuthConfig.AccessKeyID;
+
+        secret_access_key: SandboxesSandboxAwsMountStaticAuthConfig.SecretAccessKey;
+
+        /**
+         * IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+         * exclusive with static credentials. Configure only at creation.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesSandboxAwsMountStaticAuthConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -590,6 +704,12 @@ export namespace BoxCreateParams {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -629,7 +749,13 @@ export namespace BoxCreateParams {
     export interface Rule {
       name: string;
 
-      aws?: Rule.Aws;
+      aws?: Rule.SandboxesProxyAwsRoleConfig | Rule.SandboxesProxyAwsStaticConfig;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -659,13 +785,29 @@ export namespace BoxCreateParams {
     }
 
     export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesProxyAwsRoleConfig {
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesProxyAwsStaticConfig {
+        access_key_id: SandboxesProxyAwsStaticConfig.AccessKeyID;
+
+        secret_access_key: SandboxesProxyAwsStaticConfig.SecretAccessKey;
+
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesProxyAwsStaticConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -709,6 +851,19 @@ export namespace BoxCreateParams {
         value?: string;
       }
     }
+  }
+
+  /**
+   * RunConfig overrides the snapshot's run config for this sandbox: user and
+   * work_dir replace the snapshot's, env_vars merge over it. The result is what the
+   * sandbox boots with, and what a snapshot captured from it carries.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
   }
 }
 
@@ -731,6 +886,13 @@ export interface BoxUpdateParams {
 
   proxy_config?: BoxUpdateParams.ProxyConfig;
 
+  /**
+   * RunConfig changes what subsequent commands run with: user and work_dir replace
+   * the current values, env_vars merge over them. Commands already running are
+   * unaffected.
+   */
+  run_config?: BoxUpdateParams.RunConfig;
+
   tag_value_ids?: Array<string>;
 
   vcpus?: number;
@@ -741,6 +903,12 @@ export namespace BoxUpdateParams {
     access_control?: ProxyConfig.AccessControl;
 
     callbacks?: Array<ProxyConfig.Callback>;
+
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
 
     no_proxy?: Array<string>;
 
@@ -781,7 +949,13 @@ export namespace BoxUpdateParams {
     export interface Rule {
       name: string;
 
-      aws?: Rule.Aws;
+      aws?: Rule.SandboxesProxyAwsRoleConfig | Rule.SandboxesProxyAwsStaticConfig;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -811,13 +985,29 @@ export namespace BoxUpdateParams {
     }
 
     export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesProxyAwsRoleConfig {
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesProxyAwsStaticConfig {
+        access_key_id: SandboxesProxyAwsStaticConfig.AccessKeyID;
+
+        secret_access_key: SandboxesProxyAwsStaticConfig.SecretAccessKey;
+
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesProxyAwsStaticConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -861,6 +1051,19 @@ export namespace BoxUpdateParams {
         value?: string;
       }
     }
+  }
+
+  /**
+   * RunConfig changes what subsequent commands run with: user and work_dir replace
+   * the current values, env_vars merge over them. Commands already running are
+   * unaffected.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
   }
 }
 
@@ -922,6 +1125,12 @@ export interface BoxCreateSnapshotParams {
   checkpoint?: string;
 
   /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary. At most 1024 characters.
+   */
+  description?: string;
+
+  /**
    * sandbox-local Docker image to export
    */
   docker_image?: string;
@@ -945,9 +1154,38 @@ export interface BoxCreateSnapshotParams {
   labels?: { [key: string]: string };
 
   /**
+   * RunConfig overrides the runtime configuration the snapshot carries: for a
+   * docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+   * running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+   */
+  run_config?: BoxCreateSnapshotParams.RunConfig;
+
+  /**
    * mutable Docker-style tag; defaults to "latest"
    */
   tag?: string;
+}
+
+export namespace BoxCreateSnapshotParams {
+  /**
+   * RunConfig overrides the runtime configuration the snapshot carries: for a
+   * docker_image export, the image's USER, WORKDIR and ENV; for a capture of the
+   * running VM, the sandbox's own. user and work_dir replace, env_vars merge.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
+}
+
+export interface BoxDeleteServiceURLParams {
+  /**
+   * Port to stop sharing. Omit to stop sharing every port.
+   */
+  port?: number;
 }
 
 export interface BoxGenerateDownloadURLParams {
@@ -958,25 +1196,63 @@ export interface BoxGenerateDownloadURLParams {
   content_type?: string;
 
   /**
+   * CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
+   * most restrictive policy.
+   */
+  csp_sandbox_flags?: Array<
+    | 'allow-downloads'
+    | 'allow-forms'
+    | 'allow-modals'
+    | 'allow-orientation-lock'
+    | 'allow-pointer-lock'
+    | 'allow-popups'
+    | 'allow-presentation'
+    | 'allow-scripts'
+    | 'allow-top-navigation-by-user-activation'
+  >;
+
+  /**
+   * CSPSourceBundles allow the served file to fetch from named third-party origins;
+   * omit to send no fetch directive.
+   */
+  csp_source_bundles?: Array<'cdnjs' | 'google-fonts' | 'jsdelivr' | 'unpkg' | 'none'>;
+
+  /**
    * ExpiresInSeconds is optional; a link with no expiry never expires.
    */
   expires_in_seconds?: number;
 }
 
 export interface BoxGenerateServiceURLParams {
+  /**
+   * Access selects the login mode, mutually exclusive with the minted token. Omit
+   * the field for token mode: mint a short-lived service token (default).
+   * "restricted" — LangSmith login: any user with SandboxesRead on the sandbox.
+   * "workspace" — LangSmith login: any member of the owning workspace. "off" —
+   * remove an existing LangSmith login grant and mint a token. A LangSmith login
+   * grant is durable; token mode is refused (409) while one exists.
+   */
+  access?: 'restricted' | 'workspace' | 'off';
+
   expires_in_seconds?: number;
 
   port?: number;
 }
 
+export interface BoxListServiceURLsParams extends ItemsCursorGetPaginationParams {}
+
 export declare namespace Boxes {
   export {
+    type BoxListServiceURLsResponse as BoxListServiceURLsResponse,
+    type BoxListServiceURLsResponsesItemsCursorGetPagination as BoxListServiceURLsResponsesItemsCursorGetPagination,
     type BoxCreateParams as BoxCreateParams,
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxDeleteServiceURLParams as BoxDeleteServiceURLParams,
     type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
+    type BoxListServiceURLsParams as BoxListServiceURLsParams,
   };
 }
 

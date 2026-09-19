@@ -44,6 +44,8 @@ class ItemsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return ItemsResourceWithRawResponse(self)
 
@@ -51,6 +53,8 @@ class ItemsResource(SyncAPIResource):
     def with_streaming_response(self) -> ItemsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return ItemsResourceWithStreamingResponse(self)
 
@@ -158,6 +162,8 @@ class ItemsResource(SyncAPIResource):
         cursor: str | Omit = omit,
         direction: Literal["forward", "backward"] | Omit = omit,
         item_type: Literal["RUN", "THREAD"] | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -169,8 +175,10 @@ class ItemsResource(SyncAPIResource):
         """
         List RUN and THREAD items in a single annotation queue for one review status
         section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters
-        the page. direction=backward returns items before the supplied cursor. The
-        response contains item metadata only, not expanded run or thread payloads.
+        the page. Optional min_start_time/max_start_time bound the item's trace start
+        time; items with no start time are excluded when either bound is set.
+        direction=backward returns items before the supplied cursor. The response
+        contains item metadata only, not expanded run or thread payloads.
         status=archived returns items whose queue review requirements have been
         satisfied, not merely items the caller personally marked completed.
 
@@ -182,6 +190,12 @@ class ItemsResource(SyncAPIResource):
           direction: Pagination direction. backward requires cursor
 
           item_type: Filter to RUN or THREAD
+
+          max_start_time: Only items whose trace start time is at or before this timestamp. Omit or send
+              the zero time for no bound
+
+          min_start_time: Only items whose trace start time is at or after this timestamp. Omit or send
+              the zero time for no bound
 
           page_size: Page size (max 100)
 
@@ -209,6 +223,8 @@ class ItemsResource(SyncAPIResource):
                         "cursor": cursor,
                         "direction": direction,
                         "item_type": item_type,
+                        "max_start_time": max_start_time,
+                        "min_start_time": min_start_time,
                         "page_size": page_size,
                     },
                     item_list_params.ItemListParams,
@@ -304,6 +320,8 @@ class ItemsResource(SyncAPIResource):
         *,
         status: str,
         end_time: str | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
         start_time: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -312,16 +330,23 @@ class ItemsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ItemRetrieveCountResponse:
-        """
-        Returns the number of annotation queue items for the requested reviewer-specific
-        or archived bucket.
+        """Returns the number of annotation queue items in one status bucket.
+
+        The two time
+        windows are independent: start_time/end_time bound when an item was archived,
+        min_start_time/max_start_time bound when its trace ran. Items with no trace
+        start time are excluded when either of the latter is set.
 
         Args:
           status: Count bucket: all, needs_my_review, needs_others_review, or archived.
 
-          end_time: Exclusive upper bound for archived item timestamp
+          end_time: Archived strictly before this time. Only used when status=archived
 
-          start_time: Exclusive lower bound for archived item timestamp
+          max_start_time: Trace started at or before this time
+
+          min_start_time: Trace started at or after this time
+
+          start_time: Archived strictly after this time. Only used when status=archived
 
           extra_headers: Send extra headers
 
@@ -344,6 +369,8 @@ class ItemsResource(SyncAPIResource):
                     {
                         "status": status,
                         "end_time": end_time,
+                        "max_start_time": max_start_time,
+                        "min_start_time": min_start_time,
                         "start_time": start_time,
                     },
                     item_retrieve_count_params.ItemRetrieveCountParams,
@@ -366,7 +393,9 @@ class ItemsResource(SyncAPIResource):
     ) -> ItemRetrievePlacementResponse:
         """
         Resolve a RUN or THREAD item to its current review section and zero-based
-        position for deep linking.
+        position for deep linking. The returned cursor counts RUN and THREAD items
+        together, so it is only valid for a list request with no item_type or start-time
+        filter.
 
         Args:
           extra_headers: Send extra headers
@@ -400,6 +429,8 @@ class AsyncItemsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncItemsResourceWithRawResponse(self)
 
@@ -407,6 +438,8 @@ class AsyncItemsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncItemsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncItemsResourceWithStreamingResponse(self)
 
@@ -514,6 +547,8 @@ class AsyncItemsResource(AsyncAPIResource):
         cursor: str | Omit = omit,
         direction: Literal["forward", "backward"] | Omit = omit,
         item_type: Literal["RUN", "THREAD"] | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -525,8 +560,10 @@ class AsyncItemsResource(AsyncAPIResource):
         """
         List RUN and THREAD items in a single annotation queue for one review status
         section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters
-        the page. direction=backward returns items before the supplied cursor. The
-        response contains item metadata only, not expanded run or thread payloads.
+        the page. Optional min_start_time/max_start_time bound the item's trace start
+        time; items with no start time are excluded when either bound is set.
+        direction=backward returns items before the supplied cursor. The response
+        contains item metadata only, not expanded run or thread payloads.
         status=archived returns items whose queue review requirements have been
         satisfied, not merely items the caller personally marked completed.
 
@@ -538,6 +575,12 @@ class AsyncItemsResource(AsyncAPIResource):
           direction: Pagination direction. backward requires cursor
 
           item_type: Filter to RUN or THREAD
+
+          max_start_time: Only items whose trace start time is at or before this timestamp. Omit or send
+              the zero time for no bound
+
+          min_start_time: Only items whose trace start time is at or after this timestamp. Omit or send
+              the zero time for no bound
 
           page_size: Page size (max 100)
 
@@ -565,6 +608,8 @@ class AsyncItemsResource(AsyncAPIResource):
                         "cursor": cursor,
                         "direction": direction,
                         "item_type": item_type,
+                        "max_start_time": max_start_time,
+                        "min_start_time": min_start_time,
                         "page_size": page_size,
                     },
                     item_list_params.ItemListParams,
@@ -660,6 +705,8 @@ class AsyncItemsResource(AsyncAPIResource):
         *,
         status: str,
         end_time: str | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
         start_time: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -668,16 +715,23 @@ class AsyncItemsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ItemRetrieveCountResponse:
-        """
-        Returns the number of annotation queue items for the requested reviewer-specific
-        or archived bucket.
+        """Returns the number of annotation queue items in one status bucket.
+
+        The two time
+        windows are independent: start_time/end_time bound when an item was archived,
+        min_start_time/max_start_time bound when its trace ran. Items with no trace
+        start time are excluded when either of the latter is set.
 
         Args:
           status: Count bucket: all, needs_my_review, needs_others_review, or archived.
 
-          end_time: Exclusive upper bound for archived item timestamp
+          end_time: Archived strictly before this time. Only used when status=archived
 
-          start_time: Exclusive lower bound for archived item timestamp
+          max_start_time: Trace started at or before this time
+
+          min_start_time: Trace started at or after this time
+
+          start_time: Archived strictly after this time. Only used when status=archived
 
           extra_headers: Send extra headers
 
@@ -700,6 +754,8 @@ class AsyncItemsResource(AsyncAPIResource):
                     {
                         "status": status,
                         "end_time": end_time,
+                        "max_start_time": max_start_time,
+                        "min_start_time": min_start_time,
                         "start_time": start_time,
                     },
                     item_retrieve_count_params.ItemRetrieveCountParams,
@@ -722,7 +778,9 @@ class AsyncItemsResource(AsyncAPIResource):
     ) -> ItemRetrievePlacementResponse:
         """
         Resolve a RUN or THREAD item to its current review section and zero-based
-        position for deep linking.
+        position for deep linking. The returned cursor counts RUN and THREAD items
+        together, so it is only valid for a list request with no item_type or start-time
+        filter.
 
         Args:
           extra_headers: Send extra headers

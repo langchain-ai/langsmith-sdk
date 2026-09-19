@@ -2,13 +2,34 @@
 
 from __future__ import annotations
 
+from typing import Dict, Optional
 from typing_extensions import TypedDict
 
-__all__ = ["CreateOnlineCodeEvaluatorRequestParam"]
+__all__ = ["CreateOnlineCodeEvaluatorRequestParam", "ManagedCodeEvaluatorSettings"]
+
+
+class ManagedCodeEvaluatorSettings(TypedDict, total=False):
+    is_enabled: bool
+
+    key_name: str
 
 
 class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
+    advanced_features_enabled: bool
+
     code: str
+
+    dependencies: Optional[str]
 
     language: str
     """Default: "python" """
+
+    managed_code_evaluator_key: str
+
+    managed_code_evaluator_settings: Dict[str, ManagedCodeEvaluatorSettings]
+
+    require_attachments: bool
+    """
+    RequireAttachments opts the evaluator into selecting/presigning run attachments
+    (s3_urls) at evaluation time. Default false.
+    """

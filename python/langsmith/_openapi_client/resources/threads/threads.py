@@ -6,38 +6,53 @@ from typing import List, Union
 from datetime import datetime
 from typing_extensions import Literal
 
-from ..types import thread_query_params, thread_stats_params, thread_list_traces_params
-from .._httpx import httpx
-from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
-from .._utils import path_template, maybe_transform, async_maybe_transform
-from .._compat import cached_property
-from .._resource import SyncAPIResource, AsyncAPIResource
-from .._response import (
+from .share import (
+    ShareResource,
+    AsyncShareResource,
+    ShareResourceWithRawResponse,
+    AsyncShareResourceWithRawResponse,
+    ShareResourceWithStreamingResponse,
+    AsyncShareResourceWithStreamingResponse,
+)
+from ...types import thread_query_params, thread_stats_params, thread_list_traces_params, thread_aggregate_stats_params
+from ..._httpx import httpx
+from ..._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
+from ..._utils import path_template, maybe_transform, strip_not_given, async_maybe_transform
+from ..._compat import cached_property
+from ..._resource import SyncAPIResource, AsyncAPIResource
+from ..._response import (
     to_raw_response_wrapper,
     to_streamed_response_wrapper,
     async_to_raw_response_wrapper,
     async_to_streamed_response_wrapper,
 )
-from ..pagination import (
+from ...pagination import (
     SyncItemsCursorGetPagination,
     AsyncItemsCursorGetPagination,
     SyncItemsCursorPostPagination,
     AsyncItemsCursorPostPagination,
 )
-from .._base_client import AsyncPaginator, make_request_options
-from ..types.thread import Thread
-from ..types.thread_stats import ThreadStats
-from ..types.thread_trace import ThreadTrace
+from ..._base_client import AsyncPaginator, make_request_options
+from ...types.thread import Thread
+from ...types.thread_stats import ThreadStats
+from ...types.thread_trace import ThreadTrace
+from ...types.thread_aggregate_stats_response import ThreadAggregateStatsResponse
 
 __all__ = ["ThreadsResource", "AsyncThreadsResource"]
 
 
 class ThreadsResource(SyncAPIResource):
     @cached_property
+    def share(self) -> ShareResource:
+        return ShareResource(self._client)
+
+    @cached_property
     def with_raw_response(self) -> ThreadsResourceWithRawResponse:
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return ThreadsResourceWithRawResponse(self)
 
@@ -45,8 +60,116 @@ class ThreadsResource(SyncAPIResource):
     def with_streaming_response(self) -> ThreadsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return ThreadsResourceWithStreamingResponse(self)
+
+    def aggregate_stats(
+        self,
+        *,
+        project_id: str,
+        select: List[
+            Literal[
+                "THREAD_COUNT",
+                "TRACE_COUNT",
+                "TOTAL_TOKENS",
+                "TOTAL_COST",
+                "ERROR_RATE",
+                "STREAMING_RATE",
+                "LATENCY_P50",
+                "LATENCY_P99",
+                "MEDIAN_TOKENS",
+                "FIRST_TOKEN_P50",
+                "FIRST_TOKEN_P99",
+                "PROMPT_TOKENS",
+                "COMPLETION_TOKENS",
+                "PROMPT_COST",
+                "COMPLETION_COST",
+                "PROMPT_TOKEN_DETAILS",
+                "COMPLETION_TOKEN_DETAILS",
+                "PROMPT_COST_DETAILS",
+                "COMPLETION_COST_DETAILS",
+                "THREAD_FEEDBACK_STATS",
+            ]
+        ],
+        filter: str | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
+        thread_filter: str | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> ThreadAggregateStatsResponse:
+        """GET with body payload — no resources created.
+
+        Returns aggregate statistics for
+        threads in a tracing project. The response includes the thread counts, run
+        counts, latency percentiles, rates, token totals, and cost totals requested in
+        `select`.
+
+        Self-hosted deployments require LangSmith `v0.17` or later.
+
+        Args:
+          project_id: `project_id` is the tracing project UUID.
+
+          select: `select` lists the aggregate statistics to compute and return. At least one
+              value is required.
+
+          filter: `filter` is a deprecated, unscoped LangSmith filter expression evaluated against
+              trace root runs. Kept for compatibility with deployments that serve this
+              endpoint via the legacy ClickHouse backend (no SmithDB query service
+              configured); prefer `trace_filter`, `tree_filter`, or `thread_filter` otherwise,
+              since those require SmithDB.
+
+          max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
+              date-time). Defaults to now (UTC) when omitted.
+
+          min_start_time: `min_start_time` is the inclusive lower bound on thread activity (RFC3339
+              date-time). Defaults to 1 day before now (UTC) when omitted.
+
+          thread_filter: `thread_filter` narrows eligible threads using a LangSmith filter expression
+              evaluated against the complete thread summary.
+
+          trace_filter: `trace_filter` narrows eligible threads to those containing a trace whose root
+              run matches this LangSmith filter expression.
+
+          tree_filter: `tree_filter` narrows eligible threads to those containing a matching run
+              anywhere in a trace tree.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        return self._post(
+            "/api/v2/threads/stats",
+            body=maybe_transform(
+                {
+                    "project_id": project_id,
+                    "select": select,
+                    "filter": filter,
+                    "max_start_time": max_start_time,
+                    "min_start_time": min_start_time,
+                    "thread_filter": thread_filter,
+                    "trace_filter": trace_filter,
+                    "tree_filter": tree_filter,
+                },
+                thread_aggregate_stats_params.ThreadAggregateStatsParams,
+            ),
+            options=make_request_options(
+                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+            ),
+            cast_to=ThreadAggregateStatsResponse,
+        )
 
     def list_traces(
         self,
@@ -82,9 +205,12 @@ class ThreadsResource(SyncAPIResource):
                 "COMPLETION_COST_DETAILS",
                 "NAME",
                 "ERROR_PREVIEW",
+                "TURN_NUMBER",
             ]
         ]
         | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -117,6 +243,12 @@ class ThreadsResource(SyncAPIResource):
               Properties not listed are omitted from each trace object; `trace_id` is always
               returned.
 
+          trace_filter: `trace_filter` narrows traces by applying a LangSmith filter expression to each
+              trace's root run.
+
+          tree_filter: `tree_filter` narrows traces to those containing at least one run that matches
+              the LangSmith filter expression.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -142,6 +274,8 @@ class ThreadsResource(SyncAPIResource):
                         "filter": filter,
                         "page_size": page_size,
                         "selects": selects,
+                        "trace_filter": trace_filter,
+                        "tree_filter": tree_filter,
                     },
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
@@ -161,6 +295,7 @@ class ThreadsResource(SyncAPIResource):
         thread_filter: str | Omit = omit,
         trace_filter: str | Omit = omit,
         tree_filter: str | Omit = omit,
+        accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -225,6 +360,7 @@ class ThreadsResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/api/v2/threads/query",
             page=SyncItemsCursorPostPagination[Thread],
@@ -334,10 +470,16 @@ class ThreadsResource(SyncAPIResource):
 
 class AsyncThreadsResource(AsyncAPIResource):
     @cached_property
+    def share(self) -> AsyncShareResource:
+        return AsyncShareResource(self._client)
+
+    @cached_property
     def with_raw_response(self) -> AsyncThreadsResourceWithRawResponse:
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncThreadsResourceWithRawResponse(self)
 
@@ -345,8 +487,116 @@ class AsyncThreadsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncThreadsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncThreadsResourceWithStreamingResponse(self)
+
+    async def aggregate_stats(
+        self,
+        *,
+        project_id: str,
+        select: List[
+            Literal[
+                "THREAD_COUNT",
+                "TRACE_COUNT",
+                "TOTAL_TOKENS",
+                "TOTAL_COST",
+                "ERROR_RATE",
+                "STREAMING_RATE",
+                "LATENCY_P50",
+                "LATENCY_P99",
+                "MEDIAN_TOKENS",
+                "FIRST_TOKEN_P50",
+                "FIRST_TOKEN_P99",
+                "PROMPT_TOKENS",
+                "COMPLETION_TOKENS",
+                "PROMPT_COST",
+                "COMPLETION_COST",
+                "PROMPT_TOKEN_DETAILS",
+                "COMPLETION_TOKEN_DETAILS",
+                "PROMPT_COST_DETAILS",
+                "COMPLETION_COST_DETAILS",
+                "THREAD_FEEDBACK_STATS",
+            ]
+        ],
+        filter: str | Omit = omit,
+        max_start_time: Union[str, datetime] | Omit = omit,
+        min_start_time: Union[str, datetime] | Omit = omit,
+        thread_filter: str | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
+        # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
+        # The extra values given here take precedence over values defined on the client or passed to this method.
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = not_given,
+    ) -> ThreadAggregateStatsResponse:
+        """GET with body payload — no resources created.
+
+        Returns aggregate statistics for
+        threads in a tracing project. The response includes the thread counts, run
+        counts, latency percentiles, rates, token totals, and cost totals requested in
+        `select`.
+
+        Self-hosted deployments require LangSmith `v0.17` or later.
+
+        Args:
+          project_id: `project_id` is the tracing project UUID.
+
+          select: `select` lists the aggregate statistics to compute and return. At least one
+              value is required.
+
+          filter: `filter` is a deprecated, unscoped LangSmith filter expression evaluated against
+              trace root runs. Kept for compatibility with deployments that serve this
+              endpoint via the legacy ClickHouse backend (no SmithDB query service
+              configured); prefer `trace_filter`, `tree_filter`, or `thread_filter` otherwise,
+              since those require SmithDB.
+
+          max_start_time: `max_start_time` is the exclusive upper bound on thread activity (RFC3339
+              date-time). Defaults to now (UTC) when omitted.
+
+          min_start_time: `min_start_time` is the inclusive lower bound on thread activity (RFC3339
+              date-time). Defaults to 1 day before now (UTC) when omitted.
+
+          thread_filter: `thread_filter` narrows eligible threads using a LangSmith filter expression
+              evaluated against the complete thread summary.
+
+          trace_filter: `trace_filter` narrows eligible threads to those containing a trace whose root
+              run matches this LangSmith filter expression.
+
+          tree_filter: `tree_filter` narrows eligible threads to those containing a matching run
+              anywhere in a trace tree.
+
+          extra_headers: Send extra headers
+
+          extra_query: Add additional query parameters to the request
+
+          extra_body: Add additional JSON properties to the request
+
+          timeout: Override the client-level default timeout for this request, in seconds
+        """
+        return await self._post(
+            "/api/v2/threads/stats",
+            body=await async_maybe_transform(
+                {
+                    "project_id": project_id,
+                    "select": select,
+                    "filter": filter,
+                    "max_start_time": max_start_time,
+                    "min_start_time": min_start_time,
+                    "thread_filter": thread_filter,
+                    "trace_filter": trace_filter,
+                    "tree_filter": tree_filter,
+                },
+                thread_aggregate_stats_params.ThreadAggregateStatsParams,
+            ),
+            options=make_request_options(
+                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+            ),
+            cast_to=ThreadAggregateStatsResponse,
+        )
 
     def list_traces(
         self,
@@ -382,9 +632,12 @@ class AsyncThreadsResource(AsyncAPIResource):
                 "COMPLETION_COST_DETAILS",
                 "NAME",
                 "ERROR_PREVIEW",
+                "TURN_NUMBER",
             ]
         ]
         | Omit = omit,
+        trace_filter: str | Omit = omit,
+        tree_filter: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -417,6 +670,12 @@ class AsyncThreadsResource(AsyncAPIResource):
               Properties not listed are omitted from each trace object; `trace_id` is always
               returned.
 
+          trace_filter: `trace_filter` narrows traces by applying a LangSmith filter expression to each
+              trace's root run.
+
+          tree_filter: `tree_filter` narrows traces to those containing at least one run that matches
+              the LangSmith filter expression.
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -442,6 +701,8 @@ class AsyncThreadsResource(AsyncAPIResource):
                         "filter": filter,
                         "page_size": page_size,
                         "selects": selects,
+                        "trace_filter": trace_filter,
+                        "tree_filter": tree_filter,
                     },
                     thread_list_traces_params.ThreadListTracesParams,
                 ),
@@ -461,6 +722,7 @@ class AsyncThreadsResource(AsyncAPIResource):
         thread_filter: str | Omit = omit,
         trace_filter: str | Omit = omit,
         tree_filter: str | Omit = omit,
+        accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -525,6 +787,7 @@ class AsyncThreadsResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/api/v2/threads/query",
             page=AsyncItemsCursorPostPagination[Thread],
@@ -636,6 +899,9 @@ class ThreadsResourceWithRawResponse:
     def __init__(self, threads: ThreadsResource) -> None:
         self._threads = threads
 
+        self.aggregate_stats = to_raw_response_wrapper(
+            threads.aggregate_stats,
+        )
         self.list_traces = to_raw_response_wrapper(
             threads.list_traces,
         )
@@ -646,11 +912,18 @@ class ThreadsResourceWithRawResponse:
             threads.stats,
         )
 
+    @cached_property
+    def share(self) -> ShareResourceWithRawResponse:
+        return ShareResourceWithRawResponse(self._threads.share)
+
 
 class AsyncThreadsResourceWithRawResponse:
     def __init__(self, threads: AsyncThreadsResource) -> None:
         self._threads = threads
 
+        self.aggregate_stats = async_to_raw_response_wrapper(
+            threads.aggregate_stats,
+        )
         self.list_traces = async_to_raw_response_wrapper(
             threads.list_traces,
         )
@@ -661,11 +934,18 @@ class AsyncThreadsResourceWithRawResponse:
             threads.stats,
         )
 
+    @cached_property
+    def share(self) -> AsyncShareResourceWithRawResponse:
+        return AsyncShareResourceWithRawResponse(self._threads.share)
+
 
 class ThreadsResourceWithStreamingResponse:
     def __init__(self, threads: ThreadsResource) -> None:
         self._threads = threads
 
+        self.aggregate_stats = to_streamed_response_wrapper(
+            threads.aggregate_stats,
+        )
         self.list_traces = to_streamed_response_wrapper(
             threads.list_traces,
         )
@@ -676,11 +956,18 @@ class ThreadsResourceWithStreamingResponse:
             threads.stats,
         )
 
+    @cached_property
+    def share(self) -> ShareResourceWithStreamingResponse:
+        return ShareResourceWithStreamingResponse(self._threads.share)
+
 
 class AsyncThreadsResourceWithStreamingResponse:
     def __init__(self, threads: AsyncThreadsResource) -> None:
         self._threads = threads
 
+        self.aggregate_stats = async_to_streamed_response_wrapper(
+            threads.aggregate_stats,
+        )
         self.list_traces = async_to_streamed_response_wrapper(
             threads.list_traces,
         )
@@ -690,3 +977,7 @@ class AsyncThreadsResourceWithStreamingResponse:
         self.stats = async_to_streamed_response_wrapper(
             threads.stats,
         )
+
+    @cached_property
+    def share(self) -> AsyncShareResourceWithStreamingResponse:
+        return AsyncShareResourceWithStreamingResponse(self._threads.share)
