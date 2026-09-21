@@ -68,8 +68,13 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import (
+    _agent_addressing,
+    _orjson,
+    _profiles,
+    _v2_migration_utils,
+)
 from langsmith._internal import _aiter as aitertools
-from langsmith._internal import _orjson, _profiles, _v2_migration_utils
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -770,66 +775,6 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
-def _reject_url_for_agent_addressing(
-    session_id: Optional[Any],
-    agent_id: Optional[str],
-    agent_environment: Optional[str],
-) -> None:
-    """Refuse to build a run URL the SDK cannot know.
-
-    A run URL is keyed on the project id. The endpoint resolves an agent to
-    its environment's project and never tells the SDK which, so an
-    agent-addressed run has no project id here until it is read back. Falling
-    through would resolve the literal `default` project and hand back a link
-    to the wrong place, or raise a not-found from inside what callers treat as
-    a convenience.
-    """
-    if session_id is not None or not ls_utils._is_agent_addressed(
-        agent_id, agent_environment
-    ):
-        return
-    raise ls_utils.LangSmithUserError(
-        "No run URL is available for an agent-addressed run yet. The endpoint resolves the agent to its environment's project, so only it knows the project this run is in; there is no agent-shaped run URL. Read the run back and build the URL from its `session_id`."
-    )
-
-
-def _reject_conflicting_addressing(
-    *,
-    project: Optional[Any] = None,
-    session_id: Optional[Any] = None,
-    agent_id: Optional[str] = None,
-    agent_environment: Optional[str] = None,
-) -> None:
-    """Reject a call that names both a project and an agent.
-
-    A run goes to one or the other, and the endpoint never sees this particular
-    conflict: resolution drops the agent before the payload is built, so without
-    this the agent would be discarded in silence. Every other rejection is left
-    to the endpoint, which can see what it is sent.
-
-    Callers pass only values a caller supplied in this one call. A resolved run
-    body can legitimately carry both -- a project configured in the environment
-    travels with the agent so the endpoint refuses the pair -- and an inherited
-    pair must not be mistaken for a conflict.
-
-    Pass only values the caller supplied in this call. An agent that came from
-    the environment alongside an explicit project is not a conflict -- the
-    project wins and the agent is dropped, which is what lets an evaluation set
-    its own project while `LANGSMITH_AGENT_ID` is set process-wide.
-
-    Raises:
-        LangSmithUserError: If a project and an agent are both named.
-    """
-    named_project = project if project is not None else session_id
-    named_agent = agent_id if agent_id is not None else agent_environment
-    if named_project is not None and named_agent is not None:
-        raise ls_utils.LangSmithUserError(
-            f"A run is addressed by project ({named_project!r}) or by agent "
-            f"({named_agent!r}), not both. Pass one of them, or set "
-            "LANGSMITH_AGENT_ID and leave the project off the call."
-        )
-
-
 def _check_feedback_session_id(info: ls_schemas.LangSmithInfo) -> None:
     """Raise on SmithDB-only deployments, warn elsewhere.
 
@@ -1405,7 +1350,7 @@ class Client:
                 self.api_url,
                 _api_url_source(api_url, env_api_url, profile_config.api_url),
             )
-        ls_utils._warn_on_agent_env()
+        _agent_addressing.warn_on_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -2493,69 +2438,6 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
-    @staticmethod
-    def _apply_agent_addressing(payload: dict, *, update: bool = False) -> None:
-        """Settle the addressing mode on a run payload.
-
-        A project already on the payload addresses the run, so the environment
-        is not consulted; whatever agent fields the caller put there travel
-        alongside it and the endpoint refuses the pair. With no project, the
-        agent env vars fill in and the null project keys are dropped, so the
-        payload never carries a null for the mode it isn't using.
-
-        Which project reaches this payload is decided upstream, in `create_run`
-        and in the `RunTree` validator: a project named on the call replaces the
-        agent outright, and only one the caller *configured* travels with it.
-
-        On an update the environment is not consulted: a patch inherits its
-        target from the post that established it. Filling it in here would
-        address a patch to the agent while its post went to a project, because
-        an update carries a project only when the caller passed one and most
-        callers don't -- the endpoint resolves the run by id. A patch that
-        names nothing falls to that same lookup, which is how every patch is
-        resolved today.
-
-        Both members are required, but the endpoint is the one that says so:
-        whatever resolved is forwarded, and a partial pair comes back as a 400
-        carrying the server's own message. Dropping it instead would route the
-        run to the `default` project, so a typo would quietly succeed in the
-        wrong place rather than failing.
-
-        The keys read are the keys written, so running this twice re-resolves an
-        explicit value to itself rather than letting the environment replace it.
-
-        Applies to creates and updates alike: a `patch.<run_id>` part has to be
-        addressed the same way as the `post.<run_id>` it belongs to.
-        """
-        agent_id = payload.pop("agent_id", None)
-        agent_environment = payload.pop("agent_environment", None)
-        named_project = (
-            payload.get("session_id") is not None
-            or payload.get("session_name") is not None
-        )
-        if not (update or named_project):
-            # A patch inherits its post's target, and a project already on the
-            # payload addresses the run on its own; neither consults the
-            # environment. Every other create does, including one that named
-            # half an agent in code -- the missing half comes from the env var
-            # rather than reaching the endpoint as an incomplete pair.
-            agent_id, agent_environment = ls_utils._resolve_agent_addressing(
-                agent_id, agent_environment
-            )
-        if not ls_utils._is_agent_addressed(agent_id, agent_environment):
-            # Neither mode is addressed; leave the server-side fallback to it.
-            return
-        ls_utils._warn_agent_addressing_is_beta()
-        if agent_id is not None:
-            payload["agent_id"] = agent_id
-        if agent_environment is not None:
-            payload["agent_environment"] = agent_environment
-        if not named_project:
-            # Nothing to drop, and nothing to keep: the null project keys would
-            # otherwise be serialized.
-            payload.pop("session_name", None)
-            payload.pop("session_id", None)
-
     def _run_transform(
         self,
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
@@ -2601,7 +2483,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
-        self._apply_agent_addressing(run_create, update=update)
+        _agent_addressing.apply_to_payload(run_create, update=update)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
@@ -2759,7 +2641,7 @@ class Client:
         # as part of an already-resolved run body -- `RunTree.post` sends the
         # tree's fields that way -- where a project beside an agent means the
         # two were meant to travel together for the endpoint to refuse.
-        _reject_conflicting_addressing(
+        _agent_addressing.reject_conflicting(
             project=project_name,
             agent_id=kwargs.get("agent_id"),
             agent_environment=kwargs.get("agent_environment"),
@@ -2778,7 +2660,7 @@ class Client:
                 project_name,
                 kwargs["agent_id"],
                 kwargs["agent_environment"],
-            ) = ls_utils._resolve_addressing(
+            ) = _agent_addressing.resolve(
                 None, kwargs.get("agent_id"), kwargs.get("agent_environment")
             )
         run_create = {
@@ -4046,7 +3928,7 @@ class Client:
             "agent_environment": kwargs.pop("agent_environment", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
-        self._apply_agent_addressing(data, update=True)
+        _agent_addressing.apply_to_payload(data, update=True)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:
@@ -5033,7 +4915,7 @@ class Client:
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
-        _reject_url_for_agent_addressing(
+        _agent_addressing.reject_url(
             getattr(run, "session_id", None),
             getattr(run, "agent_id", None),
             getattr(run, "agent_environment", None),

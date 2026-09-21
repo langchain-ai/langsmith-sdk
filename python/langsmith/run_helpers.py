@@ -45,6 +45,7 @@ from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
+from langsmith._internal import _agent_addressing
 from langsmith._internal import _aiter as aitertools
 from langsmith._runtime_overrides import (
     _aio_to_thread_override_active as _runtime_override_active,
@@ -235,7 +236,7 @@ def tracing_context(
         # arrives here looking exactly like typing both. The project named here
         # wins, as it does over any other ambient agent.
         agent_id = agent_environment = None
-    ls_client._reject_conflicting_addressing(
+    _agent_addressing.reject_conflicting(
         project=project_name,
         agent_id=agent_id,
         agent_environment=agent_environment,
@@ -669,7 +670,7 @@ def traceable(
         enabled=enabled,
         exceptions_to_handle=kwargs.pop("exceptions_to_handle", None),
     )
-    ls_client._reject_conflicting_addressing(
+    _agent_addressing.reject_conflicting(
         project=container_input["project_name"],
         agent_id=container_input["agent_id"],
         agent_environment=container_input["agent_environment"],
@@ -1179,7 +1180,7 @@ class trace:
         self.inputs = inputs
         self.attachments = attachments
         self.extra = extra
-        ls_client._reject_conflicting_addressing(
+        _agent_addressing.reject_conflicting(
             project=project_name,
             agent_id=agent_id,
             agent_environment=agent_environment,
@@ -1405,7 +1406,7 @@ def _get_addressing(
     been named takes effect at the same point; `_resolve_addressing` settles
     which of the two the run ends up carrying.
     """
-    return utils._resolve_addressing(
+    return _agent_addressing.resolve(
         *_named_addressing(project_name, agent_id, agent_environment)
     )
 
@@ -1419,7 +1420,7 @@ def _named_addressing(
 
     The tiers an argument competes with: a context variable, the current run
     tree, then `ls.configure`. Callers that want a destination either way pass
-    the result to `utils._resolve_addressing`, which fills in from the
+    the result to `_agent_addressing.resolve`, which fills in from the
     environment below these.
     """
     prt = get_current_run_tree()
@@ -1769,7 +1770,7 @@ def _setup_run(
     parent_run_ = _get_parent_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
     )
-    ls_client._reject_conflicting_addressing(
+    _agent_addressing.reject_conflicting(
         project=langsmith_extra.get("project_name"),
         agent_id=langsmith_extra.get("agent_id"),
         agent_environment=langsmith_extra.get("agent_environment"),
@@ -1785,7 +1786,7 @@ def _setup_run(
         selected_project,
         selected_agent_id,
         selected_agent_environment,
-    ) = utils._resolve_addressing(
+    ) = _agent_addressing.resolve(
         project_cv  # From parent trace
         or (
             parent_run_.session_name if parent_run_ else None

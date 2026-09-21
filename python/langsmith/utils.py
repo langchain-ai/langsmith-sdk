@@ -15,7 +15,6 @@ import subprocess
 import sys
 import threading
 import traceback
-import warnings
 from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
@@ -35,7 +34,6 @@ from typing_extensions import ParamSpec
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
-from langsmith._internal._beta_decorator import _warn_once
 from langsmith._openapi_client._httpx import httpx
 
 _LOGGER = logging.getLogger(__name__)
@@ -506,146 +504,6 @@ def get_tracer_agent_id() -> Optional[str]:
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
     return get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
-
-
-def _resolve_agent_addressing(
-    agent_id: Optional[str] = None,
-    agent_environment: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str]]:
-    """Fill each half of the agent pair from its env var unless given.
-
-    An explicitly provided value is left alone, including when the other half
-    comes from the environment -- that combination is a complete pair.
-    """
-    return (
-        agent_id if agent_id is not None else get_tracer_agent_id(),
-        agent_environment
-        if agent_environment is not None
-        else get_tracer_agent_environment(),
-    )
-
-
-def _is_agent_addressed(
-    agent_id: Optional[str], agent_environment: Optional[str]
-) -> bool:
-    """Whether a run is addressed by agent rather than by project.
-
-    Either half is enough. A lone ``agent_environment`` is incomplete and the
-    endpoint rejects it, but it must not fall through to a project the caller
-    never named -- that would quietly send the run somewhere else instead of
-    reporting the mistake.
-    """
-    return agent_id is not None or agent_environment is not None
-
-
-def _warn_agent_addressing_is_beta() -> None:
-    """Warn the first time a run is actually addressed to an agent.
-
-    The docstrings say the feature is in beta, but a caller who reaches it
-    through an env var never read them, and the first sign of trouble would
-    otherwise be a 400 from a workspace without the flag. Emitted where the
-    addressing is settled rather than at client construction: a process that
-    configures an agent and never traces to one has nothing to hear about.
-
-    `_warn_once` caches on the message, so this fires once per process no
-    matter how many runs are addressed. The call site's depth varies by entry
-    point -- `create_run`, `update_run`, and the two batch methods all arrive
-    here through `_run_transform` -- so the warning points at the SDK rather
-    than guessing a `stacklevel` that would be wrong for most of them.
-    """
-    _warn_once(
-        "Agent addressing (`agent_id` / `agent_environment`) is in beta and is "
-        "enabled per workspace. A workspace without it rejects the run, so the "
-        "trace is lost rather than falling back to a project. The behavior may "
-        "change without notice."
-    )
-
-
-def _resolve_addressing(
-    project: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    agent_environment: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Settle a run's single destination, as `(project, agent_id, environment)`.
-
-    The arguments are the values named in code -- a parameter, a context
-    variable, a parent run, `ls.configure`. The environment fills in below
-    them, so callers pass their own chain of code-level tiers and leave the
-    env vars to this function.
-
-    Code beats the environment in both directions: a project named in code
-    drops the ambient agent, and an agent named in code drops the ambient
-    project. Half an agent named in code is completed from the environment
-    rather than competing with it.
-
-    When only the environment addresses the run, both modes travel and the
-    endpoint refuses the pair -- there is no tier to choose between, and
-    picking one would move the caller's traces without telling them. Only the
-    `default` project the SDK would otherwise invent is suppressed.
-
-    A project variable set to the empty string names no project, so it falls
-    back to `default` the way an unset one does.
-    """
-    if project:
-        return project, None, None
-    if _is_agent_addressed(agent_id, agent_environment):
-        return None, *_resolve_agent_addressing(agent_id, agent_environment)
-    env_agent_id = get_tracer_agent_id()
-    env_agent_environment = get_tracer_agent_environment()
-    if _is_agent_addressed(env_agent_id, env_agent_environment):
-        return (
-            get_tracer_project(return_default_value=False) or None,
-            env_agent_id,
-            env_agent_environment,
-        )
-    return get_tracer_project() or "default", None, None
-
-
-def _warn_on_agent_env() -> None:
-    """Warn when the environment's agent addressing cannot reach the endpoint.
-
-    Either half of the pair addresses a run, so either half alone is refused
-    with a 400 that takes the whole batch with it -- and `AGENT_ENVIRONMENT`
-    is a generic enough name to be set by accident. A project configured
-    beside a complete pair is refused the same way.
-
-    Emitted at client construction rather than per run, so it is seen once
-    instead of drowned out by the background flush's warnings, which only
-    log.
-    """
-    agent_id = get_tracer_agent_id()
-    agent_environment = get_tracer_agent_environment()
-    if not _is_agent_addressed(agent_id, agent_environment):
-        return
-    if agent_id is None or agent_environment is None:
-        missing, present = (
-            (
-                "LANGSMITH_AGENT_ID",
-                f"LANGSMITH_AGENT_ENVIRONMENT ({agent_environment!r})",
-            )
-            if agent_id is None
-            else ("LANGSMITH_AGENT_ENVIRONMENT", f"LANGSMITH_AGENT_ID ({agent_id!r})")
-        )
-        warnings.warn(
-            f"{present} is set without {missing}. Agent addressing needs both, "
-            "so the API refuses the request and the whole batch of runs is "
-            f"dropped. Set {missing}, or unset the other to trace to a project.",
-            LangSmithWarning,
-            stacklevel=3,
-        )
-        return
-    project = get_tracer_project(return_default_value=False)
-    if project is None:
-        return
-    warnings.warn(
-        f"LANGSMITH_AGENT_ID ({agent_id!r}) and a configured project "
-        f"({project!r}) both address runs, and the API accepts only one. "
-        "Unset LANGSMITH_AGENT_ID to trace to the project, or unset "
-        "LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / LANGCHAIN_SESSION) to "
-        "trace to the agent.",
-        LangSmithWarning,
-        stacklevel=3,
-    )
 
 
 class FilterPoolFullWarning(logging.Filter):

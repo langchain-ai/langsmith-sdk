@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _profiles
+from langsmith._internal import _agent_addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
     HUB,
@@ -212,7 +212,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
-        ls_utils._warn_on_agent_env()
+        _agent_addressing.warn_on_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -624,7 +624,7 @@ class AsyncClient:
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
-        ls_client._reject_conflicting_addressing(
+        _agent_addressing.reject_conflicting(
             project=project_name,
             agent_id=kwargs.get("agent_id"),
             agent_environment=kwargs.get("agent_environment"),
@@ -640,7 +640,7 @@ class AsyncClient:
                 session_name,
                 kwargs["agent_id"],
                 kwargs["agent_environment"],
-            ) = ls_utils._resolve_addressing(
+            ) = _agent_addressing.resolve(
                 project_name,
                 kwargs.get("agent_id"),
                 kwargs.get("agent_environment"),
@@ -654,7 +654,7 @@ class AsyncClient:
             "revision_id": revision_id,
             **kwargs,
         }
-        ls_client.Client._apply_agent_addressing(run_create)
+        _agent_addressing.apply_to_payload(run_create)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )
@@ -679,7 +679,7 @@ class AsyncClient:
                     may change without notice.
         """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
-        ls_client.Client._apply_agent_addressing(data, update=True)
+        _agent_addressing.apply_to_payload(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
             f"/runs/{ls_client._as_uuid(run_id)}",

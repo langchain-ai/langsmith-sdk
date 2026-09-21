@@ -20,7 +20,7 @@ from typing_extensions import NotRequired, TypedDict
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith._internal import _v2_migration_utils
+from langsmith._internal import _agent_addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import (
     ID_TYPE,
@@ -29,8 +29,6 @@ from langsmith.client import (
     ReplicaAuth,
     _dumps_json,
     _ensure_uuid,
-    _reject_conflicting_addressing,
-    _reject_url_for_agent_addressing,
 )
 from langsmith.uuid import uuid7_from_datetime
 
@@ -349,7 +347,7 @@ def configure(
         >>> ls.configure(enabled=False)
     """
     global _CLIENT
-    _reject_conflicting_addressing(
+    _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
         agent_id=None if agent_id is _SENTINEL else agent_id,
         agent_environment=(
@@ -406,7 +404,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     """Settle on one addressing mode for a run tree, in place.
 
     A run is addressed either by project (`session_name` / `session_id`) or by
-    agent (`agent_id` / `agent_environment`). `utils._resolve_addressing` settles
+    agent (`agent_id` / `agent_environment`). `_agent_addressing.resolve` settles
     which, so this shares one rule with `create_run` and `@traceable`.
 
     Runs against the raw validator input, so a value here was passed by the
@@ -423,7 +421,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         ),
         None,
     )
-    if utils._is_agent_addressed(
+    if _agent_addressing.is_addressed(
         values.get("agent_id"), values.get("agent_environment")
     ):
         # Already addressed by agent, either by the caller or by the resolution
@@ -437,14 +435,14 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         (
             values["agent_id"],
             values["agent_environment"],
-        ) = utils._resolve_agent_addressing(
+        ) = _agent_addressing.resolve_pair(
             values.get("agent_id"), values.get("agent_environment")
         )
         if named_project is None:
             values.pop("project_name", None)
             values["session_name"] = None
         return
-    project, agent_id, agent_environment = utils._resolve_addressing(named_project)
+    project, agent_id, agent_environment = _agent_addressing.resolve(named_project)
     values["agent_id"] = agent_id
     values["agent_environment"] = agent_environment
     if named_project is None:
@@ -990,7 +988,7 @@ class RunTree(ls_schemas.RunBase):
         agent_id = replica.get("agent_id")
         agent_environment = replica.get("agent_environment")
         if (project_name := replica.get("project_name")) is not None:
-            _reject_conflicting_addressing(
+            _agent_addressing.reject_conflicting(
                 project=project_name,
                 agent_id=agent_id,
                 agent_environment=agent_environment,
@@ -1199,7 +1197,7 @@ class RunTree(ls_schemas.RunBase):
     def _resolve_url(self) -> str:
         """Ask the backend for the run's URL, falling back to building it locally."""
         client = self.client
-        _reject_url_for_agent_addressing(
+        _agent_addressing.reject_url(
             self.session_id, self.agent_id, self.agent_environment
         )
         try:

@@ -50,7 +50,7 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
-from langsmith._internal import _orjson
+from langsmith._internal import _agent_addressing, _orjson
 from langsmith._internal._beta_decorator import (
     LangSmithBetaWarning,
     _warn_once,
@@ -8262,7 +8262,7 @@ def test_env_environment_plus_explicit_agent_id(
     client = Client(api_url="http://localhost:1984", api_key="123")
     run = run_trees.RunTree(name="my_run", agent_id="my-agent", ls_client=client)
     payload = run._get_dicts_safe()
-    Client._apply_agent_addressing(payload)
+    _agent_addressing.apply_to_payload(payload)
     assert (payload["agent_id"], payload["agent_environment"]) == (
         "my-agent",
         "staging",
@@ -8288,7 +8288,7 @@ class TestExplicitAgentBeatsAmbient:
             "agent_id": "explicit",
             "agent_environment": "prod",
         }
-        Client._apply_agent_addressing(payload)
+        _agent_addressing.apply_to_payload(payload)
         assert payload == {"agent_id": "explicit", "agent_environment": "prod"}
 
 
@@ -8563,9 +8563,9 @@ class TestPatchInheritsThePostsTarget:
             monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
         )
         post: dict = {"session_name": "myproj"}
-        Client._apply_agent_addressing(post)
+        _agent_addressing.apply_to_payload(post)
         patch: dict = {"session_name": None, "session_id": None}
-        Client._apply_agent_addressing(patch, update=True)
+        _agent_addressing.apply_to_payload(patch, update=True)
         assert post == {"session_name": "myproj"}
         # No agent fields added. The null session keys are left exactly as
         # `update_run` built them, which is what `main` sends today.
@@ -8583,7 +8583,7 @@ class TestPatchInheritsThePostsTarget:
             "agent_id": "from-the-run",
             "agent_environment": "env",
         }
-        Client._apply_agent_addressing(patch, update=True)
+        _agent_addressing.apply_to_payload(patch, update=True)
         assert patch == {"agent_id": "from-the-run", "agent_environment": "env"}
 
 
@@ -8676,7 +8676,7 @@ class TestAgentAddressingWarnsOnce:
         )
         payload: dict = {"session_name": None}
         with pytest.warns(LangSmithBetaWarning, match="Agent addressing"):
-            Client._apply_agent_addressing(payload)
+            _agent_addressing.apply_to_payload(payload)
         assert payload == {"agent_id": "ag", "agent_environment": "env"}
 
     def test_a_project_addressed_run_stays_quiet(
@@ -8686,7 +8686,7 @@ class TestAgentAddressingWarnsOnce:
         payload: dict = {"session_name": "proj"}
         with warnings.catch_warnings():
             warnings.simplefilter("error", LangSmithBetaWarning)
-            Client._apply_agent_addressing(payload)
+            _agent_addressing.apply_to_payload(payload)
         assert payload == {"session_name": "proj"}
 
 
@@ -8697,6 +8697,6 @@ def test_a_complete_pair_survives_a_second_transform() -> None:
         "agent_id": "explicit",
         "agent_environment": "prod",
     }
-    Client._apply_agent_addressing(payload)
-    Client._apply_agent_addressing(payload)
+    _agent_addressing.apply_to_payload(payload)
+    _agent_addressing.apply_to_payload(payload)
     assert payload == {"agent_id": "explicit", "agent_environment": "prod"}
