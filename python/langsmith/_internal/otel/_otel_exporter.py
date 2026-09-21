@@ -87,6 +87,8 @@ GEN_AI_SERIALIZED_NAME = "gen_ai.serialized.name"
 GEN_AI_SERIALIZED_SIGNATURE = "gen_ai.serialized.signature"
 GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc"
 GEN_AI_RESPONSE_ID = "gen_ai.response.id"
+GEN_AI_TOOL_NAME = "gen_ai.tool.name"
+GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
 GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier"
 GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
 GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
@@ -588,6 +590,14 @@ class OTELExporter:
         # Set metadata and tags if available
         extra = run_info.get("extra", {})
         metadata = extra.get("metadata", {})
+        if run_info.get("run_type") == "tool":
+            tool_name = run_info.get("name")
+            if tool_name:
+                span.set_attribute(GEN_AI_TOOL_NAME, str(tool_name))
+            tool_call_id = metadata.get("tool_call_id")
+            if tool_call_id is not None:
+                span.set_attribute(GEN_AI_TOOL_CALL_ID, str(tool_call_id))
+
         for key, value in metadata.items():
             if value is not None:
                 safe = otel_safe_attribute_value(value)
@@ -768,19 +778,22 @@ class OTELExporter:
                 if isinstance(outputs, dict):
                     if "id" in outputs and outputs["id"] is not None:
                         span.set_attribute(GEN_AI_RESPONSE_ID, outputs["id"])
-                    if "choices" in outputs and isinstance(outputs["choices"], list):
-                        finish_reasons = []
+                    finish_reasons = []
+                    if isinstance(outputs.get("choices"), list):
                         for choice in outputs["choices"]:
-                            if (
-                                "finish_reason" in choice
-                                and choice["finish_reason"] is not None
-                            ):
+                            if isinstance(choice, dict) and choice.get("finish_reason"):
                                 finish_reasons.append(str(choice["finish_reason"]))
-                        if finish_reasons:
-                            span.set_attribute(
-                                GEN_AI_RESPONSE_FINISH_REASONS,
-                                ", ".join(finish_reasons),
-                            )
+                    if not finish_reasons:
+                        for key in ("stop_reason", "finish_reason"):
+                            reason = outputs.get(key)
+                            if reason:
+                                finish_reasons = [str(reason)]
+                                break
+                    if finish_reasons:
+                        span.set_attribute(
+                            GEN_AI_RESPONSE_FINISH_REASONS,
+                            finish_reasons,
+                        )
                     if (
                         "service_tier" in outputs
                         and outputs["service_tier"] is not None
