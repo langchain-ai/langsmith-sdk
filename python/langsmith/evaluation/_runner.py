@@ -1254,6 +1254,23 @@ def _load_tqdm() -> Callable[[IT], IT]:
 ET = TypeVar("ET", bound="_ExperimentManagerMixin")
 
 
+def _addressed_to_project(context: dict, project_name: str) -> dict:
+    """Re-address a context snapshot to `project_name`.
+
+    An evaluation is project-addressed end to end -- the target runs to the
+    experiment, the evaluator runs to `evaluators`, the feedback to the run's
+    project -- so an agent configured around it leaks into none of them. The
+    three addressing keys move together: overriding the project alone would
+    leave a snapshot naming two destinations.
+    """
+    return {
+        **context,
+        "project_name": project_name,
+        "agent_id": None,
+        "agent_environment": None,
+    }
+
+
 class _ExperimentManagerMixin:
     def __init__(
         self,
@@ -1694,8 +1711,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         }
         with rh.tracing_context(
             **{
-                **current_context,
-                "project_name": "evaluators",
+                **_addressed_to_project(current_context, "evaluators"),
                 "metadata": metadata,
                 "enabled": _evaluator_tracing_mode(
                     self._upload_results, self._disable_evaluator_tracing
@@ -1843,8 +1859,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             }
             with rh.tracing_context(
                 **{
-                    **current_context,
-                    "project_name": "evaluators",
+                    **_addressed_to_project(current_context, "evaluators"),
                     "metadata": metadata,
                     "client": self.client,
                     "enabled": _evaluator_tracing_mode(

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
+from langsmith._internal import _agent_addressing
 from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 
@@ -90,6 +91,45 @@ class LangSmithProjectNameTest(unittest.TestCase):
                         else ls_utils.get_tracer_project(case.return_default_value)
                     )
                     self.assertEqual(project, case.expected_project_name)
+
+
+@pytest.mark.parametrize(
+    ("getter_name", "suffix"),
+    [
+        ("get_tracer_agent_environment", "AGENT_ENVIRONMENT"),
+        ("get_tracer_agent_id", "AGENT_ID"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("namespaces", "expected"),
+    [
+        ({}, None),
+        ({"LANGSMITH": "from-langsmith"}, "from-langsmith"),
+        # The agent variables are LANGSMITH_-only: the legacy LANGCHAIN_
+        # namespace is not taking new members, so that spelling is not read.
+        ({"LANGCHAIN": "from-langchain"}, None),
+        (
+            {"LANGSMITH": "from-langsmith", "LANGCHAIN": "from-langchain"},
+            "from-langsmith",
+        ),
+        # Blank is treated as unset, same as every other LangSmith env var.
+        ({"LANGSMITH": ""}, None),
+        ({"LANGSMITH": "", "LANGCHAIN": "from-langchain"}, None),
+    ],
+)
+def test_get_tracer_agent_env_vars(
+    getter_name: str,
+    suffix: str,
+    namespaces: dict,
+    expected: Optional[str],
+) -> None:
+    """`LANGSMITH_AGENT_ENVIRONMENT` / `LANGSMITH_AGENT_ID` resolution."""
+    getter = getattr(ls_utils, getter_name)
+    envvars = {f"{ns}_{suffix}": value for ns, value in namespaces.items()}
+    ls_utils.get_env_var.cache_clear()
+    getter.cache_clear()
+    with patch.dict("os.environ", envvars, clear=True):
+        assert getter() == expected
 
 
 def test_tracing_enabled():
@@ -647,3 +687,27 @@ def test_filter_request_headers_localhost():
         request, allow_hosts=["http://localhost:3000"]
     )
     assert result is None
+
+
+def test_an_empty_project_variable_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`get_tracer_project` returns "" for an empty variable, not the default.
+
+    The `session_name` field's `default_factory` used to guard that with
+    `or "default"`; the resolution writes the field now, so the guard lives
+    here instead.
+    """
+    for name in ("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT", "LANGCHAIN_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOSTED_LANGSERVE_PROJECT_NAME", "")
+    for fn in (
+        ls_utils.get_env_var,
+        ls_utils.get_tracer_project,
+        ls_utils.get_tracer_agent_id,
+        ls_utils.get_tracer_agent_environment,
+    ):
+        fn.cache_clear()
+
+    assert ls_utils.get_tracer_project() == ""
+    assert _agent_addressing.resolve()[0] == "default"

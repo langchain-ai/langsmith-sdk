@@ -68,8 +68,13 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import (
+    _agent_addressing,
+    _orjson,
+    _profiles,
+    _v2_migration_utils,
+)
 from langsmith._internal import _aiter as aitertools
-from langsmith._internal import _orjson, _profiles, _v2_migration_utils
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -1345,6 +1350,7 @@ class Client:
                 self.api_url,
                 _api_url_source(api_url, env_api_url, profile_config.api_url),
             )
+        _agent_addressing.warn_on_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -2477,6 +2483,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+        _agent_addressing.apply_to_payload(run_create, update=update)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
@@ -2573,6 +2580,17 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
+            agent_id (Optional[str]): (experimental) Address the run to an
+                agent instead of a project. Cannot be combined with
+                `project_name` / `session_id` in the same call. Defaults to
+                `LANGSMITH_AGENT_ID`. Agent addressing is in beta and enabled
+                per workspace; a workspace without it rejects the run, so the
+                trace is lost rather than falling back to a project.
+            agent_environment (Optional[str]): (experimental) Narrows
+                `agent_id`; required alongside it. One of `local`,
+                `development`, `staging` or `production` -- anything else is
+                rejected rather than defaulted. Defaults to
+                `LANGSMITH_AGENT_ENVIRONMENT`.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
@@ -2618,11 +2636,33 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        project_name = project_name or kwargs.pop(
-            "session_name",
-            # if the project is not provided, use the environment's project
-            ls_utils.get_tracer_project(),
+        # Only `project_name`, this method's own parameter, counts as a caller
+        # naming a project. `session_name` and `session_id` arrive in `kwargs`
+        # as part of an already-resolved run body -- `RunTree.post` sends the
+        # tree's fields that way -- where a project beside an agent means the
+        # two were meant to travel together for the endpoint to refuse.
+        _agent_addressing.reject_conflicting(
+            project=project_name,
+            agent_id=kwargs.get("agent_id"),
+            agent_environment=kwargs.get("agent_environment"),
         )
+        if project_name:
+            pass
+        elif "session_name" in kwargs:
+            # Passed through, even as None: a caller that says "no project"
+            # gets no project.
+            project_name = kwargs.pop("session_name")
+        elif kwargs.get("session_id") is not None:
+            # Already addressed by project id; leave it alone.
+            project_name = None
+        else:
+            (
+                project_name,
+                kwargs["agent_id"],
+                kwargs["agent_environment"],
+            ) = _agent_addressing.resolve(
+                None, kwargs.get("agent_id"), kwargs.get("agent_environment")
+            )
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -3826,7 +3866,15 @@ class Client:
             tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
             authorization (Optional[str]): The Authorization header value.
             cookie (Optional[str]): The Cookie header value.
-            **kwargs (Any): Kwargs are ignored.
+            **kwargs (Any): Ignored, except `agent_id` / `agent_environment`.
+
+                !!! warning "Experimental"
+                    `agent_id` / `agent_environment` are in beta. They address
+                    the patch to an agent, and must match the post they belong
+                    to: an update that names neither is resolved by run id, as
+                    every update was before. Agent addressing is enabled per
+                    workspace; a workspace without it rejects the runs. Both
+                    may change without notice.
 
         Returns:
             None
@@ -3876,7 +3924,11 @@ class Client:
             "extra": extra,
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
+            "agent_id": kwargs.pop("agent_id", None),
+            "agent_environment": kwargs.pop("agent_environment", None),
         }
+        # Updates don't go through `_run_transform`, so address them here.
+        _agent_addressing.apply_to_payload(data, update=True)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:
@@ -4863,6 +4915,11 @@ class Client:
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
+        _agent_addressing.reject_url(
+            getattr(run, "session_id", None),
+            getattr(run, "agent_id", None),
+            getattr(run, "agent_environment", None),
+        )
         if session_id := getattr(run, "session_id", None):
             pass
         elif session_name := getattr(run, "session_name", None):
