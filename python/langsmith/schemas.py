@@ -623,7 +623,15 @@ class FeedbackSourceType(Enum):
 
 
 class FeedbackBase(BaseModel):
-    """Feedback schema."""
+    """Feedback schema.
+
+    !!! warning "Experimental"
+        `agent_id` / `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the feedback,
+        so it is lost rather than falling back to a project. The agent must
+        already exist -- unlike run ingestion, a feedback part never creates
+        one. Both may change without notice.
+    """
 
     id: UUID
     """The unique ID of the feedback."""

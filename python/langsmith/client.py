@@ -8315,6 +8315,13 @@ class Client:
             To enable feedback to be batch uploaded in the background you must
             specify `trace_id`. *We highly encourage this for latency-sensitive environments.*
 
+        !!! warning "Experimental"
+            `agent_id` / `agent_environment` are in beta. Agent addressing is
+            enabled per workspace; a workspace without it rejects the feedback,
+            so it is lost rather than falling back to a project. The agent must
+            already exist -- unlike run ingestion, a feedback part never creates
+            one. Both may change without notice.
+
         Args:
             key (str):
                 The name of the feedback metric.

@@ -1189,6 +1189,13 @@ class AsyncClient:
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
 
+        !!! warning "Experimental"
+            `agent_id` / `agent_environment` are in beta. Agent addressing is
+            enabled per workspace; a workspace without it rejects the feedback,
+            so it is lost rather than falling back to a project. The agent must
+            already exist -- unlike run ingestion, a feedback part never creates
+            one. Both may change without notice.
+
         Args:
             run_id: The ID of the run to provide feedback for. At least one of
                 run_id, trace_id, or project_id must be specified.
