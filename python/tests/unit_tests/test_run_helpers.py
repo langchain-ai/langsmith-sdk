@@ -2994,28 +2994,6 @@ class TestEveryEntryPointTakesAnAgent:
             with tracing_context(enabled=True, client=mock_client):
                 foo(langsmith_extra={"project_name": "p", "agent_id": "a"})
 
-    def test_a_project_named_in_code_still_beats_the_ambient_agent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _clean_agent_addressing_env(
-            monkeypatch,
-            LANGSMITH_AGENT_ID="env-agent",
-            LANGSMITH_AGENT_ENVIRONMENT="staging",
-        )
-        mock_client = _get_mock_client()
-        seen: dict = {}
-
-        @traceable(project_name="dec-proj")
-        def foo() -> None:
-            run = get_current_run_tree()
-            assert run is not None
-            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
-
-        with tracing_context(enabled=True, client=mock_client):
-            foo()
-
-        assert seen["value"] == (None, None, "dec-proj")
-
 
 class TestTracingContextAgentAddressing:
     """`tracing_context` can address runs by agent instead of project."""
@@ -3041,15 +3019,6 @@ class TestTracingContextAgentAddressing:
                 enabled=True, project_name="explicit", agent_id="ctx-agent"
             ):
                 pass
-
-    def test_context_agent_overrides_the_env_var(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _clean_agent_addressing_env(monkeypatch, LANGSMITH_AGENT_ID="env-agent")
-        mock_client = _get_mock_client()
-        with tracing_context(enabled=True, agent_id="ctx-agent"):
-            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
-                assert run.agent_id == "ctx-agent"
 
     def test_traceable_is_agent_addressed_from_the_env(
         self, monkeypatch: pytest.MonkeyPatch

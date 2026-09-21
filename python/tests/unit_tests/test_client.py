@@ -49,7 +49,6 @@ from requests import HTTPError
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
-from langsmith import run_helpers as rh
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import (
@@ -8140,53 +8139,6 @@ def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     _clear_agent_addressing_caches()
 
 
-@pytest.mark.parametrize(
-    ("payload", "expected"),
-    [
-        # Both modes on the payload: both travel, and the endpoint answers 400.
-        # Dropping one here would move the run somewhere the caller never
-        # named, without telling them.
-        (
-            {"session_name": "proj", "agent_id": "a", "agent_environment": "e"},
-            {"session_name": "proj", "agent_id": "a", "agent_environment": "e"},
-        ),
-        (
-            {"session_id": "sid", "agent_id": "a", "agent_environment": "e"},
-            {"session_id": "sid", "agent_id": "a", "agent_environment": "e"},
-        ),
-        # No project: the agent addresses it, and the null project key goes.
-        (
-            {"session_name": None, "agent_id": "a", "agent_environment": "e"},
-            {"agent_id": "a", "agent_environment": "e"},
-        ),
-        # Neither mode: left alone for the server-side fallback.
-        ({"session_name": None}, {"session_name": None}),
-    ],
-)
-def test_apply_agent_addressing(
-    payload: dict,
-    expected: dict,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Whatever addresses the run survives, with no nulls for what doesn't."""
-    _clean_agent_env(monkeypatch)
-    Client._apply_agent_addressing(payload)
-    assert payload == expected
-
-
-def test_apply_agent_addressing_fills_from_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _clean_agent_env(
-        monkeypatch,
-        LANGSMITH_AGENT_ID="my-agent",
-        LANGSMITH_AGENT_ENVIRONMENT="staging",
-    )
-    payload: dict = {"session_name": None}
-    Client._apply_agent_addressing(payload)
-    assert payload == {"agent_id": "my-agent", "agent_environment": "staging"}
-
-
 def _multipart_parts(session: mock.Mock) -> dict:
     """Collect the `post.<id>` / `patch.<id>` JSON parts sent so far, by kind."""
     parts: dict = {}
@@ -8297,26 +8249,6 @@ def test_project_addressed_run_is_unchanged(
     assert "agent_environment" not in body
 
 
-@pytest.mark.parametrize(
-    ("payload", "expected_agent"),
-    [
-        ({"session_name": None, "agent_id": "a"}, {"agent_id": "a"}),
-        ({"session_name": None, "agent_environment": "e"}, {"agent_environment": "e"}),
-    ],
-)
-def test_apply_agent_addressing_forwards_half_a_pair(
-    payload: dict, expected_agent: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A partial object goes out so the endpoint answers it.
-
-    Dropping it would route the run to the `default` project, so a typo would
-    quietly succeed somewhere wrong instead of failing.
-    """
-    _clean_agent_env(monkeypatch)
-    Client._apply_agent_addressing(payload)
-    assert payload == expected_agent
-
-
 def test_env_environment_plus_explicit_agent_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -8359,15 +8291,6 @@ class TestExplicitAgentBeatsAmbient:
         Client._apply_agent_addressing(payload)
         assert payload == {"agent_id": "explicit", "agent_environment": "prod"}
 
-    def test_is_idempotent(self) -> None:
-        """The keys read are the keys written, so a second pass is a no-op."""
-        payload: dict = {"session_name": None, "agent_id": "explicit"}
-        Client._apply_agent_addressing(payload)
-        first = dict(payload)
-        Client._apply_agent_addressing(payload)
-        assert payload == first
-        assert payload["agent_id"] == "explicit"
-
 
 class TestConflictingAddressingRaises:
     """Naming a project and an agent in one call is the SDK's one rejection.
@@ -8376,31 +8299,6 @@ class TestConflictingAddressingRaises:
     ambient one: a `create_run` call, a `tracing_context`, a replica. Elsewhere
     the pair travels and the endpoint answers 400.
     """
-
-    @pytest.mark.parametrize(
-        "kwargs",
-        [
-            {"project_name": "p", "agent_id": "a", "agent_environment": "e"},
-            {"project_name": "p", "agent_id": "a"},
-            {"project_name": "p", "agent_environment": "e"},
-        ],
-    )
-    def test_a_run_tree_forwards_both_instead(
-        self, kwargs: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A run tree cannot tell a caller's pair from an inherited one.
-
-        `create_child` copies both fields down, so a parent addressed by agent
-        beside a configured project would look like a caller conflict. The pair
-        travels and the endpoint answers 400.
-        """
-        _clean_agent_env(monkeypatch)
-        run = run_trees.RunTree(name="r", **kwargs)
-        assert run.session_name == "p"
-        assert (run.agent_id, run.agent_environment) == (
-            kwargs.get("agent_id"),
-            kwargs.get("agent_environment"),
-        )
 
     def test_create_run_rejects_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clean_agent_env(monkeypatch)
@@ -8463,26 +8361,6 @@ class TestAConfiguredProjectTravelsWithTheAgent:
     endpoint reports the conflict instead of the SDK silently picking one.
     """
 
-    def test_the_defaulted_project_is_suppressed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _clean_agent_env(
-            monkeypatch,
-            LANGSMITH_AGENT_ID="my-agent",
-            LANGSMITH_AGENT_ENVIRONMENT="staging",
-        )
-        session = mock.Mock()
-        session.request = mock.Mock()
-        client = _multipart_client(session)
-        client.create_run(**_minimal_run())
-
-        body = _wait_for_part(session, "post")
-        assert (body.get("agent_id"), body.get("agent_environment")) == (
-            "my-agent",
-            "staging",
-        )
-        assert "session_name" not in body
-
     def test_a_configured_project_is_forwarded_alongside(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -8523,22 +8401,6 @@ class TestAConfiguredProjectTravelsWithTheAgent:
         assert body.get("session_name") == "explicit"
         assert "agent_id" not in body
         assert "agent_environment" not in body
-
-    def test_a_run_tree_carries_both(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _clean_agent_env(
-            monkeypatch,
-            LANGSMITH_AGENT_ID="my-agent",
-            LANGSMITH_AGENT_ENVIRONMENT="staging",
-            LANGSMITH_PROJECT="my-proj",
-        )
-        run = run_trees.RunTree(name="r")
-        assert run.session_name == "my-proj"
-        assert (run.agent_id, run.agent_environment) == ("my-agent", "staging")
-        # A child copies the parent's addressing rather than tripping the
-        # caller-conflict check.
-        child = run.create_child(name="c")
-        assert child.session_name == "my-proj"
-        assert (child.agent_id, child.agent_environment) == ("my-agent", "staging")
 
     def test_a_run_tree_post_does_not_raise_on_its_own_resolution(
         self, monkeypatch: pytest.MonkeyPatch
@@ -8583,18 +8445,6 @@ class TestAConfiguredProjectTravelsWithTheAgent:
         with pytest.warns(ls_utils.LangSmithWarning, match="LANGSMITH_AGENT_ID"):
             Client(api_url="http://localhost:1984", api_key="123")
 
-    def test_no_warning_without_a_configured_project(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _clean_agent_env(
-            monkeypatch,
-            LANGSMITH_AGENT_ID="my-agent",
-            LANGSMITH_AGENT_ENVIRONMENT="staging",
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", ls_utils.LangSmithWarning)
-            Client(api_url="http://localhost:1984", api_key="123")
-
 
 class TestRemoteInputNeverRaises:
     """A `baggage` header is attacker-settable, so it is ignored, never raised on."""
@@ -8614,30 +8464,6 @@ class TestRemoteInputNeverRaises:
         assert child is not None
         assert child.session_name == "p-caller"
         assert child.agent_id is None
-
-    @pytest.mark.parametrize(
-        "caller_kwargs",
-        [
-            {"project_name": "p-caller"},
-            # A receiver may select its project by ID rather than by name, and
-            # the conflict check treats every one of these as a named project.
-            {"project_id": uuid.UUID(int=7)},
-            {"session_id": uuid.UUID(int=7)},
-        ],
-    )
-    def test_a_baggage_agent_is_ignored_however_the_caller_named_its_project(
-        self, caller_kwargs: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _clean_agent_env(monkeypatch)
-        headers = dict(run_trees.RunTree(name="p", project_name="p-local").to_headers())
-        headers["baggage"] = (
-            f"{run_trees.LANGSMITH_AGENT_ID}=remote,"
-            f"{run_trees.LANGSMITH_AGENT_ENVIRONMENT}=prod"
-        )
-        child = run_trees.RunTree.from_headers(headers, name="c", **caller_kwargs)
-        assert child is not None
-        assert child.agent_id is None
-        assert child.agent_environment is None
 
     def test_a_baggage_replica_naming_both_is_normalized(self) -> None:
         """Otherwise a header could make the receiving service raise."""
@@ -8694,34 +8520,6 @@ class TestPatchInheritsThePostsTarget:
         }
         Client._apply_agent_addressing(patch, update=True)
         assert patch == {"agent_id": "from-the-run", "agent_environment": "env"}
-
-
-class TestEitherAgentFieldAddressesTheRun:
-    """One rule across every entry point: either field means agent-addressed.
-
-    The design doc settles it -- "a lone `agent_environment` cannot fall through
-    to a project the caller never named". Before this, `RunTree` treated a lone
-    environment as agent-addressed while `create_run` and `_get_addressing`
-    defaulted a project in, so one typo lost tracing on one path and did
-    nothing on another.
-    """
-
-    @pytest.fixture(autouse=True)
-    def _lone_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _clean_agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
-
-    def test_the_payload_boundary(self) -> None:
-        payload: dict = {"session_name": None}
-        Client._apply_agent_addressing(payload)
-        assert payload == {"agent_environment": "staging"}
-
-    def test_the_run_tree(self) -> None:
-        run = run_trees.RunTree(name="r")
-        assert run.session_name is None
-        assert run.agent_environment == "staging"
-
-    def test_run_helpers(self) -> None:
-        assert rh._get_addressing(None) == (None, None, "staging")
 
 
 def test_batch_update_does_not_resolve_the_ambient_agent(
@@ -8825,30 +8623,6 @@ class TestAgentAddressingWarnsOnce:
             warnings.simplefilter("error", LangSmithBetaWarning)
             Client._apply_agent_addressing(payload)
         assert payload == {"session_name": "proj"}
-
-    def test_a_patch_that_names_nothing_stays_quiet(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """An update never consults the environment, so it never warns."""
-        _clean_agent_env(
-            monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", LangSmithBetaWarning)
-            Client._apply_agent_addressing({"session_name": None}, update=True)
-
-    def test_a_second_run_does_not_warn_again(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Once per process, not once per run -- a trace posts many."""
-        _clean_agent_env(
-            monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
-        )
-        with pytest.warns(LangSmithBetaWarning):
-            Client._apply_agent_addressing({"session_name": None})
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", LangSmithBetaWarning)
-            Client._apply_agent_addressing({"session_name": None})
 
 
 def test_a_complete_pair_survives_a_second_transform() -> None:

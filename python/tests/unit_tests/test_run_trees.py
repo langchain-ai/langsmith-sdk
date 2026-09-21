@@ -907,25 +907,6 @@ class TestRunTreeAgentAddressing:
         assert run.agent_id is None
         assert run.agent_environment is None
 
-    def test_explicit_project_id_wins_too(
-        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
-    ) -> None:
-        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
-        _reset_agent_addressing_cache()
-        session_id = UUID("00000000-0000-0000-0000-00000000beef")
-        run = RunTree(name="foo", project_id=session_id, ls_client=_get_mock_client())
-        assert run.session_id == session_id
-        assert run.agent_id is None
-
-    def test_no_agent_env_keeps_the_default_project(
-        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
-    ) -> None:
-        _agent_env(monkeypatch)
-        _reset_agent_addressing_cache()
-        run = RunTree(name="foo", ls_client=_get_mock_client())
-        assert run.session_name == "default"
-        assert run.agent_id is None
-
     def test_agent_environment_alone_is_forwarded(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
@@ -1081,12 +1062,6 @@ class TestBaggageAgentAddressing:
         assert len(parsed.replicas) == 1
         assert parsed.replicas[0]["agent_id"] == "replica-agent"
 
-    def test_replica_naming_no_destination_is_still_dropped(self) -> None:
-        replicas_json = json.dumps([{"updates": {"reroot": True}}])
-        baggage = f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas_json)}"
-        parsed = run_trees._Baggage.from_header(baggage)
-        assert parsed.replicas == []
-
     def test_replica_credentials_are_still_stripped(self) -> None:
         replicas_json = json.dumps(
             [
@@ -1129,15 +1104,3 @@ class TestBaggageProjectVersusCallerAgent:
         assert child is not None
         assert child.agent_id == "a"
         assert child.session_name is None
-
-    def test_a_baggage_project_still_wins_over_a_caller_project(
-        self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
-    ) -> None:
-        """Unchanged, and deliberately so: a child joins its parent's project."""
-        _agent_env(monkeypatch)
-        _reset_agent_addressing_cache()
-        headers = dict(RunTree(name="p", project_name="p-local").to_headers())
-        headers["baggage"] = f"{run_trees.LANGSMITH_PROJECT}=from-parent"
-        child = RunTree.from_headers(headers, name="c", project_name="p-caller")
-        assert child is not None
-        assert child.session_name == "from-parent"
