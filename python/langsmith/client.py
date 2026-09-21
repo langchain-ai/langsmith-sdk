@@ -711,6 +711,21 @@ def _get_langsmith_env_var_uncached(name: str) -> Optional[str]:
     return None
 
 
+def _api_url_source(
+    api_url_arg: Optional[str],
+    env_api_url: Optional[str],
+    profile_api_url: Optional[str],
+) -> str:
+    """Name where the API URL came from, so a wrong region is easy to spot in logs."""
+    if api_url_arg:
+        return "api_url argument"
+    if env_api_url:
+        return "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
+    if profile_api_url:
+        return "profile config"
+    return "built-in default"
+
+
 def _validate_api_key_if_hosted(
     api_url: str,
     api_key: Optional[str],
@@ -1325,6 +1340,11 @@ class Client:
                 tracing_mode=resolved_mode,
             )
             self._write_api_urls = {self.api_url: self.api_key}
+            logger.debug(
+                "LangSmith API URL %s resolved from %s",
+                self.api_url,
+                _api_url_source(api_url, env_api_url, profile_config.api_url),
+            )
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)

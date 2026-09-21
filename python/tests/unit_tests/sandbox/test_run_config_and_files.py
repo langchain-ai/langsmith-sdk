@@ -15,6 +15,8 @@ from langsmith.sandbox._models import CommandHandle
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._ws_execute import _AsyncWSStreamControl, _WSStreamControl
 
+from ._sse_fixtures import SSE_HEADERS, exited, sse_bytes, started
+
 DATAPLANE = "https://sandbox-router.example.com/sb-123"
 
 
@@ -103,20 +105,14 @@ class TestRunConfigOnRequests:
         client.update_sandbox("sb", new_name="sb2")
         assert "run_config" not in json.loads(httpx_mock.get_requests()[0].content)
 
-    def test_run_http_sends_run_config(self, httpx_mock: HTTPXMock, sandbox):
+    def test_run_sends_run_config(self, httpx_mock: HTTPXMock, sandbox, monkeypatch):
+        monkeypatch.setenv("LANGSMITH_EXPERIMENTAL_FEATURES", "sandbox_sse_exec")
         httpx_mock.add_response(
-            url=f"{DATAPLANE}/execute",
-            json={"stdout": "", "stderr": "", "exit_code": 0},
+            url=f"{DATAPLANE}/execute/stream/start",
+            content=sse_bytes(started(), exited()),
+            headers=SSE_HEADERS,
         )
-        sandbox._run_http(
-            "echo hi",
-            timeout=60,
-            env=None,
-            cwd=None,
-            run_config={"user": "app"},
-            shell="/bin/bash",
-            headers=None,
-        )
+        sandbox.run("echo hi", run_config=RunConfig(user="app"))
         body = json.loads(httpx_mock.get_requests()[0].content)
         assert body["run_config"] == {"user": "app"}
 
@@ -125,13 +121,16 @@ class TestRunConfigOnRequests:
         with pytest.raises(ValueError, match="deprecated env/cwd"):
             sandbox.run("echo hi", run_config=RunConfig(user="app"), **deprecated)
 
-    def test_deprecated_fields_still_work_alone(self, httpx_mock: HTTPXMock, sandbox):
+    def test_deprecated_fields_still_work_alone(
+        self, httpx_mock: HTTPXMock, sandbox, monkeypatch
+    ):
+        monkeypatch.setenv("LANGSMITH_EXPERIMENTAL_FEATURES", "sandbox_sse_exec")
         httpx_mock.add_response(
-            url=f"{DATAPLANE}/execute",
-            json={"stdout": "", "stderr": "", "exit_code": 0},
+            url=f"{DATAPLANE}/execute/stream/start",
+            content=sse_bytes(started(), exited()),
+            headers=SSE_HEADERS,
         )
-        with patch("langsmith.sandbox._sandbox.WEBSOCKETS_AVAILABLE", False):
-            sandbox.run("echo hi", cwd="/tmp", env={"A": "1"})
+        sandbox.run("echo hi", cwd="/tmp", env={"A": "1"})
         body = json.loads(httpx_mock.get_requests()[0].content)
         assert body["cwd"] == "/tmp"
         assert body["env"] == {"A": "1"}

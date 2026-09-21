@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
 from langsmith._openapi_client._httpx import httpx
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    _access_delegation_from_dict,
+)
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
@@ -47,6 +51,16 @@ from langsmith.sandbox._models import (
     Snapshot,
     _run_config_from_dict,
     _StreamEndedBeforeStarted,
+)
+from langsmith.sandbox._sse_execute import (
+    MISSING_TRANSPORT_MSG,
+    require_sse_supports,
+    resume_sse_stream,
+    run_sse_stream,
+    sse_transport_selected,
+)
+from langsmith.sandbox._sse_execute import (
+    start_payload as _sse_start_payload,
 )
 from langsmith.sandbox._tunnel import Tunnel
 from langsmith.sandbox._ws_execute import (
@@ -103,6 +117,8 @@ class Sandbox:
         run_config: User, working directory and environment the sandbox's
             commands run with. None on sandboxes created before the server
             recorded it.
+        access_delegation: LangSmith access granted to code inside the sandbox,
+            or None when it has none.
 
     Example:
         with client.sandbox(snapshot_id="<snapshot-uuid>") as sandbox:
@@ -126,6 +142,7 @@ class Sandbox:
     mem_bytes: Optional[int] = None
     fs_capacity_bytes: Optional[int] = None
     run_config: Optional[RunConfig] = None
+    access_delegation: Optional[AccessDelegation] = None
 
     # Internal fields (not from API)
     _client: SandboxClient = field(repr=False, default=None)  # type: ignore
@@ -164,6 +181,9 @@ class Sandbox:
             mem_bytes=data.get("mem_bytes"),
             fs_capacity_bytes=data.get("fs_capacity_bytes"),
             run_config=_run_config_from_dict(data.get("run_config")),
+            access_delegation=_access_delegation_from_dict(
+                data.get("access_delegation")
+            ),
             _client=client,
             _auto_delete=auto_delete,
         )
@@ -201,6 +221,7 @@ class Sandbox:
             mem_bytes=self.mem_bytes,
             fs_capacity_bytes=self.fs_capacity_bytes,
             run_config=self.run_config,
+            access_delegation=self.access_delegation,
             _client=client if client is not None else self._client.to_async(),
             _auto_delete=False,
         )
@@ -375,54 +396,27 @@ class Sandbox:
 
         self._require_dataplane_url()
 
-        # When not waiting or callbacks are requested, WS is required
-        use_ws = not wait or on_stdout or on_stderr
-        if use_ws:
-            return self._run_ws(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                run_config=resolved_run_config,
-                close_stdin=close_stdin,
-                shell=shell,
-                wait=wait,
-                on_stdout=on_stdout,
-                on_stderr=on_stderr,
-                idle_timeout=idle_timeout,
-                kill_on_disconnect=kill_on_disconnect,
-                ttl_seconds=ttl_seconds,
-                pty=pty,
-                headers=headers,
-            )
-
-        # Default (wait=True, no callbacks): use WebSocket when the client
-        # library is available, otherwise the blocking HTTP endpoint.
-        if WEBSOCKETS_AVAILABLE:
-            return self._run_ws(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                run_config=resolved_run_config,
-                close_stdin=close_stdin,
-                shell=shell,
-                wait=True,
-                on_stdout=None,
-                on_stderr=None,
-                idle_timeout=idle_timeout,
-                kill_on_disconnect=kill_on_disconnect,
-                ttl_seconds=ttl_seconds,
-                pty=pty,
-                headers=headers,
-            )
-        return self._run_http(
+        if sse_transport_selected():
+            runner = self._run_sse
+        elif WEBSOCKETS_AVAILABLE:
+            runner = self._run_ws
+        else:
+            raise ImportError(MISSING_TRANSPORT_MSG)
+        return runner(
             command,
             timeout=timeout,
             env=env,
             cwd=cwd,
             run_config=resolved_run_config,
+            close_stdin=close_stdin,
             shell=shell,
+            wait=wait,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+            idle_timeout=idle_timeout,
+            kill_on_disconnect=kill_on_disconnect,
+            ttl_seconds=ttl_seconds,
+            pty=pty,
             headers=headers,
         )
 
@@ -527,7 +521,7 @@ class Sandbox:
 
         return handle.result  # blocks until command completes
 
-    def _run_http(
+    def _run_sse(
         self,
         command: str,
         *,
@@ -535,41 +529,56 @@ class Sandbox:
         env: Optional[dict[str, str]],
         cwd: Optional[str],
         run_config: Optional[dict[str, Any]],
+        close_stdin: bool,
         shell: str,
-        headers: RequestHeaders,
-    ) -> ExecutionResult:
-        """Execute via HTTP POST /execute (existing implementation)."""
-        dataplane_url = self._require_dataplane_url()
-        url = f"{dataplane_url}/execute"
-        payload: dict[str, Any] = {
-            "command": command,
-            "timeout": timeout,
-            "shell": shell,
-        }
-        if env is not None:
-            payload["env"] = env
-        if cwd is not None:
-            payload["cwd"] = cwd
-        if run_config is not None:
-            payload["run_config"] = run_config
+        wait: bool,
+        on_stdout: Optional[Callable[[str], Any]],
+        on_stderr: Optional[Callable[[str], Any]],
+        idle_timeout: int = 300,
+        kill_on_disconnect: bool = False,
+        ttl_seconds: int = 600,
+        pty: bool = False,
+        headers: RequestHeaders = None,
+    ) -> Union[ExecutionResult, CommandHandle]:
+        """Execute via the SSE endpoints /execute/stream/{start,resume}."""
+        from langsmith.uuid import uuid7
 
-        try:
-            response = self._client._http.post(
-                url,
-                json=payload,
-                timeout=timeout + 10,
-                headers=self._client._request_headers(headers),
-            )
-            response.raise_for_status()
-            data = response.json()
-            return ExecutionResult(
-                stdout=data.get("stdout", ""),
-                stderr=data.get("stderr", ""),
-                exit_code=data.get("exit_code", -1),
-            )
-        except httpx.HTTPStatusError as e:
-            handle_sandbox_http_error(e)
-            raise  # pragma: no cover
+        require_sse_supports(
+            pty=pty, close_stdin=close_stdin, kill_on_disconnect=kill_on_disconnect
+        )
+        dataplane_url = self._require_dataplane_url()
+
+        # A client-supplied command_id makes start idempotent: the daemon does
+        # get-or-create keyed on it, so a request that failed before "started"
+        # is re-sent rather than spawning a second command.
+        payload = _sse_start_payload(
+            command,
+            command_id=uuid7().hex,
+            timeout=timeout,
+            shell=shell,
+            idle_timeout=idle_timeout,
+            ttl_seconds=ttl_seconds,
+            env=env,
+            cwd=cwd,
+            run_config=run_config,
+        )
+        msg_stream, control = run_sse_stream(
+            self._client._http,
+            dataplane_url,
+            payload,
+            headers=self._client._request_headers(headers),
+        )
+        handle = CommandHandle(
+            msg_stream,
+            control,
+            self,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+            stdin_closed=True,
+        )
+        if not wait:
+            return handle
+        return handle.result
 
     def reconnect(
         self,
@@ -601,7 +610,25 @@ class Sandbox:
         from langsmith.sandbox._ws_execute import reconnect_ws_stream
 
         dataplane_url = self._require_dataplane_url()
-        api_key = self._client._api_key
+
+        if sse_transport_selected():
+            msg_stream, control = resume_sse_stream(
+                self._client._http,
+                dataplane_url,
+                command_id,
+                stdout_offset=stdout_offset,
+                stderr_offset=stderr_offset,
+                headers=self._client._request_headers(headers),
+            )
+            return CommandHandle(
+                msg_stream,
+                control,
+                self,
+                command_id=command_id,
+                stdout_offset=stdout_offset,
+                stderr_offset=stderr_offset,
+                stdin_closed=True,
+            )
 
         reconnect_kwargs: dict[str, Any] = {
             "stdout_offset": stdout_offset,
@@ -611,16 +638,16 @@ class Sandbox:
         if merged:
             reconnect_kwargs["headers"] = merged
 
-        msg_stream, control = reconnect_ws_stream(
+        ws_stream, ws_control = reconnect_ws_stream(
             dataplane_url,
-            api_key,
+            self._client._api_key,
             command_id,
             **reconnect_kwargs,
         )
 
         return CommandHandle(
-            msg_stream,
-            control,
+            ws_stream,
+            ws_control,
             self,
             command_id=command_id,
             stdout_offset=stdout_offset,

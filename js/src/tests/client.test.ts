@@ -595,6 +595,38 @@ describe("Client", () => {
       );
     });
 
+    it("logs where the API URL came from when debug is enabled", () => {
+      const log = jest.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        process.env.LANGSMITH_CONFIG_FILE = path.join(tempDir, "missing.json");
+        new Client({ apiKey: "x", debug: true });
+        expect(log).toHaveBeenCalledWith(
+          "LangSmith API URL https://api.smith.langchain.com resolved from built-in default",
+        );
+
+        process.env.LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com";
+        new Client({ apiKey: "x", debug: true });
+        expect(log).toHaveBeenCalledWith(
+          "LangSmith API URL https://eu.api.smith.langchain.com resolved from LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable",
+        );
+
+        new Client({
+          apiKey: "x",
+          debug: true,
+          apiUrl: "https://custom.example.com",
+        });
+        expect(log).toHaveBeenCalledWith(
+          "LangSmith API URL https://custom.example.com resolved from apiUrl option",
+        );
+
+        log.mockClear();
+        new Client({ apiKey: "x" });
+        expect(log).not.toHaveBeenCalled();
+      } finally {
+        log.mockRestore();
+      }
+    });
+
     it("uses profile OAuth access tokens before profile API keys", () => {
       writeProfileConfig({
         profiles: {

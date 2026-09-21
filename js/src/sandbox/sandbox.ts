@@ -2,6 +2,7 @@
  * Sandbox class for interacting with a specific sandbox instance.
  */
 
+import type { AccessDelegation } from "./access_delegation.js";
 import type { SandboxClient } from "./client.js";
 import type {
   CaptureSnapshotOptions,
@@ -110,6 +111,11 @@ export class Sandbox {
    * with. Absent on sandboxes created before the server recorded it.
    */
   readonly run_config?: RunConfig;
+  /**
+   * LangSmith access granted to code inside the sandbox, or undefined when it
+   * has none.
+   */
+  readonly access_delegation?: AccessDelegation;
 
   private _client: SandboxClient;
 
@@ -130,6 +136,7 @@ export class Sandbox {
     this.mem_bytes = data.mem_bytes;
     this.fs_capacity_bytes = data.fs_capacity_bytes;
     this.run_config = data.run_config;
+    this.access_delegation = data.access_delegation;
     this._client = client;
   }
 

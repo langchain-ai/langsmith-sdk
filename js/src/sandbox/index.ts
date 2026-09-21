@@ -39,6 +39,12 @@ export {
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
+export { validateAccessDelegation } from "./access_delegation.js";
+export {
+  ServiceUrl,
+  ServiceLoginUrl,
+  SERVICE_TOKEN_HEADER,
+} from "./service_url.js";
 export {
   contextHubMount,
   gcsMount,
@@ -48,6 +54,11 @@ export {
 } from "./mounts.js";
 
 // Types
+export type {
+  AccessDelegation,
+  AccessDelegationMode,
+} from "./access_delegation.js";
+export type { ServiceAccess, ServiceUrlData } from "./service_url.js";
 export type {
   ExecutionResult,
   FileChunk,

@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, Union
 
 from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import (
@@ -18,12 +18,51 @@ from langsmith.sandbox._exceptions import (
 if TYPE_CHECKING:
     from langsmith.sandbox._async_sandbox import AsyncSandbox
     from langsmith.sandbox._sandbox import Sandbox
-    from langsmith.sandbox._ws_execute import (
-        _AsyncWSStreamControl,
-        _WSStreamControl,
-    )
 
 logger = logging.getLogger(__name__)
+
+
+class StreamControl(Protocol):
+    """What a command handle needs from its transport to steer a command.
+
+    A one-way transport supplies this too, and raises from the methods it
+    cannot honor.
+    """
+
+    @property
+    def killed(self) -> bool: ...
+
+    @property
+    def resumes_itself(self) -> bool:
+        """Whether the transport already retries and resumes on its own.
+
+        A handle must not add its own reattach loop on top of one, or the two
+        budgets multiply into an unbounded retry.
+        """
+        ...
+
+    def send_kill(self) -> None: ...
+
+    def send_input(self, data: str) -> None: ...
+
+    def send_close_stdin(self) -> None: ...
+
+
+class AsyncStreamControl(Protocol):
+    """Async equivalent of :class:`StreamControl`."""
+
+    @property
+    def killed(self) -> bool: ...
+
+    @property
+    def resumes_itself(self) -> bool: ...
+
+    def send_kill(self) -> Awaitable[None]: ...
+
+    def send_input(self, data: str) -> Awaitable[None]: ...
+
+    def send_close_stdin(self) -> Awaitable[None]: ...
+
 
 _STDIN_CLOSED_MESSAGE = (
     "stdin is closed for this command. Non-PTY commands close stdin by "
@@ -755,6 +794,37 @@ class DownloadURL:
         )
 
 
+ServiceAccess = Literal["restricted", "workspace"]
+
+
+@dataclass
+class ServiceLoginURL:
+    """Service URL gated by LangSmith login rather than a token.
+
+    The grant is durable: there is no token to carry and no expiry, so the URL
+    is only usable from a browser signed in to LangSmith. That is also why this
+    carries none of :class:`ServiceURL`'s auth-injecting HTTP helpers — a
+    programmatic request cannot satisfy the login.
+
+    Attributes:
+        url: The URL to open in a browser.
+        access: Who may open it — ``"restricted"`` for anyone with
+            ``sandboxes:read`` on the sandbox, ``"workspace"`` for any member
+            of the owning workspace.
+    """
+
+    url: str
+    access: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ServiceLoginURL:
+        """Create a ServiceLoginURL from API response dict."""
+        return cls(
+            url=data.get("browser_url") or data.get("service_url", ""),
+            access=data.get("access", ""),
+        )
+
+
 # =============================================================================
 # WebSocket Command Execution Models
 # =============================================================================
@@ -820,7 +890,7 @@ class CommandHandle:
     def __init__(
         self,
         message_stream: Iterator[dict],
-        control: Optional[_WSStreamControl],
+        control: Optional[StreamControl],
         sandbox: Sandbox,
         *,
         command_id: str = "",
@@ -969,7 +1039,9 @@ class CommandHandle:
                 return  # Stream ended normally (exit message received)
 
             except SandboxConnectionError as e:
-                if self._control and self._control.killed:
+                if self._control and (
+                    self._control.killed or self._control.resumes_itself
+                ):
                     raise
 
                 self._reconnect_attempts += 1
@@ -1116,7 +1188,7 @@ class AsyncCommandHandle:
     def __init__(
         self,
         message_stream: AsyncIterator[dict],
-        control: Optional[_AsyncWSStreamControl],
+        control: Optional[AsyncStreamControl],
         sandbox: AsyncSandbox,
         *,
         command_id: str = "",
@@ -1257,7 +1329,9 @@ class AsyncCommandHandle:
                 return  # Stream ended normally
 
             except SandboxConnectionError as e:
-                if self._control and self._control.killed:
+                if self._control and (
+                    self._control.killed or self._control.resumes_itself
+                ):
                     raise
 
                 self._reconnect_attempts += 1

@@ -506,6 +506,7 @@ interface FeedbackUpdate {
 
 type DefaultClientConfig = {
   apiUrl: string;
+  apiUrlSource: string;
   apiKey?: string;
   webUrl?: string;
   hideInputs?: boolean;
@@ -1405,6 +1406,11 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Trace batch concurrency must be positive.");
     }
     this.debug = config.debug ?? this.debug;
+    if (this.debug) {
+      const source =
+        config.apiUrl != null ? "apiUrl option" : defaultConfig.apiUrlSource;
+      console.log(`LangSmith API URL ${this.apiUrl} resolved from ${source}`);
+    }
     this.fetchImplementation = config.fetchImplementation;
 
     // Failed trace dump configuration
@@ -1504,6 +1510,12 @@ export class Client implements LangSmithTracingClientInterface {
     const envWorkspaceId = getLangSmithEnvironmentVariable("WORKSPACE_ID");
     const envAuthSet = hasValue(envApiKey);
     const apiUrl = envApiUrl ?? profileConfig.apiUrl ?? DEFAULT_API_URL;
+    const apiUrlSource =
+      envApiUrl != null
+        ? "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
+        : profileConfig.apiUrl != null
+          ? "profile config"
+          : "built-in default";
     const workspaceId = envWorkspaceId ?? profileConfig.workspaceId;
     const hideInputs =
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
@@ -1513,6 +1525,7 @@ export class Client implements LangSmithTracingClientInterface {
       getLangSmithEnvironmentVariable("HIDE_METADATA") === "true";
     return {
       apiUrl: apiUrl,
+      apiUrlSource,
       apiKey: envApiKey,
       webUrl: undefined,
       hideInputs: hideInputs,
