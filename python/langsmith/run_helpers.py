@@ -1405,8 +1405,25 @@ def _get_addressing(
     been named takes effect at the same point; `_resolve_addressing` settles
     which of the two the run ends up carrying.
     """
-    prt = get_current_run_tree()
     return utils._resolve_addressing(
+        *_named_addressing(project_name, agent_id, agent_environment)
+    )
+
+
+def _named_addressing(
+    project_name: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    agent_environment: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Collect the addressing named in code, without consulting the environment.
+
+    The tiers an argument competes with: a context variable, the current run
+    tree, then `ls.configure`. Callers that want a destination either way pass
+    the result to `utils._resolve_addressing`, which fills in from the
+    environment below these.
+    """
+    prt = get_current_run_tree()
+    return (
         project_name
         or _context._PROJECT_NAME.get()
         or (prt.session_name if prt else None)
@@ -1669,11 +1686,13 @@ def _get_parent_run(
         return None
     if isinstance(parent, run_trees.RunTree):
         return parent
-    # Resolve both addressing modes, rather than defaulting a project in. A
-    # project here is never `None`, so it would mask the agent the `baggage`
-    # header carries *and* the one in this process's own environment, and the
-    # trace would land in `default` on every hop.
-    project_name, agent_id, agent_environment = _get_addressing(
+    # Only what was named in code, and no default: `from_headers` reads a
+    # value here as the caller naming a destination, which outranks the
+    # `baggage` header. An ambient agent passed in would hijack a
+    # project-addressed upstream, and a defaulted project would mask the agent
+    # the header carries. What the header does not settle, the `RunTree`
+    # validator resolves from the environment.
+    project_name, agent_id, agent_environment = _named_addressing(
         langsmith_extra.get("project_name"),
         langsmith_extra.get("agent_id"),
         langsmith_extra.get("agent_environment"),

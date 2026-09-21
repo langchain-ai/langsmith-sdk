@@ -478,9 +478,9 @@ def get_tracer_agent_environment() -> Optional[str]:
     ``prod`` fails the whole batch.
 
     Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
-    variables there is no legacy ``LANGCHAIN_`` alias: the legacy namespace is
-    not taking new members. There is also no default -- an agent-addressed run
-    must name its environment.
+    variables it has no ``LANGCHAIN_`` alias, so that the newer namespace is
+    the only one to learn for this. There is also no default -- an
+    agent-addressed run must name its environment.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
@@ -497,8 +497,8 @@ def get_tracer_agent_id() -> Optional[str]:
 
     Must be 1 to 255 characters.
 
-    Read from ``LANGSMITH_AGENT_ID`` only -- there is no legacy ``LANGCHAIN_``
-    alias, since that namespace is not taking new members. This is an agent
+    Read from ``LANGSMITH_AGENT_ID`` only -- there is no ``LANGCHAIN_`` alias,
+    so that the newer namespace is the only one to learn. This is an agent
     identifier, not a credential: the server resolves the agent by this ID and
     creates one if it doesn't exist yet. When unset the run is addressed by
     project instead.

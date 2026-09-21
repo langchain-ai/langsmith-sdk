@@ -38,6 +38,7 @@ from langsmith.run_helpers import (
     _cached_attachment_args,
     _get_inputs,
     _get_inputs_and_attachments_safe,
+    _get_parent_run,
     _processing_failed,
     as_runnable,
     get_current_run_tree,
@@ -2800,6 +2801,27 @@ class TestADistributedParentKeepsTheAgent:
             foo(langsmith_extra={"parent": parent})
 
         assert seen["value"] == ("env-agent", "staging", None)
+
+    def test_an_ambient_agent_does_not_hijack_a_baggage_project(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only addressing named in code outranks the header.
+
+        `from_headers` reads an agent argument as the caller naming one, and
+        ignores a baggage project beside it. Passing this process's ambient
+        agent in would reroute a project-addressed upstream trace.
+        """
+        _clean_agent_addressing_env(monkeypatch)
+        upstream = dict(RunTree(name="a", project_name="upstream").to_headers())
+        _clean_agent_addressing_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="ambient",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        parent = _get_parent_run(cast(Any, {"parent": upstream}))
+
+        assert parent is not None
+        assert (parent.session_name, parent.agent_id) == ("upstream", None)
 
     def test_a_project_named_on_the_call_still_wins(
         self, monkeypatch: pytest.MonkeyPatch
