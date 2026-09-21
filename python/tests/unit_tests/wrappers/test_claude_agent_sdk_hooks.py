@@ -1032,6 +1032,53 @@ class TestStopReasonAndResponseId:
         assert run.outputs["id"] == "msg_stream"
         assert "stop_reason" not in run.outputs
 
+    def test_transcript_patches_usage_alongside_stop_reason(self, tmp_path):
+        """Usage and stop reason share one reconcile pass and one reader.
+
+        Nothing else covers the usage half, so a regression there would be
+        silent.
+        """
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            reconcile_from_transcripts,
+        )
+
+        tracker = TurnLifecycle()
+        run = _streamed_llm_run(_make_parent_run(), message_id="m1", stop_reason=None)
+        tracker.llm_runs_by_message_id["m1"] = run
+
+        _hooks_module._default_session.main_transcript_path = _write_transcript(
+            tmp_path / "main.jsonl",
+            [
+                # Partial chunk: low output_tokens, no stop reason yet.
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "m1",
+                        "stop_reason": None,
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    },
+                },
+                # Final chunk wins for both fields.
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "m1",
+                        "stop_reason": "end_turn",
+                        "usage": {"input_tokens": 11, "output_tokens": 7},
+                    },
+                },
+            ],
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        usage = run.extra["metadata"]["usage_metadata"]
+        assert usage["input_tokens"] == 11
+        assert usage["output_tokens"] == 7
+        assert usage["total_tokens"] == 18
+        assert run.outputs["stop_reason"] == "end_turn"
+
     def test_multi_turn_transcript_patches_each_turn(self, tmp_path):
         """Reuses read_llm_turns_from_transcript, which keys by message id."""
         from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle

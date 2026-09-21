@@ -143,9 +143,7 @@ def read_usage_and_stop_reasons_from_transcript(
                 if stop_reason := msg.get("stop_reason"):
                     stop_reasons[msg_id] = str(stop_reason)
 
-        usage_by_id = {
-            mid: extract_usage_metadata(u) for mid, u in raw_usage.items() if u
-        }
+        usage_by_id = {mid: extract_usage_metadata(u) for mid, u in raw_usage.items()}
         return usage_by_id, stop_reasons
     except OSError as e:
         logger.debug(f"Could not read transcript {file_path}: {e}")

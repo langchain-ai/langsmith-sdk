@@ -146,6 +146,10 @@ def _patch_llm_runs_from_transcripts(
     once.  The live stream relays ``stop_reason: null``, making this the only
     source for every turn but the last — the last is covered by
     ``ResultMessage``, whose transcript entry is usually not on disk yet.
+
+    Runs created by :func:`_create_missing_subagent_llm_runs` are already
+    complete and already patched, so only changed values are written — that
+    keeps the counts below honest about what actually reached the server.
     """
     if not tracker.llm_runs_by_message_id:
         return
@@ -158,19 +162,24 @@ def _patch_llm_runs_from_transcripts(
     all_usage: dict[str, dict[str, Any]] = {}
     all_stop_reasons: dict[str, str] = {}
     for path in paths:
-        path_usage, path_stops = read_usage_and_stop_reasons_from_transcript(path)
-        all_usage.update(path_usage)
-        all_stop_reasons.update(path_stops)
+        usage, stop_reasons = read_usage_and_stop_reasons_from_transcript(path)
+        all_usage.update(usage)
+        all_stop_reasons.update(stop_reasons)
 
     patched_usage = patched_stop = 0
     for message_id, run in tracker.llm_runs_by_message_id.items():
-        if usage := all_usage.get(message_id):
-            run.extra.setdefault("metadata", {})["usage_metadata"] = usage
+        meta = run.extra.setdefault("metadata", {})
+        run_usage = all_usage.get(message_id)
+        if run_usage and meta.get("usage_metadata") != run_usage:
+            meta["usage_metadata"] = run_usage
             patched_usage += 1
-        if (stop_reason := all_stop_reasons.get(message_id)) and isinstance(
-            run.outputs, dict
-        ):
-            run.outputs["stop_reason"] = stop_reason
+
+        # Writes into a throwaway dict if outputs is somehow not one, rather
+        # than raising: this runs in receive_response's finally block.
+        outputs = run.outputs if isinstance(run.outputs, dict) else {}
+        run_stop_reason = all_stop_reasons.get(message_id)
+        if run_stop_reason and outputs.get("stop_reason") != run_stop_reason:
+            outputs["stop_reason"] = run_stop_reason
             patched_stop += 1
 
     if patched_usage or patched_stop:
