@@ -72,11 +72,12 @@ def test_an_agent_in_the_environment_leaks_nowhere(ls: Harness) -> None:
 
 
 def test_an_agent_in_the_context_leaks_nowhere(ls: Harness) -> None:
-    """KNOWN FAILURE, on purpose. The evaluators run under
-    `tracing_context(**current_context, project_name="evaluators")`, and the
-    current context carries the agent, so `tracing_context` sees a project and
-    an agent in one call and raises. Evaluating under an ambient agent must
-    work the way it does under an ambient project.
+    """Evaluating under an ambient agent works as it does under a project.
+
+    The evaluators run under `tracing_context(**current_context,
+    project_name="evaluators")`, where the snapshot carries the agent. That
+    restored pair is not read as a second destination, and `evaluate` clears
+    it besides, so the project named here addresses the run on its own.
     """
     with tracing_context(agent_id=ls.agent_key, agent_environment="staging"):
         experiment, run_id = _evaluate(ls)

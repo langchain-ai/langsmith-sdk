@@ -23,9 +23,9 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 
 ## FAQ
 
-- **A test fails. Is that expected?** A few do, on purpose. Each one's comment
-  starts with `KNOWN FAILURE` and says which bug it pins. Nothing else should
-  fail.
+- **A test fails. Is that expected?** No -- the suite is green. A test whose
+  comment starts with `TEMPORARY` pins behavior we mean to change, so it turns
+  red when the fix lands; read its comment before changing it.
 - **Why won't it run against production?** Every test creates an agent and
   four tracing projects. Use dev or a local LangSmith.
 - **Does it clean up after itself?** It tries, and logs what it cannot remove.
@@ -53,8 +53,6 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 - **Fix `create_feedback`**: the agent pair is accepted on paths that cannot
   carry it (no `trace_id`, `AsyncClient`) and dropped in silence. Two
   `TEMPORARY` tests pin today's behavior.
-- **Fix `evaluate()` under `tracing_context(agent_id=)`**: it raises at the
-  evaluator step. One test in `test_evaluate.py` is red until then.
 - **Delete the `TEMPORARY` test** in `test_create_update_run.py` once the
   non-multipart endpoints read the agent pair.
 - **Use SDK methods for the agent API** once they exist, replacing
