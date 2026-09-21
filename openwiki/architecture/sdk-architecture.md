@@ -5,7 +5,7 @@ description: How the Python and TypeScript LangSmith SDKs divide handwritten beh
 tags: [architecture, sdk, python, typescript, openapi, public-api]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-21T08:30:14.967Z
 sources:
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
@@ -45,7 +45,7 @@ sources:
     resource: repo://python/tests/unit_tests/test_client.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-21T08:30:14.967Z" }
 ---
 
 # Dual-SDK Architecture and Public Surfaces
@@ -131,9 +131,9 @@ Python schemas are handwritten runtime models. They use Pydantic models for vali
 
 ### TypeScript package root and subpaths
 
-`js/src/index.ts` deliberately exports a compact root: `Client`, selected schema types, `RunTree`, utility and cache APIs, UUID helpers, generated error classes, version metadata, and a tracing metadata constant. Broader capabilities are reached through explicit package subpaths such as `langsmith/client`, `langsmith/traceable`, `langsmith/evaluation`, `langsmith/schemas`, `langsmith/wrappers/openai`, test-runner integrations, experimental OpenTelemetry modules, and `langsmith/sandbox`.
+`js/src/index.ts` deliberately owns a compact root. It exports `Client` together with `ClientConfig` and the tracing-client interface, selected schema types, `RunTree`, fetch/project/tracing utilities, prompt-cache APIs, UUID helpers, generated error classes, version metadata, and the Messages View exclusion key. It does **not** aggregate every package feature. Broader capabilities have explicit package subpaths, including client and tracing modules, evaluation and schemas, anonymization, provider wrappers, Jest/Vitest integrations, experimental OpenTelemetry and provider integrations, and both `sandbox` and `experimental/sandbox`.
 
-Those subpaths are assembled by `js/scripts/create-entrypoints.js`, not by hand-editing a set of wrapper files. The script is the source list for entrypoints; it generates ESM, CommonJS, and declaration shims and rewrites `package.json` `exports` and `files`. The build compiles ESM and CommonJS, then creates these entrypoints. Package exports provide separate `import`, `require`, and type declaration targets, while the `browser` map substitutes browser implementations for filesystem and worker-thread utilities.
+`js/scripts/create-entrypoints.js` is the authoritative map from each public subpath to its source module. During the build, TypeScript is compiled to ESM and CommonJS first; the script then emits root-level `.js`, `.cjs`, `.d.ts`, and `.d.cts` forwarding shims and rewrites `package.json` `exports` and `files`. Consumers therefore receive separate `import`, `require`, and declaration targets. The manifest's `browser` map swaps only the filesystem and worker-thread utility implementations; it is not a second public API list. Add or remove a subpath in the script and regenerate the manifest rather than editing generated shims or the manifest lists in isolation.
 
 TypeScript's handwritten schemas are structural compile-time interfaces and aliases. For example, attachments use `Uint8Array` or `ArrayBuffer`, and run IDs/timestamps are string/number-shaped. Unlike Python's Pydantic models, these declarations do not perform runtime validation. Generated request/response types live separately under `_openapi_client` and are not exported as package subpaths.
 

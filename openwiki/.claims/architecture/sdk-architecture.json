@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:3daf51e4ff36517cf81c74efa2d8e6f98939cfebd6d9377c061a6858b8b3b875",
+  "pageVersion": "sha256:a3f277b701882bbb1ef85a01a589477322e6aa7c636d7c283681323a520c89c8",
   "claims": [
     {
       "id": "claim_bcd8baf7d4184ac4be1d262edbbf1daa",
@@ -16,7 +16,7 @@
         },
         {
           "resource": "repo://js/package.json#L1-L5",
-          "version": "repo-lines-v1:sha256:4a833d501722a8b8f82572e30b1f067081d319a4a164337b582510328c5bc9fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZmYjA4ZmRhMWFjYjk1N2I2MTE2YmQzNzgxMWExZmU0MWEwMTYxMWMwNjMxZWRiZjc4NmQ2ODg5YTI3YTU1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk3ZDliNTY5MjUwZjI2M2UyZDBlZmE0MzcyZWY5M2UxNDUzOWMxZjdiOGQ2Y2M3M2I1ZWI5YzM0NWU3MzA4MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzdmYmZkMmE5YzE3MWMzNWU2YTk5YjkzMmRmZmNhZGJlNGJiMzc0ZWE4NDMzYmM3ZWY2MzE4YjdlZGRkM2UwMiJ9"
+          "version": "repo-lines-v1:sha256:2eb6ecd1055a6fbf604536ae544935f9c69a3669eb1ca895a743efe7f9db0c15:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZmYjA4ZmRhMWFjYjk1N2I2MTE2YmQzNzgxMWExZmU0MWEwMTYxMWMwNjMxZWRiZjc4NmQ2ODg5YTI3YTU1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk3ZDliNTY5MjUwZjI2M2UyZDBlZmE0MzcyZWY5M2UxNDUzOWMxZjdiOGQ2Y2M3M2I1ZWI5YzM0NWU3MzA4MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzdmYmZkMmE5YzE3MWMzNWU2YTk5YjkzMmRmZmNhZGJlNGJiMzc0ZWE4NDMzYmM3ZWY2MzE4YjdlZGRkM2UwMiJ9"
         },
         {
           "resource": "repo://python/pyproject.toml#L5-L14",
@@ -186,15 +186,23 @@
     },
     {
       "id": "claim_66e450927755467baaa79fa2da438319",
-      "statement": "The TypeScript package exposes a compact root plus explicit subpath exports, and `js/scripts/create-entrypoints.js` generates ESM, CommonJS, and declaration shims while rewriting `package.json` `exports` and `files`.",
+      "statement": "The TypeScript package has a curated root rather than an aggregate of every feature: it exports the handwritten client and its public configuration/interface types, selected schemas, run-tree and utility APIs, prompt-cache APIs, generated error classes, and metadata constants, while broader capabilities use explicit subpaths. `js/scripts/create-entrypoints.js` owns those subpaths, generates ESM, CommonJS, and declaration forwarding shims, and rewrites the manifest's `exports` and `files`; the resulting manifest provides separate import, require, and type targets plus browser substitutions for internal filesystem and worker-thread utilities.",
       "evidence": [
+        {
+          "resource": "repo://js/package.json#L113-L137",
+          "version": "repo-lines-v1:sha256:1d7b14a01ffcf10cf926d8a15fc3efeb2c3646b23c270990aa02aaa163aa1e6b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1NmQ4MzA5MGM2ZmI5MzQ2M2FkNGYyZjg1ZjhjYTU1NzZmN2U4NWUxMjFkOTU4YTUzNzE4ZTIxZDlmNzZlNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxYTE3N2Y5Mjc4NGE0MWNkOGE0NmFlYWFkZmYzMGE5ZGI4ZTJmMDc3YzJkYzFmOThjZWFkMjllZjlhYTk2MzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFjZDhmOGYzZGJlMmFhZDk2MTg3ZTljM2VkZjRhMGM4NTI4OGExNGNlNzcwOWY0NTRlOTY0Y2E1MjE0NmVjZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyMzFjYjA3MDUyN2FhZjkxY2ZiZDQ3NWE1ODhhMGYyODk2NTkwMTNkMzZiMTNhNmQyNjQ1NWJmMDE1OWYzNmUifQ"
+        },
         {
           "resource": "repo://js/package.json#L246-L300",
           "version": "repo-lines-v1:sha256:879dedb3376d40e0db429aec9ce4de28a5dbc8885022039af3fd136ace7d8fd8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjMDViYjlmNGE4Yjk4NDUxMGY4MTVhNWZjNDA3OGQ3N2M1YTIwZTkzZjMzNzNkYzVkZGU0YTM0MWQxYjQwYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmMGNkYjk3MmE3YmZiN2VkMjQ2ZjlmZjY3MjM4NWU1NWY0OTY4ZmMxMTA0M2RjNWI2ODRkNTFkZmEzMWRiY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiMDY5N2NhODg3MDJiMWM5MTQ5YzVjMzhiOTE4OTM5M2M2YzA0NGQ5MjQ0NTA0MzYxYTU0MGIzYjM2Yzc5YzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MzQyYjEzOGY3MzliNTc1NGZkYmRlMzE1YTQ0MzMwMWRlODcwMzg1MjViZGM2NDFhZWNlZDJmYTBjNWM1OTQifQ"
         },
         {
-          "resource": "repo://js/scripts/create-entrypoints.js#L4-L35",
-          "version": "repo-lines-v1:sha256:8ab6017eb68132b391dcdc572de9c77b740167754d37eb6a0f76147d01e71845:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ODY1YzhmNjg4MDRlYzBmYWQ1Y2VkNGI4ODIyZWE3MDg4ZTg5YWM2ZjY3MjlkNGMxZDM1NjA0YzcyZGE5NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhOTJkOWY4MmNhOTkwMTFiODUzYTcyMDkwOTk0YTRkMTNlY2NhOTNhMWMxNjY5MzA4MDI0ODAyN2JiN2RkYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxMWViZWM1YTIwZTFjM2ZiMDQyYTdlZTcwYmE0MjZlMzM1MjM4ZjJmZTBjZWExNTRjMTgyOWJiMzhiNmNiYTQifQ"
+          "resource": "repo://js/package.json#L505-L508",
+          "version": "repo-lines-v1:sha256:af64a68a0197284a0c244ecee0ee1b2408cd51f478d71862769f51c768b38768:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTljZDgxYmNkZjdiNzk0YWQ3OGE3MzZkNWFhOWI3NjU3YmRhMDM5NDZjM2E5ZjBmMjFiZDE4ZmNjZTE1YmZkOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjdlNTc4OGQ1ZDlkNzNkMjRhODFkYmMwYTVhNzRiZmE4MmM5YzNiM2FmOTllNTJhZjc5NmU5MGI0NjhhOGEzZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2JhYjk0MWEyNTlmMTc2MWYyNGI2ZmM1NDNjNDA2YzJkZmY4ZDE5MDZkNTk0NjY5MTI1NzhlMTlhZmYxZWI4MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSJ9"
+        },
+        {
+          "resource": "repo://js/scripts/create-entrypoints.js#L4-L40",
+          "version": "repo-lines-v1:sha256:b85948099286c5578ec1b5cf2fda184226480c048cb1bf5f88a054c156574b6d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ODY1YzhmNjg4MDRlYzBmYWQ1Y2VkNGI4ODIyZWE3MDg4ZTg5YWM2ZjY3MjlkNGMxZDM1NjA0YzcyZGE5NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlMDJhYWZmMmUzYjY5YTEwZTk1NWYxMTExZDJlY2Q2MjU2MTA0MDA2ZmExYjBjMDEzMTkxOTdkMDIxYzliNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhOTJkOWY4MmNhOTkwMTFiODUzYTcyMDkwOTk0YTRkMTNlY2NhOTNhMWMxNjY5MzA4MDI0ODAyN2JiN2RkYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkZTdmNDkzMDVjYjYxZGIxMmQzNGMxY2ExMWI1Zjk5M2RkM2U0MThjYWUzMzJkZDIxMTk3MjhjNzIxMmNkZDQifQ"
         },
         {
           "resource": "repo://js/scripts/create-entrypoints.js#L48-L80",
@@ -206,7 +214,7 @@
         },
         {
           "resource": "repo://js/src/index.ts#L1-L60",
-          "version": "repo-lines-v1:sha256:e01dabb865ec422404664433db457bb574b4568f3146a64c0c195c16cfefec19:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNzQ0MjkwOTg3MDNlNjM0Y2M2NjRlNDk3NWQxNGFjNDkxMjc0OWU1MTYyNGFiMWEzNTNiZTI0NzNmOWMxMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmEyMTliZGM5YmU4ZmYxODYxM2YyMjc0OTU5NTc4MjNmNmMwNmMwOTUxMjQ2M2QwOWMzYzkxZDMxY2E2MjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:60dcee953a357bcc06418958e78171291f94574b4c6c46bec4ea7d42f73bb07e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNzQ0MjkwOTg3MDNlNjM0Y2M2NjRlNDk3NWQxNGFjNDkxMjc0OWU1MTYyNGFiMWEzNTNiZTI0NzNmOWMxMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmEyMTliZGM5YmU4ZmYxODYxM2YyMjc0OTU5NTc4MjNmNmMwNmMwOTUxMjQ2M2QwOWMzYzkxZDMxY2E2MjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -257,6 +265,6 @@
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-15T08:28:54.852Z"
+    "at": "2026-09-21T08:30:14.967Z"
   }
 }
