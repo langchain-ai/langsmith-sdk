@@ -6,8 +6,9 @@ After a conversation ends this module:
    the parent stream (the SDK only streams the first assistant message
    per subagent; subsequent turns are folded into the Agent tool result).
 
-2. Patches accurate token usage onto all LLM runs from the JSONL
-   transcripts (the live stream only has partial streaming counts).
+2. Patches accurate token usage and the Anthropic ``stop_reason`` onto
+   all LLM runs from the JSONL transcripts (the live stream only has
+   partial streaming counts, and never a stop reason).
 
 .. note::
 
@@ -26,7 +27,7 @@ from ._hooks import SessionState, _current_session_or_default
 from ._usage import (
     extract_usage_metadata,
     read_llm_turns_from_transcript,
-    read_usage_from_transcript,
+    read_usage_and_stop_reasons_from_transcript,
 )
 
 if TYPE_CHECKING:
@@ -49,8 +50,9 @@ def reconcile_from_transcripts(
        turns whose ``message_id`` is not already in
        ``tracker.llm_runs_by_message_id``.
 
-    2. **Usage correction** — patches accurate usage from the JSONL
-       transcripts onto all LLM runs (both streamed and synthetic).
+    2. **Usage and stop reason correction** — patches accurate usage and
+       the Anthropic ``stop_reason`` from the JSONL transcripts onto all
+       LLM runs (both streamed and synthetic).
 
     If *session* is omitted the current ContextVar-bound session (or the
     module-level default) is used. The caller in ``receive_response``
@@ -60,8 +62,7 @@ def reconcile_from_transcripts(
     if session is None:
         session = _current_session_or_default()
     _create_missing_subagent_llm_runs(tracker, session)
-    _patch_usage_on_llm_runs(tracker, session)
-    _patch_stop_reasons_on_llm_runs(tracker, session)
+    _patch_llm_runs_from_transcripts(tracker, session)
 
 
 # ── Step 1: synthetic subagent LLM runs ─────────────────────────────
@@ -132,68 +133,51 @@ def _create_missing_subagent_llm_runs(
             )
 
 
-# ── Step 2: usage patching ──────────────────────────────────────────
+# ── Step 2: usage and stop reason patching ──────────────────────────
 
 
-def _patch_usage_on_llm_runs(
+def _patch_llm_runs_from_transcripts(
     tracker: "TurnLifecycle",
     session: SessionState,
 ) -> None:
-    if not tracker.llm_runs_by_message_id:
-        return
+    """Patch usage metadata and ``stop_reason`` onto LLM runs.
 
-    all_usage: dict[str, dict[str, Any]] = {}
-
-    main_path = session.main_transcript_path
-    if main_path:
-        all_usage.update(read_usage_from_transcript(main_path))
-
-    for path, _run in session.subagent_transcript_paths:
-        all_usage.update(read_usage_from_transcript(path))
-
-    patched = 0
-    for message_id, run in tracker.llm_runs_by_message_id.items():
-        usage = all_usage.get(message_id)
-        if usage:
-            meta = run.extra.setdefault("metadata", {})
-            meta["usage_metadata"] = usage
-            patched += 1
-
-    if patched:
-        logger.debug(f"Set usage on {patched} LLM run(s) from transcripts")
-
-
-# ── Step 3: stop reasons ────────────────────────────────────────────
-
-
-def _patch_stop_reasons_on_llm_runs(
-    tracker: "TurnLifecycle",
-    session: SessionState,
-) -> None:
-    """Patch ``stop_reason`` onto LLM runs from the JSONL transcripts.
-
-    The live stream relays ``stop_reason: null``, so for every turn but the
-    last this is the only source.  The last turn is covered by
-    ``ResultMessage`` instead — its transcript entry is usually not on disk
-    yet when this runs.
+    Both come from the same assistant entries, so each transcript is read
+    once.  The live stream relays ``stop_reason: null``, making this the only
+    source for every turn but the last — the last is covered by
+    ``ResultMessage``, whose transcript entry is usually not on disk yet.
     """
     if not tracker.llm_runs_by_message_id:
         return
 
+    # Main first, so a subagent transcript wins on the (unexpected) overlap.
     paths = [path for path, _run in session.subagent_transcript_paths]
     if session.main_transcript_path:
         paths.insert(0, session.main_transcript_path)
 
-    stop_reasons = {
-        turn["message_id"]: turn["stop_reason"]
-        for path in paths
-        for turn in read_llm_turns_from_transcript(path)
-    }
+    all_usage: dict[str, dict[str, Any]] = {}
+    all_stop_reasons: dict[str, str] = {}
+    for path in paths:
+        path_usage, path_stops = read_usage_and_stop_reasons_from_transcript(path)
+        all_usage.update(path_usage)
+        all_stop_reasons.update(path_stops)
 
+    patched_usage = patched_stop = 0
     for message_id, run in tracker.llm_runs_by_message_id.items():
-        stop_reason = stop_reasons.get(message_id)
-        if stop_reason and isinstance(run.outputs, dict):
+        if usage := all_usage.get(message_id):
+            run.extra.setdefault("metadata", {})["usage_metadata"] = usage
+            patched_usage += 1
+        if (stop_reason := all_stop_reasons.get(message_id)) and isinstance(
+            run.outputs, dict
+        ):
             run.outputs["stop_reason"] = stop_reason
+            patched_stop += 1
+
+    if patched_usage or patched_stop:
+        logger.debug(
+            f"Patched {patched_usage} usage and {patched_stop} stop reason(s) "
+            "onto LLM runs from transcripts"
+        )
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
