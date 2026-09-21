@@ -1,0 +1,31 @@
+python/langsmith/run_helpers.py
+  s_c849eb4dd0e538::t_f28a5db49de948 1347-1349,1351-1353
+python/langsmith/run_trees.py
+  s_c849eb4dd0e538::t_f28a5db49de948 206,408-409,411,1331-1339,1341-1351,1354
+python/langsmith/utils.py
+  s_c849eb4dd0e538::t_f28a5db49de948 502-531
+python/langsmith/async_client.py
+  s_c849eb4dd0e538::t_f28a5db49de948 633-637,665
+python/langsmith/client.py
+  s_c849eb4dd0e538::t_f28a5db49de948 2468,2477-2484,2504-2508,2726-2729,3995
+python/tests/unit_tests/test_client.py
+  s_c849eb4dd0e538::t_553ed5dd515a6c 51,8470-8537
+python/tests/unit_tests/test_run_trees.py
+  s_c849eb4dd0e538::t_f28a5db49de948 1109-1143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1537b48c108b72f12132c307f3b8f8426ecc43a9",
+  "prompts": {},
+  "sessions": {
+    "s_c849eb4dd0e538": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8765c25-fb1f-4465-a790-ed0986da2072",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
