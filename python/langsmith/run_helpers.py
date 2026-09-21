@@ -435,6 +435,12 @@ def traceable(
 ) -> Union[Callable, Callable[[Callable], Callable]]:
     """Trace a function with langsmith.
 
+    !!! warning "Experimental"
+        `agent_id` / `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the runs, so
+        tracing is lost rather than falling back to a project. Both may change
+        without notice.
+
     Args:
         run_type: The type of run (span) to create.
 
@@ -1064,6 +1070,12 @@ class trace:
 
     This class can be used as both a synchronous and asynchronous context manager.
 
+    !!! warning "Experimental"
+        `agent_id` / `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the runs, so
+        tracing is lost rather than falling back to a project. Both may change
+        without notice.
+
     Args:
         name: Name of the run.
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
@@ -1390,11 +1402,11 @@ def _get_addressing(
 
     Mirrors `_get_project_name`, but for both addressing modes. The two chains
     are walked in the same order, so an agent named where a project would have
-    been named takes effect at the same point; `resolve_addressing` settles
+    been named takes effect at the same point; `_resolve_addressing` settles
     which of the two the run ends up carrying.
     """
     prt = get_current_run_tree()
-    return utils.resolve_addressing(
+    return utils._resolve_addressing(
         project_name
         or _context._PROJECT_NAME.get()
         or (prt.session_name if prt else None)
@@ -1657,12 +1669,23 @@ def _get_parent_run(
         return None
     if isinstance(parent, run_trees.RunTree):
         return parent
+    # Resolve both addressing modes, rather than defaulting a project in. A
+    # project here is never `None`, so it would mask the agent the `baggage`
+    # header carries *and* the one in this process's own environment, and the
+    # trace would land in `default` on every hop.
+    project_name, agent_id, agent_environment = _get_addressing(
+        langsmith_extra.get("project_name"),
+        langsmith_extra.get("agent_id"),
+        langsmith_extra.get("agent_environment"),
+    )
     if isinstance(parent, Mapping):
         return run_trees.RunTree.from_headers(
             parent,
             client=langsmith_extra.get("client"),
             # Precedence: headers -> cvar -> explicit -> env var
-            project_name=_get_project_name(langsmith_extra.get("project_name")),
+            project_name=project_name,
+            agent_id=agent_id,
+            agent_environment=agent_environment,
             replicas=langsmith_extra.get("replicas"),
         )
     if isinstance(parent, str):
@@ -1670,7 +1693,9 @@ def _get_parent_run(
             parent,
             client=langsmith_extra.get("client"),
             # Precedence: cvar -> explicit ->  env var
-            project_name=_get_project_name(langsmith_extra.get("project_name")),
+            project_name=project_name,
+            agent_id=agent_id,
+            agent_environment=agent_environment,
             replicas=langsmith_extra.get("replicas"),
         )
         return dort
@@ -1731,15 +1756,17 @@ def _setup_run(
         agent_environment=langsmith_extra.get("agent_environment"),
     )
     project_cv = _context._PROJECT_NAME.get()
-    # Both chains walk the same tiers in the same order, so an agent named
-    # where a project would have been named takes effect at that point. Only
-    # values named in code go in; `resolve_addressing` consults the
+    # Both chains collect the same tiers, but they do not compete tier by
+    # tier: a project named anywhere in code beats an agent named anywhere in
+    # code, whichever sits higher. `evaluate()` relies on that -- it names its
+    # experiment on the call and has to keep working under an ambient agent.
+    # Only values named in code go in; `_resolve_addressing` consults the
     # environment below them and settles which mode the run carries.
     (
         selected_project,
         selected_agent_id,
         selected_agent_environment,
-    ) = utils.resolve_addressing(
+    ) = utils._resolve_addressing(
         project_cv  # From parent trace
         or (
             parent_run_.session_name if parent_run_ else None

@@ -686,3 +686,27 @@ def test_filter_request_headers_localhost():
         request, allow_hosts=["http://localhost:3000"]
     )
     assert result is None
+
+
+def test_an_empty_project_variable_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`get_tracer_project` returns "" for an empty variable, not the default.
+
+    The `session_name` field's `default_factory` used to guard that with
+    `or "default"`; the resolution writes the field now, so the guard lives
+    here instead.
+    """
+    for name in ("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT", "LANGCHAIN_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOSTED_LANGSERVE_PROJECT_NAME", "")
+    for fn in (
+        ls_utils.get_env_var,
+        ls_utils.get_tracer_project,
+        ls_utils.get_tracer_agent_id,
+        ls_utils.get_tracer_agent_environment,
+    ):
+        fn.cache_clear()
+
+    assert ls_utils.get_tracer_project() == ""
+    assert ls_utils._resolve_addressing()[0] == "default"

@@ -2766,6 +2766,65 @@ def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) 
     ls_utils.get_tracer_project.cache_clear()
 
 
+class TestADistributedParentKeepsTheAgent:
+    """A parent built from headers must not default a project in.
+
+    A project there is never `None`, so it would suppress both the agent the
+    `baggage` header carries and the one in this process's environment, and
+    every hop would land in `default`.
+    """
+
+    @pytest.mark.parametrize("as_headers", [True, False], ids=["headers", "dotted"])
+    def test_the_hop_keeps_the_agent(
+        self, as_headers: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="env-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        upstream = RunTree(name="a", inputs={})
+        parent: Any = (
+            dict(upstream.to_headers()) if as_headers else upstream.dotted_order
+        )
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.agent_environment, run.session_name)
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo(langsmith_extra={"parent": parent})
+
+        assert seen["value"] == ("env-agent", "staging", None)
+
+    def test_a_project_named_on_the_call_still_wins(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_addressing_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="env-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        parent = dict(RunTree(name="a", inputs={}).to_headers())
+        mock_client = _get_mock_client()
+        seen: dict = {}
+
+        @traceable
+        def foo() -> None:
+            run = get_current_run_tree()
+            assert run is not None
+            seen["value"] = (run.agent_id, run.session_name)
+
+        with tracing_context(enabled=True, client=mock_client):
+            foo(langsmith_extra={"parent": parent, "project_name": "named"})
+
+        assert seen["value"] == (None, "named")
+
+
 class TestRestoringAContextSnapshot:
     """`tracing_context(**get_tracing_context(), project_name=...)` must work.
 
@@ -3020,7 +3079,7 @@ class TestTracingContextAgentAddressing:
             ):
                 pass
 
-    def test_traceable_is_agent_addressed_from_the_env(
+    def test_traceable__is_agent_addressed_from_the_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The decorator path has to honor it too, not just `trace`."""

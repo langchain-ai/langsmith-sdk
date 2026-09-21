@@ -30,6 +30,7 @@ from langsmith.client import (
     _dumps_json,
     _ensure_uuid,
     _reject_conflicting_addressing,
+    _reject_url_for_agent_addressing,
 )
 from langsmith.uuid import uuid7_from_datetime
 
@@ -275,6 +276,12 @@ def configure(
     If, instead, you wish to only configure tracing for a single invocation,
     use the `tracing_context` context manager instead.
 
+    !!! warning "Experimental"
+        `agent_id` / `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the runs, so
+        tracing is lost rather than falling back to a project. Both may change
+        without notice.
+
     Args:
         client: A LangSmith Client instance to use for all tracing operations.
 
@@ -399,7 +406,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     """Settle on one addressing mode for a run tree, in place.
 
     A run is addressed either by project (`session_name` / `session_id`) or by
-    agent (`agent_id` / `agent_environment`). `utils.resolve_addressing` settles
+    agent (`agent_id` / `agent_environment`). `utils._resolve_addressing` settles
     which, so this shares one rule with `create_run` and `@traceable`.
 
     Runs against the raw validator input, so a value here was passed by the
@@ -416,7 +423,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         ),
         None,
     )
-    if utils.is_agent_addressed(
+    if utils._is_agent_addressed(
         values.get("agent_id"), values.get("agent_environment")
     ):
         # Already addressed by agent, either by the caller or by the resolution
@@ -430,14 +437,14 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         (
             values["agent_id"],
             values["agent_environment"],
-        ) = utils.resolve_agent_addressing(
+        ) = utils._resolve_agent_addressing(
             values.get("agent_id"), values.get("agent_environment")
         )
         if named_project is None:
             values.pop("project_name", None)
             values["session_name"] = None
         return
-    project, agent_id, agent_environment = utils.resolve_addressing(named_project)
+    project, agent_id, agent_environment = utils._resolve_addressing(named_project)
     values["agent_id"] = agent_id
     values["agent_environment"] = agent_environment
     if named_project is None:
@@ -1192,6 +1199,9 @@ class RunTree(ls_schemas.RunBase):
     def _resolve_url(self) -> str:
         """Ask the backend for the run's URL, falling back to building it locally."""
         client = self.client
+        _reject_url_for_agent_addressing(
+            self.session_id, self.agent_id, self.agent_environment
+        )
         try:
             backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
             if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:

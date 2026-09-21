@@ -212,7 +212,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
-        ls_utils.warn_on_agent_and_project_env()
+        ls_utils._warn_on_agent_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -640,7 +640,7 @@ class AsyncClient:
                 session_name,
                 kwargs["agent_id"],
                 kwargs["agent_environment"],
-            ) = ls_utils.resolve_addressing(
+            ) = ls_utils._resolve_addressing(
                 project_name,
                 kwargs.get("agent_id"),
                 kwargs.get("agent_environment"),
@@ -664,7 +664,20 @@ class AsyncClient:
         run_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Update a run."""
+        """Update a run.
+
+        Args:
+            run_id: The run to update.
+            **kwargs: The fields to update, and `agent_id` / `agent_environment`.
+
+                !!! warning "Experimental"
+                    `agent_id` / `agent_environment` are in beta. They address
+                    the patch to an agent, and must match the post they belong
+                    to: an update that names neither is resolved by run id, as
+                    every update was before. Agent addressing is enabled per
+                    workspace; a workspace without it rejects the runs. Both
+                    may change without notice.
+        """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
         ls_client.Client._apply_agent_addressing(data, update=True)
         await self._arequest_with_retries(

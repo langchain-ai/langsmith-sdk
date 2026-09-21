@@ -770,6 +770,29 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
+def _reject_url_for_agent_addressing(
+    session_id: Optional[Any],
+    agent_id: Optional[str],
+    agent_environment: Optional[str],
+) -> None:
+    """Refuse to build a run URL the SDK cannot know.
+
+    A run URL is keyed on the project id. The endpoint resolves an agent to
+    its environment's project and never tells the SDK which, so an
+    agent-addressed run has no project id here until it is read back. Falling
+    through would resolve the literal `default` project and hand back a link
+    to the wrong place, or raise a not-found from inside what callers treat as
+    a convenience.
+    """
+    if session_id is not None or not ls_utils._is_agent_addressed(
+        agent_id, agent_environment
+    ):
+        return
+    raise ls_utils.LangSmithUserError(
+        "No run URL is available for an agent-addressed run yet. The endpoint resolves the agent to its environment's project, so only it knows the project this run is in; there is no agent-shaped run URL. Read the run back and build the URL from its `session_id`."
+    )
+
+
 def _reject_conflicting_addressing(
     *,
     project: Optional[Any] = None,
@@ -1382,7 +1405,7 @@ class Client:
                 self.api_url,
                 _api_url_source(api_url, env_api_url, profile_config.api_url),
             )
-        ls_utils.warn_on_agent_and_project_env()
+        ls_utils._warn_on_agent_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -2516,13 +2539,13 @@ class Client:
             # environment. Every other create does, including one that named
             # half an agent in code -- the missing half comes from the env var
             # rather than reaching the endpoint as an incomplete pair.
-            agent_id, agent_environment = ls_utils.resolve_agent_addressing(
+            agent_id, agent_environment = ls_utils._resolve_agent_addressing(
                 agent_id, agent_environment
             )
-        if not ls_utils.is_agent_addressed(agent_id, agent_environment):
+        if not ls_utils._is_agent_addressed(agent_id, agent_environment):
             # Neither mode is addressed; leave the server-side fallback to it.
             return
-        ls_utils.warn_agent_addressing_is_beta()
+        ls_utils._warn_agent_addressing_is_beta()
         if agent_id is not None:
             payload["agent_id"] = agent_id
         if agent_environment is not None:
@@ -2755,7 +2778,7 @@ class Client:
                 project_name,
                 kwargs["agent_id"],
                 kwargs["agent_environment"],
-            ) = ls_utils.resolve_addressing(
+            ) = ls_utils._resolve_addressing(
                 None, kwargs.get("agent_id"), kwargs.get("agent_environment")
             )
         run_create = {
@@ -3961,7 +3984,15 @@ class Client:
             tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
             authorization (Optional[str]): The Authorization header value.
             cookie (Optional[str]): The Cookie header value.
-            **kwargs (Any): Kwargs are ignored.
+            **kwargs (Any): Ignored, except `agent_id` / `agent_environment`.
+
+                !!! warning "Experimental"
+                    `agent_id` / `agent_environment` are in beta. They address
+                    the patch to an agent, and must match the post they belong
+                    to: an update that names neither is resolved by run id, as
+                    every update was before. Agent addressing is enabled per
+                    workspace; a workspace without it rejects the runs. Both
+                    may change without notice.
 
         Returns:
             None
@@ -5002,6 +5033,11 @@ class Client:
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
+        _reject_url_for_agent_addressing(
+            getattr(run, "session_id", None),
+            getattr(run, "agent_id", None),
+            getattr(run, "agent_environment", None),
+        )
         if session_id := getattr(run, "session_id", None):
             pass
         elif session_name := getattr(run, "session_name", None):

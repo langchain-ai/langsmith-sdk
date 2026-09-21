@@ -8446,6 +8446,71 @@ class TestAConfiguredProjectTravelsWithTheAgent:
             Client(api_url="http://localhost:1984", api_key="123")
 
 
+class TestTheEnvGuardWarnsOnEitherHalf:
+    """Half a pair in the environment is refused, and the batch goes with it."""
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            {"LANGSMITH_AGENT_ID": "my-agent"},
+            {"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
+        ],
+        ids=["id_only", "environment_only"],
+    )
+    def test_half_a_pair_warns(
+        self, env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch, **env)
+        with pytest.warns(ls_utils.LangSmithWarning, match="needs both"):
+            Client(api_url="http://localhost:1984", api_key="123")
+
+    def test_a_complete_pair_alone_stays_quiet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ls_utils.LangSmithWarning)
+            Client(api_url="http://localhost:1984", api_key="123")
+
+
+class TestNoRunUrlForAnAgentAddressedRun:
+    """The endpoint resolves the project, so the SDK cannot build the URL.
+
+    Falling through resolved the literal `default` project, handing back a
+    link to the wrong place or raising a not-found from inside what callers
+    treat as a convenience.
+    """
+
+    def test_a_run_tree_refuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        run = run_trees.RunTree(name="r", inputs={})
+        with pytest.raises(ls_utils.LangSmithUserError, match="agent-addressed"):
+            run.get_url()
+
+    def test_a_resolved_project_is_enough(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Read back from the endpoint, the run carries a `session_id`."""
+        _clean_agent_env(monkeypatch)
+        client = Client(api_url="http://localhost:1984", api_key="123")
+        run = mock.Mock(
+            id=uuid.uuid4(),
+            session_id=uuid.uuid4(),
+            agent_id="my-agent",
+            agent_environment="staging",
+        )
+        with mock.patch.object(Client, "_get_tenant_id", return_value=uuid.uuid4()):
+            assert "/projects/p/" in client._construct_run_url(run=run)
+
+
 class TestRemoteInputNeverRaises:
     """A `baggage` header is attacker-settable, so it is ignored, never raised on."""
 
@@ -8565,7 +8630,7 @@ def test_batch_create_completes_a_half_named_agent(
 ) -> None:
     """A create that names one half gets the other from the environment.
 
-    `create_run` settles this upstream in `resolve_addressing`, but the public
+    `create_run` settles this upstream in `_resolve_addressing`, but the public
     batch methods only pass through `_run_transform`, so the helper has to
     complete the pair itself. Skipping it there sent `agent_id` alone and the
     endpoint answered 400 instead of recording the run.

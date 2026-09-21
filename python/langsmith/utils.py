@@ -508,7 +508,7 @@ def get_tracer_agent_id() -> Optional[str]:
     return get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
 
 
-def resolve_agent_addressing(
+def _resolve_agent_addressing(
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str]]:
@@ -525,7 +525,7 @@ def resolve_agent_addressing(
     )
 
 
-def is_agent_addressed(
+def _is_agent_addressed(
     agent_id: Optional[str], agent_environment: Optional[str]
 ) -> bool:
     """Whether a run is addressed by agent rather than by project.
@@ -538,7 +538,7 @@ def is_agent_addressed(
     return agent_id is not None or agent_environment is not None
 
 
-def warn_agent_addressing_is_beta() -> None:
+def _warn_agent_addressing_is_beta() -> None:
     """Warn the first time a run is actually addressed to an agent.
 
     The docstrings say the feature is in beta, but a caller who reaches it
@@ -561,7 +561,7 @@ def warn_agent_addressing_is_beta() -> None:
     )
 
 
-def resolve_addressing(
+def _resolve_addressing(
     project: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
@@ -582,32 +582,57 @@ def resolve_addressing(
     endpoint refuses the pair -- there is no tier to choose between, and
     picking one would move the caller's traces without telling them. Only the
     `default` project the SDK would otherwise invent is suppressed.
+
+    A project variable set to the empty string names no project, so it falls
+    back to `default` the way an unset one does.
     """
-    if project is not None:
+    if project:
         return project, None, None
-    if is_agent_addressed(agent_id, agent_environment):
-        return None, *resolve_agent_addressing(agent_id, agent_environment)
+    if _is_agent_addressed(agent_id, agent_environment):
+        return None, *_resolve_agent_addressing(agent_id, agent_environment)
     env_agent_id = get_tracer_agent_id()
     env_agent_environment = get_tracer_agent_environment()
-    if is_agent_addressed(env_agent_id, env_agent_environment):
+    if _is_agent_addressed(env_agent_id, env_agent_environment):
         return (
-            get_tracer_project(return_default_value=False),
+            get_tracer_project(return_default_value=False) or None,
             env_agent_id,
             env_agent_environment,
         )
-    return get_tracer_project(), None, None
+    return get_tracer_project() or "default", None, None
 
 
-def warn_on_agent_and_project_env() -> None:
-    """Warn when the environment configures both an agent and a project.
+def _warn_on_agent_env() -> None:
+    """Warn when the environment's agent addressing cannot reach the endpoint.
 
-    Both go out on the payload and the endpoint answers 400, so the run is
-    lost either way; this says which variable to unset. Emitted at client
-    construction rather than per run, so it is seen once instead of drowned
-    out by the background flush's warnings.
+    Either half of the pair addresses a run, so either half alone is refused
+    with a 400 that takes the whole batch with it -- and `AGENT_ENVIRONMENT`
+    is a generic enough name to be set by accident. A project configured
+    beside a complete pair is refused the same way.
+
+    Emitted at client construction rather than per run, so it is seen once
+    instead of drowned out by the background flush's warnings, which only
+    log.
     """
     agent_id = get_tracer_agent_id()
-    if agent_id is None:
+    agent_environment = get_tracer_agent_environment()
+    if not _is_agent_addressed(agent_id, agent_environment):
+        return
+    if agent_id is None or agent_environment is None:
+        missing, present = (
+            (
+                "LANGSMITH_AGENT_ID",
+                f"LANGSMITH_AGENT_ENVIRONMENT ({agent_environment!r})",
+            )
+            if agent_id is None
+            else ("LANGSMITH_AGENT_ENVIRONMENT", f"LANGSMITH_AGENT_ID ({agent_id!r})")
+        )
+        warnings.warn(
+            f"{present} is set without {missing}. Agent addressing needs both, "
+            "so the API refuses the request and the whole batch of runs is "
+            f"dropped. Set {missing}, or unset the other to trace to a project.",
+            LangSmithWarning,
+            stacklevel=3,
+        )
         return
     project = get_tracer_project(return_default_value=False)
     if project is None:
