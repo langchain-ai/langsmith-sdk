@@ -70,6 +70,7 @@ class TestToolUseSuccessFlow:
         assert tool_run.name == "Bash"
         assert tool_run.run_type == "tool"
         assert tool_run.inputs == {"input": {"command": "echo hi"}}
+        assert tool_run.extra["metadata"]["tool_call_id"] == "tu_1"
 
         asyncio.run(
             post_tool_use_hook(
@@ -615,6 +616,8 @@ class TestMissingSubagentLLMRuns:
         assert new_run.outputs == {
             "content": [{"type": "text", "text": "done"}],
             "role": "assistant",
+            "id": "msg_missing",
+            "stop_reason": "end_turn",
         }
 
     def test_skips_already_seen_message_ids(self, tmp_path):
@@ -753,3 +756,360 @@ class TestSessionBinding:
 
         assert result == {"ok": True}
         assert seen_parent is tool_run
+
+
+class _FakeAssistantMessage:
+    """Stand-in for ``claude_agent_sdk.AssistantMessage``.
+
+    The run builder dispatches on ``type(msg).__name__``, so the class name
+    matters as much as the attributes.
+    """
+
+    def __init__(
+        self,
+        content,
+        message_id,
+        stop_reason=None,
+        model="claude-test",
+        parent_tool_use_id=None,
+    ):
+        self.content = content
+        self.message_id = message_id
+        self.stop_reason = stop_reason
+        self.model = model
+        self.parent_tool_use_id = parent_tool_use_id
+
+
+_FakeAssistantMessage.__name__ = "AssistantMessage"
+
+
+def _write_transcript(path, entries):
+    """Write entries as a Claude CLI JSONL transcript; return the path."""
+    import json
+
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    return str(path)
+
+
+def _streamed_llm_run(parent, *, message_id, stop_reason):
+    """Build an LLM run the way the live stream would, for reconcile tests."""
+    from langsmith.integrations.claude_agent_sdk._client import (
+        begin_llm_run_from_assistant_messages,
+    )
+
+    _, run = begin_llm_run_from_assistant_messages(
+        [
+            _FakeAssistantMessage(
+                content=[{"type": "text", "text": "partial"}],
+                message_id=message_id,
+                stop_reason=stop_reason,
+            )
+        ],
+        prompt="go",
+        history=[],
+        parent=parent,
+    )
+    return run
+
+
+class TestStopReasonAndResponseId:
+    """LSDK-522: `stop_reason` and the Anthropic message id reach run outputs.
+
+    Values are provider-native and stored under the provider's own key names,
+    matching `wrappers/_anthropic.py`. Mapping them onto the OTel semantic
+    conventions is the exporter's job and is not covered here.
+    """
+
+    def test_live_message_with_stop_reason_is_stored(self):
+        run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_live", stop_reason="tool_use"
+        )
+
+        assert run is not None
+        assert run.outputs["stop_reason"] == "tool_use"
+        assert run.outputs["id"] == "msg_live"
+        assert run.outputs["role"] == "assistant"
+
+    def test_absent_stop_reason_is_omitted_not_nulled(self):
+        """The live stream relays ``stop_reason: null``; do not persist that."""
+        run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_live", stop_reason=None
+        )
+
+        assert run is not None
+        assert "stop_reason" not in run.outputs
+        assert run.outputs["id"] == "msg_live"
+
+    def test_same_turn_merge_keeps_the_last_stop_reason(self):
+        """A turn can arrive as several events; only the final one has it."""
+        from langsmith.integrations.claude_agent_sdk import _tools
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+
+        _tools.set_parent_run_tree(_make_parent_run())
+        try:
+            tracker = TurnLifecycle()
+            history: list = []
+            for text, reason in (("thinking", None), ("done", "end_turn")):
+                tracker.start_llm_run(
+                    _FakeAssistantMessage(
+                        content=[{"type": "text", "text": text}],
+                        message_id="msg_split",
+                        stop_reason=reason,
+                    ),
+                    prompt="go",
+                    history=history,
+                )
+        finally:
+            _tools.clear_parent_run_tree()
+
+        run = tracker.llm_runs_by_message_id["msg_split"]
+        assert run.outputs["stop_reason"] == "end_turn"
+        assert run.outputs["id"] == "msg_split"
+
+    def test_transcript_patches_a_streamed_run_that_had_no_stop_reason(self, tmp_path):
+        """The production path: the stream has no reason, the transcript does.
+
+        This is what the customer actually hits. A fix that only writes the
+        live value would leave this run with no stop reason at all.
+        """
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            reconcile_from_transcripts,
+        )
+
+        tracker = TurnLifecycle()
+        run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_stream", stop_reason=None
+        )
+        tracker.llm_runs_by_message_id["msg_stream"] = run
+        assert "stop_reason" not in run.outputs
+
+        _hooks_module._default_session.main_transcript_path = _write_transcript(
+            tmp_path / "main.jsonl",
+            [
+                {
+                    "type": "assistant",
+                    "message": {"id": "msg_stream", "stop_reason": None},
+                },
+                {
+                    "type": "assistant",
+                    "message": {"id": "msg_stream", "stop_reason": "tool_use"},
+                },
+            ],
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        assert run.outputs["stop_reason"] == "tool_use"
+        assert run.outputs["id"] == "msg_stream"
+
+    def test_result_message_fills_the_final_turn(self):
+        """The last turn has no other source for its stop reason.
+
+        Its assistant events carry ``stop_reason: null`` and the CLI has not
+        yet flushed the matching transcript entry when reconcile runs, so
+        without this the closing ``end_turn`` is lost on every conversation.
+        """
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+
+        tracker = TurnLifecycle()
+        tracker.last_main_run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_final", stop_reason=None
+        )
+
+        tracker.set_stop_reason_from_result(MagicMock(stop_reason="end_turn"))
+
+        assert tracker.last_main_run.outputs["stop_reason"] == "end_turn"
+
+    def test_result_message_skips_a_trailing_subagent_turn(self):
+        """A conversation can end while a subagent spoke last.
+
+        Interrupt, max turns or a denied permission all leave a subagent
+        turn as the most recent run. The ``ResultMessage`` stop reason
+        describes the conversation, so it belongs to the main agent's final
+        turn — not to whichever subagent happened to be talking.
+        """
+        from langsmith.integrations.claude_agent_sdk import _tools
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+
+        _tools.set_parent_run_tree(_make_parent_run())
+        try:
+            tracker = TurnLifecycle()
+            history: list = []
+            tracker.start_llm_run(
+                _FakeAssistantMessage(
+                    content=[{"type": "text", "text": "delegating"}],
+                    message_id="msg_main",
+                ),
+                prompt="go",
+                history=history,
+            )
+            tracker.start_llm_run(
+                _FakeAssistantMessage(
+                    content=[{"type": "text", "text": "subagent working"}],
+                    message_id="msg_sub",
+                    parent_tool_use_id="toolu_agent_1",
+                ),
+                prompt=None,
+                history=history,
+            )
+        finally:
+            _tools.clear_parent_run_tree()
+
+        tracker.set_stop_reason_from_result(MagicMock(stop_reason="max_turns"))
+
+        runs = tracker.llm_runs_by_message_id
+        assert runs["msg_main"].outputs["stop_reason"] == "max_turns"
+        assert "stop_reason" not in runs["msg_sub"].outputs
+
+    def test_result_message_does_not_override_a_known_stop_reason(self):
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+
+        tracker = TurnLifecycle()
+        tracker.last_main_run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_final", stop_reason="tool_use"
+        )
+
+        tracker.set_stop_reason_from_result(MagicMock(stop_reason="end_turn"))
+
+        assert tracker.last_main_run.outputs["stop_reason"] == "tool_use"
+
+    def test_transcript_wins_over_the_result_message_value(self, tmp_path):
+        """Per-message transcript data beats the conversation-level value."""
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            reconcile_from_transcripts,
+        )
+
+        tracker = TurnLifecycle()
+        run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_final", stop_reason=None
+        )
+        tracker.last_main_run = run
+        tracker.llm_runs_by_message_id["msg_final"] = run
+        tracker.set_stop_reason_from_result(MagicMock(stop_reason="end_turn"))
+        assert run.outputs["stop_reason"] == "end_turn"
+
+        _hooks_module._default_session.main_transcript_path = _write_transcript(
+            tmp_path / "main.jsonl",
+            [
+                {
+                    "type": "assistant",
+                    "message": {"id": "msg_final", "stop_reason": "max_tokens"},
+                },
+            ],
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        assert run.outputs["stop_reason"] == "max_tokens"
+
+    def test_reconcile_does_not_invent_an_unknown_stop_reason(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            reconcile_from_transcripts,
+        )
+
+        tracker = TurnLifecycle()
+        run = _streamed_llm_run(
+            _make_parent_run(), message_id="msg_stream", stop_reason=None
+        )
+        tracker.llm_runs_by_message_id["msg_stream"] = run
+
+        _hooks_module._default_session.main_transcript_path = _write_transcript(
+            tmp_path / "main.jsonl",
+            [
+                {
+                    "type": "assistant",
+                    "message": {"id": "msg_stream", "stop_reason": None},
+                },
+            ],
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        # The id is always knowable; the stop reason is never invented.
+        assert run.outputs["id"] == "msg_stream"
+        assert "stop_reason" not in run.outputs
+
+    def test_transcript_patches_usage_alongside_stop_reason(self, tmp_path):
+        """Usage and stop reason share one reconcile pass and one reader.
+
+        Nothing else covers the usage half, so a regression there would be
+        silent.
+        """
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            reconcile_from_transcripts,
+        )
+
+        tracker = TurnLifecycle()
+        run = _streamed_llm_run(_make_parent_run(), message_id="m1", stop_reason=None)
+        tracker.llm_runs_by_message_id["m1"] = run
+
+        _hooks_module._default_session.main_transcript_path = _write_transcript(
+            tmp_path / "main.jsonl",
+            [
+                # Partial chunk: low output_tokens, no stop reason yet.
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "m1",
+                        "stop_reason": None,
+                        "usage": {"input_tokens": 11, "output_tokens": 1},
+                    },
+                },
+                # Final chunk wins for both fields.
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "m1",
+                        "stop_reason": "end_turn",
+                        "usage": {"input_tokens": 11, "output_tokens": 7},
+                    },
+                },
+            ],
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        usage = run.extra["metadata"]["usage_metadata"]
+        assert usage["input_tokens"] == 11
+        assert usage["output_tokens"] == 7
+        assert usage["total_tokens"] == 18
+        assert run.outputs["stop_reason"] == "end_turn"
+
+    def test_multi_turn_transcript_patches_each_turn(self, tmp_path):
+        """Reuses read_llm_turns_from_transcript, which keys by message id."""
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+        from langsmith.integrations.claude_agent_sdk._transcripts import (
+            reconcile_from_transcripts,
+        )
+
+        tracker = TurnLifecycle()
+        parent = _make_parent_run()
+        for mid in ("m1", "m2"):
+            tracker.llm_runs_by_message_id[mid] = _streamed_llm_run(
+                parent, message_id=mid, stop_reason=None
+            )
+
+        _hooks_module._default_session.main_transcript_path = _write_transcript(
+            tmp_path / "main.jsonl",
+            [
+                {"type": "user", "message": {"content": "hi"}},
+                {"type": "assistant", "message": {"id": "m1", "stop_reason": None}},
+                {
+                    "type": "assistant",
+                    "message": {"id": "m1", "stop_reason": "tool_use"},
+                },
+                {
+                    "type": "assistant",
+                    "message": {"id": "m2", "stop_reason": "end_turn"},
+                },
+            ],
+        )
+
+        reconcile_from_transcripts(tracker)
+
+        assert tracker.llm_runs_by_message_id["m1"].outputs["stop_reason"] == "tool_use"
+        assert tracker.llm_runs_by_message_id["m2"].outputs["stop_reason"] == "end_turn"

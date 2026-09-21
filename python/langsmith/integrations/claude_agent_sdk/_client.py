@@ -55,6 +55,11 @@ class TurnLifecycle:
 
     def __init__(self, query_start_time: Optional[float] = None):
         self.current_run: Optional[Any] = None
+        # The most recent *main agent* turn. Tracked separately because
+        # ``current_run`` may be a subagent turn, and a conversation can end
+        # while a subagent spoke last (interrupt, max turns, denied
+        # permission). See ``set_stop_reason_from_result``.
+        self.last_main_run: Optional[Any] = None
         self.current_message_id: Optional[str] = None
         self.next_start_time: Optional[float] = query_start_time
         # message_id → RunTree for all LLM runs created this conversation.
@@ -98,6 +103,9 @@ class TurnLifecycle:
                             break
                 elif isinstance(content, list):
                     self.current_run.outputs["content"] = content
+            # Update outputs with provider-specific keys
+            if isinstance(self.current_run.outputs, dict):
+                self.current_run.outputs.update(_anthropic_response_fields(message))
             self._set_usage_from_message(message, self.current_run)
             return None
 
@@ -117,6 +125,11 @@ class TurnLifecycle:
         if run:
             if message_id:
                 self.llm_runs_by_message_id[message_id] = run
+            # Read off the message, not the resolved parent: a subagent turn
+            # whose subagent run could not be looked up still is not a main
+            # agent turn.
+            if getattr(message, "parent_tool_use_id", None) is None:
+                self.last_main_run = run
             self._set_usage_from_message(message, run)
 
         return final_output
@@ -136,6 +149,21 @@ class TurnLifecycle:
         if usage_meta:
             meta = run.extra.setdefault("metadata", {})
             meta["usage_metadata"] = usage_meta
+
+    def set_stop_reason_from_result(self, message: Any) -> None:
+        """Apply a ``ResultMessage`` stop reason to the last main agent turn.
+
+        ``ResultMessage`` describes how the *conversation* ended, so it
+        belongs to the main agent's final turn — not to whichever subagent
+        happened to be speaking if the run was cut short.  Gap-fill only: a
+        streamed value wins here, and transcript reconcile wins over both.
+        """
+        stop_reason = getattr(message, "stop_reason", None)
+        if not stop_reason or self.last_main_run is None:
+            return
+        outputs = self.last_main_run.outputs
+        if isinstance(outputs, dict) and not outputs.get("stop_reason"):
+            outputs["stop_reason"] = stop_reason
 
     def mark_next_start(self) -> None:
         """Mark when the next assistant message will start."""
@@ -158,6 +186,18 @@ class TurnLifecycle:
         self._pending_patch.clear()
 
 
+def _anthropic_response_fields(message: Any) -> dict[str, Any]:
+    """Return Anthropic-native response fields for an LLM run."""
+    fields: dict[str, Any] = {}
+    message_id = getattr(message, "message_id", None)
+    if message_id:
+        fields["id"] = message_id
+    stop_reason = getattr(message, "stop_reason", None)
+    if stop_reason:
+        fields["stop_reason"] = stop_reason
+    return fields
+
+
 def begin_llm_run_from_assistant_messages(
     messages: list[Any],
     prompt: Any,
@@ -178,7 +218,11 @@ def begin_llm_run_from_assistant_messages(
 
     inputs = build_llm_input(prompt, history)
     outputs = [
-        {"content": flatten_content_blocks(m.content), "role": "assistant"}
+        {
+            "content": flatten_content_blocks(m.content),
+            "role": "assistant",
+            **_anthropic_response_fields(m),
+        }
         for m in messages
         if hasattr(m, "content")
     ]
@@ -636,6 +680,7 @@ def instrument_claude_client(original_class: Any) -> None:
                                 )
                         tracker.mark_next_start()
                     elif msg_type == "ResultMessage":
+                        tracker.set_stop_reason_from_result(msg)
                         session_id_val = getattr(msg, "session_id", None)
                         meta = {
                             k: v
