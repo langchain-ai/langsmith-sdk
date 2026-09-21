@@ -55,6 +55,11 @@ class TurnLifecycle:
 
     def __init__(self, query_start_time: Optional[float] = None):
         self.current_run: Optional[Any] = None
+        # The most recent *main agent* turn. Tracked separately because
+        # ``current_run`` may be a subagent turn, and a conversation can end
+        # while a subagent spoke last (interrupt, max turns, denied
+        # permission). See ``set_stop_reason_from_result``.
+        self.last_main_run: Optional[Any] = None
         self.current_message_id: Optional[str] = None
         self.next_start_time: Optional[float] = query_start_time
         # message_id → RunTree for all LLM runs created this conversation.
@@ -120,6 +125,11 @@ class TurnLifecycle:
         if run:
             if message_id:
                 self.llm_runs_by_message_id[message_id] = run
+            # Read off the message, not the resolved parent: a subagent turn
+            # whose subagent run could not be looked up still is not a main
+            # agent turn.
+            if getattr(message, "parent_tool_use_id", None) is None:
+                self.last_main_run = run
             self._set_usage_from_message(message, run)
 
         return final_output
@@ -141,11 +151,17 @@ class TurnLifecycle:
             meta["usage_metadata"] = usage_meta
 
     def set_stop_reason_from_result(self, message: Any) -> None:
-        """Apply a ``ResultMessage`` stop reason to the turn still in flight."""
+        """Apply a ``ResultMessage`` stop reason to the last main agent turn.
+
+        ``ResultMessage`` describes how the *conversation* ended, so it
+        belongs to the main agent's final turn — not to whichever subagent
+        happened to be speaking if the run was cut short.  Gap-fill only: a
+        streamed value wins here, and transcript reconcile wins over both.
+        """
         stop_reason = getattr(message, "stop_reason", None)
-        if not stop_reason or self.current_run is None:
+        if not stop_reason or self.last_main_run is None:
             return
-        outputs = self.current_run.outputs
+        outputs = self.last_main_run.outputs
         if isinstance(outputs, dict) and not outputs.get("stop_reason"):
             outputs["stop_reason"] = stop_reason
 

@@ -765,11 +765,19 @@ class _FakeAssistantMessage:
     matters as much as the attributes.
     """
 
-    def __init__(self, content, message_id, stop_reason=None, model="claude-test"):
+    def __init__(
+        self,
+        content,
+        message_id,
+        stop_reason=None,
+        model="claude-test",
+        parent_tool_use_id=None,
+    ):
         self.content = content
         self.message_id = message_id
         self.stop_reason = stop_reason
         self.model = model
+        self.parent_tool_use_id = parent_tool_use_id
 
 
 _FakeAssistantMessage.__name__ = "AssistantMessage"
@@ -905,25 +913,66 @@ class TestStopReasonAndResponseId:
         from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
 
         tracker = TurnLifecycle()
-        tracker.current_run = _streamed_llm_run(
+        tracker.last_main_run = _streamed_llm_run(
             _make_parent_run(), message_id="msg_final", stop_reason=None
         )
 
         tracker.set_stop_reason_from_result(MagicMock(stop_reason="end_turn"))
 
-        assert tracker.current_run.outputs["stop_reason"] == "end_turn"
+        assert tracker.last_main_run.outputs["stop_reason"] == "end_turn"
+
+    def test_result_message_skips_a_trailing_subagent_turn(self):
+        """A conversation can end while a subagent spoke last.
+
+        Interrupt, max turns or a denied permission all leave a subagent
+        turn as the most recent run. The ``ResultMessage`` stop reason
+        describes the conversation, so it belongs to the main agent's final
+        turn — not to whichever subagent happened to be talking.
+        """
+        from langsmith.integrations.claude_agent_sdk import _tools
+        from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
+
+        _tools.set_parent_run_tree(_make_parent_run())
+        try:
+            tracker = TurnLifecycle()
+            history: list = []
+            tracker.start_llm_run(
+                _FakeAssistantMessage(
+                    content=[{"type": "text", "text": "delegating"}],
+                    message_id="msg_main",
+                ),
+                prompt="go",
+                history=history,
+            )
+            tracker.start_llm_run(
+                _FakeAssistantMessage(
+                    content=[{"type": "text", "text": "subagent working"}],
+                    message_id="msg_sub",
+                    parent_tool_use_id="toolu_agent_1",
+                ),
+                prompt=None,
+                history=history,
+            )
+        finally:
+            _tools.clear_parent_run_tree()
+
+        tracker.set_stop_reason_from_result(MagicMock(stop_reason="max_turns"))
+
+        runs = tracker.llm_runs_by_message_id
+        assert runs["msg_main"].outputs["stop_reason"] == "max_turns"
+        assert "stop_reason" not in runs["msg_sub"].outputs
 
     def test_result_message_does_not_override_a_known_stop_reason(self):
         from langsmith.integrations.claude_agent_sdk._client import TurnLifecycle
 
         tracker = TurnLifecycle()
-        tracker.current_run = _streamed_llm_run(
+        tracker.last_main_run = _streamed_llm_run(
             _make_parent_run(), message_id="msg_final", stop_reason="tool_use"
         )
 
         tracker.set_stop_reason_from_result(MagicMock(stop_reason="end_turn"))
 
-        assert tracker.current_run.outputs["stop_reason"] == "tool_use"
+        assert tracker.last_main_run.outputs["stop_reason"] == "tool_use"
 
     def test_transcript_wins_over_the_result_message_value(self, tmp_path):
         """Per-message transcript data beats the conversation-level value."""
@@ -936,7 +985,7 @@ class TestStopReasonAndResponseId:
         run = _streamed_llm_run(
             _make_parent_run(), message_id="msg_final", stop_reason=None
         )
-        tracker.current_run = run
+        tracker.last_main_run = run
         tracker.llm_runs_by_message_id["msg_final"] = run
         tracker.set_stop_reason_from_result(MagicMock(stop_reason="end_turn"))
         assert run.outputs["stop_reason"] == "end_turn"
