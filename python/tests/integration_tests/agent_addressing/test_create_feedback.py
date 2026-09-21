@@ -28,12 +28,10 @@ from tests.integration_tests.agent_addressing.conftest import (
 # The project of the run the feedback describes, known only once it is sent.
 RUN_PROJECT = "{run_project}"
 
-# KNOWN FAILURE, on purpose, in both cases that use it. This is the wording on
-# langchainplus `main` (`smith-go/agentplatform/resolve.go`); dev still says
-# "this Agent id and environment". Red until dev serves the same text.
+# `smith-go/agentplatform/errors.go::ErrAgentEnvironmentUnresolvable`.
 REJECTED_UNKNOWN_AGENT = Rejected(
     reason=(
-        "no Agent environment matches this Agent key and environment, and"
+        "no Agent environment matches this Agent id and environment, and"
         " sending feedback does not create one"
     ),
     remedy="Create the Agent and this environment before sending feedback for them",
