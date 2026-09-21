@@ -623,7 +623,15 @@ class FeedbackSourceType(Enum):
 
 
 class FeedbackBase(BaseModel):
-    """Feedback schema."""
+    """Feedback schema.
+
+    !!! warning "Experimental"
+        `agent_id` / `agent_environment` are in beta. Agent addressing is
+        enabled per workspace; a workspace without it rejects the feedback,
+        so it is lost rather than falling back to a project. The agent must
+        already exist -- unlike run ingestion, a feedback part never creates
+        one. Both may change without notice.
+    """
 
     id: UUID
     """The unique ID of the feedback."""
@@ -649,6 +657,16 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
     session_id: Optional[UUID] = None
     """The associated project ID (Session = Project) this feedback is logged for."""
+    agent_id: Optional[str] = None
+    """The agent this feedback is logged for, instead of a project.
+
+    Copied from the run the feedback describes, never read from the environment:
+    feedback follows its run, so an ambient `LANGSMITH_AGENT_ID` must not
+    redirect it somewhere the run never went. Mutually exclusive with
+    `session_id`.
+    """
+    agent_environment: Optional[str] = None
+    """Narrows `agent_id`; meaningless without it."""
     start_time: Optional[datetime] = None
     """The start time of the run this feedback is associated with."""
     comparative_experiment_id: Optional[UUID] = None

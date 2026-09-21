@@ -1183,9 +1183,18 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
+        agent_id: Optional[str] = None,
+        agent_environment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
+
+        !!! warning "Experimental"
+            `agent_id` / `agent_environment` are in beta. Agent addressing is
+            enabled per workspace; a workspace without it rejects the feedback,
+            so it is lost rather than falling back to a project. The agent must
+            already exist -- unlike run ingestion, a feedback part never creates
+            one. Both may change without notice.
 
         Args:
             run_id: The ID of the run to provide feedback for. At least one of
@@ -1217,6 +1226,14 @@ class AsyncClient:
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
+            agent_id: The agent to attach this feedback to, instead of a
+                project. Pass whatever the run being described was traced to.
+                Cannot be combined with `session_id` / `project_id`, and is
+                never read from `LANGSMITH_AGENT_ID`: feedback follows its run,
+                not the ambient environment. The agent must already exist;
+                unlike run ingestion, a feedback part never creates one.
+            agent_environment: Narrows `agent_id`, and requires it. Defaults
+                server-side to `production` when omitted.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1232,7 +1249,9 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None:
+        if run_id is not None and session_id is None and agent_id is None:
+            # An agent pair locates the project directly, so it satisfies the
+            # same requirement this gate exists for.
             ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
@@ -1287,6 +1306,8 @@ class AsyncClient:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=session_id_,
+            agent_id=agent_id,
+            agent_environment=agent_environment,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(
                 comparative_experiment_id, accept_null=True
