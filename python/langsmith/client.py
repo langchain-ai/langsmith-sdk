@@ -4185,7 +4185,7 @@ class Client:
             raise ls_utils.LangSmithError(
                 "Loading child runs is not supported on SmithDB-only"
                 " backends (no ClickHouse query support). See"
-                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
                 "#load-a-run’s-child-runs"
             )
 
@@ -4224,7 +4224,7 @@ class Client:
     @_deprecated(
         "read_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.retrieve() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
         "#runs-retrieve for the migration guide."
     )
     def read_run(
@@ -4300,7 +4300,7 @@ class Client:
             raise ls_utils.LangSmithError(
                 "load_child_runs is not supported on SmithDB-only"
                 " backends (no ClickHouse query support). See"
-                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
                 "#load-a-run’s-child-runs"
             )
         return _v2_migration_utils._read_run_v2(
@@ -4313,7 +4313,7 @@ class Client:
     @_deprecated(
         "read_thread() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.threads.list_traces() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads"
         "#threads-list-traces for the migration guide."
     )
     def read_thread(
@@ -4384,7 +4384,7 @@ class Client:
     @_deprecated(
         "list_runs() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs"
         "#runs-query for the migration guide."
     )
     def list_runs(
@@ -4590,7 +4590,7 @@ class Client:
     @_deprecated(
         "list_threads() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.threads.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads"
         "#threads-query for the migration guide."
     )
     def list_threads(
@@ -4818,7 +4818,7 @@ class Client:
     @_deprecated(
         "get_run_url() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.get_url() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
         "#runs-get-url for the migration guide."
     )
     def get_run_url(
@@ -4883,7 +4883,7 @@ class Client:
     @_deprecated(
         "share_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.share.create() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
@@ -4921,7 +4921,7 @@ class Client:
     @_deprecated(
         "unshare_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.share.delete() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def unshare_run(self, run_id: ID_TYPE) -> None:
@@ -4949,7 +4949,7 @@ class Client:
     @_deprecated(
         "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
         'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
@@ -4995,7 +4995,7 @@ class Client:
     @_deprecated(
         "read_shared_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.public.runs.retrieve() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def read_shared_run(
@@ -5032,7 +5032,7 @@ class Client:
     @_deprecated(
         "list_shared_runs() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.public.runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def list_shared_runs(
@@ -11224,7 +11224,7 @@ class Client:
     @_deprecated(
         "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.datasets.experiment_runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-experiments"
         "#dataset-experiment-runs-query for the migration guide."
     )
     def get_experiment_results(
