@@ -4,7 +4,8 @@
 # Run from the langsmith-sdk checkout. Writes summary.md + status (clean|conflict|noop) to out-dir.
 set -euo pipefail
 lang=$1 sha=$2 staging=$(cd "$3" && pwd) out=${4:-$(mktemp -d)}
-mkdir -p "$out"
+mkdir -p "$out"; out=$(cd "$out" && pwd)
+
 
 case $lang in
   python)
@@ -30,7 +31,7 @@ while IFS= read -r f; do
   elif [[ $f =~ ^($mapped) ]]; then rewrite+=("$f")
   else manual+=("$f")
   fi
-done < <(git diff --name-only "$sha^" "$sha" -- "$root")
+done < <(git diff --name-only --no-renames "$sha^" "$sha" -- "$root")
 
 list() { if (($#)); then printf -- '- `%s`\n' "$@"; else echo "- none"; fi; }
 
@@ -40,7 +41,7 @@ if ((${#rewrite[@]} == 0)); then
   echo noop > "$out/status"; exit 0
 fi
 
-git diff --binary --full-index "$sha^" "$sha" -- "${rewrite[@]}" \
+git diff --binary --full-index --no-renames "$sha^" "$sha" -- "${rewrite[@]}" \
   | sed -E "/^(diff --git |--- |\+\+\+ |rename (from|to) |copy (from|to) )/ { $paths; }" \
   | sed -E "$text" > "$out/$lang.patch"
 

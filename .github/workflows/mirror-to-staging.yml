@@ -106,7 +106,7 @@ jobs:
           path: out/
 
       - name: Commit and push the mirror branch
-        if: steps.apply.outputs.status != 'noop'
+        if: (steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict')
         id: push
         working-directory: staging
         env:
@@ -122,7 +122,7 @@ jobs:
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Open or update the PR
-        if: steps.apply.outputs.status != 'noop' && inputs.branch == ''
+        if: (steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict') && inputs.branch == ''
         working-directory: staging
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
