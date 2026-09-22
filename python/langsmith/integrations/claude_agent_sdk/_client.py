@@ -481,6 +481,7 @@ def instrument_claude_client(original_class: Any) -> None:
     _orig_init = original_class.__init__
     _orig_query = original_class.query
     _orig_receive_response = original_class.receive_response
+    _orig_receive_messages = original_class.receive_messages
 
     # ── patched __init__ ─────────────────────────────────────────────
     def _traced_init(self: Any, *args: Any, **kwargs: Any) -> None:
@@ -522,10 +523,10 @@ def instrument_claude_client(original_class: Any) -> None:
 
         return await _orig_query(self, *args, **kwargs)
 
-    # ── patched receive_response ─────────────────────────────────────
-    async def _traced_receive_response(self: Any) -> AsyncGenerator[Any, None]:
-        messages = _orig_receive_response(self)
-
+    # ── shared wrapper for receive_response / receive_messages ───────
+    async def _traced_stream(
+        self: Any, messages: AsyncIterable[Any]
+    ) -> AsyncGenerator[Any, None]:
         trace_inputs: dict[str, Any] = {}
         trace_metadata: dict[str, Any] = {
             "ls_integration": "claude-agent-sdk",
@@ -594,6 +595,11 @@ def instrument_claude_client(original_class: Any) -> None:
 
             prompt_for_llm: Any = self._ls_prompt
 
+            def _end_run() -> None:
+                main_collected = collected_by_ctx.get(None, [])
+                run.end(outputs=main_collected[-1] if main_collected else None)
+
+            self._ls_stream_active = True
             try:
                 async for msg in messages:
                     if awaiting_streamed_input and self._ls_streamed_input:
@@ -700,11 +706,18 @@ def instrument_claude_client(original_class: Any) -> None:
                             run.metadata.update(meta)
 
                     yield msg
-                main_collected = collected_by_ctx.get(None, [])
-                run.end(outputs=main_collected[-1] if main_collected else None)
+                _end_run()
+            except GeneratorExit:
+                # Consumer stopped iterating early. This is the normal exit
+                # for receive_messages(), which only ends on disconnect.
+                logger.debug(
+                    "Claude Agent stream closed by consumer; ending run %s", run.id
+                )
+                _end_run()
             except Exception:
                 logger.exception("Error while tracing Claude Agent stream")
             finally:
+                self._ls_stream_active = False
                 tracker.close()
                 reconcile_from_transcripts(tracker, session=session)
                 tracker.flush()
@@ -714,10 +727,19 @@ def instrument_claude_client(original_class: Any) -> None:
                 finally:
                     _unregister_session(session, session_token)
 
+    def _traced_receive_response(self: Any) -> AsyncGenerator[Any, None]:
+        return _traced_stream(self, _orig_receive_response(self))
+
+    def _traced_receive_messages(self: Any) -> AsyncGenerator[Any, None]:
+        if getattr(self, "_ls_stream_active", False):
+            return _orig_receive_messages(self)
+        return _traced_stream(self, _orig_receive_messages(self))
+
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init
     original_class.query = _traced_query
     original_class.receive_response = _traced_receive_response
+    original_class.receive_messages = _traced_receive_messages
     original_class._langsmith_instrumented = True
 
 

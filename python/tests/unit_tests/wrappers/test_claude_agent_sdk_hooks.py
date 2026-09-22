@@ -1113,3 +1113,123 @@ class TestStopReasonAndResponseId:
 
         assert tracker.llm_runs_by_message_id["m1"].outputs["stop_reason"] == "tool_use"
         assert tracker.llm_runs_by_message_id["m2"].outputs["stop_reason"] == "end_turn"
+
+
+# ── Fakes mirroring the SDK shapes _client.py dispatches on by class name ────
+
+
+class TextBlock:
+    def __init__(self, text):
+        self.text = text
+
+
+class AssistantMessage:
+    def __init__(self, text, message_id):
+        self.content = [TextBlock(text)]
+        self.model = "claude-test"
+        self.message_id = message_id
+        self.parent_tool_use_id = None
+        self.usage = None
+
+
+class ResultMessage:
+    session_id = "sess_1"
+    num_turns = 1
+
+
+class FakeSDKClient:
+    """Minimal ClaudeSDKClient: receive_response() delegates to receive_messages()."""
+
+    def __init__(self, options=None):
+        self.options = options
+        self._turns = 0
+
+    async def query(self, prompt):
+        pass
+
+    async def receive_messages(self):
+        # Never ends on its own, like the real stream: one turn per loop.
+        while True:
+            self._turns += 1
+            yield AssistantMessage(f"hi {self._turns}", f"msg_{self._turns}")
+            yield ResultMessage()
+
+    async def receive_response(self):
+        async for msg in self.receive_messages():
+            yield msg
+            if isinstance(msg, ResultMessage):
+                return
+
+
+class TestReceiveMessagesInstrumented:
+    @pytest.fixture
+    def root_runs(self, monkeypatch):
+        from langsmith.integrations.claude_agent_sdk import _client as _client_module
+
+        created = []
+        real_trace = _client_module.trace
+
+        class RecordingTrace(real_trace):
+            def _setup(self):
+                run = super()._setup()
+                created.append(run)
+                return run
+
+        monkeypatch.setattr(_client_module, "trace", RecordingTrace)
+        return created
+
+    @pytest.fixture
+    def client_cls(self):
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+
+        cls = type("FakeSDKClient", (FakeSDKClient,), {})
+        instrument_claude_client(cls)
+        return cls
+
+    def _run(self, coro):
+        from langsmith import Client
+        from langsmith.run_helpers import tracing_context
+
+        mock_client = Client(
+            session=MagicMock(), api_key="test", auto_batch_tracing=False
+        )
+        with tracing_context(enabled=True, client=mock_client):
+            asyncio.run(coro)
+
+    def test_receive_messages_creates_root_run(self, client_cls, root_runs):
+        async def main():
+            client = client_cls()
+            await client.query("say hi")
+            stream = client.receive_messages()
+            async for msg in stream:
+                if isinstance(msg, ResultMessage):
+                    break
+            # asyncio finalises abandoned async generators on a later loop
+            # iteration; close explicitly so the root run is ended before we
+            # assert (real apps keep the loop alive, so it happens naturally).
+            await stream.aclose()
+
+        self._run(main())
+
+        assert len(root_runs) == 1
+        run = root_runs[0]
+        assert run.name == "claude.conversation"
+        assert run.error is None
+        assert run.end_time is not None
+        assert run.outputs["content"] == [{"type": "text", "text": "hi 1"}]
+        assert [c.run_type for c in run.child_runs] == ["llm"]
+
+    def test_receive_response_not_double_traced(self, client_cls, root_runs):
+        async def main():
+            client = client_cls()
+            await client.query("say hi")
+            async for _ in client.receive_response():
+                pass
+
+        self._run(main())
+
+        assert len(root_runs) == 1
+        assert root_runs[0].error is None
+        assert root_runs[0].end_time is not None
