@@ -1,7 +1,8 @@
 name: Mirror to staging
 
-# Every merge to main touching python/ or js/ becomes a PR in the staging repos
-# (langsmith-python-staging, langsmith-javascript-staging) with paths rewritten.
+# Every merge to main touching python/ or js/ is committed onto one cumulative
+# branch per staging repo (langsmith-python-staging, langsmith-javascript-staging),
+# with paths rewritten, and kept as a single open PR until merged.
 # Rewrite rules live in .github/scripts/mirror-to-staging.sh. Linear: LIN-504.
 
 on:
@@ -26,6 +27,10 @@ jobs:
   mirror:
     if: github.repository == 'langchain-ai/langsmith-sdk'
     runs-on: self-hosted-ubuntu-small-amd64
+    # one run at a time per staging repo, so commits land on the branch in main order
+    concurrency:
+      group: mirror-${{ matrix.repo }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +42,7 @@ jobs:
     env:
       SHA: ${{ inputs.sha || github.sha }}
       STAGING_REPO: langchain-ai/${{ matrix.repo }}
+      BRANCH: ${{ inputs.branch || 'mirror/langsmith-sdk' }}
     steps:
       - name: Checkout langsmith-sdk
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -90,6 +96,19 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: true
 
+      - name: Continue the open mirror branch, or start one from main
+        if: steps.gate.outputs.run == 'true'
+        working-directory: staging
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          open_pr=$(gh pr list --repo "$STAGING_REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
+          if [ -n "$open_pr" ] && git fetch origin "$BRANCH"; then
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -B "$BRANCH"
+          fi
+
       - name: Rewrite and apply the patch
         if: steps.gate.outputs.run == 'true'
         id: apply
@@ -106,20 +125,17 @@ jobs:
           path: out/
 
       - name: Commit and push the mirror branch
-        if: (steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict')
-        id: push
+        if: steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict'
         working-directory: staging
         env:
           SUBJECT: ${{ steps.gate.outputs.subject }}
           AUTHOR: ${{ steps.gate.outputs.author }}
-          BRANCH: ${{ inputs.branch || format('mirror/langsmith-sdk-{0}', env.SHA) }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit --author="$AUTHOR" -m "$SUBJECT" -m "Mirrored from langchain-ai/langsmith-sdk@$SHA"
-          git push --force origin "HEAD:refs/heads/$BRANCH"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
 
       - name: Open or update the PR
         id: pr
@@ -127,17 +143,19 @@ jobs:
         working-directory: staging
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          BRANCH: ${{ steps.push.outputs.branch }}
-          SUBJECT: ${{ steps.gate.outputs.subject }}
           SOURCE_PR: ${{ steps.gate.outputs.pr }}
           STATUS: ${{ steps.apply.outputs.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
-            echo "Mirror of langchain-ai/langsmith-sdk@$SHA${SOURCE_PR:+ (langchain-ai/langsmith-sdk#$SOURCE_PR)}."
+            echo "Mirrored langsmith-sdk merges, oldest first. Merge as one; the next merge to langsmith-sdk lands on top."
+            echo
+            git log --reverse origin/main..HEAD --format='- %s'
+            echo
+            echo "## Latest: langchain-ai/langsmith-sdk@$SHA${SOURCE_PR:+ (langchain-ai/langsmith-sdk#$SOURCE_PR)}"
             echo
             if [ "$STATUS" = conflict ]; then
-              echo "**Needs manual merge**: some hunks conflicted or did not apply. The rewritten patch is in the [workflow run]($RUN_URL) artifacts."
+              echo "**Needs manual merge**: some hunks conflicted or did not apply. Fix on this branch. The rewritten patch is in the [workflow run]($RUN_URL) artifacts."
               echo
             fi
             cat ../out/summary.md
@@ -152,19 +170,14 @@ jobs:
           existing=$(gh pr list --repo "$STAGING_REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
           if [ -z "$existing" ]; then
             gh pr create --repo "$STAGING_REPO" --base main --head "$BRANCH" \
-              --title "$SUBJECT" --body-file ../out/body.md --label "$labels"
+              --title "Mirror langsmith-sdk merges" --body-file ../out/body.md --label "$labels"
           else
-            gh pr edit "$existing" --repo "$STAGING_REPO" --body-file ../out/body.md
-            if [ "$STATUS" = conflict ]; then
-              gh pr edit "$existing" --repo "$STAGING_REPO" --add-label needs-manual-merge
-            else
-              gh pr edit "$existing" --repo "$STAGING_REPO" --remove-label needs-manual-merge || true
-            fi
+            gh pr edit "$existing" --repo "$STAGING_REPO" --body-file ../out/body.md --add-label "$labels"
           fi
           echo "url=$(gh pr view "$BRANCH" --repo "$STAGING_REPO" --json url --jq .url)" >> "$GITHUB_OUTPUT"
 
-      - name: Ping Thibaut on Slack to merge it
-        if: steps.pr.outputs.url != ''
+      - name: Ping Thibaut on Slack
+        if: steps.pr.outputs.url != '' || steps.apply.outputs.status == 'manual'
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           method: chat.postMessage
@@ -173,5 +186,6 @@ jobs:
           payload: |
             channel: "C0ACMB2JWV8"
             text: |
-              <@U0BSQM2BQJ3> mirror PR to merge (${{ steps.apply.outputs.status }}): ${{ steps.pr.outputs.url }}
+              <@U0BSQM2BQJ3> ${{ matrix.repo }}: ${{ steps.apply.outputs.status == 'manual' && 'manual port needed, see the run summary' || format('mirror PR updated ({0}): {1}', steps.apply.outputs.status, steps.pr.outputs.url) }}
               Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ env.SHA }}
+              Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

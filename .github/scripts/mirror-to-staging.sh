@@ -38,7 +38,7 @@ list() { if (($#)); then printf -- '- `%s`\n' "$@"; else echo "- none"; fi; }
 if ((${#rewrite[@]} == 0)); then
   { echo "## Dropped (generated client, synced separately)"; list ${dropped[@]+"${dropped[@]}"}
     echo; echo "## Needs manual port"; list ${manual[@]+"${manual[@]}"}; } > "$out/summary.md"
-  echo noop > "$out/status"; exit 0
+  if ((${#manual[@]})); then echo manual > "$out/status"; else echo noop > "$out/status"; fi; exit 0
 fi
 
 git diff --binary --full-index --no-renames "$sha^" "$sha" -- "${rewrite[@]}" \
