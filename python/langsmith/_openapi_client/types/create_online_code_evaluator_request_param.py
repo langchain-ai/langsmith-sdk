@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Dict, Optional
-from typing_extensions import TypedDict
+from typing_extensions import Literal, TypedDict
 
 __all__ = ["CreateOnlineCodeEvaluatorRequestParam", "ManagedCodeEvaluatorSettings"]
 
@@ -24,7 +24,7 @@ class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
     language: str
     """Default: "python" """
 
-    managed_code_evaluator_key: str
+    managed_code_evaluator_key: Literal["voice_metrics"]
 
     managed_code_evaluator_settings: Dict[str, ManagedCodeEvaluatorSettings]
 

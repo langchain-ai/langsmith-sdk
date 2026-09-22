@@ -133,7 +133,7 @@ export interface CreateOnlineCodeEvaluatorRequest {
    */
   language?: string;
 
-  managed_code_evaluator_key?: string;
+  managed_code_evaluator_key?: 'voice_metrics';
 
   managed_code_evaluator_settings?: {
     [key: string]: CreateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
@@ -207,7 +207,7 @@ export interface OnlineCodeEvaluator {
    */
   language?: string;
 
-  managed_code_evaluator_key?: string;
+  managed_code_evaluator_key?: 'voice_metrics';
 
   managed_code_evaluator_settings?: { [key: string]: OnlineCodeEvaluator.ManagedCodeEvaluatorSettings };
 

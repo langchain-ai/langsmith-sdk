@@ -30,7 +30,7 @@ class OnlineCodeEvaluator(BaseModel):
     language: Optional[str] = None
     """Default: "python" """
 
-    managed_code_evaluator_key: Optional[str] = None
+    managed_code_evaluator_key: Optional[Literal["voice_metrics"]] = None
 
     managed_code_evaluator_settings: Optional[Dict[str, ManagedCodeEvaluatorSettings]] = None
 
