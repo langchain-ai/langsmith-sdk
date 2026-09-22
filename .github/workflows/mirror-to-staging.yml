@@ -122,6 +122,7 @@ jobs:
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Open or update the PR
+        id: pr
         if: (steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict') && inputs.branch == ''
         working-directory: staging
         env:
@@ -160,3 +161,17 @@ jobs:
               gh pr edit "$existing" --repo "$STAGING_REPO" --remove-label needs-manual-merge || true
             fi
           fi
+          echo "url=$(gh pr view "$BRANCH" --repo "$STAGING_REPO" --json url --jq .url)" >> "$GITHUB_OUTPUT"
+
+      - name: Ping Thibaut on Slack to merge it
+        if: steps.pr.outputs.url != ''
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.INGESTION_CI_BOT_TOKEN }}
+          errors: true
+          payload: |
+            channel: "C0ACMB2JWV8"
+            text: |
+              <@U0BSQM2BQJ3> mirror PR to merge (${{ steps.apply.outputs.status }}): ${{ steps.pr.outputs.url }}
+              Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ env.SHA }}
