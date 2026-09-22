@@ -2,7 +2,8 @@ name: Mirror to staging
 
 # Every merge to main touching python/ or js/ is committed onto one cumulative
 # branch per staging repo (langsmith-python-staging, langsmith-javascript-staging),
-# with paths rewritten, and kept as a single open PR until merged.
+# with paths rewritten, and kept as a single open PR until merged. Each run replays
+# everything since the sha in staging/.mirror-source, so a cancelled run loses nothing.
 # Rewrite rules live in .github/scripts/mirror-to-staging.sh. Linear: LIN-504.
 
 on:
@@ -14,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "langsmith-sdk commit to mirror"
+        description: "Mirror langsmith-sdk commits up to this sha"
         required: true
       branch:
         description: "Dry run: push to this staging branch and skip the PR"
@@ -50,24 +51,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Decide whether this commit is worth mirroring
-        id: gate
-        run: |
-          author=$(git log -1 --format=%an "$SHA")
-          subject=$(git log -1 --format=%s "$SHA")
-          if [ "$author" = "langtions-bot[bot]" ]; then
-            echo "skip: generated-client sync commit"; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          case "$subject" in
-            release\(*) echo "skip: release commit, staging releases with release-please"; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
-          esac
-          echo "run=true" >> "$GITHUB_OUTPUT"
-          echo "subject=$subject" >> "$GITHUB_OUTPUT"
-          echo "author=$(git log -1 --format='%an <%ae>' "$SHA")" >> "$GITHUB_OUTPUT"
-          echo "pr=$(printf '%s' "$subject" | grep -oE '\(#[0-9]+\)$' | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
-
       - name: Load GitHub App key from 1Password
-        if: steps.gate.outputs.run == 'true'
         id: load-gh-app-secrets
         uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
         with:
@@ -78,7 +62,6 @@ jobs:
           LANGCHAINPLUS_GITHUB_APP_PRIVATE_KEY: op://${{ secrets.INTERNAL_INFRA_OP_VAULT }}/langchain-actions-pr-bot/private_key
 
       - name: Generate GitHub App token
-        if: steps.gate.outputs.run == 'true'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
@@ -87,7 +70,6 @@ jobs:
           repositories: langsmith-python-staging,langsmith-javascript-staging
 
       - name: Checkout ${{ matrix.repo }}
-        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ env.STAGING_REPO }}
@@ -97,25 +79,26 @@ jobs:
           persist-credentials: true
 
       - name: Continue the open mirror branch, or start one from main
-        if: steps.gate.outputs.run == 'true'
         working-directory: staging
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
+          git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
           open_pr=$(gh pr list --repo "$STAGING_REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
-          if [ -n "$open_pr" ] && git fetch origin "$BRANCH"; then
-            git checkout -B "$BRANCH" FETCH_HEAD
+          if [ -n "$open_pr" ] && git rev-parse -q --verify "origin/$BRANCH" >/dev/null; then
+            git checkout -B "$BRANCH" "origin/$BRANCH"
           else
             git checkout -B "$BRANCH"
           fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Rewrite and apply the patch
-        if: steps.gate.outputs.run == 'true'
+      - name: Mirror every commit since the last mirrored one
         id: apply
         run: |
-          .github/scripts/mirror-to-staging.sh "${{ matrix.lang }}" "$SHA" staging out
+          .github/scripts/mirror-since.sh "${{ matrix.lang }}" "$SHA" staging out
           echo "status=$(cat out/status)" >> "$GITHUB_OUTPUT"
-          cat out/summary.md
+          cat out/body.md
 
       - name: Keep the rewritten patch for failed hunks
         if: steps.apply.outputs.status == 'conflict'
@@ -124,18 +107,10 @@ jobs:
           name: mirror-${{ matrix.lang }}-${{ env.SHA }}
           path: out/
 
-      - name: Commit and push the mirror branch
+      - name: Push the mirror branch
         if: steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict'
         working-directory: staging
-        env:
-          SUBJECT: ${{ steps.gate.outputs.subject }}
-          AUTHOR: ${{ steps.gate.outputs.author }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit --author="$AUTHOR" -m "$SUBJECT" -m "Mirrored from langchain-ai/langsmith-sdk@$SHA"
-          git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
+        run: git push --force-with-lease="$BRANCH" origin "HEAD:refs/heads/$BRANCH"
 
       - name: Open or update the PR
         id: pr
@@ -143,7 +118,6 @@ jobs:
         working-directory: staging
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          SOURCE_PR: ${{ steps.gate.outputs.pr }}
           STATUS: ${{ steps.apply.outputs.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -152,13 +126,11 @@ jobs:
             echo
             git log --reverse origin/main..HEAD --format='- %s'
             echo
-            echo "## Latest: langchain-ai/langsmith-sdk@$SHA${SOURCE_PR:+ (langchain-ai/langsmith-sdk#$SOURCE_PR)}"
-            echo
             if [ "$STATUS" = conflict ]; then
               echo "**Needs manual merge**: some hunks conflicted or did not apply. Fix on this branch. The rewritten patch is in the [workflow run]($RUN_URL) artifacts."
               echo
             fi
-            cat ../out/summary.md
+            echo "## This run"; echo; cat ../out/body.md
           } > ../out/body.md
 
           gh label create needs-manual-merge --repo "$STAGING_REPO" --color d93f0b \
