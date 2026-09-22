@@ -131,7 +131,7 @@ jobs:
               echo
             fi
             echo "## This run"; echo; cat ../out/body.md
-          } > ../out/body.md
+          } > ../out/pr.md
 
           gh label create needs-manual-merge --repo "$STAGING_REPO" --color d93f0b \
             --description "Mirrored patch conflicted; resolve by hand" --force
@@ -142,9 +142,9 @@ jobs:
           existing=$(gh pr list --repo "$STAGING_REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
           if [ -z "$existing" ]; then
             gh pr create --repo "$STAGING_REPO" --base main --head "$BRANCH" \
-              --title "Mirror langsmith-sdk merges" --body-file ../out/body.md --label "$labels"
+              --title "Mirror langsmith-sdk merges" --body-file ../out/pr.md --label "$labels"
           else
-            gh pr edit "$existing" --repo "$STAGING_REPO" --body-file ../out/body.md --add-label "$labels"
+            gh pr edit "$existing" --repo "$STAGING_REPO" --body-file ../out/pr.md --add-label "$labels"
           fi
           echo "url=$(gh pr view "$BRANCH" --repo "$STAGING_REPO" --json url --jq .url)" >> "$GITHUB_OUTPUT"
 
