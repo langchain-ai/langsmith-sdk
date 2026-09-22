@@ -970,7 +970,7 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }
@@ -1220,7 +1220,7 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }
