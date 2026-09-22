@@ -6677,27 +6677,6 @@ def test_list_runs_child_run_ids_deprecation_warning(
     assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
-@mock.patch("langsmith.client.requests.Session")
-def test_list_runs_default_select_includes_s3_urls(
-    mock_session_cls: mock.Mock,
-) -> None:
-    """run.attachments is built from s3_urls; the server only returns it when selected."""
-    mock_session = mock.Mock()
-    mock_session_cls.return_value = mock_session
-    mock_session.request.return_value.json.return_value = {"runs": []}
-
-    client = Client()
-    with pytest.warns(DeprecationWarning):
-        list(client.list_runs(project_id=uuid.uuid4()))
-
-    query_calls = [
-        c for c in mock_session.request.call_args_list if "/runs/query" in str(c)
-    ]
-    assert query_calls
-    body = json.loads(query_calls[0].kwargs["data"])
-    assert "s3_urls" in body["select"]
-
-
 def test_tracing_error_callback_on_429():
     """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
     mock_session = MagicMock()

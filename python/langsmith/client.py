@@ -4588,9 +4588,6 @@ class Client:
             "prompt_tokens",
             "reference_example_id",
             "run_type",
-            # Needed for run.attachments; the server only returns it when
-            # selected.
-            "s3_urls",
             "session_id",
             "start_time",
             "status",
