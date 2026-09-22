@@ -594,6 +594,7 @@ def instrument_claude_client(original_class: Any) -> None:
             collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
             prompt_for_llm: Any = self._ls_prompt
+            last_prompt = self._ls_prompt
 
             def _end_run() -> None:
                 main_collected = collected_by_ctx.get(None, [])
@@ -623,6 +624,20 @@ def instrument_claude_client(original_class: Any) -> None:
 
                         ctx_key = parent_tool_use_id
                         ctx_history = collected_by_ctx.setdefault(ctx_key, [])
+
+                        # A later query() on the same stream. The SDK does not
+                        # echo user prompts back as UserMessage, so record it
+                        # ourselves or the next LLM run has no user turn.
+                        if (
+                            parent_tool_use_id is None
+                            and self._ls_prompt
+                            and self._ls_prompt != last_prompt
+                        ):
+                            ctx_history.append(
+                                {"role": "user", "content": self._ls_prompt}
+                            )
+                            last_prompt = self._ls_prompt
+                            tracker.next_start_time = self._ls_start_time
 
                         content = tracker.start_llm_run(
                             msg,

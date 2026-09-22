@@ -1258,3 +1258,32 @@ class TestReceiveMessagesInstrumented:
         assert len(root_runs) == 1
         assert root_runs[0].error is None
         assert root_runs[0].end_time is not None
+
+    def test_later_query_on_same_loop_is_recorded(self, client_cls, root_runs):
+        """LSDK-531 part 1: a second query() inside one receive_messages() loop
+        must show up as a user turn in the next LLM run's inputs."""
+
+        async def main():
+            client = client_cls()
+            await client.query("turn 1")
+            stream = client.receive_messages()
+            results = 0
+            async for msg in stream:
+                if isinstance(msg, ResultMessage):
+                    results += 1
+                    if results == 1:
+                        await client.query("turn 2")
+                    else:
+                        break
+            await stream.aclose()
+
+        self._run(main())
+
+        assert len(root_runs) == 1
+        llm_runs = [c for c in root_runs[0].child_runs if c.run_type == "llm"]
+        assert len(llm_runs) == 2
+        assert llm_runs[1].inputs["messages"] == [
+            {"role": "user", "content": "turn 1"},
+            {"role": "assistant", "content": [{"type": "text", "text": "hi 1"}]},
+            {"role": "user", "content": "turn 2"},
+        ]
