@@ -27,7 +27,7 @@ permissions:
 jobs:
   mirror:
     if: github.repository == 'langchain-ai/langsmith-sdk'
-    runs-on: self-hosted-ubuntu-small-amd64
+    runs-on: ubuntu-latest
     # one run at a time per staging repo, so commits land on the branch in main order
     concurrency:
       group: mirror-${{ matrix.repo }}
@@ -51,22 +51,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Load GitHub App key from 1Password
-        id: load-gh-app-secrets
-        uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
-        with:
-          export-env: false
-        env:
-          OP_CONNECT_TOKEN: ${{ secrets.OP_CONNECT_TOKEN_INTERNAL }}
-          OP_CONNECT_HOST: ${{ secrets.OP_CONNECT_HOST }}
-          LANGCHAINPLUS_GITHUB_APP_PRIVATE_KEY: op://${{ secrets.INTERNAL_INFRA_OP_VAULT }}/langchain-actions-pr-bot/private_key
-
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: "Iv23liMFOFBcPTKFWi3S"
-          private-key: ${{ steps.load-gh-app-secrets.outputs.LANGCHAINPLUS_GITHUB_APP_PRIVATE_KEY }}
+          private-key: ${{ secrets.LANGCHAIN_ACTIONS_PR_BOT_PRIVATE_KEY }}
           repositories: langsmith-python-staging,langsmith-javascript-staging
 
       - name: Checkout ${{ matrix.repo }}
