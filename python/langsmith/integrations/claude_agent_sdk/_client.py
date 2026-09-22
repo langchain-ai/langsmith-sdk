@@ -594,7 +594,7 @@ def instrument_claude_client(original_class: Any) -> None:
             collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
             prompt_for_llm: Any = self._ls_prompt
-            last_prompt = self._ls_prompt
+            last_query_time = self._ls_start_time
 
             def _end_run() -> None:
                 main_collected = collected_by_ctx.get(None, [])
@@ -628,15 +628,17 @@ def instrument_claude_client(original_class: Any) -> None:
                         # A later query() on the same stream. The SDK does not
                         # echo user prompts back as UserMessage, so record it
                         # ourselves or the next LLM run has no user turn.
+                        # Keyed on the query() timestamp, not the prompt text,
+                        # so repeated identical prompts each count.
                         if (
                             parent_tool_use_id is None
                             and self._ls_prompt
-                            and self._ls_prompt != last_prompt
+                            and self._ls_start_time != last_query_time
                         ):
                             ctx_history.append(
                                 {"role": "user", "content": self._ls_prompt}
                             )
-                            last_prompt = self._ls_prompt
+                            last_query_time = self._ls_start_time
                             tracker.next_start_time = self._ls_start_time
 
                         content = tracker.start_llm_run(
