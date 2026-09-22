@@ -1,0 +1,163 @@
+name: Mirror to staging
+
+# Every merge to main touching python/ or js/ is committed onto one cumulative
+# branch per staging repo (langsmith-python-staging, langsmith-javascript-staging),
+# with paths rewritten, and kept as a single open PR until merged. Each run replays
+# everything since the sha in staging/.mirror-source, so a cancelled run loses nothing.
+# Rewrite rules live in .github/scripts/mirror-to-staging.sh. Linear: LIN-504.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - "js/**"
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Mirror langsmith-sdk commits up to this sha"
+        required: true
+      branch:
+        description: "Dry run: push to this staging branch and skip the PR"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository == 'langchain-ai/langsmith-sdk'
+    runs-on: self-hosted-ubuntu-small-amd64
+    # one run at a time per staging repo, so commits land on the branch in main order
+    concurrency:
+      group: mirror-${{ matrix.repo }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lang: python
+            repo: langsmith-python-staging
+          - lang: js
+            repo: langsmith-javascript-staging
+    env:
+      SHA: ${{ inputs.sha || github.sha }}
+      STAGING_REPO: langchain-ai/${{ matrix.repo }}
+      BRANCH: ${{ inputs.branch || 'mirror/langsmith-sdk' }}
+    steps:
+      - name: Checkout langsmith-sdk
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Load GitHub App key from 1Password
+        id: load-gh-app-secrets
+        uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
+        with:
+          export-env: false
+        env:
+          OP_CONNECT_TOKEN: ${{ secrets.OP_CONNECT_TOKEN_INTERNAL }}
+          OP_CONNECT_HOST: ${{ secrets.OP_CONNECT_HOST }}
+          LANGCHAINPLUS_GITHUB_APP_PRIVATE_KEY: op://${{ secrets.INTERNAL_INFRA_OP_VAULT }}/langchain-actions-pr-bot/private_key
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: "Iv23liMFOFBcPTKFWi3S"
+          private-key: ${{ steps.load-gh-app-secrets.outputs.LANGCHAINPLUS_GITHUB_APP_PRIVATE_KEY }}
+          repositories: langsmith-python-staging,langsmith-javascript-staging
+
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ env.STAGING_REPO }}
+          ref: main
+          path: staging
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+
+      - name: Continue the open mirror branch, or start one from main
+        working-directory: staging
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
+          open_pr=$(gh pr list --repo "$STAGING_REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
+          if [ -n "$open_pr" ] && git rev-parse -q --verify "origin/$BRANCH" >/dev/null; then
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+          else
+            git checkout -B "$BRANCH"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Mirror every commit since the last mirrored one
+        id: apply
+        run: |
+          .github/scripts/mirror-since.sh "${{ matrix.lang }}" "$SHA" staging out
+          echo "status=$(cat out/status)" >> "$GITHUB_OUTPUT"
+          cat out/body.md
+
+      - name: Keep the rewritten patch for failed hunks
+        if: steps.apply.outputs.status == 'conflict'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: mirror-${{ matrix.lang }}-${{ env.SHA }}
+          path: out/
+
+      - name: Push the mirror branch
+        if: steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict'
+        working-directory: staging
+        run: git push --force-with-lease="$BRANCH" origin "HEAD:refs/heads/$BRANCH"
+
+      - name: Open or update the PR
+        id: pr
+        if: (steps.apply.outputs.status == 'clean' || steps.apply.outputs.status == 'conflict') && inputs.branch == ''
+        working-directory: staging
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          STATUS: ${{ steps.apply.outputs.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Mirrored langsmith-sdk merges, oldest first. Merge as one; the next merge to langsmith-sdk lands on top."
+            echo
+            git log --reverse origin/main..HEAD --format='- %s'
+            echo
+            if [ "$STATUS" = conflict ]; then
+              echo "**Needs manual merge**: some hunks conflicted or did not apply. Fix on this branch. The rewritten patch is in the [workflow run]($RUN_URL) artifacts."
+              echo
+            fi
+            echo "## This run"; echo; cat ../out/body.md
+          } > ../out/pr.md
+
+          gh label create needs-manual-merge --repo "$STAGING_REPO" --color d93f0b \
+            --description "Mirrored patch conflicted; resolve by hand" --force
+          gh label create mirror --repo "$STAGING_REPO" --color 0075ca \
+            --description "Mirrored from langsmith-sdk" --force
+
+          labels=mirror; [ "$STATUS" = conflict ] && labels=mirror,needs-manual-merge
+          existing=$(gh pr list --repo "$STAGING_REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
+          if [ -z "$existing" ]; then
+            gh pr create --repo "$STAGING_REPO" --base main --head "$BRANCH" \
+              --title "Mirror langsmith-sdk merges" --body-file ../out/pr.md --label "$labels"
+          else
+            gh pr edit "$existing" --repo "$STAGING_REPO" --body-file ../out/pr.md --add-label "$labels"
+          fi
+          echo "url=$(gh pr view "$BRANCH" --repo "$STAGING_REPO" --json url --jq .url)" >> "$GITHUB_OUTPUT"
+
+      - name: Ping Thibaut on Slack
+        if: steps.pr.outputs.url != '' || steps.apply.outputs.status == 'manual'
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.INGESTION_CI_BOT_TOKEN }}
+          errors: true
+          payload: |
+            channel: "C0ACMB2JWV8"
+            text: |
+              <@U0BSQM2BQJ3> ${{ matrix.repo }}: ${{ steps.apply.outputs.status == 'manual' && 'manual port needed, see the run summary' || format('mirror PR updated ({0}): {1}', steps.apply.outputs.status, steps.pr.outputs.url) }}
+              Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ env.SHA }}
+              Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

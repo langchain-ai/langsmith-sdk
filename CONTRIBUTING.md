@@ -12,6 +12,10 @@ Updates are applied automatically by the [`stlc_sync_python_and_js_sdks`](https:
 
 For the full end-to-end process — how the spec is generated, how the sync PRs are produced, and how to review and land them — see [Releasing the SDKs](https://github.com/langchain-ai/langchainplus/tree/main/smith-sdks#releasing-the-sdks) in `langchain-ai/langchainplus` (internal).
 
+## Merges are mirrored to the staging repos
+
+Every merge to `main` touching `python/` or `js/` is mirrored by [`mirror-to-staging.yml`](.github/workflows/mirror-to-staging.yml) onto one open PR in [langsmith-python-staging](https://github.com/langchain-ai/langsmith-python-staging) or [langsmith-javascript-staging](https://github.com/langchain-ai/langsmith-javascript-staging), with paths rewritten. Those repos are the future home of the SDKs: open new work there when you can. `pyproject.toml`, `package.json` and lockfile changes are not mirrored and need a manual port.
+
 ## Cutting a release
 
 Releases are published by GitHub Actions workflows that fire on `main` when specific files change:
