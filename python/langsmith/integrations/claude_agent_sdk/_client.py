@@ -715,7 +715,10 @@ def instrument_claude_client(original_class: Any) -> None:
                 )
                 _end_run()
             except Exception:
+                # Let the SDK error reach the caller. The trace() context
+                # manager records it on the root run on the way out.
                 logger.exception("Error while tracing Claude Agent stream")
+                raise
             finally:
                 self._ls_stream_active = False
                 tracker.close()

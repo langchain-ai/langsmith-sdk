@@ -1221,6 +1221,31 @@ class TestReceiveMessagesInstrumented:
         assert run.outputs["content"] == [{"type": "text", "text": "hi 1"}]
         assert [c.run_type for c in run.child_runs] == ["llm"]
 
+    def test_stream_errors_propagate(self, root_runs):
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+
+        class Failing(FakeSDKClient):
+            async def receive_messages(self):
+                yield AssistantMessage("hi", "msg_1")
+                raise RuntimeError("transport died")
+
+        instrument_claude_client(Failing)
+
+        async def main():
+            client = Failing()
+            await client.query("say hi")
+            async for _ in client.receive_messages():
+                pass
+
+        with pytest.raises(RuntimeError, match="transport died"):
+            self._run(main())
+
+        assert len(root_runs) == 1
+        assert "transport died" in (root_runs[0].error or "")
+        assert root_runs[0].end_time is not None
+
     def test_receive_response_not_double_traced(self, client_cls, root_runs):
         async def main():
             client = client_cls()
