@@ -34,6 +34,14 @@ from langsmith.sandbox._access_delegation import (
 )
 from langsmith.sandbox._async_client import AsyncSandboxClient
 from langsmith.sandbox._async_sandbox import AsyncSandbox
+from langsmith.sandbox._callback_verifier import (
+    SANDBOX_CALLBACK_SIGNATURE_HEADER,
+    SANDBOX_CALLBACK_SUBJECT,
+    SandboxCallbackClaims,
+    SandboxCallbackIdentity,
+    SandboxCallbackVerificationError,
+    SandboxCallbackVerifier,
+)
 from langsmith.sandbox._client import SandboxClient
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
@@ -125,6 +133,13 @@ __all__ = [
     "AsyncSandboxClient",
     "Sandbox",
     "AsyncSandbox",
+    # Callback verification
+    "SANDBOX_CALLBACK_SIGNATURE_HEADER",
+    "SANDBOX_CALLBACK_SUBJECT",
+    "SandboxCallbackClaims",
+    "SandboxCallbackIdentity",
+    "SandboxCallbackVerifier",
+    "SandboxCallbackVerificationError",
     # Models
     "ResourceStatus",
     "ExecutionResult",
