@@ -3,13 +3,18 @@
 import logging
 import time
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langsmith._internal import _context
 from langsmith._internal._package_version import get_package_version
-from langsmith.run_helpers import get_current_run_tree, trace
+from langsmith.run_helpers import (
+    _set_tracing_context,
+    get_current_run_tree,
+    get_tracing_context,
+    trace,
+)
 
 from ._config import get_tracing_config
 from ._hooks import (
@@ -480,7 +485,6 @@ def instrument_claude_client(original_class: Any) -> None:
     # ── stash originals ──────────────────────────────────────────────
     _orig_init = original_class.__init__
     _orig_query = original_class.query
-    _orig_receive_response = original_class.receive_response
     _orig_receive_messages = original_class.receive_messages
 
     # ── patched __init__ ─────────────────────────────────────────────
@@ -523,8 +527,8 @@ def instrument_claude_client(original_class: Any) -> None:
 
         return await _orig_query(self, *args, **kwargs)
 
-    # ── shared wrapper for receive_response / receive_messages ───────
-    async def _traced_stream(
+    # Trace one response, ending before its ResultMessage reaches the caller.
+    async def _traced_response(
         self: Any, messages: AsyncIterable[Any]
     ) -> AsyncGenerator[Any, None]:
         trace_inputs: dict[str, Any] = {}
@@ -578,7 +582,16 @@ def instrument_claude_client(original_class: Any) -> None:
         if config.get("tags"):
             trace_kwargs["tags"] = config["tags"]
 
+        caller_context = get_tracing_context()
+        caller_session = _current_session.get()
+        caller_parent = get_parent_run_tree()
+        result_message = None
         async with trace(**trace_kwargs) as run:
+            # Include the wait for the first message in the response duration.
+            if self._ls_start_time is not None:
+                run.start_time = datetime.fromtimestamp(
+                    self._ls_start_time, tz=timezone.utc
+                )
             # Bind this client's state container to the ContextVar so stream
             # helpers on this SDK event loop pick it up (see
             # _hooks.SessionState). This keeps concurrent ClaudeSDKClient
@@ -599,7 +612,6 @@ def instrument_claude_client(original_class: Any) -> None:
                 main_collected = collected_by_ctx.get(None, [])
                 run.end(outputs=main_collected[-1] if main_collected else None)
 
-            self._ls_stream_active = True
             try:
                 async for msg in messages:
                     if awaiting_streamed_input and self._ls_streamed_input:
@@ -704,12 +716,26 @@ def instrument_claude_client(original_class: Any) -> None:
                         }
                         if meta:
                             run.metadata.update(meta)
+                        # Finish the trace before delivering the final message.
+                        result_message = msg
+                        break
 
-                    yield msg
+                    # Restore the caller's context while yielding so application
+                    # work doesn't become part of this response's trace.
+                    stream_context = get_tracing_context()
+                    _set_tracing_context(caller_context)
+                    _current_session.set(caller_session)
+                    set_parent_run_tree(caller_parent)
+                    try:
+                        yield msg
+                    finally:
+                        # Resume processing or cleanup in the response's context.
+                        _set_tracing_context(stream_context)
+                        _current_session.set(session)
+                        set_parent_run_tree(run)
                 _end_run()
             except GeneratorExit:
-                # Consumer stopped iterating early. This is the normal exit
-                # for receive_messages(), which only ends on disconnect.
+                # Consumer closed the stream before a ResultMessage arrived.
                 logger.debug(
                     "Claude Agent stream closed by consumer; ending run %s", run.id
                 )
@@ -720,7 +746,6 @@ def instrument_claude_client(original_class: Any) -> None:
                 logger.exception("Error while tracing Claude Agent stream")
                 raise
             finally:
-                self._ls_stream_active = False
                 tracker.close()
                 reconcile_from_transcripts(tracker, session=session)
                 tracker.flush()
@@ -730,18 +755,36 @@ def instrument_claude_client(original_class: Any) -> None:
                 finally:
                     _unregister_session(session, session_token)
 
-    def _traced_receive_response(self: Any) -> AsyncGenerator[Any, None]:
-        return _traced_stream(self, _orig_receive_response(self))
+        if result_message is not None:
+            yield result_message
 
-    def _traced_receive_messages(self: Any) -> AsyncGenerator[Any, None]:
-        if getattr(self, "_ls_stream_active", False):
-            return _orig_receive_messages(self)
-        return _traced_stream(self, _orig_receive_messages(self))
+    async def _response_messages(
+        first: Any, messages: AsyncIterator[Any]
+    ) -> AsyncGenerator[Any, None]:
+        # Include the first message already consumed by the outer loop.
+        yield first
+        async for msg in messages:
+            yield msg
+
+    async def _traced_receive_messages(self: Any) -> AsyncGenerator[Any, None]:
+        messages = _orig_receive_messages(self)
+        try:
+            # Wait for a message to avoid creating traces for idle connections.
+            async for first in messages:
+                # One trace per response, ending at ResultMessage.
+                response = _traced_response(self, _response_messages(first, messages))
+                try:
+                    async for msg in response:
+                        yield msg
+                finally:
+                    await response.aclose()
+        finally:
+            await messages.aclose()
 
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init
     original_class.query = _traced_query
-    original_class.receive_response = _traced_receive_response
+    # receive_response() delegates here, so it needs no separate patch.
     original_class.receive_messages = _traced_receive_messages
     original_class._langsmith_instrumented = True
 

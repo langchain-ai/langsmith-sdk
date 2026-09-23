@@ -1206,9 +1206,8 @@ class TestReceiveMessagesInstrumented:
             async for msg in stream:
                 if isinstance(msg, ResultMessage):
                     break
-            # asyncio finalises abandoned async generators on a later loop
-            # iteration; close explicitly so the root run is ended before we
-            # assert (real apps keep the loop alive, so it happens naturally).
+            # Completion must not depend on closing the suspended generator.
+            assert root_runs[0].end_time is not None
             await stream.aclose()
 
         self._run(main())
@@ -1258,3 +1257,147 @@ class TestReceiveMessagesInstrumented:
         assert len(root_runs) == 1
         assert root_runs[0].error is None
         assert root_runs[0].end_time is not None
+
+    @pytest.mark.parametrize("method", ["receive_messages", "receive_response"])
+    def test_result_ends_run_before_yield(self, client_cls, root_runs, method):
+        from langsmith.run_helpers import get_current_run_tree, trace
+
+        async def main():
+            client = client_cls()
+            with trace("caller") as parent:
+                for prompt in ("first", "second"):
+                    await client.query(prompt)
+                    stream = getattr(client, method)()
+                    async for msg in stream:
+                        assert get_current_run_tree() is parent
+                        if isinstance(msg, ResultMessage):
+                            run = root_runs[-1]
+                            assert run.end_time is not None
+                            assert run.error is None
+                            assert run.parent_run_id == parent.id
+                            assert run.inputs["prompt"] == prompt
+                            assert (
+                                abs(run.start_time.timestamp() - client._ls_start_time)
+                                < 0.001
+                            )
+                            assert all(c.end_time is not None for c in run.child_runs)
+                            break
+                    await stream.aclose()
+                assert len(root_runs) == 2
+                parent.end()
+
+        self._run(main())
+
+    def test_multiple_responses_in_one_stream(self, client_cls, root_runs):
+        from langsmith.run_helpers import get_current_run_tree
+
+        async def main():
+            client = client_cls()
+            await client.query("first")
+            stream = client.receive_messages()
+            async for msg in stream:
+                assert get_current_run_tree() is None
+                if isinstance(msg, ResultMessage):
+                    assert root_runs[-1].end_time is not None
+                    if len(root_runs) == 1:
+                        await client.query("second")
+                    else:
+                        break
+            await stream.aclose()
+
+        self._run(main())
+        assert len(root_runs) == 2
+        for run, prompt in zip(root_runs, ["first", "second"]):
+            assert run.parent_run_id is None
+            assert run.inputs["prompt"] == prompt
+            assert run.metadata["thread_id"] == "sess_1"
+            assert len(run.child_runs) == 1
+            assert run.child_runs[0].inputs["messages"][0]["content"] == prompt
+
+    def test_early_close_restores_context(self, client_cls, root_runs):
+        from langsmith.run_helpers import get_current_run_tree
+
+        async def main():
+            client = client_cls()
+            await client.query("first")
+            stream = client.receive_messages()
+            await stream.__anext__()
+            assert get_current_run_tree() is None
+            await stream.aclose()
+            assert root_runs[0].end_time is not None
+            assert root_runs[0].error is None
+            assert get_current_run_tree() is None
+
+        self._run(main())
+
+    def test_receive_response_is_not_patched(self, client_cls):
+        assert client_cls.receive_response is FakeSDKClient.receive_response
+
+    @pytest.mark.parametrize("with_result", [False, True])
+    def test_finite_stream_closes_without_extra_run(self, root_runs, with_result):
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+
+        closed = []
+
+        class Finite(FakeSDKClient):
+            async def receive_messages(self):
+                try:
+                    yield AssistantMessage("hi", "msg_1")
+                    if with_result:
+                        yield ResultMessage()
+                finally:
+                    closed.append(True)
+
+        instrument_claude_client(Finite)
+
+        async def main():
+            client = Finite()
+            await client.query("hi")
+            async for _ in client.receive_messages():
+                pass
+
+        self._run(main())
+        assert closed == [True]
+        assert len(root_runs) == 1
+        assert root_runs[0].end_time is not None
+        assert root_runs[0].error is None
+
+    def test_tool_hooks_attach_to_each_response(self, root_runs):
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+
+        class WithTools(FakeSDKClient):
+            async def receive_messages(self):
+                for i in range(2):
+                    yield AssistantMessage("calling tool", f"msg_{i}")
+                    await pre_tool_use_hook(
+                        {"tool_name": "Bash", "tool_input": {"command": "echo hi"}},
+                        f"tool_{i}",
+                        MagicMock(),
+                    )
+                    await post_tool_use_hook(
+                        {"tool_name": "Bash", "tool_response": "hi"},
+                        f"tool_{i}",
+                        MagicMock(),
+                    )
+                    yield ResultMessage()
+
+        instrument_claude_client(WithTools)
+
+        async def main():
+            client = WithTools()
+            await client.query("first")
+            async for msg in client.receive_messages():
+                if isinstance(msg, ResultMessage):
+                    await client.query("second")
+
+        self._run(main())
+        assert len(root_runs) == 2
+        for run in root_runs:
+            tools = [child for child in run.child_runs if child.run_type == "tool"]
+            assert len(tools) == 1
+            assert tools[0].end_time is not None
+            assert tools[0].error is None
