@@ -4,6 +4,7 @@ import logging
 import time
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
+from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -716,7 +717,8 @@ def instrument_claude_client(original_class: Any) -> None:
                         }
                         if meta:
                             run.metadata.update(meta)
-                        # Finish the trace before delivering the final message.
+                        # Stop this response's loop, then end the run and clean up.
+                        # Yield ResultMessage only after that cleanup completes.
                         result_message = msg
                         break
 
@@ -756,30 +758,40 @@ def instrument_claude_client(original_class: Any) -> None:
                     _unregister_session(session, session_token)
 
         if result_message is not None:
+            # The caller may stop reading here; the trace is already finished.
             yield result_message
 
-    async def _response_messages(
+    async def _prepend_message(
         first: Any, messages: AsyncIterator[Any]
     ) -> AsyncGenerator[Any, None]:
-        # Include the first message already consumed by the outer loop.
+        """Put back the first message into the async iterator so it can be processed."""
         yield first
         async for msg in messages:
             yield msg
 
     async def _traced_receive_messages(self: Any) -> AsyncGenerator[Any, None]:
-        messages = _orig_receive_messages(self)
-        try:
-            # Wait for a message to avoid creating traces for idle connections.
-            async for first in messages:
-                # One trace per response, ending at ResultMessage.
-                response = _traced_response(self, _response_messages(first, messages))
-                try:
-                    async for msg in response:
+        # The SDK supplies messages, not response objects. ResultMessage marks
+        # each response boundary: [assistant, tool, ..., result] -> one trace.
+        # Both loops share one SDK iterator. The outer loop reads the first
+        # message of a response. The inner loop forwards that message and keeps
+        # reading until it has also forwarded ResultMessage, then stops.
+        # The outer loop then waits for the first message of the next response.
+        # aclosing closes each iterator when its block exits, including on errors.
+        async with aclosing(_orig_receive_messages(self)) as sdk_messages:
+            # Wait before opening a trace so an idle connection creates no run.
+            async for first_message in sdk_messages: # OUTER loop
+                # Include back the message as this loop already consumed it in the trace.
+                messages = _prepend_message(first_message, sdk_messages)
+                # Create the generator; its body has not run and no trace exists yet.
+                response = _traced_response(self, messages)
+                async with aclosing(response):
+                    # The first iteration starts _traced_response(), which enters
+                    # `async with trace(...)` to create the run, then processes
+                    # a message and yields it here. Later iterations resume that
+                    # same generator and run, rather than starting a new trace.
+                    async for msg in response:  # INNER loop
+                        # Forward each message to the application unchanged.
                         yield msg
-                finally:
-                    await response.aclose()
-        finally:
-            await messages.aclose()
 
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init

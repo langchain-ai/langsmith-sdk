@@ -1401,3 +1401,68 @@ class TestReceiveMessagesInstrumented:
             assert len(tools) == 1
             assert tools[0].end_time is not None
             assert tools[0].error is None
+
+    @pytest.mark.parametrize("ending", ["result", "exhaust", "error", "close"])
+    def test_caller_can_change_context_between_messages(self, root_runs, ending):
+        from langsmith.integrations.claude_agent_sdk._client import (
+            instrument_claude_client,
+        )
+        from langsmith.run_helpers import (
+            get_current_run_tree,
+            get_tracing_context,
+            trace,
+            tracing_context,
+        )
+
+        class ChangingContext(FakeSDKClient):
+            async def receive_messages(self):
+                yield AssistantMessage("first", "msg_1")
+                yield AssistantMessage("second", "msg_2")
+                if ending == "result":
+                    yield ResultMessage()
+                elif ending == "error":
+                    raise RuntimeError("transport died")
+
+        instrument_claude_client(ChangingContext)
+
+        async def main():
+            client = ChangingContext()
+            await client.query("hi")
+            with trace("outer") as outer:
+                stream = client.receive_messages()
+                await stream.__anext__()
+                assert get_current_run_tree() is outer
+                with trace("inner") as inner:
+                    with tracing_context(
+                        tags=["inner-tag"],
+                        metadata={"scope": "inner"},
+                        client=MagicMock(),
+                    ):
+                        expected = get_tracing_context()
+                        try:
+                            await stream.__anext__()
+                            assert get_tracing_context() == expected
+                            if ending == "result":
+                                assert isinstance(
+                                    await stream.__anext__(), ResultMessage
+                                )
+                            elif ending == "exhaust":
+                                with pytest.raises(StopAsyncIteration):
+                                    await stream.__anext__()
+                            elif ending == "error":
+                                with pytest.raises(
+                                    RuntimeError, match="transport died"
+                                ):
+                                    await stream.__anext__()
+                        finally:
+                            await stream.aclose()
+                        assert get_tracing_context() == expected
+                    inner.end()
+                assert get_current_run_tree() is outer
+                outer.end()
+
+        self._run(main())
+        assert len(root_runs) == 1
+        assert root_runs[0].end_time is not None
+        assert len(root_runs[0].child_runs) == 2
+        assert all(c.parent_run_id == root_runs[0].id for c in root_runs[0].child_runs)
