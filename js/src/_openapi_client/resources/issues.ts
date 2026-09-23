@@ -64,15 +64,27 @@ export interface Issue {
 
   first_seen_at?: string;
 
+  /**
+   * Legacy: branch of the oldest fix in the board's oldest connected repository.
+   */
   fix_branch?: string;
 
   fix_dispatched_at?: string;
 
   fix_pr_number?: number;
 
+  /**
+   * Issue-level: the problem every fix shares, and the last time a fix run was
+   * dispatched for this issue — one run works several fixes.
+   */
   fix_prompt?: string;
 
   fix_verification?: Issue.FixVerification;
+
+  /**
+   * Newest first.
+   */
+  fixes?: Array<Issue.Fix>;
 
   last_seen_at?: string;
 
@@ -308,6 +320,20 @@ export namespace Issue {
     status?: 'awaiting_preview' | 'verifying' | 'passed' | 'failed' | 'inconclusive' | 'timeout' | 'error';
 
     updated_at?: string;
+  }
+
+  export interface Fix {
+    id: string;
+
+    branch: string | null;
+
+    created_at: string;
+
+    pr_number: number | null;
+
+    repo_url: string;
+
+    updated_at: string;
   }
 
   export interface LinearContext {

@@ -17,6 +17,7 @@ __all__ = [
     "EvidenceSeriesMetricDefinitionNumeratorParams",
     "EvidenceSeriesMetricDefinitionParams",
     "FixVerification",
+    "Fix",
     "LinearContext",
     "LinearSync",
     "ValidationResult",
@@ -198,6 +199,20 @@ class FixVerification(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class Fix(BaseModel):
+    id: str
+
+    branch: Optional[str] = None
+
+    created_at: datetime
+
+    pr_number: Optional[int] = None
+
+    repo_url: str
+
+    updated_at: datetime
+
+
 class LinearContext(BaseModel):
     github_pr_urls: Optional[List[str]] = None
 
@@ -263,14 +278,22 @@ class Issue(BaseModel):
     first_seen_at: Optional[str] = None
 
     fix_branch: Optional[str] = None
+    """Legacy: branch of the oldest fix in the board's oldest connected repository."""
 
     fix_dispatched_at: Optional[str] = None
 
     fix_pr_number: Optional[int] = None
 
     fix_prompt: Optional[str] = None
+    """
+    Issue-level: the problem every fix shares, and the last time a fix run was
+    dispatched for this issue — one run works several fixes.
+    """
 
     fix_verification: Optional[FixVerification] = None
+
+    fixes: Optional[List[Fix]] = None
+    """Newest first."""
 
     last_seen_at: Optional[str] = None
 
