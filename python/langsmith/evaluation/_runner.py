@@ -957,6 +957,10 @@ def evaluate_comparative(
         executor: cf.Executor,
     ) -> tuple[uuid.UUID, ComparisonEvaluationResult]:
         feedback_group_id = uuid.uuid4()
+        # Every comparator for an example receives the same list, and scores are
+        # matched to runs after the comparator returns, so shuffle a copy: an
+        # in-place shuffle reorders the runs under comparators still running.
+        runs_list = list(runs_list)
         if randomize_order:
             random.shuffle(runs_list)
         with rh.tracing_context(project_name="evaluators", client=client):
