@@ -114,9 +114,15 @@ export namespace Issue {
   export interface FixVerification {
     attempt?: number;
 
+    baseline_experiment_id?: string;
+
+    dataset_id?: string;
+
     parent_deployment_id?: string;
 
     preview_deployment_id?: string;
+
+    preview_experiment_id?: string;
 
     reason?: string;
 
@@ -154,7 +160,11 @@ export namespace Issue {
   export interface ValidationResult {
     active_revision_id?: string;
 
+    baseline_experiment_id?: string;
+
     completed_at?: string;
+
+    dataset_id?: string;
 
     deployment_id?: string;
 

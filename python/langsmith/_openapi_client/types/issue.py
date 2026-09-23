@@ -12,9 +12,15 @@ __all__ = ["Issue", "FixVerification", "LinearContext", "LinearSync", "Validatio
 class FixVerification(BaseModel):
     attempt: Optional[int] = None
 
+    baseline_experiment_id: Optional[str] = None
+
+    dataset_id: Optional[str] = None
+
     parent_deployment_id: Optional[str] = None
 
     preview_deployment_id: Optional[str] = None
+
+    preview_experiment_id: Optional[str] = None
 
     reason: Optional[str] = None
 
@@ -54,7 +60,11 @@ class LinearSync(BaseModel):
 class ValidationResult(BaseModel):
     active_revision_id: Optional[str] = None
 
+    baseline_experiment_id: Optional[str] = None
+
     completed_at: Optional[datetime] = None
+
+    dataset_id: Optional[str] = None
 
     deployment_id: Optional[str] = None
 
