@@ -3,8 +3,8 @@
 import logging
 import time
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
-from contextlib import aclosing
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
+from contextlib import AsyncExitStack, aclosing, contextmanager
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -587,7 +587,33 @@ def instrument_claude_client(original_class: Any) -> None:
         caller_session = _current_session.get()
         caller_parent = get_parent_run_tree()
         result_message = None
-        async with trace(**trace_kwargs) as run:
+
+        def _restore_caller_context() -> None:
+            _set_tracing_context(caller_context)
+            _current_session.set(caller_session)
+            set_parent_run_tree(caller_parent)
+
+        @contextmanager
+        def _caller_scope() -> Iterator[None]:
+            """Yield in the caller's scope, preserving any changes made there."""
+            nonlocal caller_context, caller_session, caller_parent
+            response_context = get_tracing_context()
+            response_session = _current_session.get()
+            response_parent = get_parent_run_tree()
+            _restore_caller_context()
+            try:
+                yield
+            finally:
+                caller_context = get_tracing_context()
+                caller_session = _current_session.get()
+                caller_parent = get_parent_run_tree()
+                _set_tracing_context(response_context)
+                _current_session.set(response_session)
+                set_parent_run_tree(response_parent)
+
+        async with AsyncExitStack() as cleanup, trace(**trace_kwargs) as run:
+            # Restore the latest caller scope after trace restores its entry scope.
+            cleanup.callback(_restore_caller_context)
             # Include the wait for the first message in the response duration.
             if self._ls_start_time is not None:
                 run.start_time = datetime.fromtimestamp(
@@ -722,19 +748,9 @@ def instrument_claude_client(original_class: Any) -> None:
                         result_message = msg
                         break
 
-                    # Restore the caller's context while yielding so application
-                    # work doesn't become part of this response's trace.
-                    stream_context = get_tracing_context()
-                    _set_tracing_context(caller_context)
-                    _current_session.set(caller_session)
-                    set_parent_run_tree(caller_parent)
-                    try:
+                    # Application work must not inherit this response's trace.
+                    with _caller_scope():
                         yield msg
-                    finally:
-                        # Resume processing or cleanup in the response's context.
-                        _set_tracing_context(stream_context)
-                        _current_session.set(session)
-                        set_parent_run_tree(run)
                 _end_run()
             except GeneratorExit:
                 # Consumer closed the stream before a ResultMessage arrived.
@@ -779,8 +795,8 @@ def instrument_claude_client(original_class: Any) -> None:
         # aclosing closes each iterator when its block exits, including on errors.
         async with aclosing(_orig_receive_messages(self)) as sdk_messages:
             # Wait before opening a trace so an idle connection creates no run.
-            async for first_message in sdk_messages: # OUTER loop
-                # Include back the message as this loop already consumed it in the trace.
+            async for first_message in sdk_messages:  # OUTER loop
+                # Include the first message this loop already read in the trace.
                 messages = _prepend_message(first_message, sdk_messages)
                 # Create the generator; its body has not run and no trace exists yet.
                 response = _traced_response(self, messages)
