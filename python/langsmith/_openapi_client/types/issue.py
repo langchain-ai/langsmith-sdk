@@ -6,7 +6,172 @@ from typing_extensions import Literal
 
 from .._models import BaseModel
 
-__all__ = ["Issue", "FixVerification", "LinearContext", "LinearSync", "ValidationResult"]
+__all__ = [
+    "Issue",
+    "Evidence",
+    "EvidenceSeries",
+    "EvidenceSeriesMetricDefinition",
+    "EvidenceSeriesMetricDefinitionDenominator",
+    "EvidenceSeriesMetricDefinitionDenominatorParams",
+    "EvidenceSeriesMetricDefinitionNumerator",
+    "EvidenceSeriesMetricDefinitionNumeratorParams",
+    "EvidenceSeriesMetricDefinitionParams",
+    "FixVerification",
+    "LinearContext",
+    "LinearSync",
+    "ValidationResult",
+]
+
+
+class EvidenceSeriesMetricDefinitionDenominatorParams(BaseModel):
+    """required when type=percentile"""
+
+    bucket_count: Optional[int] = None
+
+    feedback_key: Optional[str] = None
+
+    p: Optional[float] = None
+
+
+class EvidenceSeriesMetricDefinitionDenominator(BaseModel):
+    type: Literal["count", "sum", "avg", "min", "max", "percentile", "ratio", "histogram"]
+    """An operand is non-composite, so ratio is rejected here too."""
+
+    entity: Optional[Literal["run", "feedback"]] = None
+    """Entity selects what a type=count metric counts.
+
+    Only valid when type=count; defaults to MetricEntityRun. entity=feedback
+    requires params.feedback_key and counts individual feedback records rather than
+    runs.
+    """
+
+    field: Optional[
+        Literal[
+            "latency_seconds",
+            "first_token_seconds",
+            "total_tokens",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_cost",
+            "prompt_cost",
+            "completion_cost",
+            "feedback_score",
+        ]
+    ] = None
+
+    filter: Optional[str] = None
+
+    params: Optional[EvidenceSeriesMetricDefinitionDenominatorParams] = None
+    """required when type=percentile"""
+
+
+class EvidenceSeriesMetricDefinitionNumeratorParams(BaseModel):
+    """required when type=percentile"""
+
+    bucket_count: Optional[int] = None
+
+    feedback_key: Optional[str] = None
+
+    p: Optional[float] = None
+
+
+class EvidenceSeriesMetricDefinitionNumerator(BaseModel):
+    """Numerator and Denominator are required when type=ratio."""
+
+    type: Literal["count", "sum", "avg", "min", "max", "percentile", "ratio", "histogram"]
+    """An operand is non-composite, so ratio is rejected here too."""
+
+    entity: Optional[Literal["run", "feedback"]] = None
+    """Entity selects what a type=count metric counts.
+
+    Only valid when type=count; defaults to MetricEntityRun. entity=feedback
+    requires params.feedback_key and counts individual feedback records rather than
+    runs.
+    """
+
+    field: Optional[
+        Literal[
+            "latency_seconds",
+            "first_token_seconds",
+            "total_tokens",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_cost",
+            "prompt_cost",
+            "completion_cost",
+            "feedback_score",
+        ]
+    ] = None
+
+    filter: Optional[str] = None
+
+    params: Optional[EvidenceSeriesMetricDefinitionNumeratorParams] = None
+    """required when type=percentile"""
+
+
+class EvidenceSeriesMetricDefinitionParams(BaseModel):
+    """percentile p or histogram bucket_count"""
+
+    bucket_count: Optional[int] = None
+
+    feedback_key: Optional[str] = None
+
+    p: Optional[float] = None
+
+
+class EvidenceSeriesMetricDefinition(BaseModel):
+    type: Literal["count", "sum", "avg", "min", "max", "percentile", "ratio", "histogram"]
+    """histogram is reserved and rejected; the tag publishes what is accepted."""
+
+    denominator: Optional[EvidenceSeriesMetricDefinitionDenominator] = None
+
+    entity: Optional[Literal["run", "feedback"]] = None
+    """Entity selects what a type=count metric counts.
+
+    Only valid when type=count; defaults to MetricEntityRun. entity=feedback
+    requires params.feedback_key and counts individual feedback records rather than
+    runs.
+    """
+
+    field: Optional[
+        Literal[
+            "latency_seconds",
+            "first_token_seconds",
+            "total_tokens",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_cost",
+            "prompt_cost",
+            "completion_cost",
+            "feedback_score",
+        ]
+    ] = None
+
+    numerator: Optional[EvidenceSeriesMetricDefinitionNumerator] = None
+    """Numerator and Denominator are required when type=ratio."""
+
+    params: Optional[EvidenceSeriesMetricDefinitionParams] = None
+    """percentile p or histogram bucket_count"""
+
+
+class EvidenceSeries(BaseModel):
+    metric_definition: EvidenceSeriesMetricDefinition
+
+    run_filter: Optional[str] = None
+    """Narrows what is measured; the renderer ANDs its root scope over it."""
+
+    window_end: Optional[datetime] = None
+
+    window_start: Optional[datetime] = None
+    """The view the chart opens at, not a clamp. Start alone renders start -> now."""
+
+
+class Evidence(BaseModel):
+    """Nil for the trace-list issues that are the norm."""
+
+    type: Literal["series"]
+
+    series: Optional[EvidenceSeries] = None
 
 
 class FixVerification(BaseModel):
@@ -91,6 +256,9 @@ class Issue(BaseModel):
     created_at: Optional[str] = None
 
     description: Optional[str] = None
+
+    evidence: Optional[Evidence] = None
+    """Nil for the trace-list issues that are the norm."""
 
     first_seen_at: Optional[str] = None
 

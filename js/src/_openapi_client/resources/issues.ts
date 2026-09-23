@@ -57,6 +57,11 @@ export interface Issue {
 
   description?: string;
 
+  /**
+   * Nil for the trace-list issues that are the norm.
+   */
+  evidence?: Issue.Evidence | null;
+
   first_seen_at?: string;
 
   fix_branch?: string;
@@ -111,6 +116,178 @@ export interface Issue {
 }
 
 export namespace Issue {
+  /**
+   * Nil for the trace-list issues that are the norm.
+   */
+  export interface Evidence {
+    type: 'series';
+
+    series?: Evidence.Series;
+  }
+
+  export namespace Evidence {
+    export interface Series {
+      metric_definition: Series.MetricDefinition;
+
+      /**
+       * Narrows what is measured; the renderer ANDs its root scope over it.
+       */
+      run_filter?: string;
+
+      window_end?: string;
+
+      /**
+       * The view the chart opens at, not a clamp. Start alone renders start -> now.
+       */
+      window_start?: string;
+    }
+
+    export namespace Series {
+      export interface MetricDefinition {
+        /**
+         * histogram is reserved and rejected; the tag publishes what is accepted.
+         */
+        type: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'percentile' | 'ratio' | 'histogram';
+
+        denominator?: MetricDefinition.Denominator;
+
+        /**
+         * Entity selects what a type=count metric counts. Only valid when type=count;
+         * defaults to MetricEntityRun. entity=feedback requires params.feedback_key and
+         * counts individual feedback records rather than runs.
+         */
+        entity?: 'run' | 'feedback';
+
+        field?:
+          | 'latency_seconds'
+          | 'first_token_seconds'
+          | 'total_tokens'
+          | 'prompt_tokens'
+          | 'completion_tokens'
+          | 'total_cost'
+          | 'prompt_cost'
+          | 'completion_cost'
+          | 'feedback_score';
+
+        /**
+         * Numerator and Denominator are required when type=ratio.
+         */
+        numerator?: MetricDefinition.Numerator;
+
+        /**
+         * percentile p or histogram bucket_count
+         */
+        params?: MetricDefinition.Params;
+      }
+
+      export namespace MetricDefinition {
+        export interface Denominator {
+          /**
+           * An operand is non-composite, so ratio is rejected here too.
+           */
+          type: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'percentile' | 'ratio' | 'histogram';
+
+          /**
+           * Entity selects what a type=count metric counts. Only valid when type=count;
+           * defaults to MetricEntityRun. entity=feedback requires params.feedback_key and
+           * counts individual feedback records rather than runs.
+           */
+          entity?: 'run' | 'feedback';
+
+          field?:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost'
+            | 'feedback_score';
+
+          filter?: string;
+
+          /**
+           * required when type=percentile
+           */
+          params?: Denominator.Params;
+        }
+
+        export namespace Denominator {
+          /**
+           * required when type=percentile
+           */
+          export interface Params {
+            bucket_count?: number;
+
+            feedback_key?: string;
+
+            p?: number;
+          }
+        }
+
+        /**
+         * Numerator and Denominator are required when type=ratio.
+         */
+        export interface Numerator {
+          /**
+           * An operand is non-composite, so ratio is rejected here too.
+           */
+          type: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'percentile' | 'ratio' | 'histogram';
+
+          /**
+           * Entity selects what a type=count metric counts. Only valid when type=count;
+           * defaults to MetricEntityRun. entity=feedback requires params.feedback_key and
+           * counts individual feedback records rather than runs.
+           */
+          entity?: 'run' | 'feedback';
+
+          field?:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost'
+            | 'feedback_score';
+
+          filter?: string;
+
+          /**
+           * required when type=percentile
+           */
+          params?: Numerator.Params;
+        }
+
+        export namespace Numerator {
+          /**
+           * required when type=percentile
+           */
+          export interface Params {
+            bucket_count?: number;
+
+            feedback_key?: string;
+
+            p?: number;
+          }
+        }
+
+        /**
+         * percentile p or histogram bucket_count
+         */
+        export interface Params {
+          bucket_count?: number;
+
+          feedback_key?: string;
+
+          p?: number;
+        }
+      }
+    }
+  }
+
   export interface FixVerification {
     attempt?: number;
 
