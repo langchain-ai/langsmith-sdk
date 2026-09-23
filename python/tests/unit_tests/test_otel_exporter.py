@@ -8,6 +8,9 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal.otel._otel_exporter import (
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_TOOL_CALL_ID,
@@ -19,6 +22,75 @@ from langsmith.integrations.otel import (
     set_langsmith_metadata_attribute,
 )
 from langsmith.integrations.otel.processor import OtelSpanProcessor
+
+
+@pytest.mark.parametrize("on_update", [False, True])
+def test_invocation_parameters_survive_otlp_export(on_update):
+    """Bound tool definitions must reach OTLP ingestion on creates and updates."""
+    from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+        ExportTraceServiceRequest,
+    )
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    params = {
+        "model": "test-model",
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_tasks",
+                    "description": "List tasks",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {"type": "tool_search"},
+        ],
+    }
+    run_id = uuid.uuid4()
+    run = {
+        "id": run_id,
+        "trace_id": run_id,
+        "name": "bound-tools",
+        "run_type": "llm",
+        "start_time": "2026-01-01T00:00:00+00:00",
+    }
+    completed = {
+        "id": run_id,
+        "trace_id": run_id,
+        "end_time": "2026-01-01T00:00:01+00:00",
+        "extra": {"invocation_params": params},
+    }
+    if on_update:
+        operations = [
+            serialize_run_dict("post", run),
+            serialize_run_dict("patch", completed),
+        ]
+    else:
+        operations = [serialize_run_dict("post", {**run, **completed})]
+
+    provider = TracerProvider()
+    sink = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(sink))
+    try:
+        exporter = OTELExporter(tracer_provider=provider)
+        exporter.export_batch(operations, {})
+        spans = sink.get_finished_spans()
+        assert len(spans) == 1
+        request = ExportTraceServiceRequest.FromString(
+            encode_spans(spans).SerializeToString()
+        )
+        span = request.resource_spans[0].scope_spans[0].spans[0]
+        attributes = {attr.key: attr.value for attr in span.attributes}
+        assert (
+            json.loads(attributes["llm.invocation_parameters"].string_value) == params
+        )
+    finally:
+        provider.shutdown()
 
 
 def test_cleanup_stale_spans():
