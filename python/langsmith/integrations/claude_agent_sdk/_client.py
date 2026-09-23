@@ -796,7 +796,6 @@ def instrument_claude_client(original_class: Any) -> None:
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init
     original_class.query = _traced_query
-    # receive_response() delegates here, so it needs no separate patch.
     original_class.receive_messages = _traced_receive_messages
     original_class._langsmith_instrumented = True
 
