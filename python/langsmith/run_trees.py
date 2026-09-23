@@ -20,6 +20,7 @@ from typing_extensions import NotRequired, TypedDict
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._agent import Agent
 from langsmith._internal import _agent_addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import (
@@ -262,6 +263,7 @@ def configure(
     agent_environment: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
+    agent: Optional[Agent] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -303,11 +305,14 @@ def configure(
             project. Mutually exclusive with `project_name`.
 
             Pass `None` to explicitly clear it.
-        agent_environment: (experimental) Narrows `agent_id`; one of `local`,
-            `development`, `staging` or `production`. Both agent arguments are
-            required together.
+        agent_environment: (experimental) Narrows `agent_id`. Both agent
+            arguments are required together.
 
             Pass `None` to explicitly clear it.
+        agent: (experimental) An `Agent` handle from `langsmith.agent`, in
+            place of `agent_id` / `agent_environment`.
+
+            Pass `None` to clear both.
         tags: A list of tags to be applied to all traced runs.
 
             Tags are useful for filtering and organizing runs in the LangSmith UI.
@@ -347,6 +352,12 @@ def configure(
         >>> ls.configure(enabled=False)
     """
     global _CLIENT
+    if agent is not _SENTINEL:
+        if agent_id is not _SENTINEL or agent_environment is not _SENTINEL:
+            raise utils.LangSmithUserError(
+                "Pass either `agent` or `agent_id` / `agent_environment`, not both."
+            )
+        agent_id, agent_environment = _agent_addressing.expand_agent(agent)
     _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
         agent_id=None if agent_id is _SENTINEL else agent_id,
@@ -573,6 +584,7 @@ class RunTree(ls_schemas.RunBase):
         if values.get("replicas") is None:
             values["replicas"] = _REPLICAS.get()
         values["replicas"] = _ensure_write_replicas(values["replicas"])
+        _agent_addressing.pop_agent(values)
         _apply_agent_addressing(values)
         return values
 
@@ -1698,10 +1710,14 @@ def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
 
 
 def _ensure_write_replicas(
-    replicas: Optional[Sequence[WriteReplica]],
+    replicas: Optional[Sequence[Union[WriteReplica, Agent]]],
 ) -> list[WriteReplica]:
     """Convert replicas to WriteReplica format."""
-    ensured = _get_write_replicas_from_env() if replicas is None else list(replicas)
+    ensured = (
+        _get_write_replicas_from_env()
+        if replicas is None
+        else cast(list[WriteReplica], _agent_addressing.expand_replicas(replicas))
+    )
     if sum(replica.get("primary") is True for replica in ensured) > 1:
         raise ValueError("Only one replica can be marked as primary.")
     return ensured

@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 from typing import Any, Optional
+from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
 
 import langsmith as ls
 from langsmith import utils as ls_utils
+from langsmith._internal import _context
 from langsmith.client import Client
-from langsmith.run_helpers import get_current_run_tree, tracing_context
-from langsmith.run_trees import RunTree
+from langsmith.run_helpers import (
+    get_current_run_tree,
+    get_tracing_context,
+    trace,
+    traceable,
+    tracing_context,
+)
+from langsmith.run_trees import RunTree, configure
 
 
 @pytest.fixture(autouse=True)
@@ -131,3 +139,142 @@ class TestRendering:
         args = ("r",) if method == "trace" else ()
         with pytest.raises(ls_utils.LangSmithUserError, match="already addresses"):
             getattr(support, method)(*args, **{kwarg: "x"})
+
+
+staging = support.with_environment("staging")
+
+
+class TestEntryPointsTakeAHandle:
+    """`agent=` is accepted wherever `agent_id` / `agent_environment` are."""
+
+    def test_tracing_context(self) -> None:
+        with tracing_context(agent=staging):
+            ctx = get_tracing_context()
+        assert (ctx["agent_id"], ctx["agent_environment"]) == (
+            "customer-support",
+            "staging",
+        )
+
+    def test_traceable(self, client: Client) -> None:
+        seen: dict = {}
+
+        @traceable(agent=staging)
+        def foo() -> None:
+            seen["value"] = _address(get_current_run_tree())
+
+        with tracing_context(enabled=True, client=client):
+            foo()
+
+        assert seen["value"] == ("customer-support", "staging", None)
+
+    def test_langsmith_extra_beats_the_decorator(self, client: Client) -> None:
+        seen: dict = {}
+
+        @support.traceable
+        def foo() -> None:
+            seen["value"] = _address(get_current_run_tree())
+
+        extra: Any = {"agent": staging}
+        with tracing_context(enabled=True, client=client):
+            foo(langsmith_extra=extra)
+
+        assert seen["value"] == ("customer-support", "staging", None)
+        # The caller's dict is left alone.
+        assert extra == {"agent": staging}
+
+    def test_trace(self, client: Client) -> None:
+        with tracing_context(enabled=True, client=client):
+            with trace("r", agent=staging) as run:
+                assert _address(run) == ("customer-support", "staging", None)
+
+    def test_run_tree(self) -> None:
+        run = RunTree(name="r", agent=staging)
+        assert _address(run) == ("customer-support", "staging", None)
+
+    def test_configure(self) -> None:
+        try:
+            configure(agent=staging)
+            assert (
+                _context._GLOBAL_AGENT_ID,
+                _context._GLOBAL_AGENT_ENVIRONMENT,
+            ) == ("customer-support", "staging")
+            configure(agent=None)
+            assert _context._GLOBAL_AGENT_ID is None
+            assert _context._GLOBAL_AGENT_ENVIRONMENT is None
+        finally:
+            configure(agent=None)
+
+    def test_configure_rejects_both_forms(self) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            configure(agent=staging, agent_id="x")
+
+    def test_replicas(self) -> None:
+        run = RunTree(name="r", replicas=[staging, {"project_name": "p"}])
+        assert run.replicas == [
+            {"agent_id": "customer-support", "agent_environment": "staging"},
+            {"project_name": "p"},
+        ]
+
+    def test_tracing_context_replicas(self) -> None:
+        with tracing_context(replicas=[staging]):
+            ctx = get_tracing_context()
+        assert ctx["replicas"] == [
+            {"agent_id": "customer-support", "agent_environment": "staging"}
+        ]
+
+    def test_client_create_run(self, client: Client) -> None:
+        with mock.patch.object(
+            Client, "_filter_for_sampling", return_value=[]
+        ) as filtered:
+            client.create_run("r", {}, "chain", agent=staging)
+        (run_create,) = filtered.call_args.args[0]
+        assert "agent" not in run_create
+        assert (run_create["agent_id"], run_create["agent_environment"]) == (
+            "customer-support",
+            "staging",
+        )
+
+    def test_client_update_run(self, client: Client) -> None:
+        from langsmith._internal import _agent_addressing
+
+        with mock.patch.object(
+            _agent_addressing,
+            "apply_to_payload",
+            wraps=_agent_addressing.apply_to_payload,
+        ) as apply:
+            client.update_run("00000000-0000-0000-0000-000000000000", agent=staging)
+        data = apply.call_args.args[0]
+        assert (data["agent_id"], data["agent_environment"]) == (
+            "customer-support",
+            "staging",
+        )
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda: tracing_context(agent=staging, agent_id="x").__enter__(),
+            lambda: traceable(agent=staging, agent_environment="x"),
+            lambda: trace("r", agent=staging, agent_id="x"),
+            lambda: RunTree(name="r", agent=staging, agent_id="x"),
+            lambda: Client(session=MagicMock(), api_key="t").create_feedback(
+                run_id="00000000-0000-0000-0000-000000000000",
+                key="k",
+                agent=staging,
+                agent_id="x",
+            ),
+        ],
+        ids=["tracing_context", "traceable", "trace", "run_tree", "create_feedback"],
+    )
+    def test_rejects_a_handle_beside_the_pair(self, call: Any) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            call()
+
+    def test_rejects_a_handle_beside_a_project(self) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            with tracing_context(agent=staging, project_name="p"):
+                pass
+
+    def test_rejects_a_non_handle(self) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="langsmith.Agent"):
+            with tracing_context(agent="customer-support"):  # type: ignore[arg-type]
+                pass

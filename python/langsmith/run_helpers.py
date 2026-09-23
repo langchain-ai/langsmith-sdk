@@ -45,6 +45,7 @@ from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
+from langsmith._agent import Agent
 from langsmith._internal import _agent_addressing
 from langsmith._internal import _aiter as aitertools
 from langsmith._runtime_overrides import (
@@ -177,12 +178,13 @@ def tracing_context(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
+    agent: Optional[Agent] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
-    replicas: Optional[Sequence[WriteReplica]] = None,
+    replicas: Optional[Sequence[Union[WriteReplica, Agent]]] = None,
     distributed_parent_id: Optional[str] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
@@ -200,9 +202,9 @@ def tracing_context(
             project. Cannot be combined with a project in the same call.
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. One of `local`, `development`, `staging` or
-            `production` -- anything else is rejected rather than defaulted.
-            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent: (experimental) An `Agent` handle from `langsmith.agent`, in
+            place of `agent_id` / `agent_environment`.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.
@@ -213,7 +215,8 @@ def tracing_context(
         enabled: Whether tracing is enabled.
 
             Defaults to `None`, meaning it will use the current context value or environment variables.
-        replicas: A sequence of `WriteReplica` dictionaries to send runs to.
+        replicas: A sequence of `WriteReplica` dictionaries or `Agent` handles
+            to send runs to.
 
             Example: `[{"api_url": "https://api.example.com", "auth": {"api_key": "key"}, "project_name": "proj"}]`
             or `[{"project_name": "my_experiment", "updates": {"reference_example_id": None}}]`
@@ -225,6 +228,10 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
+    agent_id, agent_environment = _agent_addressing.expand_agent(
+        agent, agent_id, agent_environment
+    )
+    replicas = _agent_addressing.expand_replicas(replicas)
     current_context = get_tracing_context()
     if project_name is not None and (agent_id, agent_environment) == (
         current_context.get("agent_id"),
@@ -299,6 +306,7 @@ def ensure_traceable(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
+    agent: Optional[Agent] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -315,6 +323,7 @@ def ensure_traceable(
         project_name=project_name,
         agent_id=agent_id,
         agent_environment=agent_environment,
+        agent=agent,
         process_inputs=process_inputs,
         process_outputs=process_outputs,
         process_chunk=process_chunk,
@@ -347,6 +356,8 @@ class LangSmithExtra(TypedDict, total=False):
     """(experimental) Optional agent to log the run to, instead of a project."""
     agent_environment: Optional[str]
     """(experimental) Narrows `agent_id`; required alongside it."""
+    agent: Optional[Agent]
+    """(experimental) An `Agent` handle, in place of `agent_id` / `agent_environment`."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
     tags: Optional[list[str]]
@@ -355,8 +366,8 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional ID for the run."""
     client: Optional[ls_client.Client]
     """Optional LangSmith client."""
-    replicas: Optional[Sequence[WriteReplica]]
-    """Optional write replicas to apply to the run and its descendants."""
+    replicas: Optional[Sequence[Union[WriteReplica, Agent]]]
+    """Optional write replicas (or `Agent` handles) for the run and its descendants."""
     # Optional callback function to be called if the run succeeds and before it is sent.
     _on_success: Optional[Callable[[run_trees.RunTree], None]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
@@ -420,6 +431,7 @@ def traceable(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
+    agent: Optional[Agent] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -470,9 +482,9 @@ def traceable(
             project. Cannot be combined with a project in the same call.
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. One of `local`, `development`, `staging` or
-            `production` -- anything else is rejected rather than defaulted.
-            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent: (experimental) An `Agent` handle from `langsmith.agent`, in
+            place of `agent_id` / `agent_environment`.
         process_inputs: Custom serialization / processing function for inputs.
 
             Defaults to `None`.
@@ -652,6 +664,7 @@ def traceable(
         )
     reduce_fn = kwargs.pop("reduce_fn", None)
     enabled = kwargs.pop("enabled", None)
+    _agent_addressing.pop_agent(kwargs)
     container_input = _ContainerInput(
         # TODO: Deprecate raw extra
         extra_outer=kwargs.pop("extra", None),
@@ -1086,9 +1099,9 @@ class trace:
             project. Cannot be combined with a project in the same call.
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. One of `local`, `development`, `staging` or
-            `production` -- anything else is rejected rather than defaulted.
-            Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent: (experimental) An `Agent` handle from `langsmith.agent`, in
+            place of `agent_id` / `agent_environment`.
         parent: Parent run.
 
             Can be a `RunTree`, dotted order string, or tracing headers.
@@ -1152,6 +1165,7 @@ class trace:
         project_name: Optional[str] = None,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
+        agent: Optional[Agent] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
         ] = None,
@@ -1180,6 +1194,9 @@ class trace:
         self.inputs = inputs
         self.attachments = attachments
         self.extra = extra
+        agent_id, agent_environment = _agent_addressing.expand_agent(
+            agent, agent_id, agent_environment
+        )
         _agent_addressing.reject_conflicting(
             project=project_name,
             agent_id=agent_id,
@@ -1764,7 +1781,12 @@ def _setup_run(
         "dangerously_allow_filesystem", False
     )
     outer_project = _context._PROJECT_NAME.get()
-    langsmith_extra = langsmith_extra or LangSmithExtra()
+    langsmith_extra = LangSmithExtra(**(langsmith_extra or {}))
+    _agent_addressing.pop_agent(cast(dict, langsmith_extra))
+    if "replicas" in langsmith_extra:
+        langsmith_extra["replicas"] = _agent_addressing.expand_replicas(
+            langsmith_extra["replicas"]
+        )
     name = langsmith_extra.get("name") or container_input.get("name")
     client_ = langsmith_extra.get("client", client) or _context._CLIENT.get()
     parent_run_ = _get_parent_run(

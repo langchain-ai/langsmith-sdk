@@ -470,10 +470,8 @@ def get_tracer_agent_environment() -> Optional[str]:
     agent addressing rejects the runs, so tracing is lost rather than falling
     back to a project.
 
-    Must be one of ``local``, ``development``, ``staging`` or ``production``
-    -- matched case-insensitively, surrounding space ignored. The endpoint
-    rejects anything else rather than defaulting it, so a near miss like
-    ``prod`` fails the whole batch.
+    Not validated client-side: the server decides which environments it
+    accepts, and one it rejects fails the whole batch.
 
     Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
     variables it has no ``LANGCHAIN_`` alias, so that the newer namespace is

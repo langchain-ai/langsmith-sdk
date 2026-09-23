@@ -29,13 +29,17 @@ from __future__ import annotations
 
 import dataclasses
 from contextlib import AbstractContextManager
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from langsmith import run_helpers, utils
-from langsmith.run_trees import WriteReplica
+from langsmith import utils
+
+if TYPE_CHECKING:
+    # Imported lazily below: the tracing modules import this one.
+    from langsmith import run_helpers
+    from langsmith.run_trees import WriteReplica
 
 _MAX_AGENT_ID_LENGTH = 255
-_ADDRESSING_KWARGS = ("project_name", "agent_id", "agent_environment")
+_ADDRESSING_KWARGS = ("agent", "project_name", "agent_id", "agent_environment")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -69,9 +73,6 @@ class Agent:
         """Return a handle to the same agent in another environment."""
         return dataclasses.replace(self, environment=environment)
 
-    def _address(self) -> dict[str, str]:
-        return {"agent_id": self.id, "agent_environment": self.environment}
-
     def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         named = [k for k in _ADDRESSING_KWARGS if k in kwargs]
         if named:
@@ -79,7 +80,7 @@ class Agent:
                 f"An Agent handle already addresses the run; drop {named}, or "
                 "use another handle (e.g. `agent.with_environment(...)`) to change it."
             )
-        return {**kwargs, **self._address()}
+        return {**kwargs, "agent": self}
 
     def traceable(self, func: Optional[Callable] = None, /, **kwargs: Any) -> Any:
         """`langsmith.traceable`, addressed to this agent environment.
@@ -88,6 +89,8 @@ class Agent:
         (`@support.traceable(run_type="llm")`). Binds at decorator time, so an
         enclosing `tracing_context` still wins, as with `project_name`.
         """
+        from langsmith import run_helpers
+
         kwargs = self._with_address(kwargs)
         if func is None:
             return run_helpers.traceable(**kwargs)
@@ -97,6 +100,8 @@ class Agent:
         self, name: str, run_type: Any = "chain", **kwargs: Any
     ) -> run_helpers.trace:
         """`langsmith.trace`, addressed to this agent environment."""
+        from langsmith import run_helpers
+
         return run_helpers.trace(name, run_type, **self._with_address(kwargs))
 
     def tracing_context(self, **kwargs: Any) -> AbstractContextManager[None]:
@@ -105,11 +110,21 @@ class Agent:
         Sets the context variables, so it beats an `@traceable` binding inside
         it. Like any address, it can't move a child of a run already in flight.
         """
+        from langsmith import run_helpers
+
         return run_helpers.tracing_context(**self._with_address(kwargs))
 
     def replica(self, **kwargs: Any) -> WriteReplica:
-        """Build a `WriteReplica` that sends runs to this agent environment."""
-        return WriteReplica(**self._with_address(kwargs))  # type: ignore[typeddict-item]
+        """Build a `WriteReplica` that sends runs to this agent environment.
+
+        Only needed to set other replica fields; the handle itself can be
+        passed in `replicas`.
+        """
+        self._with_address(kwargs)
+        return {**kwargs, **self._replica()}  # type: ignore[typeddict-item]
+
+    def _replica(self) -> WriteReplica:
+        return {"agent_id": self.id, "agent_environment": self.environment}
 
 
 def agent(agent_id: str, *, environment: str) -> Agent:
