@@ -44,11 +44,12 @@ support = ls.agent("customer-support", environment="production")
 
 
 class TestConstruction:
-    def test_normalizes_the_environment(self) -> None:
-        assert ls.agent("a", environment=" Staging ").environment == "staging"
+    @pytest.mark.parametrize("environment", ["prod", "Staging", "eu-canary"])
+    def test_passes_any_environment_through(self, environment: str) -> None:
+        assert ls.agent("a", environment=environment).environment == environment
 
-    @pytest.mark.parametrize("environment", ["prod", "", None])
-    def test_rejects_an_unknown_environment(self, environment: Any) -> None:
+    @pytest.mark.parametrize("environment", ["", None])
+    def test_rejects_a_missing_environment(self, environment: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="environment"):
             ls.agent("a", environment=environment)
 
@@ -62,8 +63,9 @@ class TestConstruction:
             ls.agent("a")  # type: ignore[call-arg]
 
     def test_switching_environment_keeps_the_agent(self) -> None:
-        assert support.staging == ls.Agent("customer-support", "staging")
-        assert support.with_environment("LOCAL").environment == "local"
+        assert support.with_environment("staging") == ls.Agent(
+            "customer-support", "staging"
+        )
         assert support.environment == "production"
 
 
@@ -83,7 +85,7 @@ class TestRendering:
     def test_decorator_with_arguments(self, client: Client) -> None:
         seen: dict = {}
 
-        @support.staging.traceable(run_type="llm", name="named")
+        @support.with_environment("staging").traceable(run_type="llm", name="named")
         def foo() -> None:
             run = get_current_run_tree()
             assert run is not None
@@ -107,13 +109,15 @@ class TestRendering:
         def foo() -> None:
             seen["value"] = _address(get_current_run_tree())
 
-        with support.staging.tracing_context(enabled=True, client=client):
+        with support.with_environment("staging").tracing_context(
+            enabled=True, client=client
+        ):
             foo()
 
         assert seen["value"] == ("customer-support", "staging", None)
 
     def test_replica(self) -> None:
-        assert support.staging.replica(updates={"x": 1}) == {
+        assert support.with_environment("staging").replica(updates={"x": 1}) == {
             "agent_id": "customer-support",
             "agent_environment": "staging",
             "updates": {"x": 1},

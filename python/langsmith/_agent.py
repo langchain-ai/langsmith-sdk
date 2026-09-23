@@ -20,7 +20,7 @@ Example:
     def handle(order): ...
 
 
-    with support.staging.tracing_context():
+    with support.with_environment("staging").tracing_context():
         handle(order)
     ```
 """
@@ -34,8 +34,6 @@ from typing import Any, Callable, Optional
 from langsmith import run_helpers, utils
 from langsmith.run_trees import WriteReplica
 
-ENVIRONMENTS = ("local", "development", "staging", "production")
-
 _MAX_AGENT_ID_LENGTH = 255
 _ADDRESSING_KWARGS = ("project_name", "agent_id", "agent_environment")
 
@@ -44,14 +42,14 @@ _ADDRESSING_KWARGS = ("project_name", "agent_id", "agent_environment")
 class Agent:
     """(experimental) An agent environment that runs can be addressed to.
 
-    Build one with `langsmith.agent`. Validation happens at construction, so a
-    typo fails at the call site instead of as a 400 that drops a batch.
+    Build one with `langsmith.agent`. Both values are required at construction;
+    which environments exist is left to the server.
     """
 
     id: str
     """The agent's immutable ID, as used by the rest of the Agent API."""
     environment: str
-    """One of `local`, `development`, `staging` or `production`."""
+    """The agent environment, passed to the server as given."""
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not (
@@ -61,41 +59,15 @@ class Agent:
                 f"Agent id must be a string of 1 to {_MAX_AGENT_ID_LENGTH} "
                 f"characters, got {self.id!r}."
             )
-        environment = (
-            self.environment.strip().lower()
-            if isinstance(self.environment, str)
-            else self.environment
-        )
-        if environment not in ENVIRONMENTS:
+        if not isinstance(self.environment, str) or not self.environment:
             raise utils.LangSmithUserError(
-                f"Agent environment must be one of {', '.join(ENVIRONMENTS)}, "
-                f"got {self.environment!r}."
+                f"Agent environment must be a non-empty string, got "
+                f"{self.environment!r}."
             )
-        object.__setattr__(self, "environment", environment)
 
     def with_environment(self, environment: str) -> Agent:
         """Return a handle to the same agent in another environment."""
         return dataclasses.replace(self, environment=environment)
-
-    @property
-    def local(self) -> Agent:
-        """This agent's `local` environment."""
-        return self.with_environment("local")
-
-    @property
-    def development(self) -> Agent:
-        """This agent's `development` environment."""
-        return self.with_environment("development")
-
-    @property
-    def staging(self) -> Agent:
-        """This agent's `staging` environment."""
-        return self.with_environment("staging")
-
-    @property
-    def production(self) -> Agent:
-        """This agent's `production` environment."""
-        return self.with_environment("production")
 
     def _address(self) -> dict[str, str]:
         return {"agent_id": self.id, "agent_environment": self.environment}
@@ -105,7 +77,7 @@ class Agent:
         if named:
             raise utils.LangSmithUserError(
                 f"An Agent handle already addresses the run; drop {named}, or "
-                "use another handle (e.g. `agent.staging`) to change it."
+                "use another handle (e.g. `agent.with_environment(...)`) to change it."
             )
         return {**kwargs, **self._address()}
 
@@ -145,8 +117,8 @@ def agent(agent_id: str, *, environment: str) -> Agent:
 
     Args:
         agent_id: The agent's ID. The server creates the agent on first use.
-        environment: One of `local`, `development`, `staging` or `production`,
-            matched case-insensitively.
+        environment: The agent environment. Not validated client-side; the
+            server decides which environments are accepted.
 
     Raises:
         LangSmithUserError: If either value is invalid.
