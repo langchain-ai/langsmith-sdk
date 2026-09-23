@@ -290,6 +290,7 @@ class BoxesResource(SyncAPIResource):
         sort_direction: str | Omit = omit,
         sort_order: str | Omit = omit,
         status: str | Omit = omit,
+        tag_value_id: SequenceNotStr[str] | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -329,6 +330,8 @@ class BoxesResource(SyncAPIResource):
 
           status: Filter by status (provisioning, ready, failed, stopped, deleting)
 
+          tag_value_id: Filter by workspace resource tag value IDs; all must match
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -358,6 +361,7 @@ class BoxesResource(SyncAPIResource):
                         "sort_direction": sort_direction,
                         "sort_order": sort_order,
                         "status": status,
+                        "tag_value_id": tag_value_id,
                     },
                     box_list_params.BoxListParams,
                 ),
@@ -1078,6 +1082,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         sort_direction: str | Omit = omit,
         sort_order: str | Omit = omit,
         status: str | Omit = omit,
+        tag_value_id: SequenceNotStr[str] | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -1117,6 +1122,8 @@ class AsyncBoxesResource(AsyncAPIResource):
 
           status: Filter by status (provisioning, ready, failed, stopped, deleting)
 
+          tag_value_id: Filter by workspace resource tag value IDs; all must match
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -1146,6 +1153,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                         "sort_direction": sort_direction,
                         "sort_order": sort_order,
                         "status": status,
+                        "tag_value_id": tag_value_id,
                     },
                     box_list_params.BoxListParams,
                 ),
