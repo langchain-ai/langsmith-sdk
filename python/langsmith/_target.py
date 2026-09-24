@@ -44,6 +44,15 @@ if TYPE_CHECKING:
 _MAX_ID_LENGTH = 255
 
 
+class EnvTargetError(utils.LangSmithUserError):
+    """The `LANGSMITH_TARGET_*` / project env vars can't address a run.
+
+    Raised for half a target, or a target beside a project. Tracing entry
+    points catch it, log it and leave the call untraced, so a bad environment
+    never breaks the code being traced.
+    """
+
+
 def _wire(name: str, *, required: bool) -> dict[str, Any]:
     return {"wire": name, "required": required}
 
@@ -134,10 +143,10 @@ class Target:
 
     @classmethod
     def from_env(cls) -> Optional[Target]:
-        """Read the target named by `LANGSMITH_TARGET_*` env vars, if complete.
+        """Read the target named by `LANGSMITH_TARGET_*` env vars, if any.
 
-        An incomplete one is warned about at client construction and ignored
-        here, so runs keep going to the project rather than failing.
+        Raises:
+            EnvTargetError: If only some of the required ones are set.
         """
         try:
             return cls.from_wire(
@@ -146,8 +155,12 @@ class Target:
                     for f in dataclasses.fields(cls)
                 }
             )
-        except utils.LangSmithUserError:
-            return None
+        except EnvTargetError:
+            raise
+        except utils.LangSmithUserError as e:
+            raise EnvTargetError(
+                f"The LANGSMITH_TARGET_* env vars name an incomplete target: {e}"
+            ) from e
 
     @classmethod
     def env_values(cls) -> dict[str, Optional[str]]:
