@@ -351,14 +351,14 @@ def configure(
         if enabled is not _SENTINEL:
             _context._TRACING_ENABLED.set(enabled)
             _context._GLOBAL_TRACING_ENABLED = enabled
-        # One level holds one mode: naming one replaces the other.
+        # One level holds one mode: naming one replaces the other. Only the
+        # process-wide values are set: the context vars are the
+        # `tracing_context` level, which outranks the decorator.
         if project_name is not _SENTINEL or (set_target and target is not None):
             project_name = None if project_name is _SENTINEL else project_name
-            _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
         if set_target or project_name is not None:
             target = target if set_target else None
-            _context._TARGET.set(target)
             _context._GLOBAL_TARGET = target
         if tags is not _SENTINEL:
             _context._TAGS.set(tags)
@@ -404,6 +404,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     `default_factory` from reaching for the environment afterwards and
     overriding what was settled.
     """
+    _agent_addressing.reject_loose_fields(values, "`RunTree`")
     _agent_addressing.check_target(values.get("target"))
     named_project = next(
         (

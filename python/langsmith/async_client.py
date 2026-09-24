@@ -621,6 +621,7 @@ class AsyncClient:
             the run, so the trace is lost rather than falling back to a
             project. It may change without notice.
         """
+        _agent_addressing.reject_loose_fields(kwargs, "`create_run`")
         _agent_addressing.check_target(kwargs.get("target"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
@@ -674,6 +675,7 @@ class AsyncClient:
                     names none is resolved by run id, as every update was
                     before. It may change without notice.
         """
+        _agent_addressing.reject_loose_fields(kwargs, "`update_run`")
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
         _agent_addressing.apply_to_payload(data, update=True)
         await self._arequest_with_retries(
