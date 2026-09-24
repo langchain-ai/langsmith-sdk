@@ -75,8 +75,11 @@ export interface VerifyCallbackOptions {
   body: string | Uint8Array | ArrayBuffer;
   /** The `X-LangSmith-Signature-JWT` header value. */
   signature: string;
-  /** The callback URL exactly as configured in the proxy config. */
-  url: string;
+  /**
+   * If set, the callback URL exactly as configured in the proxy config, which
+   * the signature's audience must match.
+   */
+  url?: string;
   /** If set, the LangSmith OAuth issuer the signature must be issued by. */
   issuer?: string;
 }
@@ -260,7 +263,7 @@ export class SandboxTokenVerifier {
 
   private async verify(
     token: string,
-    audience: string,
+    audience: string | undefined,
     issuer: string | undefined,
   ): Promise<Claims> {
     const parts = token ? token.split(".") : [];
@@ -304,7 +307,9 @@ export class SandboxTokenVerifier {
     }
     const audiences =
       typeof aud === "string" ? [aud] : Array.isArray(aud) ? aud : [];
-    if (!audiences.includes(audience)) fail("token has the wrong audience");
+    if (audience !== undefined && !audiences.includes(audience)) {
+      fail("token has the wrong audience");
+    }
     return claims;
   }
 

@@ -238,6 +238,18 @@ describe("SandboxTokenVerifier", () => {
       expect(cb.port).toBe(443);
     });
 
+    it("skips the audience check without a url", async () => {
+      const body = callbackBody();
+      const cb = await verifier().verifyCallback({
+        body,
+        signature: await sign(
+          pair,
+          callbackClaims(body, { aud: ["https://other.example.com/cb"] }),
+        ),
+      });
+      expect(cb.port).toBe(443);
+    });
+
     it("rejects a tampered body", async () => {
       const body = callbackBody();
       const signature = await sign(pair, callbackClaims(body));

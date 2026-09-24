@@ -891,7 +891,8 @@ print(user.subject, user.email)
 ### Proxy Callbacks
 
 Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
-header. Pass the raw body and the callback URL exactly as configured:
+header. Pass the raw body, and optionally the callback URL exactly as
+configured to also check the signature was minted for this endpoint:
 
 ```python
 from langsmith.sandbox import CALLBACK_SIGNATURE_HEADER

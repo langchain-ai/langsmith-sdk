@@ -258,6 +258,12 @@ class TestCallback:
                 body=body, signature=_sign(key, claims), url=CALLBACK_URL
             )
 
+    def test_url_optional(self, jwks, key, verifier):
+        body = _callback_body()
+        claims = _callback_claims(body, aud=["https://other.example.com/cb"])
+        cb = verifier.verify_callback(body=body, signature=_sign(key, claims))
+        assert cb.port == 443
+
     async def test_async(self, jwks, key, verifier):
         body = _callback_body()
         cb = await verifier.averify_callback(

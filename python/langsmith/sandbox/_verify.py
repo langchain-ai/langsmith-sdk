@@ -193,7 +193,7 @@ class SandboxTokenVerifier:
         *,
         body: Union[bytes, str],
         signature: str,
-        url: str,
+        url: Optional[str] = None,
         issuer: Optional[str] = None,
     ) -> SandboxCallback:
         """Verify a proxy callback request and return its parsed payload.
@@ -201,7 +201,8 @@ class SandboxTokenVerifier:
         Args:
             body: The raw request body, exactly as received.
             signature: The ``X-LangSmith-Signature-JWT`` header value.
-            url: The callback URL exactly as configured in the proxy config.
+            url: If set, the callback URL exactly as configured in the proxy
+                config, which the signature's audience must match.
             issuer: If set, the LangSmith OAuth issuer the signature must be
                 issued by.
         """
@@ -213,7 +214,7 @@ class SandboxTokenVerifier:
         *,
         body: Union[bytes, str],
         signature: str,
-        url: str,
+        url: Optional[str] = None,
         issuer: Optional[str] = None,
     ) -> SandboxCallback:
         """Async version of :meth:`verify_callback`."""
@@ -241,7 +242,7 @@ class SandboxTokenVerifier:
         self,
         token: str,
         key: Any,
-        audience: str,
+        audience: Optional[str],
         issuer: Optional[str],
         required: list[str],
     ) -> dict[str, Any]:
@@ -253,7 +254,7 @@ class SandboxTokenVerifier:
                 audience=audience,
                 issuer=issuer.rstrip("/") if issuer else None,
                 leeway=_LEEWAY_SECONDS,
-                options={"require": required},
+                options={"require": required, "verify_aud": audience is not None},
             )
         except self._jwt.PyJWTError as e:
             raise SandboxTokenVerificationError(f"invalid token: {e}") from e
@@ -283,7 +284,7 @@ class SandboxTokenVerifier:
         signature: str,
         key: Any,
         body: Union[bytes, str],
-        url: str,
+        url: Optional[str],
         issuer: Optional[str],
     ) -> SandboxCallback:
         claims = self._decode(
