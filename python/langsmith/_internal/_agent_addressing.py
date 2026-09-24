@@ -8,13 +8,16 @@ arguments are turned into a `Target` at the entry point that receives them.
 
 from __future__ import annotations
 
+import logging
 import warnings
 from collections.abc import Mapping
 from typing import Any, Optional
 
 from langsmith import utils
 from langsmith._internal._beta_decorator import _warn_once
-from langsmith._target import Target
+from langsmith._target import EnvTargetError, Target
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def coerce_target(
@@ -101,12 +104,13 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[Target]]:
     beats a project on the decorator, and the other way round.
 
     Raises:
-        utils.LangSmithUserError: If one level names both a project and a
-            target -- including the env vars.
+        utils.LangSmithUserError: If one level named in code names both.
+        EnvTargetError: If the env vars are the deciding level and name both,
+            or half a target.
     """
     for level, (project, target) in enumerate(tiers, start=1):
         if project and target is not None:
-            raise _both_at_one_level(project, target, f"precedence level {level}")
+            raise _both_at_one_level(project, target, f"at precedence level {level}")
         if project:
             return project, None
         if target is not None:
@@ -114,7 +118,9 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[Target]]:
     env_project = utils.get_tracer_project(return_default_value=False) or None
     env_target = Target.from_env()
     if env_project and env_target is not None:
-        raise _both_at_one_level(env_project, env_target, "the environment")
+        raise EnvTargetError(
+            str(_both_at_one_level(env_project, env_target, "in the environment"))
+        )
     if env_target is not None:
         return None, env_target
     return env_project or "default", None
@@ -128,7 +134,7 @@ def first_named(*tiers: Tier) -> Tier:
     """
     for level, (project, target) in enumerate(tiers, start=1):
         if project and target is not None:
-            raise _both_at_one_level(project, target, f"precedence level {level}")
+            raise _both_at_one_level(project, target, f"at precedence level {level}")
         if project or target is not None:
             return project or None, target
     return None, None
@@ -138,40 +144,49 @@ def _both_at_one_level(
     project: str, target: Target, where: str
 ) -> utils.LangSmithUserError:
     return utils.LangSmithUserError(
-        f"A project ({project!r}) and a target ({target!r}) are both set at "
+        f"A project ({project!r}) and a target ({target!r}) are both set "
         f"{where}, so neither outranks the other. Set only one there, or set "
         "the one you want at a higher-precedence level."
     )
 
 
+def log_untraced(error: EnvTargetError) -> None:
+    """Log that a call runs untraced because the env can't address it."""
+    _LOGGER.warning("LangSmith is not tracing this call: %s", error)
+
+
 def warn_on_env() -> None:
     """Warn when the environment's target cannot be used.
 
-    An incomplete one is ignored, so runs go to the project instead -- and a
-    name like `TARGET_ENVIRONMENT` is generic enough to be set by accident. A
-    project configured beside a complete one makes resolution raise.
+    Half a target, or one beside a configured project, leaves calls that name
+    nothing in code untraced -- and a name like `TARGET_ENVIRONMENT` is generic
+    enough to be set by accident.
 
     Emitted at client construction rather than per run, so it is seen once.
     """
     present = [name for name, value in Target.env_values().items() if value]
     if not present:
         return
-    if (target := Target.from_env()) is None:
+    try:
+        target = Target.from_env()
+    except EnvTargetError:
         warnings.warn(
             f"{', '.join(present)} is set, but not every LANGSMITH_TARGET_* "
-            "variable a target needs. The partial target is ignored, so runs "
-            "are traced to the project instead.",
+            "variable a target needs, so calls that name no destination in "
+            "code are not traced.",
             utils.LangSmithWarning,
             stacklevel=3,
         )
+        return
+    if target is None:
         return
     project = utils.get_tracer_project(return_default_value=False)
     if project is None:
         return
     warnings.warn(
         f"LANGSMITH_TARGET_ID ({target.id!r}) and a configured project "
-        f"({project!r}) are both set in the environment, so a run that names "
-        "neither in code raises. Unset one of them.",
+        f"({project!r}) are both set in the environment, so calls that name "
+        "no destination in code are not traced. Unset one of them.",
         utils.LangSmithWarning,
         stacklevel=3,
     )
