@@ -13,6 +13,7 @@ from langsmith._internal import _orjson
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith._target import Target
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ def serialize_feedback_dict(
     # half a pair included, for the endpoint to answer with its own 400 -- same
     # reasoning as the run parts: dropping it would attach the feedback
     # somewhere the caller didn't name.
-    for _addressing_key in ("agent_id", "agent_environment", "agent_region"):
+    for _addressing_key in Target.wire_keys():
         if feedback_create.get(_addressing_key) is None:
             feedback_create.pop(_addressing_key, None)
     if "trace_id" not in feedback_create:

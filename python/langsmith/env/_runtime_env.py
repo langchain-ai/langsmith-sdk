@@ -190,9 +190,6 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_TRACING_V2",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
-        "LANGSMITH_AGENT_ENVIRONMENT",
-        "LANGSMITH_AGENT_ID",
-        "LANGSMITH_AGENT_REGION",
         "LANGSMITH_RUNS_ENDPOINTS",
         # Control-plane signing secrets the substring filter misses; excluded here.
         "LANGSMITH_SIGNING_JWKS",
@@ -203,6 +200,8 @@ def get_langchain_env_var_metadata() -> dict:
         for k, v in os.environ.items()
         if (k.startswith("LANGCHAIN_") or k.startswith("LANGSMITH_"))
         and k not in excluded
+        # Target addressing (`LANGSMITH_AGENT_*`), however many dimensions.
+        and not k.startswith("LANGSMITH_AGENT_")
         and not any(sub in k.lower() for sub in _EXCLUDED_SUBSTRINGS)
     }
     env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)

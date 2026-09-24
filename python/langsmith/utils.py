@@ -484,21 +484,6 @@ def get_tracer_agent_environment() -> Optional[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def get_tracer_agent_region() -> Optional[str]:
-    """Get the agent region for a LangSmith tracer.
-
-    Experimental: in beta, and not yet read by the endpoint. Optional: it
-    narrows an agent address but never forms one, so it is dropped from a run
-    that isn't addressed to an agent. Not validated client-side.
-
-    Read from ``LANGSMITH_AGENT_REGION`` only, with no ``LANGCHAIN_`` alias.
-
-    Read once per process and cached; call ``.cache_clear()`` to re-read.
-    """
-    return get_env_var("AGENT_REGION", namespaces=("LANGSMITH",))
-
-
-@functools.lru_cache(maxsize=1)
 def get_tracer_agent_id() -> Optional[str]:
     """Get the agent ID for a LangSmith tracer.
 

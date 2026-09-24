@@ -63,19 +63,21 @@ class WriteReplica(TypedDict, total=False):
     """Configuration for a write replica endpoint.
 
     !!! warning "Experimental"
-        `agent_id` and `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the runs, so
-        tracing is lost rather than falling back to a project. Both keys may
-        change without notice.
+        `target` (or the loose `agent_id` / `agent_environment`) is in beta.
+        Agent addressing is enabled per workspace; a workspace without it
+        rejects the runs, so tracing is lost rather than falling back to a
+        project. These keys may change without notice.
     """
 
     api_url: Optional[str]
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
+    target: Optional[Target]
     agent_id: Optional[str]
+    """Loose form of `target`; folded into it when the replica is read."""
     agent_environment: Optional[str]
-    agent_region: Optional[str]
+    """Loose form of `target`; folded into it when the replica is read."""
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -109,9 +111,7 @@ class _PayloadKey(NamedTuple):
     project_name: Optional[str]
     updates: Optional[dict]
     primary: Optional[bool]
-    agent_id: Optional[str] = None
-    agent_environment: Optional[str] = None
-    agent_region: Optional[str] = None
+    target: Optional[Target] = None
 
 
 class _ReplicaGroup(NamedTuple):
@@ -124,14 +124,7 @@ class _ReplicaGroup(NamedTuple):
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
     # Routing identifiers, like `project_name`: a distributed child has to know
     # where its parent's replica sent runs. Credentials stay out by omission.
-    {
-        "project_name",
-        "primary",
-        "updates",
-        "agent_id",
-        "agent_environment",
-        "agent_region",
-    }
+    {"project_name", "primary", "updates", *Target.wire_keys()}
 )
 
 # Untrusted header-supplied replica `updates` is merged into the run, so restrict it
@@ -212,7 +205,6 @@ def _exclude_inputs_on_patch() -> bool:
 # Every way a caller can name a project. The agent-conflict check and the
 # `baggage` guard both key off this, so they cannot drift apart.
 _PROJECT_ADDRESSING_KEYS = ("project_name", "session_name", "project_id", "session_id")
-_AGENT_ADDRESSING_KEYS = ("agent_id", "agent_environment")
 
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
@@ -222,7 +214,9 @@ LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
 LANGSMITH_AGENT_ID = sys.intern(f"{LANGSMITH_PREFIX}agent-id")
 LANGSMITH_AGENT_ENVIRONMENT = sys.intern(f"{LANGSMITH_PREFIX}agent-environment")
-LANGSMITH_AGENT_REGION = sys.intern(f"{LANGSMITH_PREFIX}agent-region")
+# The whole target, as URL-encoded JSON of its wire fields. The two keys above
+# are still written and read, for services on SDKs that predate this one.
+LANGSMITH_TARGET = sys.intern(f"{LANGSMITH_PREFIX}target")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -274,7 +268,6 @@ def configure(
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
     target: Optional[Target] = _SENTINEL,
-    agent_region: Optional[str] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -312,22 +305,14 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        agent_id: (experimental) The agent to send traces to, instead of a
-            project. Mutually exclusive with `project_name`.
+        agent_id: (experimental) Loose form of `target`; a missing half is
+            read from its `LANGSMITH_AGENT_*` env var. Mutually exclusive with
+            `project_name`.
+        agent_environment: (experimental) Loose form of `target`.
+        target: (experimental) A `Target` handle from `langsmith.target`, to
+            send traces to instead of a project.
 
             Pass `None` to explicitly clear it.
-        agent_environment: (experimental) Narrows `agent_id`. Both agent
-            arguments are required together.
-
-            Pass `None` to explicitly clear it.
-        agent_region: (experimental) Optionally narrows `agent_id`; ignored
-            without it.
-
-            Pass `None` to explicitly clear it.
-        target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment` / `agent_region`.
-
-            Pass `None` to clear both.
         tags: A list of tags to be applied to all traced runs.
 
             Tags are useful for filtering and organizing runs in the LangSmith UI.
@@ -367,25 +352,22 @@ def configure(
         >>> ls.configure(enabled=False)
     """
     global _CLIENT
-    if target is not _SENTINEL:
-        if (
-            agent_id is not _SENTINEL
-            or agent_environment is not _SENTINEL
-            or agent_region is not _SENTINEL
-        ):
-            raise utils.LangSmithUserError(
-                "Pass either `target` or `agent_id` / `agent_environment` / "
-                "`agent_region`, not both."
-            )
-        agent_id, agent_environment, agent_region = _agent_addressing.expand_target(
-            target
+    loose = {
+        key: value
+        for key, value in (
+            ("agent_id", agent_id),
+            ("agent_environment", agent_environment),
+        )
+        if value is not _SENTINEL
+    }
+    set_target = target is not _SENTINEL or bool(loose)
+    if set_target:
+        target = _agent_addressing.coerce_target(
+            None if target is _SENTINEL else target, loose
         )
     _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
-        agent_id=None if agent_id is _SENTINEL else agent_id,
-        agent_environment=(
-            None if agent_environment is _SENTINEL else agent_environment
-        ),
+        target=target if set_target else None,
     )
     with _LOCK:
         if client is not _SENTINEL:
@@ -396,15 +378,9 @@ def configure(
         if project_name is not _SENTINEL:
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
-        if agent_id is not _SENTINEL:
-            _context._AGENT_ID.set(agent_id)
-            _context._GLOBAL_AGENT_ID = agent_id
-        if agent_environment is not _SENTINEL:
-            _context._AGENT_ENVIRONMENT.set(agent_environment)
-            _context._GLOBAL_AGENT_ENVIRONMENT = agent_environment
-        if agent_region is not _SENTINEL:
-            _context._AGENT_REGION.set(agent_region)
-            _context._GLOBAL_AGENT_REGION = agent_region
+        if set_target:
+            _context._TARGET.set(target)
+            _context._GLOBAL_TARGET = target
         if tags is not _SENTINEL:
             _context._TAGS.set(tags)
             _context._GLOBAL_TAGS = tags
@@ -440,7 +416,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     """Settle on one addressing mode for a run tree, in place.
 
     A run is addressed either by project (`session_name` / `session_id`) or by
-    agent (`agent_id` / `agent_environment`). `_agent_addressing.resolve` settles
+    target (`target`). `_agent_addressing.resolve` settles
     which, so this shares one rule with `create_run` and `@traceable`.
 
     Runs against the raw validator input, so a value here was passed by the
@@ -449,6 +425,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     `default_factory` from reaching for the environment afterwards and
     overriding what was settled.
     """
+    _agent_addressing.pop_target(values)
     named_project = next(
         (
             values[key]
@@ -457,36 +434,16 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         ),
         None,
     )
-    if _agent_addressing.is_addressed(
-        values.get("agent_id"), values.get("agent_environment")
-    ):
-        # Already addressed by agent, either by the caller or by the resolution
-        # that built these values -- `_setup_run` settles a trace's addressing
-        # before constructing the tree, and `create_child` copies the parent's
-        # down. Both keys are written back as they are so their
-        # `default_factory` cannot reach for the environment afterwards, and a
-        # project beside the agent is left in place to travel with it. A half
-        # named here is completed from the environment, which fills the pair
-        # out rather than competing with it.
-        (
-            values["agent_id"],
-            values["agent_environment"],
-        ) = _agent_addressing.resolve_pair(
-            values.get("agent_id"), values.get("agent_environment")
-        )
-        values["agent_region"] = _agent_addressing.resolve_region(
-            values["agent_id"], values["agent_environment"], values.get("agent_region")
-        )
+    if values.get("target") is not None:
+        # Already addressed, by the caller or by the resolution that built
+        # these values -- `_setup_run` settles a trace's target before
+        # constructing the tree, and `create_child` copies the parent's down. A
+        # project beside it is left in place to travel with it.
         if named_project is None:
             values.pop("project_name", None)
             values["session_name"] = None
         return
-    project, agent_id, agent_environment = _agent_addressing.resolve(named_project)
-    values["agent_id"] = agent_id
-    values["agent_environment"] = agent_environment
-    values["agent_region"] = _agent_addressing.resolve_region(
-        agent_id, agent_environment
-    )
+    project, values["target"] = _agent_addressing.resolve(named_project)
     if named_project is None:
         # Nothing was named, so whatever the resolution chose is the answer.
         # `project_name` is an alias of `session_name`; leaving it set would
@@ -515,29 +472,16 @@ class RunTree(ls_schemas.RunBase):
     )
     """The project to ingest this run into.
 
-    `None` only for an agent-addressed run, where the backend resolves the
-    project from `agent_id` / `agent_environment` instead.
+    `None` only for a target-addressed run, where the backend resolves the
+    project from `target` instead.
     """
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    agent_environment: Optional[str] = Field(
-        default_factory=utils.get_tracer_agent_environment,
-        description=(
-            "Experimental. The agent environment to ingest this run into; "
-            "requires `agent_id`."
-        ),
-    )
-    agent_region: Optional[str] = Field(
+    target: Optional[Target] = Field(
         default=None,
+        exclude=True,
         description=(
-            "Experimental. Optionally narrows `agent_id`; dropped when the run "
-            "isn't addressed to an agent."
-        ),
-    )
-    agent_id: Optional[str] = Field(
-        default_factory=utils.get_tracer_agent_id,
-        description=(
-            "Experimental. The ID of the agent to ingest this run into, "
-            "instead of a project."
+            "Experimental. The target to ingest this run into, instead of a "
+            "project. Unpacked into wire fields only when the run is sent."
         ),
     )
     """Agent addressing is in beta and enabled per workspace.
@@ -881,9 +825,7 @@ class RunTree(ls_schemas.RunBase):
             extra=child_extra,
             parent_run=self,
             project_name=self.session_name,
-            agent_environment=self.agent_environment,
-            agent_region=self.agent_region,
-            agent_id=self.agent_id,
+            target=self.target,
             replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,
@@ -893,11 +835,25 @@ class RunTree(ls_schemas.RunBase):
         self.child_runs.append(run)
         return run
 
+    @property
+    def agent_id(self) -> Optional[str]:
+        """(experimental) The target's id, if the run is target-addressed."""
+        return self.target.id if self.target is not None else None
+
+    @property
+    def agent_environment(self) -> Optional[str]:
+        """(experimental) The target's environment, if target-addressed."""
+        return self.target.environment if self.target is not None else None
+
     def _get_dicts_safe(self):
         # Things like generators cannot be copied
         self_dict = self.model_dump(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
+        if self.target is not None:
+            # Excluded from the dump so it travels whole, to be unpacked only
+            # where the payload is built.
+            self_dict["target"] = self.target
         if self.inputs is not None:
             # shallow copy. deep copying will occur in the client
             inputs_ = {}
@@ -951,30 +907,22 @@ class RunTree(ls_schemas.RunBase):
         updates: Optional[dict] = None,
         *,
         primary: Optional[bool] = None,
-        agent_id: Optional[str] = None,
-        agent_environment: Optional[str] = None,
-        agent_region: Optional[str] = None,
+        target: Optional[Target] = None,
     ) -> dict:
         """Rewrites ids/dotted_order for a given target with optional updates."""
         run_dict = self._get_dicts_safe()
         if (
             primary is None
             and project_name == self.session_name
-            and agent_id == self.agent_id
-            and agent_environment == self.agent_environment
-            and agent_region == self.agent_region
+            and target == self.target
         ):
             return run_dict
         # Runs are duplicated per destination, so the derivation seed has to
-        # identify the destination -- an agent-addressed replica has no project.
+        # identify the destination -- a target-addressed replica has no project.
         seed = (
             project_name
             if project_name is not None
-            else "/".join(
-                ["agent", agent_id or "", agent_environment or ""]
-                # Only when set, so seeds for region-less replicas are unchanged.
-                + ([agent_region] if agent_region else [])
-            )
+            else (target.seed() if target is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -985,9 +933,7 @@ class RunTree(ls_schemas.RunBase):
         if primary:
             dup = utils.deepish_copy(run_dict)
             dup["session_name"] = project_name
-            dup["agent_id"] = agent_id
-            dup["agent_environment"] = agent_environment
-            dup["agent_region"] = agent_region
+            dup["target"] = target
             if updates:
                 dup.update(updates)
             return dup
@@ -1026,9 +972,7 @@ class RunTree(ls_schemas.RunBase):
                 "parent_run_id": new_parent,
                 "dotted_order": dotted,
                 "session_name": project_name,
-                "agent_id": agent_id,
-                "agent_environment": agent_environment,
-                "agent_region": agent_region,
+                "target": target,
             }
         )
         if updates:
@@ -1037,30 +981,20 @@ class RunTree(ls_schemas.RunBase):
 
     def _replica_addressing(
         self, replica: WriteReplica
-    ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-        """Resolve one replica's `(project, agent_id, environment, region)`.
+    ) -> tuple[Optional[str], Optional[Target]]:
+        """Resolve one replica's `(project_name, target)`.
 
         Same precedence as everywhere else, applied per replica: the replica's
         own project wins over its own agent, and a replica that names neither
         inherits the run tree's addressing whole rather than mixing the two.
         """
-        agent_id = replica.get("agent_id")
-        agent_environment = replica.get("agent_environment")
+        target = replica.get("target")
         if (project_name := replica.get("project_name")) is not None:
-            _agent_addressing.reject_conflicting(
-                project=project_name,
-                agent_id=agent_id,
-                agent_environment=agent_environment,
-            )
-            return project_name, None, None, None
-        if agent_id is not None or agent_environment is not None:
-            return None, agent_id, agent_environment, replica.get("agent_region")
-        return (
-            self.session_name,
-            self.agent_id,
-            self.agent_environment,
-            self.agent_region,
-        )
+            _agent_addressing.reject_conflicting(project=project_name, target=target)
+            return project_name, None
+        if target is not None:
+            return None, target
+        return self.session_name, self.target
 
     def _replica_groups(self) -> list[_ReplicaGroup]:
         """Bucket replicas by the payload each one would produce.
@@ -1070,18 +1004,14 @@ class RunTree(ls_schemas.RunBase):
         """
         groups: list[_ReplicaGroup] = []
         for replica in self.replicas or ():
-            project_name, agent_id, agent_environment, agent_region = (
-                self._replica_addressing(replica)
-            )
+            project_name, target = self._replica_addressing(replica)
             # Identity key - if those match across replicas, then payload can be reused.
             key = _PayloadKey(
                 client=replica.get("client") or self.client,
                 project_name=project_name,
                 updates=replica.get("updates"),
                 primary=replica.get("primary"),
-                agent_id=agent_id,
-                agent_environment=agent_environment,
-                agent_region=agent_region,
+                target=target,
             )
             # Join the first group that matches, or start a new group
             for group in groups:
@@ -1101,9 +1031,7 @@ class RunTree(ls_schemas.RunBase):
                     project_name,
                     updates,
                     primary,
-                    agent_id,
-                    agent_environment,
-                    agent_region,
+                    target,
                 ) = group.key
                 members = group.members
                 if not hasattr(replica_client, "create_run"):
@@ -1115,9 +1043,7 @@ class RunTree(ls_schemas.RunBase):
                     project_name,
                     updates,
                     primary=primary,
-                    agent_id=agent_id,
-                    agent_environment=agent_environment,
-                    agent_region=agent_region,
+                    target=target,
                 )
                 replica_client.create_run(
                     **run_dict,
@@ -1182,9 +1108,7 @@ class RunTree(ls_schemas.RunBase):
                     project_name,
                     updates,
                     primary,
-                    agent_id,
-                    agent_environment,
-                    agent_region,
+                    target,
                 ) = group.key
                 members = group.members
                 if not hasattr(replica_client, "update_run"):
@@ -1196,9 +1120,7 @@ class RunTree(ls_schemas.RunBase):
                     project_name,
                     updates,
                     primary=primary,
-                    agent_id=agent_id,
-                    agent_environment=agent_environment,
-                    agent_region=agent_region,
+                    target=target,
                 )
                 replica_client.update_run(
                     name=run_dict["name"],
@@ -1210,9 +1132,7 @@ class RunTree(ls_schemas.RunBase):
                     error=run_dict.get("error"),
                     parent_run_id=run_dict.get("parent_run_id"),
                     session_name=run_dict.get("session_name"),
-                    agent_id=run_dict.get("agent_id"),
-                    agent_environment=run_dict.get("agent_environment"),
-                    agent_region=run_dict.get("agent_region"),
+                    target=run_dict.get("target"),
                     reference_example_id=run_dict.get("reference_example_id"),
                     end_time=run_dict.get("end_time"),
                     dotted_order=run_dict.get("dotted_order"),
@@ -1238,9 +1158,7 @@ class RunTree(ls_schemas.RunBase):
                 error=self.error,
                 parent_run_id=self.parent_run_id,
                 session_name=self.session_name,
-                agent_id=self.agent_id,
-                agent_environment=self.agent_environment,
-                agent_region=self.agent_region,
+                target=self.target,
                 reference_example_id=self.reference_example_id,
                 end_time=self.end_time,
                 dotted_order=self.dotted_order,
@@ -1268,9 +1186,7 @@ class RunTree(ls_schemas.RunBase):
     def _resolve_url(self) -> str:
         """Ask the backend for the run's URL, falling back to building it locally."""
         client = self.client
-        _agent_addressing.reject_url(
-            self.session_id, self.agent_id, self.agent_environment
-        )
+        _agent_addressing.reject_url(self.session_id, self.target)
         try:
             backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
             if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
@@ -1436,9 +1352,8 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-        caller_named_agent = any(
-            init_args.get(key) is not None for key in _AGENT_ADDRESSING_KEYS
-        )
+        _agent_addressing.pop_target(init_args)
+        caller_named_agent = init_args.get("target") is not None
         caller_named_project = any(
             init_args.get(key) is not None for key in _PROJECT_ADDRESSING_KEYS
         )
@@ -1451,30 +1366,18 @@ class RunTree(ls_schemas.RunBase):
             # untrusted input must never raise.
             logger.warning(
                 "Ignoring the project in a distributed-tracing `baggage` header:"
-                " this run is addressed to agent %r.",
-                init_args.get("agent_id"),
+                " this run is addressed to target %r.",
+                init_args.get("target"),
             )
         elif caller_named_project or caller_named_agent:
             # The caller named a destination, so ignore any agent the header
             # carries -- injecting it would conflict with what they named.
             pass
-        elif baggage.agent_id and baggage.agent_environment:
-            # One mode survives the hop. Both members or neither: a header
-            # carrying half a pair is ignored rather than raised on, since
-            # baggage is untrusted input and a malformed one must not take down
-            # the receiving service.
-            init_args["agent_id"] = baggage.agent_id
-            init_args["agent_environment"] = baggage.agent_environment
-            if baggage.agent_region:
-                init_args["agent_region"] = baggage.agent_region
-        elif baggage.agent_id or baggage.agent_environment:
-            logger.warning(
-                "Ignoring incomplete agent addressing in a distributed-tracing "
-                "`baggage` header: both %s and %s are required, but only one "
-                "was present.",
-                LANGSMITH_AGENT_ID,
-                LANGSMITH_AGENT_ENVIRONMENT,
-            )
+        elif baggage.target is not None:
+            # One mode survives the hop. A malformed or partial target was
+            # already dropped while parsing: baggage is untrusted input and must
+            # not take down the receiving service.
+            init_args["target"] = baggage.target
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
@@ -1495,9 +1398,7 @@ class RunTree(ls_schemas.RunBase):
             tags=self.tags,
             project_name=self.session_name,
             replicas=self.replicas,
-            agent_id=self.agent_id,
-            agent_environment=self.agent_environment,
-            agent_region=self.agent_region,
+            target=self.target,
         )
         headers["baggage"] = baggage.to_header()
         return headers
@@ -1519,18 +1420,14 @@ class _Baggage:
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
-        agent_id: Optional[str] = None,
-        agent_environment: Optional[str] = None,
-        agent_region: Optional[str] = None,
+        target: Optional[Target] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
         self.project_name = project_name
         self.replicas = replicas or []
-        self.agent_id = agent_id
-        self.agent_environment = agent_environment
-        self.agent_region = agent_region
+        self.target = target
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -1540,9 +1437,8 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        agent_id = None
-        agent_environment = None
-        agent_region = None
+        target_wire: dict[str, Any] = {}
+        legacy_target_wire: dict[str, Any] = {}
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1553,12 +1449,16 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
+                elif key == LANGSMITH_TARGET:
+                    parsed = json.loads(urllib.parse.unquote(value))
+                    if isinstance(parsed, dict):
+                        target_wire = parsed
                 elif key == LANGSMITH_AGENT_ID:
-                    agent_id = urllib.parse.unquote(value)
+                    legacy_target_wire["agent_id"] = urllib.parse.unquote(value)
                 elif key == LANGSMITH_AGENT_ENVIRONMENT:
-                    agent_environment = urllib.parse.unquote(value)
-                elif key == LANGSMITH_AGENT_REGION:
-                    agent_region = urllib.parse.unquote(value)
+                    legacy_target_wire["agent_environment"] = urllib.parse.unquote(
+                        value
+                    )
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1580,21 +1480,22 @@ class _Baggage:
                                 cast(WriteReplica, replica_item)
                             )
                             # A replica has to name a destination, but either
-                            # mode counts -- requiring a project would silently
-                            # drop agent-addressed replicas. An agent-addressed
-                            # one needs both members, so half a pair is dropped
-                            # here rather than raising downstream.
+                            # mode counts. A partial or malformed target is
+                            # dropped here rather than raising downstream.
+                            replica_wire = {
+                                k: cast(dict, filtered_replica).pop(k)
+                                for k in Target.wire_keys()
+                                if k in filtered_replica
+                            }
                             if filtered_replica.get("project_name"):
                                 # Naming both would raise once resolved, and a
                                 # header must not be able to do that; the
-                                # project takes precedence, so drop the agent.
-                                filtered_replica.pop("agent_id", None)
-                                filtered_replica.pop("agent_environment", None)
-                                filtered_replica.pop("agent_region", None)
+                                # project takes precedence, so drop the target.
                                 parsed_replicas.append(filtered_replica)
-                            elif filtered_replica.get("agent_id") and (
-                                filtered_replica.get("agent_environment")
-                            ):
+                            elif (
+                                replica_target := _target_from_header(replica_wire)
+                            ) is not None:
+                                filtered_replica["target"] = replica_target
                                 parsed_replicas.append(filtered_replica)
                         else:
                             logger.warning(
@@ -1610,9 +1511,7 @@ class _Baggage:
             tags=tags,
             project_name=project_name,
             replicas=replicas,
-            agent_id=agent_id,
-            agent_environment=agent_environment,
-            agent_region=agent_region,
+            target=_target_from_header(target_wire or legacy_target_wire),
         )
 
     @classmethod
@@ -1641,18 +1540,27 @@ class _Baggage:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
-        if self.agent_id:
-            items.append(f"{LANGSMITH_AGENT_ID}={urllib.parse.quote(self.agent_id)}")
-        if self.agent_environment:
+        if self.target is not None:
+            wire = self.target.to_wire()
+            items.append(f"{LANGSMITH_TARGET}={urllib.parse.quote(_dumps_json(wire))}")
+            # Legacy keys, for receivers that predate `LANGSMITH_TARGET`.
+            items.append(f"{LANGSMITH_AGENT_ID}={urllib.parse.quote(self.target.id)}")
             items.append(
                 f"{LANGSMITH_AGENT_ENVIRONMENT}="
-                f"{urllib.parse.quote(self.agent_environment)}"
-            )
-        if self.agent_region:
-            items.append(
-                f"{LANGSMITH_AGENT_REGION}={urllib.parse.quote(self.agent_region)}"
+                f"{urllib.parse.quote(self.target.environment)}"
             )
         return ",".join(items)
+
+
+def _target_from_header(wire: Mapping[str, Any]) -> Optional[Target]:
+    """Build a target from untrusted header input, or `None` if it is unusable."""
+    try:
+        return Target.from_wire(
+            {k: v for k, v in wire.items() if k in Target.wire_keys()}
+        )
+    except (utils.LangSmithUserError, TypeError) as e:
+        logger.warning("Ignoring an unusable target in a `baggage` header: %s", e)
+        return None
 
 
 @functools.lru_cache(maxsize=1)
@@ -1789,7 +1697,7 @@ def _ensure_write_replicas(
     ensured = (
         _get_write_replicas_from_env()
         if replicas is None
-        else cast(list[WriteReplica], _agent_addressing.expand_replicas(replicas))
+        else cast(list[WriteReplica], _agent_addressing.normalize_replicas(replicas))
     )
     if sum(replica.get("primary") is True for replica in ensured) > 1:
         raise ValueError("Only one replica can be marked as primary.")

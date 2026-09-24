@@ -5,10 +5,11 @@
     workspace without it rejects the runs, so tracing is lost rather than
     falling back to a project. This API may change without notice.
 
-The handle holds `(id, environment, region)` as one value, so an address can't
-be set half-way. It renders onto the existing `agent_id` / `agent_environment`
-/ `agent_region` parameters and takes the same place in the resolution chain
-they do.
+The handle is propagated whole -- through context variables, run trees,
+replicas and distributed-tracing headers -- and only unpacked into wire fields
+where a run or feedback is serialized. Every dimension is a dataclass field
+whose `wire` metadata names its payload key; the env var, header and payload
+handling below are derived from the fields, so a new dimension is a new field.
 
 Example:
     ```python
@@ -29,6 +30,7 @@ Example:
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -40,59 +42,132 @@ if TYPE_CHECKING:
     from langsmith.run_trees import WriteReplica
 
 _MAX_ID_LENGTH = 255
-_ADDRESSING_KWARGS = (
-    "target",
-    "project_name",
-    "agent_id",
-    "agent_environment",
-    "agent_region",
-)
+
+
+def _wire(name: str, *, required: bool) -> dict[str, Any]:
+    return {"wire": name, "required": required}
 
 
 @dataclasses.dataclass(frozen=True)
 class Target:
     """(experimental) A destination that runs can be addressed to.
 
-    Build one with `langsmith.target`. Both values are required at
-    construction; which environments exist is left to the server.
+    Build one with `langsmith.target`. Required fields must be set at
+    construction; which values exist is left to the server.
     """
 
-    id: str
+    id: str = dataclasses.field(metadata=_wire("agent_id", required=True))
     """The target's immutable ID."""
-    environment: str
+    environment: str = dataclasses.field(
+        metadata=_wire("agent_environment", required=True)
+    )
     """The target's environment, passed to the server as given."""
-    region: Optional[str] = None
+    region: Optional[str] = dataclasses.field(
+        default=None, metadata=_wire("agent_region", required=False)
+    )
     """Optionally, the target's region, passed to the server as given."""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.id, str) or not (0 < len(self.id) <= _MAX_ID_LENGTH):
+        for f in dataclasses.fields(self):
+            value = getattr(self, f.name)
+            if value is None and not f.metadata["required"]:
+                continue
+            if not isinstance(value, str) or not value:
+                raise utils.LangSmithUserError(
+                    f"Target {f.name} must be a non-empty string, got {value!r}."
+                )
+        if len(self.id) > _MAX_ID_LENGTH:
             raise utils.LangSmithUserError(
-                f"Target id must be a string of 1 to {_MAX_ID_LENGTH} "
-                f"characters, got {self.id!r}."
+                f"Target id must be at most {_MAX_ID_LENGTH} characters."
             )
-        if not isinstance(self.environment, str) or not self.environment:
+
+    # -- Generic over the fields: the only code that knows what a target holds.
+
+    @classmethod
+    def wire_keys(cls) -> tuple[str, ...]:
+        """Return the payload keys a target renders to."""
+        return tuple(f.metadata["wire"] for f in dataclasses.fields(cls))
+
+    def to_wire(self) -> dict[str, str]:
+        """Render as run / feedback payload fields, omitting unset ones."""
+        return {
+            f.metadata["wire"]: value
+            for f in dataclasses.fields(self)
+            if (value := getattr(self, f.name)) is not None
+        }
+
+    @classmethod
+    def from_wire(
+        cls, values: Mapping[str, Any], *, complete_from_env: bool = False
+    ) -> Optional[Target]:
+        """Build from payload-keyed values, or `None` if none are set.
+
+        With `complete_from_env`, a field left unset is read from its
+        `LANGSMITH_AGENT_<FIELD>` env var -- how a caller naming half an
+        address in code gets the other half from the environment.
+
+        Raises:
+            LangSmithUserError: If some but not all required fields are set.
+        """
+        fields = {
+            f.name: values.get(f.metadata["wire"]) for f in dataclasses.fields(cls)
+        }
+        if all(v is None for v in fields.values()):
+            return None
+        if complete_from_env:
+            fields = {
+                name: value if value is not None else _env_value(name)
+                for name, value in fields.items()
+            }
+        missing = [
+            f.metadata["wire"]
+            for f in dataclasses.fields(cls)
+            if f.metadata["required"] and fields[f.name] is None
+        ]
+        if missing:
             raise utils.LangSmithUserError(
-                f"Target environment must be a non-empty string, got "
-                f"{self.environment!r}."
+                f"An agent address needs {' and '.join(missing)} as well; set "
+                f"them in code or through their LANGSMITH_ env vars, or pass a "
+                "`langsmith.target(...)` instead."
             )
-        if self.region is not None and (
-            not isinstance(self.region, str) or not self.region
-        ):
-            raise utils.LangSmithUserError(
-                f"Target region must be a non-empty string or None, got "
-                f"{self.region!r}."
+        return cls(**fields)  # type: ignore[arg-type]
+
+    @classmethod
+    def from_env(cls) -> Optional[Target]:
+        """Read the target named by `LANGSMITH_AGENT_*` env vars, if complete.
+
+        An incomplete one is warned about at client construction and ignored
+        here, so runs keep going to the project rather than failing.
+        """
+        try:
+            return cls.from_wire(
+                {
+                    f.metadata["wire"]: _env_value(f.name)
+                    for f in dataclasses.fields(cls)
+                }
             )
+        except utils.LangSmithUserError:
+            return None
+
+    @classmethod
+    def env_values(cls) -> dict[str, Optional[str]]:
+        """Return each `LANGSMITH_AGENT_*` env var a target reads, with its value."""
+        return {_env_name(f.name): _env_value(f.name) for f in dataclasses.fields(cls)}
+
+    def seed(self) -> str:
+        """Identify this destination for deterministic replica run ids."""
+        return "/".join(["agent", *self.to_wire().values()])
+
+    # -- Sugar.
 
     def with_environment(self, environment: str) -> Target:
         """Return a handle to the same target in another environment."""
         return dataclasses.replace(self, environment=environment)
 
-    def with_region(self, region: Optional[str]) -> Target:
-        """Return a handle to the same target in another region."""
-        return dataclasses.replace(self, region=region)
-
     def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        named = [k for k in _ADDRESSING_KWARGS if k in kwargs]
+        named = [
+            k for k in ("target", "project_name", *self.wire_keys()) if k in kwargs
+        ]
         if named:
             raise utils.LangSmithUserError(
                 f"A Target already addresses the run; drop {named}, or use "
@@ -138,29 +213,27 @@ class Target:
         Only needed to set other replica fields; the handle itself can be
         passed in `replicas`.
         """
-        self._with_address(kwargs)
-        return {**kwargs, **self._replica()}  # type: ignore[typeddict-item]
-
-    def _replica(self) -> WriteReplica:
-        replica: WriteReplica = {
-            "agent_id": self.id,
-            "agent_environment": self.environment,
-        }
-        if self.region is not None:
-            replica["agent_region"] = self.region
-        return replica
+        return self._with_address(kwargs)  # type: ignore[return-value]
 
 
-def target(id: str, *, environment: str, region: Optional[str] = None) -> Target:
+def _env_name(field_name: str) -> str:
+    return f"LANGSMITH_AGENT_{field_name.upper()}"
+
+
+def _env_value(field_name: str) -> Optional[str]:
+    return utils.get_env_var(f"AGENT_{field_name.upper()}", namespaces=("LANGSMITH",))
+
+
+def target(id: str, *, environment: str, **dimensions: Optional[str]) -> Target:
     """(experimental) Build a handle that addresses runs to a target.
 
     Args:
         id: The target's ID. The server creates it on first use.
         environment: The target's environment. Not validated client-side; the
             server decides which environments are accepted.
-        region: Optionally, the target's region. Not validated client-side.
+        **dimensions: Any further `Target` fields.
 
     Raises:
-        LangSmithUserError: If either value is invalid.
+        LangSmithUserError: If a value is invalid.
     """
-    return Target(id, environment, region)
+    return Target(id, environment, **dimensions)

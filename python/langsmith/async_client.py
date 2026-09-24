@@ -627,9 +627,7 @@ class AsyncClient:
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
         _agent_addressing.reject_conflicting(
-            project=project_name,
-            agent_id=kwargs.get("agent_id"),
-            agent_environment=kwargs.get("agent_environment"),
+            project=project_name, target=kwargs.get("target")
         )
         if (
             kwargs.get("session_name") is not None
@@ -638,14 +636,8 @@ class AsyncClient:
             # Already addressed by an incoming run body; leave it alone.
             session_name = project_name
         else:
-            (
-                session_name,
-                kwargs["agent_id"],
-                kwargs["agent_environment"],
-            ) = _agent_addressing.resolve(
-                project_name,
-                kwargs.get("agent_id"),
-                kwargs.get("agent_environment"),
+            session_name, kwargs["target"] = _agent_addressing.resolve(
+                project_name, kwargs.get("target")
             )
         run_create = {
             "name": name,
@@ -1189,7 +1181,6 @@ class AsyncClient:
         extend_trace_retention: bool = True,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
-        agent_region: Optional[str] = None,
         target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -1240,8 +1231,7 @@ class AsyncClient:
                 unlike run ingestion, a feedback part never creates one.
             agent_environment: Narrows `agent_id`, and requires it. Defaults
                 server-side to `production` when omitted.
-            agent_region: Optionally narrows `agent_id`; meaningless without it.
-            target: A `Target` handle, in place of the loose agent fields.
+            target: A `Target` handle, in place of `agent_id` / `agent_environment`.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1250,9 +1240,14 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        agent_id, agent_environment, agent_region = _agent_addressing.expand_target(
-            target, agent_id, agent_environment, agent_region
-        )
+        # Loose fields keep their feedback semantics (never read from the
+        # environment, environment defaulted server-side), so they are not
+        # folded into a `Target`; a handle travels whole to the payload.
+        target = _agent_addressing.coerce_target(target)
+        if target is not None and (agent_id is not None or agent_environment):
+            raise ls_utils.LangSmithUserError(
+                "Pass either `target` or the loose `agent_*` fields, not both."
+            )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -1260,7 +1255,12 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None and agent_id is None:
+        if (
+            run_id is not None
+            and session_id is None
+            and agent_id is None
+            and target is None
+        ):
             # An agent pair locates the project directly, so it satisfies the
             # same requirement this gate exists for.
             ls_client._check_feedback_session_id(await self.info())
@@ -1319,7 +1319,7 @@ class AsyncClient:
             session_id=session_id_,
             agent_id=agent_id,
             agent_environment=agent_environment,
-            agent_region=agent_region,
+            target=target,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(
                 comparative_experiment_id, accept_null=True
