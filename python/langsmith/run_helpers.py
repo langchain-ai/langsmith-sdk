@@ -198,9 +198,9 @@ def tracing_context(
         project_name: The name of the project to log the run to.
         agent_id: (experimental) The agent to log the run to, instead of a
             project. Cannot be combined with a project in the same call.
-            Defaults to `LANGSMITH_AGENT_ID`.
+            Defaults to `LANGSMITH_TARGET_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. Defaults to `LANGSMITH_TARGET_ENVIRONMENT`.
         target: (experimental) A `Target` handle from `langsmith.target`, in
             place of `agent_id` / `agent_environment`.
         tags: The tags to add to the run.
@@ -470,9 +470,9 @@ def traceable(
             Defaults to `None`, which will use the default project.
         agent_id: (experimental) The agent to log the run to, instead of a
             project. Cannot be combined with a project in the same call.
-            Defaults to `LANGSMITH_AGENT_ID`.
+            Defaults to `LANGSMITH_TARGET_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. Defaults to `LANGSMITH_TARGET_ENVIRONMENT`.
         target: (experimental) A `Target` handle from `langsmith.target`, in
             place of `agent_id` / `agent_environment`.
         process_inputs: Custom serialization / processing function for inputs.
@@ -1084,9 +1084,9 @@ class trace:
         project_name: Project name to associate the run with.
         agent_id: (experimental) The agent to log the run to, instead of a
             project. Cannot be combined with a project in the same call.
-            Defaults to `LANGSMITH_AGENT_ID`.
+            Defaults to `LANGSMITH_TARGET_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+            without it. Defaults to `LANGSMITH_TARGET_ENVIRONMENT`.
         target: (experimental) A `Target` handle from `langsmith.target`, in
             place of `agent_id` / `agent_environment`.
         parent: Parent run.

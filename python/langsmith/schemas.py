@@ -661,7 +661,7 @@ class FeedbackBase(BaseModel):
     """The agent this feedback is logged for, instead of a project.
 
     Copied from the run the feedback describes, never read from the environment:
-    feedback follows its run, so an ambient `LANGSMITH_AGENT_ID` must not
+    feedback follows its run, so an ambient `LANGSMITH_TARGET_ID` must not
     redirect it somewhere the run never went. Mutually exclusive with
     `session_id`.
     """

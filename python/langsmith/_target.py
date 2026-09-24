@@ -103,7 +103,7 @@ class Target:
         """Build from payload-keyed values, or `None` if none are set.
 
         With `complete_from_env`, a field left unset is read from its
-        `LANGSMITH_AGENT_<FIELD>` env var -- how a caller naming half an
+        `LANGSMITH_TARGET_<FIELD>` env var -- how a caller naming half an
         address in code gets the other half from the environment.
 
         Raises:
@@ -134,7 +134,7 @@ class Target:
 
     @classmethod
     def from_env(cls) -> Optional[Target]:
-        """Read the target named by `LANGSMITH_AGENT_*` env vars, if complete.
+        """Read the target named by `LANGSMITH_TARGET_*` env vars, if complete.
 
         An incomplete one is warned about at client construction and ignored
         here, so runs keep going to the project rather than failing.
@@ -151,7 +151,7 @@ class Target:
 
     @classmethod
     def env_values(cls) -> dict[str, Optional[str]]:
-        """Return each `LANGSMITH_AGENT_*` env var a target reads, with its value."""
+        """Return each `LANGSMITH_TARGET_*` env var a target reads, with its value."""
         return {_env_name(f.name): _env_value(f.name) for f in dataclasses.fields(cls)}
 
     def seed(self) -> str:
@@ -217,11 +217,11 @@ class Target:
 
 
 def _env_name(field_name: str) -> str:
-    return f"LANGSMITH_AGENT_{field_name.upper()}"
+    return f"LANGSMITH_TARGET_{field_name.upper()}"
 
 
 def _env_value(field_name: str) -> Optional[str]:
-    return utils.get_env_var(f"AGENT_{field_name.upper()}", namespaces=("LANGSMITH",))
+    return utils.get_env_var(f"TARGET_{field_name.upper()}", namespaces=("LANGSMITH",))
 
 
 def target(id: str, *, environment: str, **dimensions: Optional[str]) -> Target:
