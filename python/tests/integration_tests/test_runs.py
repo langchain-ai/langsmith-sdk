@@ -511,9 +511,7 @@ def test_trace_file_path(langchain_client: Client) -> None:
     )
     runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs) == 1
-    # list_runs() selects a fixed field set without s3_urls, so attachments are
-    # only populated when reading a single run.
-    run = langchain_client.read_run(runs[0].id)
+    run = runs[0]
     assert run.attachments
     assert (
         run.attachments["foo"]["reader"].read()
