@@ -1,0 +1,23 @@
+"""Fan-out: write replicas send one run to several targets, or projects."""
+
+import langsmith as ls
+
+support = ls.target("customer-support", environment="production")
+
+
+@ls.traceable
+def answer(question: str) -> str:
+    """Echo the question; names no destination of its own."""
+    return f"echo: {question}"
+
+
+with ls.tracing_context(
+    replicas=[
+        support,  # a bare Target is a replica
+        support.with_environment("staging").replica(
+            updates={"metadata": {"mirrored": True}}
+        ),
+        {"project_name": "audit-log"},  # projects still work
+    ]
+):
+    answer("hello")  # written three times
