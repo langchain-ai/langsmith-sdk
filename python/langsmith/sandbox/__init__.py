@@ -121,6 +121,7 @@ from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
 from langsmith.sandbox._verify import (
     CALLBACK_SIGNATURE_HEADER,
     USER_TOKEN_HEADER,
+    AudienceMatcher,
     SandboxCallback,
     SandboxCallbackIdentity,
     SandboxCallbackRequest,
@@ -138,6 +139,7 @@ __all__ = [
     # Token and callback verification
     "SandboxTokenVerifier",
     "SandboxTokenVerificationError",
+    "AudienceMatcher",
     "SandboxUser",
     "SandboxCallback",
     "SandboxCallbackIdentity",

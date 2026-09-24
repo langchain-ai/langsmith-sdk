@@ -51,6 +51,7 @@ export {
   CALLBACK_SIGNATURE_HEADER,
 } from "./verify.js";
 export type {
+  AudienceMatcher,
   SandboxCallback,
   SandboxCallbackIdentity,
   SandboxCallbackRequest,

@@ -76,15 +76,19 @@ export interface VerifyCallbackOptions {
   /** The `X-LangSmith-Signature-JWT` header value. */
   signature: string;
   /**
-   * If set, the callback URL exactly as configured in the proxy config, which
-   * the signature's audience must match.
+   * If set, checks the signature's audience, which is the callback URL as
+   * configured in the proxy config. A string must match exactly; a predicate
+   * is called with each audience and must return true for at least one.
    */
-  url?: string;
+  aud?: AudienceMatcher;
   /** If set, the LangSmith OAuth issuer the signature must be issued by. */
   issuer?: string;
 }
 
 type Claims = Record<string, unknown>;
+
+/** An exact audience, or a predicate called with each audience in the token. */
+export type AudienceMatcher = string | ((aud: string) => boolean);
 
 interface Jwk {
   kty?: string;
@@ -168,7 +172,7 @@ function timingSafeEqual(a: string, b: string): boolean {
  * const callback = await verifier.verifyCallback({
  *   body: await req.text(),
  *   signature: req.headers.get(CALLBACK_SIGNATURE_HEADER)!,
- *   url: "https://example.com/sandbox-callback",
+ *   aud: "https://example.com/sandbox-callback",
  * });
  * ```
  */
@@ -232,7 +236,7 @@ export class SandboxTokenVerifier {
   ): Promise<SandboxCallback> {
     const claims = await this.verify(
       options.signature,
-      options.url,
+      options.aud,
       options.issuer,
     );
     if (claims.sub !== CALLBACK_SUBJECT) {
@@ -265,7 +269,7 @@ export class SandboxTokenVerifier {
 
   private async verify(
     token: string,
-    audience: string | undefined,
+    audience: AudienceMatcher | undefined,
     issuer: string | undefined,
   ): Promise<Claims> {
     const parts = token ? token.split(".") : [];
@@ -309,7 +313,11 @@ export class SandboxTokenVerifier {
     }
     const audiences =
       typeof aud === "string" ? [aud] : Array.isArray(aud) ? aud : [];
-    if (audience !== undefined && !audiences.includes(audience)) {
+    const matches =
+      typeof audience === "function"
+        ? audiences.some((a) => typeof a === "string" && audience(a))
+        : audiences.includes(audience);
+    if (audience !== undefined && !matches) {
       fail("token has the wrong audience");
     }
     return claims;

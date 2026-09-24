@@ -12,7 +12,7 @@ import hmac
 import json
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -24,6 +24,8 @@ from langsmith.sandbox._exceptions import SandboxClientError
 
 if TYPE_CHECKING:
     from jwt import PyJWKSet
+
+AudienceMatcher = Union[str, Callable[[str], bool]]
 
 USER_TOKEN_HEADER = "X-Langsmith-User-Token"
 CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
@@ -129,7 +131,7 @@ class SandboxTokenVerifier:
         callback = verifier.verify_callback(
             body=await request.body(),
             signature=request.headers[CALLBACK_SIGNATURE_HEADER],
-            url="https://example.com/sandbox-callback",
+            aud="https://example.com/sandbox-callback",
         )
     """
 
@@ -194,7 +196,7 @@ class SandboxTokenVerifier:
         *,
         body: Union[bytes, str],
         signature: str,
-        url: Optional[str] = None,
+        aud: Optional[AudienceMatcher] = None,
         issuer: Optional[str] = None,
     ) -> SandboxCallback:
         """Verify a proxy callback request and return its parsed payload.
@@ -202,26 +204,28 @@ class SandboxTokenVerifier:
         Args:
             body: The raw request body, exactly as received.
             signature: The ``X-LangSmith-Signature-JWT`` header value.
-            url: If set, the callback URL exactly as configured in the proxy
-                config, which the signature's audience must match.
+            aud: If set, checks the signature's audience, which is the callback
+                URL as configured in the proxy config. A string must match
+                exactly; a predicate is called with each audience and must
+                return True for at least one.
             issuer: If set, the LangSmith OAuth issuer the signature must be
                 issued by.
         """
         kid = self._kid(signature)
-        return self._decode_callback(signature, self._key_sync(kid), body, url, issuer)
+        return self._decode_callback(signature, self._key_sync(kid), body, aud, issuer)
 
     async def averify_callback(
         self,
         *,
         body: Union[bytes, str],
         signature: str,
-        url: Optional[str] = None,
+        aud: Optional[AudienceMatcher] = None,
         issuer: Optional[str] = None,
     ) -> SandboxCallback:
         """Async version of :meth:`verify_callback`."""
         kid = self._kid(signature)
         key = await self._key_async(kid)
-        return self._decode_callback(signature, key, body, url, issuer)
+        return self._decode_callback(signature, key, body, aud, issuer)
 
     def _kid(self, token: str) -> str:
         if not token:
@@ -285,16 +289,22 @@ class SandboxTokenVerifier:
         signature: str,
         key: Any,
         body: Union[bytes, str],
-        url: Optional[str],
+        aud: Optional[AudienceMatcher],
         issuer: Optional[str],
     ) -> SandboxCallback:
         claims = self._decode(
             signature,
             key,
-            url,
+            aud if isinstance(aud, str) else None,
             issuer,
             ["exp", "iat", "iss", "aud", "sub", "body_sha256"],
         )
+        if callable(aud):
+            audiences = claims["aud"]
+            if isinstance(audiences, str):
+                audiences = [audiences]
+            if not any(isinstance(a, str) and aud(a) for a in audiences):
+                raise SandboxTokenVerificationError("signature audience does not match")
         if claims["sub"] != _CALLBACK_SUBJECT:
             raise SandboxTokenVerificationError("signature is not a callback signature")
         raw = body.encode() if isinstance(body, str) else body

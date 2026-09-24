@@ -692,8 +692,9 @@ console.log(user.subject, user.email);
 ### Proxy Callbacks
 
 Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
-header. Pass the raw body, and optionally the callback URL exactly as
-configured to also check the signature was minted for this endpoint:
+header. Pass the raw body. Optionally pass `aud` to check the signature was
+minted for this endpoint: either the callback URL exactly as configured, or a
+predicate called with the signature's audience:
 
 ```typescript
 import { CALLBACK_SIGNATURE_HEADER } from "langsmith/sandbox";
@@ -701,7 +702,7 @@ import { CALLBACK_SIGNATURE_HEADER } from "langsmith/sandbox";
 const callback = await verifier.verifyCallback({
   body: await req.text(),
   signature: req.headers.get(CALLBACK_SIGNATURE_HEADER)!,
-  url: "https://example.com/sandbox-callback",
+  aud: "https://example.com/sandbox-callback",
 });
 console.log(callback.identity.sandbox_id, callback.host);
 ```

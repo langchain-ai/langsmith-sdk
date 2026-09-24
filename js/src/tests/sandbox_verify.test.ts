@@ -220,7 +220,7 @@ describe("SandboxTokenVerifier", () => {
       const cb = await verifier().verifyCallback({
         body,
         signature: await sign(pair, callbackClaims(body)),
-        url: CALLBACK_URL,
+        aud: CALLBACK_URL,
         issuer: APP_URL,
       });
       expect(cb.host).toBe("api.github.com");
@@ -233,12 +233,30 @@ describe("SandboxTokenVerifier", () => {
       const cb = await verifier().verifyCallback({
         body: new TextEncoder().encode(body),
         signature: await sign(pair, callbackClaims(body)),
-        url: CALLBACK_URL,
+        aud: CALLBACK_URL,
       });
       expect(cb.port).toBe(443);
     });
 
-    it("skips the audience check without a url", async () => {
+    it("accepts an aud predicate", async () => {
+      const body = callbackBody();
+      const signature = await sign(pair, callbackClaims(body));
+      const cb = await verifier().verifyCallback({
+        body,
+        signature,
+        aud: (a) => a.startsWith("https://integrator.example.com/"),
+      });
+      expect(cb.port).toBe(443);
+      await expect(
+        verifier().verifyCallback({
+          body,
+          signature,
+          aud: (a) => a === "https://x/cb",
+        }),
+      ).rejects.toThrow("audience");
+    });
+
+    it("skips the audience check without aud", async () => {
       const body = callbackBody();
       const cb = await verifier().verifyCallback({
         body,
@@ -257,13 +275,13 @@ describe("SandboxTokenVerifier", () => {
         verifier().verifyCallback({
           body: callbackBody({ host: "evil.example.com" }),
           signature,
-          url: CALLBACK_URL,
+          aud: CALLBACK_URL,
         }),
       ).rejects.toThrow("body does not match");
     });
 
     it.each([
-      ["wrong url", { aud: ["https://other.example.com/cb"] }],
+      ["wrong aud", { aud: ["https://other.example.com/cb"] }],
       ["wrong subject", { sub: "user-123" }],
       ["expired", { exp: now() - 120 }],
       ["missing body hash", { body_sha256: undefined }],
@@ -273,7 +291,7 @@ describe("SandboxTokenVerifier", () => {
         verifier().verifyCallback({
           body,
           signature: await sign(pair, callbackClaims(body, claims)),
-          url: CALLBACK_URL,
+          aud: CALLBACK_URL,
         }),
       ).rejects.toThrow(LangSmithSandboxTokenVerificationError);
     });

@@ -193,7 +193,7 @@ class TestCallback:
         cb = verifier.verify_callback(
             body=body,
             signature=_sign(key, _callback_claims(body)),
-            url=CALLBACK_URL,
+            aud=CALLBACK_URL,
             issuer=APP_URL,
         )
         assert cb.host == "api.github.com"
@@ -216,7 +216,7 @@ class TestCallback:
             }
         )
         cb = verifier.verify_callback(
-            body=body, signature=_sign(key, _callback_claims(body)), url=CALLBACK_URL
+            body=body, signature=_sign(key, _callback_claims(body)), aud=CALLBACK_URL
         )
         assert cb.request is not None
         assert cb.request.body == b"hello"
@@ -229,13 +229,13 @@ class TestCallback:
             verifier.verify_callback(
                 body=_callback_body(host="evil.example.com"),
                 signature=signature,
-                url=CALLBACK_URL,
+                aud=CALLBACK_URL,
             )
 
     @pytest.mark.parametrize(
         "claims",
         [
-            pytest.param({"aud": ["https://other.example.com/cb"]}, id="wrong url"),
+            pytest.param({"aud": ["https://other.example.com/cb"]}, id="wrong aud"),
             pytest.param({"sub": "user-123"}, id="wrong subject"),
             pytest.param({"exp": int(time.time()) - 120}, id="expired"),
         ],
@@ -246,7 +246,7 @@ class TestCallback:
             verifier.verify_callback(
                 body=body,
                 signature=_sign(key, _callback_claims(body, **claims)),
-                url=CALLBACK_URL,
+                aud=CALLBACK_URL,
             )
 
     def test_rejects_missing_body_hash(self, jwks, key, verifier):
@@ -255,10 +255,24 @@ class TestCallback:
         del claims["body_sha256"]
         with pytest.raises(SandboxTokenVerificationError):
             verifier.verify_callback(
-                body=body, signature=_sign(key, claims), url=CALLBACK_URL
+                body=body, signature=_sign(key, claims), aud=CALLBACK_URL
             )
 
-    def test_url_optional(self, jwks, key, verifier):
+    def test_aud_predicate(self, jwks, key, verifier):
+        body = _callback_body()
+        signature = _sign(key, _callback_claims(body))
+        cb = verifier.verify_callback(
+            body=body,
+            signature=signature,
+            aud=lambda a: a.startswith("https://integrator.example.com/"),
+        )
+        assert cb.port == 443
+        with pytest.raises(SandboxTokenVerificationError, match="audience"):
+            verifier.verify_callback(
+                body=body, signature=signature, aud=lambda a: a == "https://x/cb"
+            )
+
+    def test_aud_optional(self, jwks, key, verifier):
         body = _callback_body()
         claims = _callback_claims(body, aud=["https://other.example.com/cb"])
         cb = verifier.verify_callback(body=body, signature=_sign(key, claims))
@@ -267,7 +281,7 @@ class TestCallback:
     async def test_async(self, jwks, key, verifier):
         body = _callback_body()
         cb = await verifier.averify_callback(
-            body=body, signature=_sign(key, _callback_claims(body)), url=CALLBACK_URL
+            body=body, signature=_sign(key, _callback_claims(body)), aud=CALLBACK_URL
         )
         assert cb.port == 443
 
