@@ -670,8 +670,10 @@ runtime with Ed25519 support (Node.js 20+, Deno, Bun, Cloudflare Workers).
 ### Service URL Users
 
 Apps served from a service URL with LangSmith login receive the caller's
-identity in the signed `X-Langsmith-User-Token` header. The unsigned
-`X-Langsmith-User-Id` / `X-Langsmith-User-Email` headers are for display only.
+identity in `X-Langsmith-User-Id` / `X-Langsmith-User-Email`. The sandbox
+runtime strips these from inbound requests and sets them itself, so code that
+knows it is running in a sandbox can trust them as-is. Otherwise, verify the
+signed `X-Langsmith-User-Token` header, which carries the same identity:
 
 ```typescript
 import { SandboxTokenVerifier, USER_TOKEN_HEADER } from "langsmith/sandbox";

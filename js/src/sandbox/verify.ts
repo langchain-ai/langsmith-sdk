@@ -194,8 +194,10 @@ export class SandboxTokenVerifier {
    * Verify the `X-Langsmith-User-Token` header of a service URL request.
    *
    * LangSmith sets this header only for service URLs that use LangSmith login.
-   * The unsigned `X-Langsmith-User-Id` and `X-Langsmith-User-Email` headers
-   * carry the same identity but must not be relied on for access control.
+   * Code that knows it is running in a sandbox can instead trust the unsigned
+   * `X-Langsmith-User-Id` and `X-Langsmith-User-Email` headers, which the
+   * sandbox runtime strips from inbound requests and sets itself; verify this
+   * token when that is not guaranteed.
    */
   async verifyUserToken(
     token: string,

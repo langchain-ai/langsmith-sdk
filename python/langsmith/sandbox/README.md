@@ -873,8 +873,10 @@ checks EdDSA signatures against LangSmith's JWKS (derived from
 ### Service URL Users
 
 Apps served from a service URL with LangSmith login receive the caller's
-identity in the signed `X-Langsmith-User-Token` header. The unsigned
-`X-Langsmith-User-Id` / `X-Langsmith-User-Email` headers are for display only.
+identity in `X-Langsmith-User-Id` / `X-Langsmith-User-Email`. The sandbox
+runtime strips these from inbound requests and sets them itself, so code that
+knows it is running in a sandbox can trust them as-is. Otherwise, verify the
+signed `X-Langsmith-User-Token` header, which carries the same identity:
 
 ```python
 from langsmith.sandbox import USER_TOKEN_HEADER, SandboxTokenVerifier
