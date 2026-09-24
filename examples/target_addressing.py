@@ -12,7 +12,7 @@ wins, in this order:
     EXPLICIT  3 · langsmith_extra={"target": ...}, at call time
               4 · @traceable(target=...), at decoration time
     DEFAULTS  5 · ls.configure(target=...)
-              6 · LANGSMITH_AGENT_* env vars
+              6 · LANGSMITH_TARGET_* env vars
 
 Below the root the target is inherited, never re-resolved: child runs copy it,
 and the `baggage` header carries it to other services. Write replicas fan one
@@ -134,12 +134,12 @@ def way_5_configure() -> None:
 
 # -- 6 · env vars: process-wide default from configuration -------------------
 
-# No code at all. Every `Target` field has a `LANGSMITH_AGENT_<FIELD>`
+# No code at all. Every `Target` field has a `LANGSMITH_TARGET_<FIELD>`
 # variable, derived from the field name:
 #
-#     LANGSMITH_AGENT_ID=customer-support
-#     LANGSMITH_AGENT_ENVIRONMENT=production
-#     LANGSMITH_AGENT_REGION=eu            # optional
+#     LANGSMITH_TARGET_ID=customer-support
+#     LANGSMITH_TARGET_ENVIRONMENT=production
+#     LANGSMITH_TARGET_REGION=eu            # optional
 #
 # An incomplete set is warned about at client construction and ignored, so
 # runs go to the project instead.
