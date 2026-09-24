@@ -1198,6 +1198,7 @@ class trace:
         self.exceptions_to_handle = exceptions_to_handle
         self.new_run: Optional[run_trees.RunTree] = None
         self.old_ctx: Optional[dict] = None
+        self._untraced = False
 
     def _setup(self) -> run_trees.RunTree:
         """Set up the tracing context and create a new run.
@@ -1211,18 +1212,35 @@ class trace:
         """
         self.old_ctx = get_tracing_context()
         enabled = utils.tracing_is_enabled(self.old_ctx)
+        try:
+            project_name_, target_ = _get_addressing(self.project_name, self.target)
+        except _agent_addressing.EnvTargetError as e:
+            # A bad environment must not break the block it would have traced:
+            # the run tree is built but never sent.
+            _agent_addressing.log_untraced(e)
+            self._untraced = True
+            enabled = False
+            project_name_, target_ = "default", None
 
         outer_tags = _context._TAGS.get() or _context._GLOBAL_TAGS
         outer_metadata = _context._METADATA.get() or _context._GLOBAL_METADATA
         client_ = self.client or self.old_ctx.get("client")
-        parent_run_ = _get_parent_run(
-            {
-                "parent": self.parent,
-                "run_tree": self.run_tree,
-                "client": client_,
-                "project_name": self.project_name,
-            }
-        )
+        parent_run_ = None
+        if not self._untraced:
+            try:
+                parent_run_ = _get_parent_run(
+                    {
+                        "parent": self.parent,
+                        "run_tree": self.run_tree,
+                        "client": client_,
+                        "project_name": self.project_name,
+                    }
+                )
+            except _agent_addressing.EnvTargetError as e:
+                _agent_addressing.log_untraced(e)
+                self._untraced = True
+                enabled = False
+                project_name_, target_ = "default", None
 
         tags_ = sorted(set((self.tags or []) + (outer_tags or [])))
         metadata = {
@@ -1233,8 +1251,6 @@ class trace:
 
         extra_outer = self.extra or {}
         extra_outer["metadata"] = metadata
-
-        project_name_, target_ = _get_addressing(self.project_name, self.target)
 
         if parent_run_ is not None and enabled:
             self.new_run = parent_run_.create_child(
@@ -1304,7 +1320,7 @@ class trace:
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled is True and self._end_on_exit:
+            if enabled is True and self._end_on_exit and not self._untraced:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
@@ -1728,6 +1744,36 @@ def _get_parent_run(
     return crt
 
 
+def _resolve_traceable_addressing(
+    parent_run_: Optional[run_trees.RunTree],
+    langsmith_extra: LangSmithExtra,
+    container_input: _ContainerInput,
+) -> tuple[Optional[str], Optional[Target]]:
+    """Settle a `@traceable` run's `(project, target)`.
+
+    One walk over the precedence levels, highest first: the first level naming
+    a project or a target decides, and one naming both raises. `evaluate()`
+    relies on this -- it names its experiment in a `tracing_context`, which
+    outranks a target on the decorator or in the env. `resolve` consults the
+    env vars as the last level.
+    """
+    return _agent_addressing.resolve(
+        # 1 · tracing_context
+        (_context._PROJECT_NAME.get(), _context._TARGET.get()),
+        # 2 · the parent run, e.g. from distributed-tracing headers
+        (
+            parent_run_.session_name if parent_run_ else None,
+            parent_run_.target if parent_run_ else None,
+        ),
+        # 3 · langsmith_extra, at call time
+        (langsmith_extra.get("project_name"), langsmith_extra.get("target")),
+        # 4 · @traceable, at decoration time
+        (container_input["project_name"], container_input.get("target")),
+        # 5 · ls.configure
+        (_context._GLOBAL_PROJECT_NAME, _context._GLOBAL_TARGET),
+    )
+
+
 def _setup_run(
     func: Callable,
     container_input: _ContainerInput,
@@ -1753,33 +1799,23 @@ def _setup_run(
         )
     name = langsmith_extra.get("name") or container_input.get("name")
     client_ = langsmith_extra.get("client", client) or _context._CLIENT.get()
-    parent_run_ = _get_parent_run(
-        {**langsmith_extra, "client": client_}, kwargs.get("config")
-    )
     _agent_addressing.reject_conflicting(
         project=langsmith_extra.get("project_name"),
         target=langsmith_extra.get("target"),
     )
-    # One walk over the precedence levels, highest first: the first level
-    # naming a project or a target decides, and one naming both raises.
-    # `evaluate()` relies on this -- it names its experiment in a
-    # `tracing_context`, which outranks a target on the decorator or in the
-    # env. `resolve` consults the env vars as the last level.
-    selected_project, selected_target = _agent_addressing.resolve(
-        # 1 · tracing_context
-        (_context._PROJECT_NAME.get(), _context._TARGET.get()),
-        # 2 · the parent run, e.g. from distributed-tracing headers
-        (
-            parent_run_.session_name if parent_run_ else None,
-            parent_run_.target if parent_run_ else None,
-        ),
-        # 3 · langsmith_extra, at call time
-        (langsmith_extra.get("project_name"), langsmith_extra.get("target")),
-        # 4 · @traceable, at decoration time
-        (container_input["project_name"], container_input.get("target")),
-        # 5 · ls.configure
-        (_context._GLOBAL_PROJECT_NAME, _context._GLOBAL_TARGET),
-    )
+    try:
+        parent_run_ = _get_parent_run(
+            {**langsmith_extra, "client": client_}, kwargs.get("config")
+        )
+        selected_project, selected_target = _resolve_traceable_addressing(
+            parent_run_, langsmith_extra, container_input
+        )
+        untraced = False
+    except _agent_addressing.EnvTargetError as e:
+        # A bad environment must not break the call it would have traced.
+        _agent_addressing.log_untraced(e)
+        parent_run_, selected_project, selected_target = None, None, None
+        untraced = True
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
     enabled = container_input.get("enabled")
@@ -1787,8 +1823,10 @@ def _setup_run(
     # - enabled=False: never trace
     # - enabled=True: always trace
     # - enabled=None: use context/environment setting
-    if enabled is False or (
-        enabled is not True and not (parent_run_ or utils.tracing_is_enabled())
+    if (
+        untraced
+        or enabled is False
+        or (enabled is not True and not (parent_run_ or utils.tracing_is_enabled()))
     ):
         utils.log_once(
             logging.DEBUG,

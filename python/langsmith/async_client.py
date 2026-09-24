@@ -636,9 +636,14 @@ class AsyncClient:
             # Already addressed by an incoming run body; leave it alone.
             session_name = project_name
         else:
-            session_name, kwargs["target"] = _agent_addressing.resolve(
-                (project_name, kwargs.get("target"))
-            )
+            try:
+                session_name, kwargs["target"] = _agent_addressing.resolve(
+                    (project_name, kwargs.get("target"))
+                )
+            except _agent_addressing.EnvTargetError as e:
+                # Dropped, not raised: tracing must not break the caller.
+                _agent_addressing.log_untraced(e)
+                return
         run_create = {
             "name": name,
             "id": kwargs.get("id") or uuid.uuid4(),

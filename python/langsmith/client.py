@@ -2656,9 +2656,14 @@ class Client:
             # Already addressed by project id; leave it alone.
             project_name = None
         else:
-            project_name, kwargs["target"] = _agent_addressing.resolve(
-                (None, kwargs.get("target"))
-            )
+            try:
+                project_name, kwargs["target"] = _agent_addressing.resolve(
+                    (None, kwargs.get("target"))
+                )
+            except _agent_addressing.EnvTargetError as e:
+                # Dropped, not raised: tracing must not break the caller.
+                _agent_addressing.log_untraced(e)
+                return
         run_create = {
             **kwargs,
             "session_name": project_name,
