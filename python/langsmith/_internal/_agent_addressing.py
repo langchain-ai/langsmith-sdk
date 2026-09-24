@@ -2,15 +2,13 @@
 
 The address travels as a whole `Target` everywhere -- context variables, run
 trees, replicas, headers -- and is unpacked into wire fields only here, in
-`apply_to_payload` and `target_to_wire`. Loose `agent_id` / `agent_environment`
-arguments are turned into a `Target` at the entry point that receives them.
+`apply_to_payload` and `FeedbackCreate.model_dump`.
 """
 
 from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Mapping
 from typing import Any, Optional
 
 from langsmith import utils
@@ -20,51 +18,22 @@ from langsmith._target import EnvTargetError, Target
 _LOGGER = logging.getLogger(__name__)
 
 
-def coerce_target(
-    target: Optional[Target] = None, loose: Optional[Mapping[str, Any]] = None
-) -> Optional[Target]:
-    """Settle the target an entry point was given, if any.
-
-    `loose` holds whatever `agent_*` keyword arguments the caller passed. A
-    half named there is completed from the env vars; one still incomplete
-    raises here rather than as a 400 that drops the batch.
+def check_target(target: Any) -> Optional[Target]:
+    """Return `target` if it is a `Target` or `None`, else raise.
 
     Raises:
-        utils.LangSmithUserError: If `target` is not a `Target`, is combined
-            with loose fields, or the loose fields are incomplete.
+        utils.LangSmithUserError: If `target` is anything else.
     """
-    loose_target = Target.from_wire(loose or {}, complete_from_env=True)
-    if target is None:
-        return loose_target
-    if not isinstance(target, Target):
-        raise utils.LangSmithUserError(
-            f"`target` must be a `langsmith.Target`, got {type(target).__name__}. "
-            "Build one with `langsmith.target(id, environment=...)`."
-        )
-    if loose_target is not None:
-        raise utils.LangSmithUserError(
-            "Pass either `target` or the loose `agent_*` fields, not both."
-        )
-    return target
-
-
-def pop_target(values: dict) -> None:
-    """Fold `target` and loose `agent_*` keys in `values` into one `target`.
-
-    For entry points that take the address through a dict or `**kwargs`.
-    """
-    loose = {k: values.pop(k) for k in Target.wire_keys() if k in values}
-    target = coerce_target(values.pop("target", None), loose)
-    if target is not None:
-        values["target"] = target
+    if target is None or isinstance(target, Target):
+        return target
+    raise utils.LangSmithUserError(
+        f"`target` must be a `langsmith.Target`, got {type(target).__name__}. "
+        "Build one with `langsmith.target(id, environment=...)`."
+    )
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
-    """Put each replica's address in a `target` key.
-
-    A replica may be a bare `Target`, or a dict naming one through `target` or
-    loose `agent_*` keys.
-    """
+    """Put a bare `Target` replica in a `target` key, and check the rest."""
     if replicas is None:
         return None
     normalized = []
@@ -72,9 +41,8 @@ def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
         if isinstance(replica, Target):
             normalized.append({"target": replica})
             continue
-        replica = dict(replica)
-        pop_target(replica)
-        normalized.append(replica)
+        check_target(replica.get("target"))
+        normalized.append(dict(replica))
     return normalized
 
 
@@ -84,10 +52,10 @@ def warn_is_beta() -> None:
     `_warn_once` caches on the message, so this fires once per process.
     """
     _warn_once(
-        "Agent addressing (`langsmith.target` / `agent_id` / "
-        "`agent_environment`) is in beta and is enabled per workspace. A "
-        "workspace without it rejects the run, so the trace is lost rather than "
-        "falling back to a project. The behavior may change without notice."
+        "Target addressing (`langsmith.target`) is in beta and is enabled per "
+        "workspace. A workspace without it rejects the run, so the trace is "
+        "lost rather than falling back to a project. The behavior may change "
+        "without notice."
     )
 
 
@@ -242,8 +210,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     target from the post that established it, and one naming nothing is
     resolved by run id.
     """
-    pop_target(payload)
-    target = payload.pop("target", None)
+    target = check_target(payload.pop("target", None))
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
@@ -256,10 +223,3 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)
-
-
-def target_to_wire(values: dict) -> None:
-    """Render a feedback payload's `target` into its wire fields."""
-    target = values.pop("target", None)
-    if target is not None:
-        values.update(target.to_wire())

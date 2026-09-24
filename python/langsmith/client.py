@@ -2581,17 +2581,13 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            agent_id (Optional[str]): (experimental) Address the run to an
-                agent instead of a project. Cannot be combined with
-                `project_name` / `session_id` in the same call. Defaults to
-                `LANGSMITH_TARGET_ID`. Agent addressing is in beta and enabled
-                per workspace; a workspace without it rejects the run, so the
-                trace is lost rather than falling back to a project.
-            agent_environment (Optional[str]): (experimental) Narrows
-                `agent_id`; required alongside it. Defaults to
-                `LANGSMITH_TARGET_ENVIRONMENT`.
-            target (Optional[Target]): (experimental) A `Target` handle from
-                `langsmith.target`, in place of `agent_id` / `agent_environment`.
+            target (Optional[Target]): (experimental) A `Target` from
+                `langsmith.target`, to send the run to instead of a project.
+                Cannot be combined with `project_name` / `session_id` in the
+                same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
+                Target addressing is in beta and enabled per workspace; a
+                workspace without it rejects the run, so the trace is lost
+                rather than falling back to a project.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
@@ -2637,7 +2633,7 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        _agent_addressing.pop_target(kwargs)
+        _agent_addressing.check_target(kwargs.get("target"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body -- `RunTree.post` sends the
@@ -3867,16 +3863,13 @@ class Client:
             tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
             authorization (Optional[str]): The Authorization header value.
             cookie (Optional[str]): The Cookie header value.
-            **kwargs (Any): Ignored, except `agent_id` / `agent_environment`
-                or a `target` handle in their place.
+            **kwargs (Any): Ignored, except `target`.
 
                 !!! warning "Experimental"
-                    `agent_id` / `agent_environment` are in beta. They address
-                    the patch to an agent, and must match the post they belong
-                    to: an update that names neither is resolved by run id, as
-                    every update was before. Agent addressing is enabled per
-                    workspace; a workspace without it rejects the runs. Both
-                    may change without notice.
+                    `target` is in beta. It addresses the patch to a target,
+                    and must match the post it belongs to: an update that
+                    names none is resolved by run id, as every update was
+                    before. It may change without notice.
 
         Returns:
             None
@@ -3915,7 +3908,7 @@ class Client:
         replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
             "_replica_auths", None
         )
-        _agent_addressing.pop_target(kwargs)
+        _agent_addressing.check_target(kwargs.get("target"))
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -8304,8 +8297,6 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        agent_id: Optional[str] = None,
-        agent_environment: Optional[str] = None,
         target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -8317,11 +8308,11 @@ class Client:
             specify `trace_id`. *We highly encourage this for latency-sensitive environments.*
 
         !!! warning "Experimental"
-            `agent_id` / `agent_environment` are in beta. Agent addressing is
-            enabled per workspace; a workspace without it rejects the feedback,
-            so it is lost rather than falling back to a project. The agent must
-            already exist -- unlike run ingestion, a feedback part never creates
-            one. Both may change without notice.
+            `target` is in beta. Target addressing is enabled per workspace; a
+            workspace without it rejects the feedback, so it is lost rather
+            than falling back to a project. The target must already exist --
+            unlike run ingestion, a feedback part never creates one. It may
+            change without notice.
 
         Args:
             key (str):
@@ -8379,19 +8370,13 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
-            agent_id (Optional[str]):
-                The agent to attach this feedback to, instead of a project. Pass
-                whatever the run being described was traced to -- for a run
-                created in this process, `run_tree.agent_id`. Cannot be combined
-                with `session_id` / `project_id`, and is never read from
-                `LANGSMITH_TARGET_ID`: feedback follows its run, not the ambient
-                environment. The agent must already exist; unlike run ingestion,
-                a feedback part never creates one.
-            agent_environment (Optional[str]):
-                Narrows `agent_id`, and requires it. Defaults server-side to
-                `production` when omitted.
             target (Optional[Target]):
-                A `Target` handle, in place of `agent_id` / `agent_environment`.
+                The target to attach this feedback to, instead of a project.
+                Pass whatever the run being described was traced to -- for a
+                run created in this process, `run_tree.target`. Cannot be
+                combined with `session_id` / `project_id`, and is never read
+                from the env vars: feedback follows its run, not the ambient
+                environment.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -8442,14 +8427,7 @@ class Client:
             )
             ```
         """
-        # Loose fields keep their feedback semantics (never read from the
-        # environment, environment defaulted server-side), so they are not
-        # folded into a `Target`; a handle travels whole to the payload.
-        target = _agent_addressing.coerce_target(target)
-        if target is not None and (agent_id is not None or agent_environment):
-            raise ls_utils.LangSmithUserError(
-                "Pass either `target` or the loose `agent_*` fields, not both."
-            )
+        target = _agent_addressing.check_target(target)
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -8457,14 +8435,9 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if (
-            run_id is not None
-            and session_id is None
-            and agent_id is None
-            and target is None
-        ):
-            # An agent pair locates the project directly, so it satisfies the
-            # same requirement this gate exists for.
+        if run_id is not None and session_id is None and target is None:
+            # A target locates the project directly, so it satisfies the same
+            # requirement this gate exists for.
             _check_feedback_session_id(self.info)
         if kwargs:
             warnings.warn(
@@ -8526,8 +8499,6 @@ class Client:
                 modified_at=datetime.datetime.now(datetime.timezone.utc),
                 feedback_config=feedback_config,
                 session_id=_session_id,
-                agent_id=agent_id,
-                agent_environment=agent_environment,
                 target=target,
                 start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
