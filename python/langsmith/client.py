@@ -2633,7 +2633,6 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        _agent_addressing.reject_loose_fields(kwargs, "`create_run`")
         _agent_addressing.check_target(kwargs.get("target"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
@@ -3909,7 +3908,6 @@ class Client:
         replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
             "_replica_auths", None
         )
-        _agent_addressing.reject_loose_fields(kwargs, "`update_run`")
         _agent_addressing.check_target(kwargs.get("target"))
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
