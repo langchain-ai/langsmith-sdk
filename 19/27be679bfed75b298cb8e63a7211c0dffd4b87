@@ -1,0 +1,18 @@
+js/src/experimental/otel/constants.ts
+  h_b47ec433af8c62 26-28
+js/src/experimental/otel/translator.ts
+  h_b47ec433af8c62 240-250,351-358
+js/src/tests/otel_translator.vitesttest.ts
+  h_b47ec433af8c62 414-483
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1927be679bfed75b298cb8e63a7211c0dffd4b87",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}
