@@ -19,7 +19,7 @@ from tests.integration_tests.agent_addressing.conftest import (
     Harness,
     InAgent,
     InProject,
-    Rejected,
+    Untraced,
 )
 
 CASES = [
@@ -37,9 +37,9 @@ CASES = [
         kwargs={"project_name": PROJECT},
         lands_in=InProject(PROJECT),
     ),
-    # Both from the environment, the same tier: the SDK forwards both and the
-    # endpoint says which to drop. It used to pick the agent in silence, moving
-    # a customer's traces without asking.
+    # Both from the environment, the same level: neither outranks the other,
+    # so the SDK drops the run and logs why, rather than moving a customer's
+    # traces without asking.
     Case(
         "env_agent_and_env_project",
         env={
@@ -47,13 +47,7 @@ CASES = [
             "LANGSMITH_TARGET_ENVIRONMENT": "staging",
             "LANGSMITH_PROJECT": PROJECT,
         },
-        lands_in=Rejected(
-            reason="agent_id cannot be combined with session_id or session_name",
-            remedy=(
-                "Address the run by agent_id, or by session_id or session_name,"
-                " but not both"
-            ),
-        ),
+        lands_in=Untraced(reason="are both set in the environment"),
     ),
     # Addressing passed per call rather than configured in the environment.
     Case(
@@ -70,16 +64,12 @@ CASES = [
         kwargs={"agent_id": AGENT},
         lands_in=InAgent("STAGING"),
     ),
-    # A genuinely incomplete pair is forwarded rather than dropped, so the
-    # caller gets the endpoint's 400 instead of a run that quietly landed in
-    # `default`.
+    # A genuinely incomplete target is dropped and logged, not a run that
+    # quietly landed in `default`.
     Case(
         "env_agent_id_only",
         env={"LANGSMITH_TARGET_ID": AGENT},
-        lands_in=Rejected(
-            reason="agent_id and agent_environment must be sent together",
-            remedy="Send agent_id and agent_environment together",
-        ),
+        lands_in=Untraced(reason="incomplete target"),
     ),
     # The legacy path, unchanged: a project by name, and no addressing at all.
     Case(

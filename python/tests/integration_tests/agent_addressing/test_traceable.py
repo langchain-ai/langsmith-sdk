@@ -18,7 +18,7 @@ from tests.integration_tests.agent_addressing.conftest import (
     Harness,
     InAgent,
     InProject,
-    Rejected,
+    Untraced,
 )
 
 ENV_AGENT = {"LANGSMITH_TARGET_ID": AGENT, "LANGSMITH_TARGET_ENVIRONMENT": "staging"}
@@ -27,54 +27,36 @@ CONTEXT_AGENT = {"agent_id": AGENT, "agent_environment": "staging"}
 CASES = [
     # -- root, environment only ----------------------------------------------
     Case("env_agent", env=ENV_AGENT, lands_in=InAgent("STAGING")),
-    # Half a pair is forwarded and refused, not dropped into `default`.
+    # Half a target is not dropped into `default`: the call runs untraced,
+    # and the SDK logs why.
     Case(
         "env_agent_id_only",
         env={"LANGSMITH_TARGET_ID": AGENT},
-        lands_in=Rejected(
-            reason="agent_id and agent_environment must be sent together",
-            remedy="Send agent_id and agent_environment together",
-        ),
+        lands_in=Untraced(reason="incomplete target"),
     ),
-    # The other half. `_setup_run` used to test the id alone and drop this into
-    # `default` in silence; it now shares the predicate with `trace()`.
+    # The other half.
     Case(
         "env_environment_only",
         env={"LANGSMITH_TARGET_ENVIRONMENT": "staging"},
-        lands_in=Rejected(
-            reason="agent_id and agent_environment must be sent together",
-            remedy="Send agent_id and agent_environment together",
-        ),
+        lands_in=Untraced(reason="incomplete target"),
     ),
     Case(
         "env_project", env={"LANGSMITH_PROJECT": PROJECT}, lands_in=InProject(PROJECT)
     ),
     Case("no_addressing", lands_in=InProject("default")),
-    # Both from the environment, the same tier: both travel and the endpoint
-    # says which to drop. The SDK used to pick the agent in silence.
+    # Both from the environment, the same level: neither outranks the other,
+    # so the call runs untraced and the SDK logs why, rather than picking one.
     Case(
         "env_agent_and_env_project",
         env={**ENV_AGENT, "LANGSMITH_PROJECT": PROJECT},
-        lands_in=Rejected(
-            reason="agent_id cannot be combined with session_id or session_name",
-            remedy=(
-                "Address the run by agent_id, or by session_id or session_name,"
-                " but not both"
-            ),
-        ),
+        lands_in=Untraced(reason="are both set in the environment"),
     ),
     # `HOSTED_LANGSERVE_PROJECT_NAME` is a configured project too, not the
-    # `default` the SDK invents, so it travels with the agent like the one above.
+    # `default` the SDK invents, so it conflicts like the one above.
     Case(
         "env_agent_and_hosted_project",
         env={**ENV_AGENT, "HOSTED_LANGSERVE_PROJECT_NAME": PROJECT},
-        lands_in=Rejected(
-            reason="agent_id cannot be combined with session_id or session_name",
-            remedy=(
-                "Address the run by agent_id, or by session_id or session_name,"
-                " but not both"
-            ),
-        ),
+        lands_in=Untraced(reason="are both set in the environment"),
     ),
     # -- root, a project named in code beats an agent in the environment ------
     Case(
@@ -111,14 +93,14 @@ CASES = [
         context=CONTEXT_AGENT,
         lands_in=InAgent("STAGING"),
     ),
-    # Two destinations named in code, at different tiers: a project named
-    # anywhere in code wins. `evaluate()` relies on this, since it names its
-    # experiment on the call and must keep working under an ambient agent.
+    # Two destinations named in code, at different levels: the higher level
+    # wins, whichever mode it names -- here the context's agent over the
+    # decorator's project.
     Case(
         "context_agent_and_decorator_project",
         context=CONTEXT_AGENT,
         decorator={"project_name": PROJECT},
-        lands_in=InProject(PROJECT),
+        lands_in=InAgent("STAGING"),
     ),
     # The decorator's own arguments, beside `project_name`.
     Case(

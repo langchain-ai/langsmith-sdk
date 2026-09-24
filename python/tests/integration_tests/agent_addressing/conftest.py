@@ -90,7 +90,18 @@ class Rejected:
     status: int = 400
 
 
-Destination = Union[InAgent, InProject, Rejected]
+@dataclasses.dataclass(frozen=True)
+class Untraced:
+    """The SDK can't address the call from the environment, so sends nothing.
+
+    The traced code still runs; the SDK logs `reason` at warning, and no run
+    lands anywhere -- in particular not in `default`.
+    """
+
+    reason: str
+
+
+Destination = Union[InAgent, InProject, Rejected, Untraced]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -141,7 +152,8 @@ class CallArgs:
 class TracedIds:
     """The run ids a `Harness.trace` call produced."""
 
-    root: uuid.UUID
+    root: Optional[uuid.UUID]
+    """None when the root ran untraced."""
     child: Optional[uuid.UUID]
 
 
@@ -291,6 +303,10 @@ class Harness:
 
             @traceable(**self.format(case.decorator))
             def root() -> None:
+                run = get_current_run_tree()
+                if run is None and isinstance(case.lands_in, Untraced):
+                    ids["root_ran_untraced"] = uuid.uuid4()
+                    return
                 ids["root"] = _current_run_id()
                 if case.child is not None:
                     with tracing_context(**self.format(case.child.context)):
@@ -311,6 +327,8 @@ class Harness:
         # the case would silently test something else.
         ignored = [str(w.message) for w in caught if "not recognized" in str(w.message)]
         assert not ignored, f"the decorator ignored part of the case: {ignored}"
+        if "root_ran_untraced" in ids:
+            return TracedIds(root=None, child=None)
         return TracedIds(root=ids["root"], child=ids.get("child"))
 
     # -- lookups -----------------------------------------------------------
@@ -379,6 +397,9 @@ class Harness:
         if isinstance(destination, Rejected):
             self.assert_rejected(destination, run_id)
             return None
+        if isinstance(destination, Untraced):
+            self.assert_untraced(destination, run_id)
+            return None
 
         expected = self._expected_project(destination, run_id)
         assert not self.errors, f"the SDK reported ingestion errors: {self.errors}"
@@ -419,6 +440,11 @@ class Harness:
 
     def assert_traced(self, ids: TracedIds, case: Case) -> None:
         """Assert the root landed, and the child landed under it."""
+        if isinstance(case.lands_in, Untraced):
+            assert ids.root is None, f"the call was traced as run {ids.root}"
+            self.assert_untraced(case.lands_in)
+            return
+        assert ids.root is not None, "the call was not traced"
         self.assert_landed(ids.root, case.lands_in)
         if case.child is None:
             return
@@ -427,6 +453,28 @@ class Harness:
         if child is not None:
             assert child.parent_run_id == ids.root, (
                 f"the child's parent is {child.parent_run_id}, not the root {ids.root}"
+            )
+
+    def assert_untraced(
+        self, untraced: Untraced, run_id: Optional[uuid.UUID] = None
+    ) -> None:
+        """Assert the SDK said why it sent nothing, and nothing landed."""
+        logged = [
+            record.getMessage()
+            for record in self._caplog.records
+            if record.levelno >= logging.WARNING
+        ]
+        assert any(
+            "LangSmith is not tracing this call" in message
+            and untraced.reason in message
+            for message in logged
+        ), f"expected the untraced call logged at warning or above; got {logged}"
+        assert self.agent() is None, (
+            f"an untraced call must not create an agent, but {self.agent_key!r} exists"
+        )
+        if run_id is not None and (default := self.project_id("default")):
+            assert self._read_run(run_id, default, patched=False) is None, (
+                f"the run was sent to `default`: {self._describe_run(run_id)}"
             )
 
     def assert_rejected(
