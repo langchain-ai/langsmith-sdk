@@ -1,0 +1,44 @@
+python/langsmith/_internal/_operations.py
+  s_e0e0b0aad1dc60::t_0f69e7fdec3f64 189
+python/langsmith/_internal/_context.py
+  s_e0e0b0aad1dc60::t_0f69e7fdec3f64 19,50
+python/langsmith/_target.py
+  s_e0e0b0aad1dc60::t_de359b83be6b85 8-11,43-49,64-65,78-84,90-93,145-151,154,161,166
+python/langsmith/schemas.py
+  s_e0e0b0aad1dc60::t_0f69e7fdec3f64 570,671-672
+python/langsmith/utils.py
+  s_e0e0b0aad1dc60::t_0f69e7fdec3f64 487-500
+  s_e0e0b0aad1dc60::t_1473d622e3fedc 486
+python/langsmith/run_trees.py
+  s_e0e0b0aad1dc60::t_ad678b913bbe83 78,114,127-134,225,277,328,371-375,377-378,380-382,405-407,477-479,487-489,529-535,885,956,965,973-977,990,1031,1040-1041,1055,1057-1063,1073-1074,1084,1106,1120,1187,1201,1215,1243,1468-1469,1500,1524,1533,1545,1560-1561,1593,1615,1651-1654
+  s_e0e0b0aad1dc60::t_53933e4dccd0ac 323-325
+  s_e0e0b0aad1dc60::t_d51ce873a64f48 322
+python/langsmith/async_client.py
+  s_e0e0b0aad1dc60::t_fa69154c866dc8 1192,1243-1244,1253-1254,1322
+python/langsmith/evaluation/_runner.py
+  s_e0e0b0aad1dc60::t_0f69e7fdec3f64 1271
+python/langsmith/client.py
+  s_e0e0b0aad1dc60::t_fa69154c866dc8 2593-2595,2597,3936,8317,8402-8403,8405,8456-8457,8532
+python/langsmith/_internal/_agent_addressing.py
+  s_e0e0b0aad1dc60::t_19aab24fb45170 23-25,33,36,42,44-45,47,51,58-66,94-111,329,340,342-343,350-351
+python/langsmith/run_helpers.py
+  s_e0e0b0aad1dc60::t_2b289c7cbaf529 95,162,183,209-210,212,236-237,241,244,251,277,316,334,368-369,445,498-499,501,692,1118-1119,1121,1185,1215-1216,1226,1275-1276,1301,1321,1439-1441,1448-1458,1466-1467,1489-1492,1651,1750,1754,1764,1775,1870-1878,1978,2014
+python/langsmith/env/_runtime_env.py
+  s_e0e0b0aad1dc60::t_eb0b20ba235b8c 195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2cb4ad96acfb6a729e29bb7d7a61df0812022d3a",
+  "prompts": {},
+  "sessions": {
+    "s_e0e0b0aad1dc60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac46cf5e-9692-47f8-ba2d-dfef73ba4247",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
