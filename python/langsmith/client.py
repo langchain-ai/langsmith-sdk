@@ -2584,12 +2584,12 @@ class Client:
             agent_id (Optional[str]): (experimental) Address the run to an
                 agent instead of a project. Cannot be combined with
                 `project_name` / `session_id` in the same call. Defaults to
-                `LANGSMITH_AGENT_ID`. Agent addressing is in beta and enabled
+                `LANGSMITH_TARGET_ID`. Agent addressing is in beta and enabled
                 per workspace; a workspace without it rejects the run, so the
                 trace is lost rather than falling back to a project.
             agent_environment (Optional[str]): (experimental) Narrows
                 `agent_id`; required alongside it. Defaults to
-                `LANGSMITH_AGENT_ENVIRONMENT`.
+                `LANGSMITH_TARGET_ENVIRONMENT`.
             target (Optional[Target]): (experimental) A `Target` handle from
                 `langsmith.target`, in place of `agent_id` / `agent_environment`.
             api_key (Optional[str]): The API key to use for this specific run.
@@ -8379,7 +8379,7 @@ class Client:
                 whatever the run being described was traced to -- for a run
                 created in this process, `run_tree.agent_id`. Cannot be combined
                 with `session_id` / `project_id`, and is never read from
-                `LANGSMITH_AGENT_ID`: feedback follows its run, not the ambient
+                `LANGSMITH_TARGET_ID`: feedback follows its run, not the ambient
                 environment. The agent must already exist; unlike run ingestion,
                 a feedback part never creates one.
             agent_environment (Optional[str]):

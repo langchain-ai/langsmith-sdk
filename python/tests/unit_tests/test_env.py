@@ -140,8 +140,8 @@ def test_env_var_metadata_excludes_signing_secrets(
 @pytest.mark.parametrize(
     "agent_var",
     [
-        "LANGSMITH_AGENT_ENVIRONMENT",
-        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_TARGET_ENVIRONMENT",
+        "LANGSMITH_TARGET_ID",
     ],
 )
 def test_env_var_metadata_excludes_agent_addressing(

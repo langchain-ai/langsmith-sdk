@@ -118,7 +118,7 @@ def warn_on_env() -> None:
     """Warn when the environment's target cannot reach the endpoint.
 
     An incomplete one is ignored, so runs go to the project instead -- and a
-    name like `AGENT_ENVIRONMENT` is generic enough to be set by accident. A
+    name like `TARGET_ENVIRONMENT` is generic enough to be set by accident. A
     project configured beside a complete one is refused by the endpoint.
 
     Emitted at client construction rather than per run, so it is seen once.
@@ -128,7 +128,7 @@ def warn_on_env() -> None:
         return
     if (target := Target.from_env()) is None:
         warnings.warn(
-            f"{', '.join(present)} is set, but not every LANGSMITH_AGENT_* "
+            f"{', '.join(present)} is set, but not every LANGSMITH_TARGET_* "
             "variable a target needs. The partial target is ignored, so runs "
             "are traced to the project instead.",
             utils.LangSmithWarning,
@@ -139,9 +139,9 @@ def warn_on_env() -> None:
     if project is None:
         return
     warnings.warn(
-        f"LANGSMITH_AGENT_ID ({target.id!r}) and a configured project "
+        f"LANGSMITH_TARGET_ID ({target.id!r}) and a configured project "
         f"({project!r}) both address runs, and the API accepts only one. "
-        "Unset LANGSMITH_AGENT_ID to trace to the project, or unset "
+        "Unset LANGSMITH_TARGET_ID to trace to the project, or unset "
         "LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / LANGCHAIN_SESSION) to "
         "trace to the target.",
         utils.LangSmithWarning,
@@ -175,7 +175,7 @@ def reject_conflicting(
     Pass only values the caller supplied in this call: an inherited or
     ambient target beside an explicit project is not a conflict -- the project
     wins, which is what lets an evaluation set its own project while
-    `LANGSMITH_AGENT_ID` is set process-wide.
+    `LANGSMITH_TARGET_ID` is set process-wide.
 
     Raises:
         utils.LangSmithUserError: If a project and a target are both named.
