@@ -88,38 +88,68 @@ def warn_is_beta() -> None:
     )
 
 
-def resolve(
-    project: Optional[str] = None, target: Optional[Target] = None
-) -> tuple[Optional[str], Optional[Target]]:
+Tier = tuple[Optional[str], Optional[Target]]
+"""One precedence level: the `(project, target)` it names, either may be unset."""
+
+
+def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[Target]]:
     """Settle a run's single destination, as `(project, target)`.
 
-    The arguments are the values named in code; the environment fills in
-    below them. Code beats the environment in both directions: a project named
-    in code drops the ambient target, and a target named in code drops the
-    ambient project.
+    `tiers` are the levels named in code, highest precedence first; the env
+    vars are the last level, consulted here. The first level that names
+    anything decides, whichever mode it names -- a target in `tracing_context`
+    beats a project on the decorator, and the other way round.
 
-    When only the environment addresses the run, both travel and the endpoint
-    refuses the pair -- there is no tier to choose between. Only the `default`
-    project the SDK would otherwise invent is suppressed.
+    Raises:
+        utils.LangSmithUserError: If one level names both a project and a
+            target -- including the env vars.
     """
-    if project:
-        return project, None
-    if target is not None:
-        return None, target
-    if (env_target := Target.from_env()) is not None:
-        return (
-            utils.get_tracer_project(return_default_value=False) or None,
-            env_target,
-        )
-    return utils.get_tracer_project() or "default", None
+    for level, (project, target) in enumerate(tiers, start=1):
+        if project and target is not None:
+            raise _both_at_one_level(project, target, f"precedence level {level}")
+        if project:
+            return project, None
+        if target is not None:
+            return None, target
+    env_project = utils.get_tracer_project(return_default_value=False) or None
+    env_target = Target.from_env()
+    if env_project and env_target is not None:
+        raise _both_at_one_level(env_project, env_target, "the environment")
+    if env_target is not None:
+        return None, env_target
+    return env_project or "default", None
+
+
+def first_named(*tiers: Tier) -> Tier:
+    """Return the highest level that names a destination, without the env vars.
+
+    Raises:
+        utils.LangSmithUserError: If that level names both.
+    """
+    for level, (project, target) in enumerate(tiers, start=1):
+        if project and target is not None:
+            raise _both_at_one_level(project, target, f"precedence level {level}")
+        if project or target is not None:
+            return project or None, target
+    return None, None
+
+
+def _both_at_one_level(
+    project: str, target: Target, where: str
+) -> utils.LangSmithUserError:
+    return utils.LangSmithUserError(
+        f"A project ({project!r}) and a target ({target!r}) are both set at "
+        f"{where}, so neither outranks the other. Set only one there, or set "
+        "the one you want at a higher-precedence level."
+    )
 
 
 def warn_on_env() -> None:
-    """Warn when the environment's target cannot reach the endpoint.
+    """Warn when the environment's target cannot be used.
 
     An incomplete one is ignored, so runs go to the project instead -- and a
     name like `TARGET_ENVIRONMENT` is generic enough to be set by accident. A
-    project configured beside a complete one is refused by the endpoint.
+    project configured beside a complete one makes resolution raise.
 
     Emitted at client construction rather than per run, so it is seen once.
     """
@@ -140,10 +170,8 @@ def warn_on_env() -> None:
         return
     warnings.warn(
         f"LANGSMITH_TARGET_ID ({target.id!r}) and a configured project "
-        f"({project!r}) both address runs, and the API accepts only one. "
-        "Unset LANGSMITH_TARGET_ID to trace to the project, or unset "
-        "LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / LANGCHAIN_SESSION) to "
-        "trace to the target.",
+        f"({project!r}) are both set in the environment, so a run that names "
+        "neither in code raises. Unset one of them.",
         utils.LangSmithWarning,
         stacklevel=3,
     )

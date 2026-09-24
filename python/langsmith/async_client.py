@@ -637,7 +637,7 @@ class AsyncClient:
             session_name = project_name
         else:
             session_name, kwargs["target"] = _agent_addressing.resolve(
-                project_name, kwargs.get("target")
+                (project_name, kwargs.get("target"))
             )
         run_create = {
             "name": name,

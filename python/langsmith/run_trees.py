@@ -375,10 +375,13 @@ def configure(
         if enabled is not _SENTINEL:
             _context._TRACING_ENABLED.set(enabled)
             _context._GLOBAL_TRACING_ENABLED = enabled
-        if project_name is not _SENTINEL:
+        # One level holds one mode: naming one replaces the other.
+        if project_name is not _SENTINEL or (set_target and target is not None):
+            project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
-        if set_target:
+        if set_target or project_name is not None:
+            target = target if set_target else None
             _context._TARGET.set(target)
             _context._GLOBAL_TARGET = target
         if tags is not _SENTINEL:
@@ -437,13 +440,14 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     if values.get("target") is not None:
         # Already addressed, by the caller or by the resolution that built
         # these values -- `_setup_run` settles a trace's target before
-        # constructing the tree, and `create_child` copies the parent's down. A
-        # project beside it is left in place to travel with it.
-        if named_project is None:
-            values.pop("project_name", None)
-            values["session_name"] = None
+        # constructing the tree, and `create_child` copies the parent's down.
+        _agent_addressing.reject_conflicting(
+            project=named_project, target=values["target"]
+        )
+        values.pop("project_name", None)
+        values["session_name"] = None
         return
-    project, values["target"] = _agent_addressing.resolve(named_project)
+    project, values["target"] = _agent_addressing.resolve((named_project, None))
     if named_project is None:
         # Nothing was named, so whatever the resolution chose is the answer.
         # `project_name` is an alias of `session_name`; leaving it set would
@@ -1352,32 +1356,19 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-        _agent_addressing.pop_target(init_args)
-        caller_named_agent = init_args.get("target") is not None
-        caller_named_project = any(
-            init_args.get(key) is not None for key in _PROJECT_ADDRESSING_KEYS
-        )
-        if baggage.project_name and not caller_named_agent:
-            # A baggage project outranks a caller-supplied one, so a child joins
-            # the project its parent traced to.
-            init_args["project_name"] = baggage.project_name
-        elif caller_named_agent and baggage.project_name:
-            # Writing it in would conflict with the agent the caller named, and
-            # untrusted input must never raise.
-            logger.warning(
-                "Ignoring the project in a distributed-tracing `baggage` header:"
-                " this run is addressed to target %r.",
-                init_args.get("target"),
-            )
-        elif caller_named_project or caller_named_agent:
-            # The caller named a destination, so ignore any agent the header
-            # carries -- injecting it would conflict with what they named.
-            pass
+        # The header is one precedence level: an address named above it (a
+        # `tracing_context`, passed privately as `_address_above`) wins, and
+        # it beats the caller's own arguments, whichever mode each names.
+        above = init_args.pop("_address_above", None) or {}
+        below = _take_address(init_args)
+        from_baggage: dict[str, Any] = {}
+        if baggage.project_name:
+            # Untrusted input must never raise, so a header naming both keeps
+            # the project, as it always has.
+            from_baggage["project_name"] = baggage.project_name
         elif baggage.target is not None:
-            # One mode survives the hop. A malformed or partial target was
-            # already dropped while parsing: baggage is untrusted input and must
-            # not take down the receiving service.
-            init_args["target"] = baggage.target
+            from_baggage["target"] = baggage.target
+        init_args.update(above or from_baggage or below)
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
@@ -1409,6 +1400,16 @@ class RunTree(ls_schemas.RunBase):
             f"RunTree(id={self.id}, name='{self.name}', "
             f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
         )
+
+
+def _take_address(values: dict[str, Any]) -> dict[str, Any]:
+    """Pop and return the project and target keys `values` names."""
+    _agent_addressing.pop_target(values)
+    return {
+        key: value
+        for key in (*_PROJECT_ADDRESSING_KEYS, "target")
+        if (value := values.pop(key, None)) is not None
+    }
 
 
 class _Baggage:
