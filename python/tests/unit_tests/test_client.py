@@ -8128,7 +8128,7 @@ def _reset_agent_addressing_caches() -> Generator[None, None, None]:
 
 def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name in (
-        "LANGSMITH_TARGET_ID",
+        "LANGSMITH_TARGET_AGENT_ID",
         "LANGSMITH_TARGET_ENVIRONMENT",
         "LANGSMITH_PROJECT",
         "LANGCHAIN_PROJECT",
@@ -8211,7 +8211,7 @@ def test_agent_addressed_run_sends_no_project(
     """
     _clean_agent_env(
         monkeypatch,
-        LANGSMITH_TARGET_ID="my-agent",
+        LANGSMITH_TARGET_AGENT_ID="my-agent",
         LANGSMITH_TARGET_ENVIRONMENT="staging",
     )
     session = mock.Mock()
@@ -8278,7 +8278,7 @@ class TestExplicitAgentBeatsAmbient:
     def _ambient_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="ambient",
+            LANGSMITH_TARGET_AGENT_ID="ambient",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
 
@@ -8332,7 +8332,7 @@ class TestConflictingAddressingRaises:
         """
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="ambient",
+            LANGSMITH_TARGET_AGENT_ID="ambient",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         run = run_trees.RunTree(name="r", project_name="experiment-1")
@@ -8345,7 +8345,7 @@ class TestConflictingAddressingRaises:
         """`create_child` forwards both fields, but one is always None."""
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="ambient",
+            LANGSMITH_TARGET_AGENT_ID="ambient",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         parent = run_trees.RunTree(name="p", project_name="p-explicit")
@@ -8355,7 +8355,7 @@ class TestConflictingAddressingRaises:
 
 
 class TestAConfiguredProjectTravelsWithTheAgent:
-    """`LANGSMITH_TARGET_ID` beside `LANGSMITH_PROJECT` must not relocate a trace.
+    """`LANGSMITH_TARGET_AGENT_ID` beside `LANGSMITH_PROJECT` must not relocate a trace.
 
     Only the `"default"` project the SDK would invent on its own is suppressed.
     A project the caller configured goes out alongside the agent, so the
@@ -8367,7 +8367,7 @@ class TestAConfiguredProjectTravelsWithTheAgent:
     ) -> None:
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="my-agent",
+            LANGSMITH_TARGET_AGENT_ID="my-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
             LANGSMITH_PROJECT="my-proj",
         )
@@ -8389,7 +8389,7 @@ class TestAConfiguredProjectTravelsWithTheAgent:
         """An argument beats the environment, so the agent drops out entirely."""
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="my-agent",
+            LANGSMITH_TARGET_AGENT_ID="my-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
             LANGSMITH_PROJECT="my-proj",
         )
@@ -8414,7 +8414,7 @@ class TestAConfiguredProjectTravelsWithTheAgent:
         """
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="my-agent",
+            LANGSMITH_TARGET_AGENT_ID="my-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
             LANGSMITH_PROJECT="my-proj",
         )
@@ -8439,11 +8439,11 @@ class TestAConfiguredProjectTravelsWithTheAgent:
         """
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="my-agent",
+            LANGSMITH_TARGET_AGENT_ID="my-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
             LANGSMITH_PROJECT="my-proj",
         )
-        with pytest.warns(ls_utils.LangSmithWarning, match="LANGSMITH_TARGET_ID"):
+        with pytest.warns(ls_utils.LangSmithWarning, match="LANGSMITH_TARGET_AGENT_ID"):
             Client(api_url="http://localhost:1984", api_key="123")
 
 
@@ -8453,7 +8453,7 @@ class TestTheEnvGuardWarnsOnEitherHalf:
     @pytest.mark.parametrize(
         "env",
         [
-            {"LANGSMITH_TARGET_ID": "my-agent"},
+            {"LANGSMITH_TARGET_AGENT_ID": "my-agent"},
             {"LANGSMITH_TARGET_ENVIRONMENT": "staging"},
         ],
         ids=["id_only", "environment_only"],
@@ -8470,7 +8470,7 @@ class TestTheEnvGuardWarnsOnEitherHalf:
     ) -> None:
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="my-agent",
+            LANGSMITH_TARGET_AGENT_ID="my-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         with warnings.catch_warnings():
@@ -8489,7 +8489,7 @@ class TestNoRunUrlForAnAgentAddressedRun:
     def test_a_run_tree_refuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clean_agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="my-agent",
+            LANGSMITH_TARGET_AGENT_ID="my-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         run = run_trees.RunTree(name="r", inputs={})
@@ -8561,7 +8561,9 @@ class TestPatchInheritsThePostsTarget:
         of one run to two different projects.
         """
         _clean_agent_env(
-            monkeypatch, LANGSMITH_TARGET_ID="ag", LANGSMITH_TARGET_ENVIRONMENT="env"
+            monkeypatch,
+            LANGSMITH_TARGET_AGENT_ID="ag",
+            LANGSMITH_TARGET_ENVIRONMENT="env",
         )
         post: dict = {"session_name": "myproj"}
         _agent_addressing.apply_to_payload(post)
@@ -8599,7 +8601,7 @@ def test_batch_update_does_not_resolve_the_ambient_agent(
     broken.
     """
     _clean_agent_env(
-        monkeypatch, LANGSMITH_TARGET_ID="ag", LANGSMITH_TARGET_ENVIRONMENT="env"
+        monkeypatch, LANGSMITH_TARGET_AGENT_ID="ag", LANGSMITH_TARGET_ENVIRONMENT="env"
     )
     session = mock.Mock()
     session.request = mock.Mock()
@@ -8673,7 +8675,9 @@ class TestAgentAddressingWarnsOnce:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _clean_agent_env(
-            monkeypatch, LANGSMITH_TARGET_ID="ag", LANGSMITH_TARGET_ENVIRONMENT="env"
+            monkeypatch,
+            LANGSMITH_TARGET_AGENT_ID="ag",
+            LANGSMITH_TARGET_ENVIRONMENT="env",
         )
         payload: dict = {"session_name": None}
         with pytest.warns(LangSmithBetaWarning, match="Agent addressing"):
