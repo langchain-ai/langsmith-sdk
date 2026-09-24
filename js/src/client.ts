@@ -548,6 +548,10 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  /** Experimental. The agent to address this run to, instead of a project. */
+  agent_id?: string | null;
+  /** Experimental. Narrows `agent_id`; required alongside it. */
+  agent_environment?: string | null;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -2273,7 +2277,7 @@ export class Client implements LangSmithTracingClientInterface {
             !this._runCompressionDisabled &&
             serverInfo?.instance_flags?.gzip_body_enabled;
           try {
-            await this.multipartIngestRuns(ingestParams, {
+            await this._multipartIngestRuns(ingestParams, {
               ...options,
               useGzip,
               sizeBytes: batchSizeBytes,
@@ -2284,7 +2288,7 @@ export class Client implements LangSmithTracingClientInterface {
               // Fallback to batch ingest if multipart endpoint returns 404
               // Disable multipart for future requests
               this._multipartDisabled = true;
-              await this.batchIngestRuns(ingestParams, {
+              await this._batchIngestRuns(ingestParams, {
                 ...options,
                 sizeBytes: batchSizeBytes,
               });
@@ -2293,7 +2297,7 @@ export class Client implements LangSmithTracingClientInterface {
             }
           }
         } else {
-          await this.batchIngestRuns(ingestParams, {
+          await this._batchIngestRuns(ingestParams, {
             ...options,
             sizeBytes: batchSizeBytes,
           });
@@ -2525,6 +2529,17 @@ export class Client implements LangSmithTracingClientInterface {
     run: CreateRunParams,
     options?: { apiKey?: string; apiUrl?: string; workspaceId?: string },
   ): Promise<void> {
+    // Raised before anything is queued, as in Python: sent on, the pair would
+    // earn a 400 that, under auto-batching, drops unrelated runs with it.
+    // Only `project_name`, this method's own parameter, counts as naming a
+    // project; a `session_name` arrives as part of an already-resolved body
+    // (`RunTree.postRun` sends that), where a project beside an agent is
+    // meant to travel for the endpoint to refuse.
+    rejectConflictingAgentAddressing({
+      project: run.project_name,
+      agentId: run.agent_id ?? undefined,
+      agentEnvironment: run.agent_environment ?? undefined,
+    });
     if (!this._filterForSampling([run]).length) {
       return;
     }
@@ -2585,10 +2600,60 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Resolve the addressing of runs handed directly to a public ingest method,
+   * the way `createRun` / `updateRun` do. Creates without a project pick up
+   * the agent env vars; updates never consult the environment, since a patch
+   * inherits its post's target. Operates on copies so callers' objects are
+   * not mutated.
+   */
+  private _addressDirectIngestRuns({
+    runCreates,
+    runUpdates,
+  }: {
+    runCreates?: RunCreate[];
+    runUpdates?: RunUpdate[];
+  }): { runCreates?: RunCreate[]; runUpdates?: RunUpdate[] } {
+    return {
+      runCreates: runCreates?.map((create) => {
+        const addressed = { ...create };
+        applyAgentAddressingToPayload(
+          addressed as unknown as Record<string, unknown>,
+        );
+        return addressed;
+      }),
+      runUpdates: runUpdates?.map((update) => {
+        const addressed = { ...update };
+        applyAgentAddressingToPayload(
+          addressed as unknown as Record<string, unknown>,
+          true,
+        );
+        return addressed;
+      }),
+    };
+  }
+
+  /**
    * Batch ingest/upsert multiple runs in the Langsmith system.
    * @param runs
    */
   public async batchIngestRuns(
+    runs: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      sizeBytes?: number;
+    },
+  ) {
+    // Runs queued by `createRun` / `updateRun` were addressed on the way in
+    // and drain through the private method; only direct callers need it here.
+    return this._batchIngestRuns(this._addressDirectIngestRuns(runs), options);
+  }
+
+  private async _batchIngestRuns(
     {
       runCreates,
       runUpdates,
@@ -2722,6 +2787,27 @@ export class Client implements LangSmithTracingClientInterface {
    * @param runs
    */
   public async multipartIngestRuns(
+    runs: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      useGzip?: boolean;
+      sizeBytes?: number;
+    },
+  ) {
+    // Runs queued by `createRun` / `updateRun` were addressed on the way in
+    // and drain through the private method; only direct callers need it here.
+    return this._multipartIngestRuns(
+      this._addressDirectIngestRuns(runs),
+      options,
+    );
+  }
+
+  private async _multipartIngestRuns(
     {
       runCreates,
       runUpdates,
@@ -3141,17 +3227,18 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.events) {
       run.events = this._filterNewTokenEvents(run.events);
     }
+    // Applied to `run` before `data` is copied from it: the non-batch path
+    // below serializes `run` and the batch path queues `data`, so both have
+    // to see the same addressed payload.
+    applyAgentAddressingToPayload(
+      run as unknown as Record<string, unknown>,
+      true,
+    );
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
       return;
     }
-    // Applied to `run` itself: the non-batch path below serializes `run`,
-    // so mutating only the copy would send the patch unaddressed.
-    applyAgentAddressingToPayload(
-      run as unknown as Record<string, unknown>,
-      true,
-    );
     if (
       this.autoBatchTracing &&
       data.trace_id !== undefined &&

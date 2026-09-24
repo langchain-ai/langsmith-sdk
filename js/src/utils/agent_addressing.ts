@@ -76,14 +76,14 @@ function getLangsmithOnlyVariable(name: string): string | undefined {
  * comes from the environment -- that combination is a complete pair.
  */
 export function resolveAgentPair(
-  agentId?: string,
-  agentEnvironment?: string,
+  agentId?: string | null,
+  agentEnvironment?: string | null,
 ): [string | undefined, string | undefined] {
+  // `null` counts as unset, matching Python's `is not None`: untyped or
+  // JSON input can carry it, and it must not stand in for a value.
   return [
-    agentId !== undefined ? agentId : getDefaultTracerAgentId(),
-    agentEnvironment !== undefined
-      ? agentEnvironment
-      : getDefaultTracerAgentEnvironment(),
+    agentId ?? getDefaultTracerAgentId(),
+    agentEnvironment ?? getDefaultTracerAgentEnvironment(),
   ];
 }
 
@@ -96,10 +96,10 @@ export function resolveAgentPair(
  * reporting the mistake.
  */
 export function isAgentAddressed(
-  agentId?: string,
-  agentEnvironment?: string,
+  agentId?: string | null,
+  agentEnvironment?: string | null,
 ): boolean {
-  return agentId !== undefined || agentEnvironment !== undefined;
+  return agentId != null || agentEnvironment != null;
 }
 
 /**
@@ -323,8 +323,12 @@ export function applyAgentAddressingToPayload(
   payload: Record<string, unknown>,
   update = false,
 ): void {
-  let agentId = payload["agent_id"] as string | undefined;
-  let agentEnvironment = payload["agent_environment"] as string | undefined;
+  // `null` counts as unset: it must not trigger agent addressing, drop the
+  // project, or be forwarded to the endpoint.
+  let agentId = (payload["agent_id"] ?? undefined) as string | undefined;
+  let agentEnvironment = (payload["agent_environment"] ?? undefined) as
+    | string
+    | undefined;
   delete payload["agent_id"];
   delete payload["agent_environment"];
   const namedProject =

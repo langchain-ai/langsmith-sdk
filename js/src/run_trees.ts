@@ -42,18 +42,31 @@ const UUID_NAMESPACE_DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 
 const AGENT_ADDRESSING_KEYS = ["agent_id", "agent_environment"] as const;
 
+/**
+ * Marks a config whose project / agent fields were copied from elsewhere --
+ * a parent run, or a distributed-tracing header -- rather than named by the
+ * caller. Such values are already resolved and may legitimately carry both
+ * modes (an env-only setup that names both, left for the endpoint to
+ * refuse), so the constructor must not treat them as a caller conflict.
+ */
+const INHERITED_ADDRESSING = Symbol("langsmith:inherited_addressing");
+
 function namesAgent(args: Record<string, unknown>): boolean {
   return AGENT_ADDRESSING_KEYS.some((key) => args[key] != null);
 }
 
 function getReplicaKey(replica: {
   projectName?: string;
+  agentId?: string;
+  agentEnvironment?: string;
   apiUrl?: string;
   workspaceId?: string;
   apiKey?: string;
 }): string {
   // Generate a unique key by hashing the replica's identifying properties
-  // This ensures each unique replica (combination of projectName, apiUrl, workspaceId, apiKey) gets a unique key
+  // This ensures each unique replica (combination of destination -- project or
+  // agent -- plus apiUrl, workspaceId, apiKey) gets a unique key. Agent-addressed
+  // replicas have no project, so the agent pair must be part of the key.
   // Sort keys to ensure consistent hashing
   const sortedKeys = Object.keys(replica).sort();
   const keyData = sortedKeys
@@ -437,6 +450,9 @@ export class RunTree implements BaseRun {
     if ("id" in config && config.id == null) {
       delete config.id;
     }
+    const inheritedAddressing =
+      (config as Record<symbol, unknown>)[INHERITED_ADDRESSING] === true;
+    delete (config as Record<symbol, unknown>)[INHERITED_ADDRESSING];
     Object.assign(this, { ...defaultConfig, ...config, client });
 
     this.execution_order ??= 1;
@@ -445,28 +461,31 @@ export class RunTree implements BaseRun {
     // The SDK's only rejection: a call that names both a project and an
     // agent would silently lose the agent, since resolution drops it before
     // the payload is built. Named values only -- an inherited pair travels
-    // with a resolved project by design.
-    rejectConflictingAgentAddressing({
-      project: config.project_name,
-      agentId: config.agent_id,
-      agentEnvironment: config.agent_environment,
-    });
+    // with a resolved project by design, so callers that copy addressing
+    // down (`createChild`, `fromHeaders`) mark it and skip the check.
+    if (!inheritedAddressing) {
+      rejectConflictingAgentAddressing({
+        project: config.project_name,
+        agentId: config.agent_id,
+        agentEnvironment: config.agent_environment,
+      });
+    }
 
     // Settle one addressing mode for this run, before anything reads
     // `project_name` back. `getDefaultConfig` invents `default` when nothing
     // is named, so a run the caller addressed by agent carries that project
     // only as that invention -- which is what gets dropped here.
     const addressedAgent =
-      this.agent_id !== undefined || this.agent_environment !== undefined;
+      this.agent_id != null || this.agent_environment != null;
     if (addressedAgent) {
       [this.agent_id, this.agent_environment] = resolveAgentPair(
         this.agent_id,
         this.agent_environment,
       );
-      if (config.project_name === undefined) {
+      if (config.project_name == null) {
         this.project_name = undefined as unknown as string;
       }
-    } else if (config.project_name === undefined) {
+    } else if (config.project_name == null) {
       const [project, agentId, agentEnvironment] = resolveAgentAddressing(
         config.project_name,
       );
@@ -563,12 +582,24 @@ export class RunTree implements BaseRun {
 
     const childReplicas = config.replicas ?? inheritedReplicas;
 
+    // A child always follows its parent's addressing, as in Python: the
+    // child's `parent_run_id` points into the parent's destination, so
+    // addressing it elsewhere would split the trace. A project or agent on
+    // the child's own config is ignored, the same way `project_name` always
+    // has been. The parent's values are already resolved -- possibly both
+    // modes, in an env-only setup the endpoint refuses -- so they are marked
+    // as inherited rather than checked as a caller conflict.
+    const addressing = {
+      project_name: this.project_name,
+      agent_id: this.agent_id,
+      agent_environment: this.agent_environment,
+      [INHERITED_ADDRESSING]: true,
+    };
+
     const child = new RunTree({
       ...config,
       parent_run: this,
-      project_name: this.project_name,
-      agent_id: config.agent_id ?? this.agent_id,
-      agent_environment: config.agent_environment ?? this.agent_environment,
+      ...addressing,
       replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
@@ -835,6 +866,8 @@ export class RunTree implements BaseRun {
       // We store the original ID (before remapping) so it can be found in dotted_order
       const replicaKey = getReplicaKey({
         projectName,
+        agentId,
+        agentEnvironment,
         apiUrl,
         apiKey,
         workspaceId,
@@ -853,6 +886,8 @@ export class RunTree implements BaseRun {
         >) ?? {};
       const replicaKey = getReplicaKey({
         projectName,
+        agentId,
+        agentEnvironment,
         apiUrl,
         apiKey,
         workspaceId,
@@ -962,7 +997,7 @@ export class RunTree implements BaseRun {
     // Same precedence as everywhere else, applied per replica: the replica's
     // own project wins over its own agent, and a replica that names neither
     // inherits the run tree's addressing whole rather than mixing the two.
-    if (replica.projectName !== undefined) {
+    if (replica.projectName != null) {
       rejectConflictingAgentAddressing({
         project: replica.projectName,
         agentId: replica.agentId,
@@ -1212,6 +1247,22 @@ export class RunTree implements BaseRun {
       });
     }
 
+    // A parent addressed to an agent keeps that addressing: the tracer's
+    // `projectName` falls back to an invented `default`, and using it would
+    // post the child to a different destination than its parent, leaving a
+    // dangling parent id. The parent's values are already resolved, so they
+    // are inherited rather than checked as a caller conflict.
+    const parentAddressedToAgent =
+      parentRun.agent_id != null || parentRun.agent_environment != null;
+    const addressing = parentAddressedToAgent
+      ? {
+          project_name: parentRun.project_name,
+          agent_id: parentRun.agent_id,
+          agent_environment: parentRun.agent_environment,
+          [INHERITED_ADDRESSING]: true,
+        }
+      : { project_name: projectName };
+
     const parentRunTree = new RunTree({
       name: parentRun.name,
       id: parentRun.id,
@@ -1219,7 +1270,7 @@ export class RunTree implements BaseRun {
       dotted_order: parentRun.dotted_order,
       client,
       tracingEnabled,
-      project_name: projectName,
+      ...addressing,
       tags: [
         ...new Set((parentRun?.tags ?? []).concat(parentConfig?.tags ?? [])),
       ],
@@ -1278,37 +1329,42 @@ export class RunTree implements BaseRun {
       const callerNamedAgent = namesAgent(
         config as unknown as Record<string, unknown>,
       );
-      if (baggage.project_name && !callerNamedAgent) {
-        // A baggage project outranks a caller-supplied one, so a child joins
-        // the project its parent traced to.
-        config.project_name = baggage.project_name;
-      } else if (callerNamedAgent && baggage.project_name) {
-        // Writing it in would conflict with the agent the caller named, and
-        // untrusted input must never raise.
-        console.warn(
-          "Ignoring the project in a distributed-tracing `baggage` header:" +
-            " this run is addressed to agent " +
-            `${JSON.stringify(
-              (config as unknown as Record<string, unknown>)["agent_id"],
-            )}.`,
-        );
-      } else if (baggage.project_name) {
-        config.project_name = baggage.project_name;
-      }
-      // One mode survives the hop. Both members or neither: a header
-      // carrying half a pair is ignored rather than raised on, since
-      // baggage is untrusted input and a malformed one must not take down
-      // the receiving service.
-      if (!callerNamedAgent && baggage.agent_id && baggage.agent_environment) {
-        config.agent_id = baggage.agent_id;
-        config.agent_environment = baggage.agent_environment;
-      } else if (!callerNamedAgent) {
-        console.warn(
-          "Ignoring incomplete agent addressing in a distributed-tracing " +
-            "`baggage` header: both langsmith-agent-id and " +
-            "langsmith-agent-environment are required, but only one was " +
-            "present.",
-        );
+      const callerNamedProject = config.project_name != null;
+      // One mode survives the hop, as in Python. A header project wins, so a
+      // header carrying both (an upstream with `LANGSMITH_PROJECT` and the
+      // agent vars set) resolves to its project; the header's agent applies
+      // only when nobody -- header or caller -- named a destination.
+      if (baggage.project_name) {
+        if (callerNamedAgent) {
+          // Writing it in would conflict with the agent the caller named,
+          // and untrusted input must never raise.
+          console.warn(
+            "Ignoring the project in a distributed-tracing `baggage` header:" +
+              " this run is addressed to agent " +
+              `${JSON.stringify(
+                (config as unknown as Record<string, unknown>)["agent_id"],
+              )}.`,
+          );
+        } else {
+          // A baggage project outranks a caller-supplied one, so a child
+          // joins the project its parent traced to.
+          config.project_name = baggage.project_name;
+        }
+      } else if (!callerNamedProject && !callerNamedAgent) {
+        // Both members or neither: a header carrying half a pair is ignored
+        // rather than raised on, since baggage is untrusted input and a
+        // malformed one must not take down the receiving service.
+        if (baggage.agent_id && baggage.agent_environment) {
+          config.agent_id = baggage.agent_id;
+          config.agent_environment = baggage.agent_environment;
+        } else if (baggage.agent_id || baggage.agent_environment) {
+          console.warn(
+            "Ignoring incomplete agent addressing in a distributed-tracing " +
+              "`baggage` header: both langsmith-agent-id and " +
+              "langsmith-agent-environment are required, but only one was " +
+              "present.",
+          );
+        }
       }
       config.replicas = baggage.replicas;
     }
