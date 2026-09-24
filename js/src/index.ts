@@ -21,6 +21,11 @@ export { overrideFetchImplementation } from "./singletons/fetch.js";
 export { getDefaultProjectName } from "./utils/project.js";
 
 export {
+  getDefaultTracerAgentId,
+  getDefaultTracerAgentEnvironment,
+} from "./utils/agent_addressing.js";
+
+export {
   computeRunIdForSecondaryReplica,
   uuid7,
   uuid7FromTime,

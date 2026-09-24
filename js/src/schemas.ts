@@ -170,6 +170,15 @@ export interface Run extends BaseRun {
   /** The ID of the project that owns this run. */
   session_id?: string;
 
+  /**
+   * Experimental. The agent this run is addressed to, instead of a project;
+   * present only on agent-addressed runs.
+   */
+  agent_id?: string;
+
+  /** Narrows `agent_id`; meaningless without it. */
+  agent_environment?: string;
+
   /** IDs of any child runs spawned by this run. */
   child_run_ids?: string[];
 
@@ -217,6 +226,19 @@ export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
   session_name?: string;
+  /**
+   * Experimental. The agent to ingest this run into, instead of a project.
+   *
+   * Agent addressing is in beta and enabled per workspace; a workspace
+   * without it rejects the run, so tracing is lost rather than falling back
+   * to a project. Both fields may change without notice.
+   */
+  agent_id?: string;
+  /**
+   * Experimental. The agent environment to ingest this run into; requires
+   * `agent_id`.
+   */
+  agent_environment?: string;
 }
 
 export interface RunUpdate {
@@ -236,6 +258,13 @@ export interface RunUpdate {
   events?: KVMap[];
   session_id?: string;
   session_name?: string;
+  /**
+   * Experimental. The agent this update addresses, matching the post that
+   * established the run; the environment is not consulted on a patch.
+   */
+  agent_id?: string;
+  /** Narrows `agent_id`; meaningless without it. */
+  agent_environment?: string;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 
@@ -382,6 +411,18 @@ export interface FeedbackBase {
 
 export interface FeedbackCreate extends FeedbackBase {
   id: string;
+  /**
+   * The agent this feedback is logged for, instead of a project.
+   *
+   * Copied from the run the feedback describes, never read from the
+   * environment: feedback follows its run, so an ambient
+   * `LANGSMITH_AGENT_ID` must not redirect it somewhere the run never went.
+   * Mutually exclusive with `session_id`. The agent must already exist --
+   * unlike run ingestion, a feedback part never creates one.
+   */
+  agent_id?: string;
+  /** Narrows `agent_id`; meaningless without it. */
+  agent_environment?: string;
 }
 
 export interface Feedback extends FeedbackBase {

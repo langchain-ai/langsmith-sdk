@@ -25,6 +25,12 @@ import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import {
+  resolveAgentPair,
+  resolveAgentAddressing,
+  isAgentAddressed,
+  rejectConflictingAgentAddressing,
+} from "./utils/agent_addressing.js";
+import {
   uuid7FromTime,
   nonCryptographicUuid7Deterministic,
 } from "./utils/_uuid.js";
@@ -33,6 +39,12 @@ import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
 const UUID_NAMESPACE_DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+
+const AGENT_ADDRESSING_KEYS = ["agent_id", "agent_environment"] as const;
+
+function namesAgent(args: Record<string, unknown>): boolean {
+  return AGENT_ADDRESSING_KEYS.some((key) => args[key] != null);
+}
 
 function getReplicaKey(replica: {
   projectName?: string;
@@ -109,6 +121,23 @@ export interface RunTreeConfig {
   attachments?: Attachments;
   replicas?: Replica[];
   distributedParentId?: string;
+
+  /**
+   * Experimental. The agent to address this run to, instead of a project.
+   * Defaults to `LANGSMITH_AGENT_ID`.
+   *
+   * Agent addressing is in beta and enabled per workspace; a workspace
+   * without it rejects the run, so tracing is lost rather than falling back
+   * to a project. Both fields may change without notice.
+   */
+  agent_id?: string;
+  /**
+   * Experimental. Narrows `agent_id`; required alongside it. One of
+   * `local`, `development`, `staging` or `production` -- anything else is
+   * rejected rather than defaulted. Defaults to
+   * `LANGSMITH_AGENT_ENVIRONMENT`.
+   */
+  agent_environment?: string;
 }
 
 // TODO: Remove in 0.4
@@ -162,6 +191,16 @@ export type WriteReplica = {
   apiKey?: string;
   workspaceId?: string;
   projectName?: string;
+  /**
+   * Experimental. The agent to address this replica to, instead of a
+   * project. A replica that names both is rejected.
+   */
+  agentId?: string;
+  /**
+   * Experimental. Narrows `agentId`; required alongside it. One of `local`,
+   * `development`, `staging` or `production`.
+   */
+  agentEnvironment?: string;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
   updates?: KVMap | undefined;
@@ -179,6 +218,8 @@ type Replica = ProjectReplica | WriteReplica;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "projectName",
+  "agentId",
+  "agentEnvironment",
   "primary",
   "updates",
   "reroot",
@@ -205,16 +246,22 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
+  agent_id: string | undefined;
+  agent_environment: string | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
+    agent_id?: string,
+    agent_environment?: string,
   ) {
     this.metadata = metadata;
     this.tags = tags;
     this.project_name = project_name;
     this.replicas = replicas;
+    this.agent_id = agent_id;
+    this.agent_environment = agent_environment;
   }
 
   static fromHeader(value: string) {
@@ -223,6 +270,8 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
+    let agent_id: string | undefined;
+    let agent_environment: string | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -232,18 +281,45 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
+      } else if (key === "langsmith-agent-id") {
+        agent_id = value;
+      } else if (key === "langsmith-agent-environment") {
+        agent_environment = value;
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as Replica[];
         replicas = parsed.map((replica) => {
           if (Array.isArray(replica)) {
             return replica;
           }
-          return filterReplicaForHeaders(replica);
+          const filtered = filterReplicaForHeaders(replica);
+          // A replica has to name a destination, but either mode counts --
+          // requiring a project would silently drop agent-addressed
+          // replicas. An agent-addressed one needs both members, so half a
+          // pair is dropped here rather than raising downstream.
+          if (filtered.projectName) {
+            // Naming both would raise once resolved, and a header must not
+            // be able to do that; the project takes precedence, so drop the
+            // agent.
+            delete filtered.agentId;
+            delete filtered.agentEnvironment;
+            return filtered;
+          }
+          if (filtered.agentId && filtered.agentEnvironment) {
+            return filtered;
+          }
+          return { projectName: filtered.projectName };
         });
       }
     }
 
-    return new Baggage(metadata, tags, project_name, replicas);
+    return new Baggage(
+      metadata,
+      tags,
+      project_name,
+      replicas,
+      agent_id,
+      agent_environment,
+    );
   }
 
   toHeader(): string {
@@ -260,6 +336,16 @@ class Baggage {
     }
     if (this.project_name) {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
+    }
+    if (this.agent_id) {
+      items.push(`langsmith-agent-id=${encodeURIComponent(this.agent_id)}`);
+    }
+    if (this.agent_environment) {
+      items.push(
+        `langsmith-agent-environment=${encodeURIComponent(
+          this.agent_environment,
+        )}`,
+      );
     }
 
     return items.join(",");
@@ -311,6 +397,20 @@ export class RunTree implements BaseRun {
   distributedParentId?: string;
 
   /**
+   * Experimental. The agent to ingest this run into, instead of a project.
+   *
+   * Agent addressing is in beta and enabled per workspace; a workspace
+   * without it rejects the run, so tracing is lost rather than falling back
+   * to a project. Both fields may change without notice.
+   */
+  agent_id?: string;
+  /**
+   * Experimental. The agent environment to ingest this run into; requires
+   * `agent_id`.
+   */
+  agent_environment?: string;
+
+  /**
    * @interface
    */
   private _serialized_start_time: string | undefined;
@@ -341,6 +441,39 @@ export class RunTree implements BaseRun {
 
     this.execution_order ??= 1;
     this.child_execution_order ??= 1;
+
+    // The SDK's only rejection: a call that names both a project and an
+    // agent would silently lose the agent, since resolution drops it before
+    // the payload is built. Named values only -- an inherited pair travels
+    // with a resolved project by design.
+    rejectConflictingAgentAddressing({
+      project: config.project_name,
+      agentId: config.agent_id,
+      agentEnvironment: config.agent_environment,
+    });
+
+    // Settle one addressing mode for this run, before anything reads
+    // `project_name` back. `getDefaultConfig` invents `default` when nothing
+    // is named, so a run the caller addressed by agent carries that project
+    // only as that invention -- which is what gets dropped here.
+    const addressedAgent =
+      this.agent_id !== undefined || this.agent_environment !== undefined;
+    if (addressedAgent) {
+      [this.agent_id, this.agent_environment] = resolveAgentPair(
+        this.agent_id,
+        this.agent_environment,
+      );
+      if (config.project_name === undefined) {
+        this.project_name = undefined as unknown as string;
+      }
+    } else if (config.project_name === undefined) {
+      const [project, agentId, agentEnvironment] = resolveAgentAddressing(
+        config.project_name,
+      );
+      this.project_name = project as string;
+      this.agent_id = agentId;
+      this.agent_environment = agentEnvironment;
+    }
 
     // Generate serialized start time for ID generation
     if (!this.dotted_order) {
@@ -434,6 +567,8 @@ export class RunTree implements BaseRun {
       ...config,
       parent_run: this,
       project_name: this.project_name,
+      agent_id: config.agent_id ?? this.agent_id,
+      agent_environment: config.agent_environment ?? this.agent_environment,
       replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
@@ -563,6 +698,8 @@ export class RunTree implements BaseRun {
       inputs: run.inputs,
       outputs: run.outputs,
       session_name: run.project_name,
+      agent_id: run.agent_id,
+      agent_environment: run.agent_environment,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
       trace_id: run.trace_id,
@@ -634,7 +771,7 @@ export class RunTree implements BaseRun {
   }
 
   private _remapForProject(params: {
-    projectName: string;
+    projectName?: string;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -643,6 +780,8 @@ export class RunTree implements BaseRun {
     apiUrl?: string;
     apiKey?: string;
     workspaceId?: string;
+    agentId?: string;
+    agentEnvironment?: string;
   }): RunCreate & { id: string } {
     const {
       projectName,
@@ -654,11 +793,18 @@ export class RunTree implements BaseRun {
       apiUrl,
       apiKey,
       workspaceId,
+      agentId,
+      agentEnvironment,
     } = params;
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
     // Preserve legacy behavior when `primary` is omitted.
-    if (primary === undefined && projectName === this.project_name) {
+    if (
+      primary === undefined &&
+      projectName === this.project_name &&
+      agentId === this.agent_id &&
+      agentEnvironment === this.agent_environment
+    ) {
       return {
         ...baseRun,
         session_name: projectName,
@@ -746,21 +892,28 @@ export class RunTree implements BaseRun {
       return {
         ...baseRun,
         session_name: projectName,
+        agent_id: agentId,
+        agent_environment: agentEnvironment,
       };
     }
+
+    // Runs are duplicated per destination, so the derivation seed has to
+    // identify the destination -- an agent-addressed replica has no project.
+    const seedName =
+      projectName ?? ["agent", agentId ?? "", agentEnvironment ?? ""].join("/");
 
     // Remap IDs for the replica using nonCryptographicUuid7Deterministic
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = nonCryptographicUuid7Deterministic(oldId, projectName);
+    const newId = nonCryptographicUuid7Deterministic(oldId, seedName);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
       newTraceId = nonCryptographicUuid7Deterministic(
         baseRun.trace_id,
-        projectName,
+        seedName,
       );
     } else {
       newTraceId = newId;
@@ -771,7 +924,7 @@ export class RunTree implements BaseRun {
     if (baseRun.parent_run_id) {
       newParentId = nonCryptographicUuid7Deterministic(
         baseRun.parent_run_id,
-        projectName,
+        seedName,
       );
     }
 
@@ -782,10 +935,7 @@ export class RunTree implements BaseRun {
       const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = nonCryptographicUuid7Deterministic(
-          segId,
-          projectName,
-        );
+        const remappedId = nonCryptographicUuid7Deterministic(segId, seedName);
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
       });
@@ -799,6 +949,39 @@ export class RunTree implements BaseRun {
       parent_run_id: newParentId,
       dotted_order: newDottedOrder,
       session_name: projectName,
+      agent_id: agentId,
+      agent_environment: agentEnvironment,
+    };
+  }
+
+  private _replicaAddressing(replica: WriteReplica): {
+    projectName?: string;
+    agentId?: string;
+    agentEnvironment?: string;
+  } {
+    // Same precedence as everywhere else, applied per replica: the replica's
+    // own project wins over its own agent, and a replica that names neither
+    // inherits the run tree's addressing whole rather than mixing the two.
+    if (replica.projectName !== undefined) {
+      rejectConflictingAgentAddressing({
+        project: replica.projectName,
+        agentId: replica.agentId,
+        agentEnvironment: replica.agentEnvironment,
+      });
+      return { projectName: replica.projectName };
+    }
+    if (isAgentAddressed(replica.agentId, replica.agentEnvironment)) {
+      // An agent-addressed replica has no project; the endpoint refuses the
+      // pair, so the tree's own project must not ride along.
+      return {
+        agentId: replica.agentId,
+        agentEnvironment: replica.agentEnvironment,
+      };
+    }
+    return {
+      projectName: this.project_name,
+      agentId: this.agent_id,
+      agentEnvironment: this.agent_environment,
     };
   }
 
@@ -807,34 +990,39 @@ export class RunTree implements BaseRun {
     if (this._awaitInputsOnPost) {
       this.inputs = await (this.inputs as Promise<KVMap>);
     }
+    // Resolved outside the try below: a replica that names a project and an
+    // agent is a caller mistake to raise, not an ingest failure to log.
+    const replicaTargets = (this.replicas ?? []).map((replica) => ({
+      replica,
+      ...this._replicaAddressing(replica),
+    }));
     try {
       const runtimeEnv = getRuntimeEnvironment();
-      if (this.replicas && this.replicas.length > 0) {
+      if (replicaTargets.length > 0) {
         for (const {
+          replica,
           projectName,
-          primary,
-          apiKey,
-          apiUrl,
-          workspaceId,
-          reroot,
-          client: replicaClient,
-        } of this.replicas) {
+          agentId,
+          agentEnvironment,
+        } of replicaTargets) {
           const runCreate = this._remapForProject({
-            projectName: projectName ?? this.project_name,
-            primary,
+            projectName,
+            primary: replica.primary,
             runtimeEnv,
             excludeChildRuns: true,
-            reroot,
+            reroot: replica.reroot,
             distributedParentId: this.distributedParentId,
-            apiUrl,
-            apiKey,
-            workspaceId,
+            apiUrl: replica.apiUrl,
+            apiKey: replica.apiKey,
+            workspaceId: replica.workspaceId,
+            agentId,
+            agentEnvironment,
           });
-          const targetClient = replicaClient ?? this.client;
+          const targetClient = replica.client ?? this.client;
           await targetClient.createRun(runCreate, {
-            apiKey,
-            apiUrl,
-            workspaceId,
+            apiKey: replica.apiKey,
+            apiUrl: replica.apiUrl,
+            workspaceId: replica.workspaceId,
           });
         }
       } else {
@@ -876,26 +1064,21 @@ export class RunTree implements BaseRun {
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
     const excludeInputs = options?.excludeInputs ?? getExcludeInputsOnPatch();
     if (this.replicas && this.replicas.length > 0) {
-      for (const {
-        projectName,
-        primary,
-        apiKey,
-        apiUrl,
-        workspaceId,
-        updates,
-        reroot,
-        client: replicaClient,
-      } of this.replicas) {
+      for (const replica of this.replicas) {
+        const { projectName, agentId, agentEnvironment } =
+          this._replicaAddressing(replica);
         const runData = this._remapForProject({
-          projectName: projectName ?? this.project_name,
-          primary,
+          projectName,
+          primary: replica.primary,
           runtimeEnv: undefined,
           excludeChildRuns: true,
-          reroot,
+          reroot: replica.reroot,
           distributedParentId: this.distributedParentId,
-          apiUrl,
-          apiKey,
-          workspaceId,
+          apiUrl: replica.apiUrl,
+          apiKey: replica.apiKey,
+          workspaceId: replica.workspaceId,
+          agentId,
+          agentEnvironment,
         });
         const updatePayload: RunUpdate = {
           id: runData.id,
@@ -906,6 +1089,8 @@ export class RunTree implements BaseRun {
           error: runData.error,
           parent_run_id: runData.parent_run_id,
           session_name: runData.session_name,
+          agent_id: runData.agent_id,
+          agent_environment: runData.agent_environment,
           reference_example_id: runData.reference_example_id,
           end_time: runData.end_time,
           dotted_order: runData.dotted_order,
@@ -914,7 +1099,7 @@ export class RunTree implements BaseRun {
           tags: runData.tags,
           extra: runData.extra,
           attachments: this.attachments,
-          ...updates,
+          ...(replica.updates as Record<string, unknown>),
         };
         // Important that inputs is not a key in the run update
         // if excluded because it will overwrite the run create if the
@@ -922,11 +1107,11 @@ export class RunTree implements BaseRun {
         if (!excludeInputs) {
           updatePayload.inputs = runData.inputs;
         }
-        const targetClient = replicaClient ?? this.client;
+        const targetClient = replica.client ?? this.client;
         await targetClient.updateRun(runData.id, updatePayload, {
-          apiKey,
-          apiUrl,
-          workspaceId,
+          apiKey: replica.apiKey,
+          apiUrl: replica.apiUrl,
+          workspaceId: replica.workspaceId,
         });
       }
     } else {
@@ -947,6 +1132,8 @@ export class RunTree implements BaseRun {
           tags: this.tags,
           attachments: this.attachments,
           session_name: this.project_name,
+          agent_id: this.agent_id,
+          agent_environment: this.agent_environment,
         };
         // Important that inputs is not a key in the run update
         // if excluded because it will overwrite the run create if the
@@ -1088,7 +1275,41 @@ export class RunTree implements BaseRun {
       const baggage = Baggage.fromHeader(rawHeaders["baggage"]);
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
-      config.project_name = baggage.project_name;
+      const callerNamedAgent = namesAgent(
+        config as unknown as Record<string, unknown>,
+      );
+      if (baggage.project_name && !callerNamedAgent) {
+        // A baggage project outranks a caller-supplied one, so a child joins
+        // the project its parent traced to.
+        config.project_name = baggage.project_name;
+      } else if (callerNamedAgent && baggage.project_name) {
+        // Writing it in would conflict with the agent the caller named, and
+        // untrusted input must never raise.
+        console.warn(
+          "Ignoring the project in a distributed-tracing `baggage` header:" +
+            " this run is addressed to agent " +
+            `${JSON.stringify(
+              (config as unknown as Record<string, unknown>)["agent_id"],
+            )}.`,
+        );
+      } else if (baggage.project_name) {
+        config.project_name = baggage.project_name;
+      }
+      // One mode survives the hop. Both members or neither: a header
+      // carrying half a pair is ignored rather than raised on, since
+      // baggage is untrusted input and a malformed one must not take down
+      // the receiving service.
+      if (!callerNamedAgent && baggage.agent_id && baggage.agent_environment) {
+        config.agent_id = baggage.agent_id;
+        config.agent_environment = baggage.agent_environment;
+      } else if (!callerNamedAgent) {
+        console.warn(
+          "Ignoring incomplete agent addressing in a distributed-tracing " +
+            "`baggage` header: both langsmith-agent-id and " +
+            "langsmith-agent-environment are required, but only one was " +
+            "present.",
+        );
+      }
       config.replicas = baggage.replicas;
     }
 
@@ -1106,6 +1327,8 @@ export class RunTree implements BaseRun {
         this.tags,
         this.project_name,
         this.replicas,
+        this.agent_id,
+        this.agent_environment,
       ).toHeader(),
     };
 

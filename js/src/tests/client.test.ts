@@ -327,8 +327,11 @@ describe("Client", () => {
         projectId: "550e8400-e29b-41d4-a716-446655440001",
       });
 
-      // @ts-expect-error sessionId is required alongside runId.
-      await client.createFeedback({ runId: "x", key: "Foo" }).catch(() => {});
+      // sessionId is required alongside runId unless an agent pair names the
+      // destination; this call names neither, so it is rejected at typecheck.
+      await client
+        .createFeedback({ runId: "x", key: "Foo" } as never)
+        .catch(() => {});
     });
 
     it("warns without a sessionId on other deployments", async () => {
