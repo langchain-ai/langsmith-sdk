@@ -8521,8 +8521,8 @@ class TestRemoteInputNeverRaises:
         _clean_agent_env(monkeypatch)
         headers = dict(run_trees.RunTree(name="p", project_name="p-local").to_headers())
         headers["baggage"] = (
-            f"{run_trees.LANGSMITH_AGENT_ID}=remote,"
-            f"{run_trees.LANGSMITH_AGENT_ENVIRONMENT}=prod"
+            f"{run_trees.LANGSMITH_TARGET_ID}=remote,"
+            f"{run_trees.LANGSMITH_TARGET_ENVIRONMENT}=prod"
         )
         child = run_trees.RunTree.from_headers(
             headers, name="c", project_name="p-caller"
