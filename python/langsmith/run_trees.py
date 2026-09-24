@@ -212,11 +212,11 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
-LANGSMITH_AGENT_ID = sys.intern(f"{LANGSMITH_PREFIX}agent-id")
-LANGSMITH_AGENT_ENVIRONMENT = sys.intern(f"{LANGSMITH_PREFIX}agent-environment")
-# The whole target, as URL-encoded JSON of its wire fields. The two keys above
-# are still written and read, for services on SDKs that predate this one.
+# The whole target, as URL-encoded JSON of its wire fields; the two keys below
+# also carry its required fields on their own, and are read when it is absent.
 LANGSMITH_TARGET = sys.intern(f"{LANGSMITH_PREFIX}target")
+LANGSMITH_TARGET_ID = sys.intern(f"{LANGSMITH_PREFIX}target-id")
+LANGSMITH_TARGET_ENVIRONMENT = sys.intern(f"{LANGSMITH_PREFIX}target-environment")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -1438,7 +1438,7 @@ class _Baggage:
         tags = []
         project_name = None
         target_wire: dict[str, Any] = {}
-        legacy_target_wire: dict[str, Any] = {}
+        field_target_wire: dict[str, Any] = {}
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1453,12 +1453,10 @@ class _Baggage:
                     parsed = json.loads(urllib.parse.unquote(value))
                     if isinstance(parsed, dict):
                         target_wire = parsed
-                elif key == LANGSMITH_AGENT_ID:
-                    legacy_target_wire["agent_id"] = urllib.parse.unquote(value)
-                elif key == LANGSMITH_AGENT_ENVIRONMENT:
-                    legacy_target_wire["agent_environment"] = urllib.parse.unquote(
-                        value
-                    )
+                elif key == LANGSMITH_TARGET_ID:
+                    field_target_wire["agent_id"] = urllib.parse.unquote(value)
+                elif key == LANGSMITH_TARGET_ENVIRONMENT:
+                    field_target_wire["agent_environment"] = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1511,7 +1509,7 @@ class _Baggage:
             tags=tags,
             project_name=project_name,
             replicas=replicas,
-            target=_target_from_header(target_wire or legacy_target_wire),
+            target=_target_from_header(target_wire or field_target_wire),
         )
 
     @classmethod
@@ -1543,10 +1541,9 @@ class _Baggage:
         if self.target is not None:
             wire = self.target.to_wire()
             items.append(f"{LANGSMITH_TARGET}={urllib.parse.quote(_dumps_json(wire))}")
-            # Legacy keys, for receivers that predate `LANGSMITH_TARGET`.
-            items.append(f"{LANGSMITH_AGENT_ID}={urllib.parse.quote(self.target.id)}")
+            items.append(f"{LANGSMITH_TARGET_ID}={urllib.parse.quote(self.target.id)}")
             items.append(
-                f"{LANGSMITH_AGENT_ENVIRONMENT}="
+                f"{LANGSMITH_TARGET_ENVIRONMENT}="
                 f"{urllib.parse.quote(self.target.environment)}"
             )
         return ",".join(items)

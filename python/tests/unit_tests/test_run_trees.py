@@ -1031,7 +1031,7 @@ class TestBaggageAgentAddressing:
         headers["baggage"] = ",".join(
             [
                 f"{run_trees.LANGSMITH_PROJECT}=from-header",
-                f"{run_trees.LANGSMITH_AGENT_ID}=agent-from-header",
+                f"{run_trees.LANGSMITH_TARGET_ID}=agent-from-header",
             ]
         )
         child = RunTree.from_headers(headers, name="child")
@@ -1048,8 +1048,8 @@ class TestBaggageAgentAddressing:
             name="parent", project_name="proj", ls_client=_get_mock_client()
         )
         baggage = parent.to_headers()["baggage"]
-        assert run_trees.LANGSMITH_AGENT_ID not in baggage
-        assert run_trees.LANGSMITH_AGENT_ENVIRONMENT not in baggage
+        assert run_trees.LANGSMITH_TARGET_ID not in baggage
+        assert run_trees.LANGSMITH_TARGET_ENVIRONMENT not in baggage
 
     def test_agent_addressed_replica_survives_the_hop(self) -> None:
         """Replicas used to be dropped unless they named a project."""
