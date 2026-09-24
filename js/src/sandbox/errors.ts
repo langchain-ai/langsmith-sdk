@@ -355,3 +355,14 @@ export class LangSmithSandboxServerReloadError extends LangSmithSandboxConnectio
     this.name = "LangSmithSandboxServerReloadError";
   }
 }
+
+/**
+ * Raised when a sandbox user token or proxy callback signature fails
+ * verification.
+ */
+export class LangSmithSandboxTokenVerificationError extends LangSmithSandboxError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithSandboxTokenVerificationError";
+  }
+}

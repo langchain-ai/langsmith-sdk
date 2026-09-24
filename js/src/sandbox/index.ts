@@ -46,6 +46,20 @@ export {
   SERVICE_TOKEN_HEADER,
 } from "./service_url.js";
 export {
+  SandboxTokenVerifier,
+  USER_TOKEN_HEADER,
+  CALLBACK_SIGNATURE_HEADER,
+} from "./verify.js";
+export type {
+  SandboxCallback,
+  SandboxCallbackIdentity,
+  SandboxCallbackRequest,
+  SandboxTokenVerifierConfig,
+  SandboxUser,
+  VerifyCallbackOptions,
+  VerifyUserTokenOptions,
+} from "./verify.js";
+export {
   contextHubMount,
   gcsMount,
   gitMount,
@@ -142,4 +156,5 @@ export {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithDataplaneNotConfiguredError,
+  LangSmithSandboxTokenVerificationError,
 } from "./errors.js";

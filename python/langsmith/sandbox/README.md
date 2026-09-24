@@ -864,6 +864,48 @@ async with await client.sandbox(snapshot_id=snapshot_id) as sb:
     url = await svc.get_service_url()
 ```
 
+## Verifying Requests from LangSmith
+
+Install the extra: `pip install "langsmith[sandbox-auth]"`. `SandboxTokenVerifier`
+checks EdDSA signatures against LangSmith's JWKS (derived from
+`LANGSMITH_ENDPOINT`, cached).
+
+### Service URL Users
+
+Apps served from a service URL with LangSmith login receive the caller's
+identity in the signed `X-Langsmith-User-Token` header. The unsigned
+`X-Langsmith-User-Id` / `X-Langsmith-User-Email` headers are for display only.
+
+```python
+from langsmith.sandbox import USER_TOKEN_HEADER, SandboxTokenVerifier
+
+verifier = SandboxTokenVerifier()
+
+user = verifier.verify_user_token(
+    request.headers[USER_TOKEN_HEADER],
+    audience=request.headers["Host"],  # the service URL host
+)
+print(user.subject, user.email)
+```
+
+### Proxy Callbacks
+
+Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
+header. Pass the raw body and the callback URL exactly as configured:
+
+```python
+from langsmith.sandbox import CALLBACK_SIGNATURE_HEADER
+
+callback = await verifier.averify_callback(
+    body=await request.body(),
+    signature=request.headers[CALLBACK_SIGNATURE_HEADER],
+    url="https://example.com/sandbox-callback",
+)
+print(callback.identity.sandbox_id, callback.host)
+```
+
+Both raise `SandboxTokenVerificationError` on failure.
+
 ## Snapshots
 
 Snapshots are the starting point for every sandbox. They're built from Docker

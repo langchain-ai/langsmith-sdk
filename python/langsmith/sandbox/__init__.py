@@ -118,6 +118,16 @@ from langsmith.sandbox._proxy_config import (
 )
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
+from langsmith.sandbox._verify import (
+    CALLBACK_SIGNATURE_HEADER,
+    USER_TOKEN_HEADER,
+    SandboxCallback,
+    SandboxCallbackIdentity,
+    SandboxCallbackRequest,
+    SandboxTokenVerificationError,
+    SandboxTokenVerifier,
+    SandboxUser,
+)
 
 __all__ = [
     # Main classes
@@ -125,6 +135,15 @@ __all__ = [
     "AsyncSandboxClient",
     "Sandbox",
     "AsyncSandbox",
+    # Token and callback verification
+    "SandboxTokenVerifier",
+    "SandboxTokenVerificationError",
+    "SandboxUser",
+    "SandboxCallback",
+    "SandboxCallbackIdentity",
+    "SandboxCallbackRequest",
+    "USER_TOKEN_HEADER",
+    "CALLBACK_SIGNATURE_HEADER",
     # Models
     "ResourceStatus",
     "ExecutionResult",

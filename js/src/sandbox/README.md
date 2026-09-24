@@ -661,6 +661,47 @@ try {
 }
 ```
 
+## Verifying Requests from LangSmith
+
+`SandboxTokenVerifier` checks EdDSA signatures against LangSmith's JWKS
+(derived from `LANGSMITH_ENDPOINT`, cached) using Web Crypto, so it needs a
+runtime with Ed25519 support (Node.js 20+, Deno, Bun, Cloudflare Workers).
+
+### Service URL Users
+
+Apps served from a service URL with LangSmith login receive the caller's
+identity in the signed `X-Langsmith-User-Token` header. The unsigned
+`X-Langsmith-User-Id` / `X-Langsmith-User-Email` headers are for display only.
+
+```typescript
+import { SandboxTokenVerifier, USER_TOKEN_HEADER } from "langsmith/sandbox";
+
+const verifier = new SandboxTokenVerifier();
+
+const user = await verifier.verifyUserToken(req.headers.get(USER_TOKEN_HEADER)!, {
+  audience: req.headers.get("host")!, // the service URL host
+});
+console.log(user.subject, user.email);
+```
+
+### Proxy Callbacks
+
+Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
+header. Pass the raw body and the callback URL exactly as configured:
+
+```typescript
+import { CALLBACK_SIGNATURE_HEADER } from "langsmith/sandbox";
+
+const callback = await verifier.verifyCallback({
+  body: await req.text(),
+  signature: req.headers.get(CALLBACK_SIGNATURE_HEADER)!,
+  url: "https://example.com/sandbox-callback",
+});
+console.log(callback.identity.sandbox_id, callback.host);
+```
+
+Both throw `LangSmithSandboxTokenVerificationError` on failure.
+
 ## Snapshots
 
 Snapshots are the filesystem images sandboxes boot from. You can build one from
