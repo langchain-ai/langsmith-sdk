@@ -97,7 +97,7 @@ class LangSmithProjectNameTest(unittest.TestCase):
     ("getter_name", "suffix"),
     [
         ("get_tracer_target_environment", "TARGET_ENVIRONMENT"),
-        ("get_tracer_target_id", "TARGET_ID"),
+        ("get_tracer_target_id", "TARGET_AGENT_ID"),
     ],
 )
 @pytest.mark.parametrize(
@@ -123,7 +123,7 @@ def test_get_tracer_target_env_vars(
     namespaces: dict,
     expected: Optional[str],
 ) -> None:
-    """`LANGSMITH_TARGET_ENVIRONMENT` / `LANGSMITH_TARGET_ID` resolution."""
+    """`LANGSMITH_TARGET_ENVIRONMENT` / `LANGSMITH_TARGET_AGENT_ID` resolution."""
     getter = getattr(ls_utils, getter_name)
     envvars = {f"{ns}_{suffix}": value for ns, value in namespaces.items()}
     ls_utils.get_env_var.cache_clear()

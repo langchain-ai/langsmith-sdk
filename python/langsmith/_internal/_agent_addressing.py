@@ -28,7 +28,7 @@ def check_target(target: Any) -> Optional[Target]:
         return target
     raise utils.LangSmithUserError(
         f"`target` must be a `langsmith.Target`, got {type(target).__name__}. "
-        "Build one with `langsmith.target(id, environment=...)`."
+        "Build one with `langsmith.target(agent_id, environment=...)`."
     )
 
 
@@ -152,7 +152,8 @@ def warn_on_env() -> None:
     if project is None:
         return
     warnings.warn(
-        f"LANGSMITH_TARGET_ID ({target.id!r}) and a configured project "
+        f"LANGSMITH_TARGET_AGENT_ID ({target.agent_id!r}) and a configured "
+        f"project "
         f"({project!r}) are both set in the environment, so calls that name "
         "no destination in code are not traced. Unset one of them.",
         utils.LangSmithWarning,
@@ -186,7 +187,7 @@ def reject_conflicting(
     Pass only values the caller supplied in this call: an inherited or
     ambient target beside an explicit project is not a conflict -- the project
     wins, which is what lets an evaluation set its own project while
-    `LANGSMITH_TARGET_ID` is set process-wide.
+    `LANGSMITH_TARGET_AGENT_ID` is set process-wide.
 
     Raises:
         utils.LangSmithUserError: If a project and a target are both named.

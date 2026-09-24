@@ -141,7 +141,7 @@ def test_env_var_metadata_excludes_signing_secrets(
     "agent_var",
     [
         "LANGSMITH_TARGET_ENVIRONMENT",
-        "LANGSMITH_TARGET_ID",
+        "LANGSMITH_TARGET_AGENT_ID",
     ],
 )
 def test_env_var_metadata_excludes_agent_addressing(
