@@ -1268,6 +1268,7 @@ def _addressed_to_project(context: dict, project_name: str) -> dict:
         "project_name": project_name,
         "agent_id": None,
         "agent_environment": None,
+        "agent_region": None,
     }
 
 

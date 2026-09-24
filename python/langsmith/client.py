@@ -2590,8 +2590,11 @@ class Client:
             agent_environment (Optional[str]): (experimental) Narrows
                 `agent_id`; required alongside it. Defaults to
                 `LANGSMITH_AGENT_ENVIRONMENT`.
+            agent_region (Optional[str]): (experimental) Optionally narrows
+                `agent_id`; dropped without it. Defaults to
+                `LANGSMITH_AGENT_REGION`.
             target (Optional[Target]): (experimental) A `Target` handle from
-                `langsmith.target`, in place of `agent_id` / `agent_environment`.
+                `langsmith.target`, in place of the loose agent fields.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
@@ -3930,6 +3933,7 @@ class Client:
             "session_name": kwargs.pop("session_name", None),
             "agent_id": kwargs.pop("agent_id", None),
             "agent_environment": kwargs.pop("agent_environment", None),
+            "agent_region": kwargs.pop("agent_region", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
         _agent_addressing.apply_to_payload(data, update=True)
@@ -8310,6 +8314,7 @@ class Client:
         extend_trace_retention: bool = True,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
+        agent_region: Optional[str] = None,
         target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -8394,8 +8399,10 @@ class Client:
             agent_environment (Optional[str]):
                 Narrows `agent_id`, and requires it. Defaults server-side to
                 `production` when omitted.
+            agent_region (Optional[str]):
+                Optionally narrows `agent_id`; meaningless without it.
             target (Optional[Target]):
-                A `Target` handle, in place of `agent_id` / `agent_environment`.
+                A `Target` handle, in place of the loose agent fields.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -8446,8 +8453,8 @@ class Client:
             )
             ```
         """
-        agent_id, agent_environment = _agent_addressing.expand_target(
-            target, agent_id, agent_environment
+        agent_id, agent_environment, agent_region = _agent_addressing.expand_target(
+            target, agent_id, agent_environment, agent_region
         )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
@@ -8522,6 +8529,7 @@ class Client:
                 session_id=_session_id,
                 agent_id=agent_id,
                 agent_environment=agent_environment,
+                agent_region=agent_region,
                 start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
                     comparative_experiment_id, accept_null=True

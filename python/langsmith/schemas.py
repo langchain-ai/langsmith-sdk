@@ -567,6 +567,7 @@ class RunLikeDict(TypedDict, total=False):
     session_name: Optional[str]
     agent_id: Optional[str]
     agent_environment: Optional[str]
+    agent_region: Optional[str]
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
@@ -667,6 +668,8 @@ class FeedbackBase(BaseModel):
     """
     agent_environment: Optional[str] = None
     """Narrows `agent_id`; meaningless without it."""
+    agent_region: Optional[str] = None
+    """Optionally narrows `agent_id`; meaningless without it."""
     start_time: Optional[datetime] = None
     """The start time of the run this feedback is associated with."""
     comparative_experiment_id: Optional[UUID] = None

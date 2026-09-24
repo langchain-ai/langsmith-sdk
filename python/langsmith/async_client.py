@@ -1189,6 +1189,7 @@ class AsyncClient:
         extend_trace_retention: bool = True,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
+        agent_region: Optional[str] = None,
         target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -1239,7 +1240,8 @@ class AsyncClient:
                 unlike run ingestion, a feedback part never creates one.
             agent_environment: Narrows `agent_id`, and requires it. Defaults
                 server-side to `production` when omitted.
-            target: A `Target` handle, in place of `agent_id` / `agent_environment`.
+            agent_region: Optionally narrows `agent_id`; meaningless without it.
+            target: A `Target` handle, in place of the loose agent fields.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1248,8 +1250,8 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        agent_id, agent_environment = _agent_addressing.expand_target(
-            target, agent_id, agent_environment
+        agent_id, agent_environment, agent_region = _agent_addressing.expand_target(
+            target, agent_id, agent_environment, agent_region
         )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
@@ -1317,6 +1319,7 @@ class AsyncClient:
             session_id=session_id_,
             agent_id=agent_id,
             agent_environment=agent_environment,
+            agent_region=agent_region,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(
                 comparative_experiment_id, accept_null=True

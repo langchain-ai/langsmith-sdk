@@ -20,8 +20,9 @@ def expand_target(
     target: Optional[Target],
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str]]:
-    """Unpack a `Target` handle into `(agent_id, agent_environment)`.
+    agent_region: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Unpack a `Target` into `(agent_id, agent_environment, agent_region)`.
 
     Every entry point that takes the loose pair also takes a handle; this is
     the one place that turns it back into the pair, so everything downstream
@@ -29,35 +30,41 @@ def expand_target(
 
     Raises:
         utils.LangSmithUserError: If `target` is not a `Target`, or is passed
-            together with `agent_id` / `agent_environment`.
+            together with `agent_id` / `agent_environment` / `agent_region`.
     """
     if target is None:
-        return agent_id, agent_environment
+        return agent_id, agent_environment, agent_region
     if not isinstance(target, Target):
         raise utils.LangSmithUserError(
             f"`target` must be a `langsmith.Target`, got {type(target).__name__}. "
             "Build one with `langsmith.target(agent_id, environment=...)`."
         )
-    if agent_id is not None or agent_environment is not None:
+    if agent_id is not None or agent_environment is not None or agent_region:
         raise utils.LangSmithUserError(
-            "Pass either `target` or `agent_id` / `agent_environment`, not both."
+            "Pass either `target` or `agent_id` / `agent_environment` / "
+            "`agent_region`, not both."
         )
-    return target.id, target.environment
+    return target.id, target.environment, target.region
 
 
 def pop_target(values: dict) -> None:
-    """Replace a `target` key in `values` with `agent_id` / `agent_environment`.
+    """Replace a `target` key in `values` with the loose agent fields.
 
     For entry points that take the addressing through a dict or `**kwargs`.
     """
     target = values.pop("target", None)
     if target is None:
         return
-    agent_id, agent_environment = expand_target(
-        target, values.get("agent_id"), values.get("agent_environment")
+    (
+        values["agent_id"],
+        values["agent_environment"],
+        values["agent_region"],
+    ) = expand_target(
+        target,
+        values.get("agent_id"),
+        values.get("agent_environment"),
+        values.get("agent_region"),
     )
-    values["agent_id"] = agent_id
-    values["agent_environment"] = agent_environment
 
 
 def expand_replicas(replicas: Optional[Any]) -> Optional[list]:
@@ -82,6 +89,24 @@ def resolve_pair(
         if agent_environment is not None
         else utils.get_tracer_agent_environment(),
     )
+
+
+def resolve_region(
+    agent_id: Optional[str],
+    agent_environment: Optional[str],
+    agent_region: Optional[str] = None,
+) -> Optional[str]:
+    """Settle a run's region, given its already-resolved agent pair.
+
+    A region narrows an agent address but never forms one, so it is dropped
+    from a run that isn't addressed to an agent -- a stray
+    `LANGSMITH_AGENT_REGION` must not turn a project-addressed run into a
+    malformed agent one. Otherwise the value named in code wins over the env
+    var.
+    """
+    if not is_addressed(agent_id, agent_environment):
+        return None
+    return agent_region if agent_region is not None else utils.get_tracer_agent_region()
 
 
 def is_addressed(agent_id: Optional[str], agent_environment: Optional[str]) -> bool:
@@ -301,6 +326,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     """
     agent_id = payload.pop("agent_id", None)
     agent_environment = payload.pop("agent_environment", None)
+    agent_region = payload.pop("agent_region", None)
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
@@ -311,14 +337,18 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         # half an agent in code -- the missing half comes from the env var
         # rather than reaching the endpoint as an incomplete pair.
         agent_id, agent_environment = resolve_pair(agent_id, agent_environment)
+        agent_region = resolve_region(agent_id, agent_environment, agent_region)
     if not is_addressed(agent_id, agent_environment):
-        # Neither mode is addressed; leave the server-side fallback to it.
+        # Neither mode is addressed; leave the server-side fallback to it. A
+        # region alone addresses nothing, so it goes too.
         return
     warn_is_beta()
     if agent_id is not None:
         payload["agent_id"] = agent_id
     if agent_environment is not None:
         payload["agent_environment"] = agent_environment
+    if agent_region is not None:
+        payload["agent_region"] = agent_region
     if not named_project:
         # Nothing to drop, and nothing to keep: the null project keys would
         # otherwise be serialized.

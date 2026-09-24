@@ -186,7 +186,7 @@ def serialize_feedback_dict(
     # half a pair included, for the endpoint to answer with its own 400 -- same
     # reasoning as the run parts: dropping it would attach the feedback
     # somewhere the caller didn't name.
-    for _addressing_key in ("agent_id", "agent_environment"):
+    for _addressing_key in ("agent_id", "agent_environment", "agent_region"):
         if feedback_create.get(_addressing_key) is None:
             feedback_create.pop(_addressing_key, None)
     if "trace_id" not in feedback_create:

@@ -5,9 +5,10 @@
     workspace without it rejects the runs, so tracing is lost rather than
     falling back to a project. This API may change without notice.
 
-The handle holds `(id, environment)` as one value, so an address can't be set
-half-way. It renders onto the existing `agent_id` / `agent_environment`
-parameters and takes the same place in the resolution chain they do.
+The handle holds `(id, environment, region)` as one value, so an address can't
+be set half-way. It renders onto the existing `agent_id` / `agent_environment`
+/ `agent_region` parameters and takes the same place in the resolution chain
+they do.
 
 Example:
     ```python
@@ -39,7 +40,13 @@ if TYPE_CHECKING:
     from langsmith.run_trees import WriteReplica
 
 _MAX_ID_LENGTH = 255
-_ADDRESSING_KWARGS = ("target", "project_name", "agent_id", "agent_environment")
+_ADDRESSING_KWARGS = (
+    "target",
+    "project_name",
+    "agent_id",
+    "agent_environment",
+    "agent_region",
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -54,6 +61,8 @@ class Target:
     """The target's immutable ID."""
     environment: str
     """The target's environment, passed to the server as given."""
+    region: Optional[str] = None
+    """Optionally, the target's region, passed to the server as given."""
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not (0 < len(self.id) <= _MAX_ID_LENGTH):
@@ -66,10 +75,21 @@ class Target:
                 f"Target environment must be a non-empty string, got "
                 f"{self.environment!r}."
             )
+        if self.region is not None and (
+            not isinstance(self.region, str) or not self.region
+        ):
+            raise utils.LangSmithUserError(
+                f"Target region must be a non-empty string or None, got "
+                f"{self.region!r}."
+            )
 
     def with_environment(self, environment: str) -> Target:
         """Return a handle to the same target in another environment."""
         return dataclasses.replace(self, environment=environment)
+
+    def with_region(self, region: Optional[str]) -> Target:
+        """Return a handle to the same target in another region."""
+        return dataclasses.replace(self, region=region)
 
     def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         named = [k for k in _ADDRESSING_KWARGS if k in kwargs]
@@ -122,18 +142,25 @@ class Target:
         return {**kwargs, **self._replica()}  # type: ignore[typeddict-item]
 
     def _replica(self) -> WriteReplica:
-        return {"agent_id": self.id, "agent_environment": self.environment}
+        replica: WriteReplica = {
+            "agent_id": self.id,
+            "agent_environment": self.environment,
+        }
+        if self.region is not None:
+            replica["agent_region"] = self.region
+        return replica
 
 
-def target(id: str, *, environment: str) -> Target:
+def target(id: str, *, environment: str, region: Optional[str] = None) -> Target:
     """(experimental) Build a handle that addresses runs to a target.
 
     Args:
         id: The target's ID. The server creates it on first use.
         environment: The target's environment. Not validated client-side; the
             server decides which environments are accepted.
+        region: Optionally, the target's region. Not validated client-side.
 
     Raises:
         LangSmithUserError: If either value is invalid.
     """
-    return Target(id, environment)
+    return Target(id, environment, region)

@@ -92,6 +92,7 @@ _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "project_name": _context._PROJECT_NAME,
     "agent_id": _context._AGENT_ID,
     "agent_environment": _context._AGENT_ENVIRONMENT,
+    "agent_region": _context._AGENT_REGION,
     "tags": _context._TAGS,
     "metadata": _context._METADATA,
     "enabled": _context._TRACING_ENABLED,
@@ -158,6 +159,7 @@ def get_tracing_context(
             "project_name": _context._PROJECT_NAME.get(),
             "agent_id": _context._AGENT_ID.get(),
             "agent_environment": _context._AGENT_ENVIRONMENT.get(),
+            "agent_region": _context._AGENT_REGION.get(),
             "tags": _context._TAGS.get(),
             "metadata": _context._METADATA.get(),
             "enabled": _context._TRACING_ENABLED.get(),
@@ -178,6 +180,7 @@ def tracing_context(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
+    agent_region: Optional[str] = None,
     target: Optional[Target] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
@@ -203,8 +206,10 @@ def tracing_context(
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
             without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent_region: (experimental) Optionally narrows `agent_id`; ignored
+            without it. Defaults to `LANGSMITH_AGENT_REGION`.
         target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment`.
+            place of `agent_id` / `agent_environment` / `agent_region`.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.
@@ -228,21 +233,22 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
-    agent_id, agent_environment = _agent_addressing.expand_target(
-        target, agent_id, agent_environment
+    agent_id, agent_environment, agent_region = _agent_addressing.expand_target(
+        target, agent_id, agent_environment, agent_region
     )
     replicas = _agent_addressing.expand_replicas(replicas)
     current_context = get_tracing_context()
-    if project_name is not None and (agent_id, agent_environment) == (
+    if project_name is not None and (agent_id, agent_environment, agent_region) == (
         current_context.get("agent_id"),
         current_context.get("agent_environment"),
+        current_context.get("agent_region"),
     ):
         # Restoring a snapshot, not naming a second destination:
         # `tracing_context(**get_tracing_context(), project_name=...)` is how
         # the SDK and its callers carry a context across a thread or task, and
         # arrives here looking exactly like typing both. The project named here
         # wins, as it does over any other ambient agent.
-        agent_id = agent_environment = None
+        agent_id = agent_environment = agent_region = None
     _agent_addressing.reject_conflicting(
         project=project_name,
         agent_id=agent_id,
@@ -268,6 +274,7 @@ def tracing_context(
             "project_name": project_name,
             "agent_id": agent_id,
             "agent_environment": agent_environment,
+            "agent_region": agent_region,
             "tags": tags,
             "metadata": metadata,
             "enabled": enabled,
@@ -306,6 +313,7 @@ def ensure_traceable(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
+    agent_region: Optional[str] = None,
     target: Optional[Target] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -323,6 +331,7 @@ def ensure_traceable(
         project_name=project_name,
         agent_id=agent_id,
         agent_environment=agent_environment,
+        agent_region=agent_region,
         target=target,
         process_inputs=process_inputs,
         process_outputs=process_outputs,
@@ -356,6 +365,8 @@ class LangSmithExtra(TypedDict, total=False):
     """(experimental) Optional agent to log the run to, instead of a project."""
     agent_environment: Optional[str]
     """(experimental) Narrows `agent_id`; required alongside it."""
+    agent_region: Optional[str]
+    """(experimental) Optionally narrows `agent_id`."""
     target: Optional[Target]
     """(experimental) A `Target` handle, in place of `agent_id` / `agent_environment`."""
     metadata: Optional[dict[str, Any]]
@@ -431,6 +442,7 @@ def traceable(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
+    agent_region: Optional[str] = None,
     target: Optional[Target] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -483,8 +495,10 @@ def traceable(
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
             without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent_region: (experimental) Optionally narrows `agent_id`; ignored
+            without it. Defaults to `LANGSMITH_AGENT_REGION`.
         target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment`.
+            place of `agent_id` / `agent_environment` / `agent_region`.
         process_inputs: Custom serialization / processing function for inputs.
 
             Defaults to `None`.
@@ -675,6 +689,7 @@ def traceable(
         project_name=kwargs.pop("project_name", None),
         agent_id=kwargs.pop("agent_id", None),
         agent_environment=kwargs.pop("agent_environment", None),
+        agent_region=kwargs.pop("agent_region", None),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         process_chunk=kwargs.pop("process_chunk", None),
@@ -1100,8 +1115,10 @@ class trace:
             Defaults to `LANGSMITH_AGENT_ID`.
         agent_environment: (experimental) Narrows `agent_id`; meaningless
             without it. Defaults to `LANGSMITH_AGENT_ENVIRONMENT`.
+        agent_region: (experimental) Optionally narrows `agent_id`; ignored
+            without it. Defaults to `LANGSMITH_AGENT_REGION`.
         target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment`.
+            place of `agent_id` / `agent_environment` / `agent_region`.
         parent: Parent run.
 
             Can be a `RunTree`, dotted order string, or tracing headers.
@@ -1165,6 +1182,7 @@ class trace:
         project_name: Optional[str] = None,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
+        agent_region: Optional[str] = None,
         target: Optional[Target] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
@@ -1194,8 +1212,8 @@ class trace:
         self.inputs = inputs
         self.attachments = attachments
         self.extra = extra
-        agent_id, agent_environment = _agent_addressing.expand_target(
-            target, agent_id, agent_environment
+        agent_id, agent_environment, agent_region = _agent_addressing.expand_target(
+            target, agent_id, agent_environment, agent_region
         )
         _agent_addressing.reject_conflicting(
             project=project_name,
@@ -1205,6 +1223,7 @@ class trace:
         self.project_name = project_name
         self.agent_id = agent_id
         self.agent_environment = agent_environment
+        self.agent_region = agent_region
         self.parent = parent
         # The run tree is deprecated. Keeping for backwards compat.
         # Will fully merge within parent later.
@@ -1253,8 +1272,8 @@ class trace:
         extra_outer = self.extra or {}
         extra_outer["metadata"] = metadata
 
-        project_name_, agent_id_, agent_environment_ = _get_addressing(
-            self.project_name, self.agent_id, self.agent_environment
+        project_name_, agent_id_, agent_environment_, agent_region_ = _get_addressing(
+            self.project_name, self.agent_id, self.agent_environment, self.agent_region
         )
 
         if parent_run_ is not None and enabled:
@@ -1279,6 +1298,7 @@ class trace:
                 project_name=project_name_,
                 agent_id=agent_id_,
                 agent_environment=agent_environment_,
+                agent_region=agent_region_,
                 replicas=run_trees._REPLICAS.get(),
                 inputs=self.inputs or {},
                 tags=tags_,
@@ -1298,6 +1318,7 @@ class trace:
             _context._PROJECT_NAME.set(project_name_)
             _context._AGENT_ID.set(agent_id_)
             _context._AGENT_ENVIRONMENT.set(agent_environment_)
+            _context._AGENT_REGION.set(agent_region_)
             _context._CLIENT.set(client_)
 
         return self.new_run
@@ -1415,16 +1436,26 @@ def _get_addressing(
     project_name: Optional[str],
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Resolve `(project_name, agent_id, agent_environment)` for a new run.
+    agent_region: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Resolve `(project, agent_id, agent_environment, agent_region)` for a run.
 
     Mirrors `_get_project_name`, but for both addressing modes. The two chains
     are walked in the same order, so an agent named where a project would have
     been named takes effect at the same point; `_resolve_addressing` settles
     which of the two the run ends up carrying.
     """
-    return _agent_addressing.resolve(
-        *_named_addressing(project_name, agent_id, agent_environment)
+    project, agent_id, agent_environment, agent_region = _named_addressing(
+        project_name, agent_id, agent_environment, agent_region
+    )
+    project, agent_id, agent_environment = _agent_addressing.resolve(
+        project, agent_id, agent_environment
+    )
+    return (
+        project,
+        agent_id,
+        agent_environment,
+        _agent_addressing.resolve_region(agent_id, agent_environment, agent_region),
     )
 
 
@@ -1432,7 +1463,8 @@ def _named_addressing(
     project_name: Optional[str] = None,
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    agent_region: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """Collect the addressing named in code, without consulting the environment.
 
     The tiers an argument competes with: a context variable, the current run
@@ -1454,6 +1486,10 @@ def _named_addressing(
         or _context._AGENT_ENVIRONMENT.get()
         or (prt.agent_environment if prt else None)
         or _context._GLOBAL_AGENT_ENVIRONMENT,
+        agent_region
+        or _context._AGENT_REGION.get()
+        or (prt.agent_region if prt else None)
+        or _context._GLOBAL_AGENT_REGION,
     )
 
 
@@ -1612,6 +1648,7 @@ class _ContainerInput(TypedDict, total=False):
     project_name: Optional[str]
     agent_id: Optional[str]
     agent_environment: Optional[str]
+    agent_region: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     process_chunk: Optional[Callable]
@@ -1710,10 +1747,11 @@ def _get_parent_run(
     # project-addressed upstream, and a defaulted project would mask the agent
     # the header carries. What the header does not settle, the `RunTree`
     # validator resolves from the environment.
-    project_name, agent_id, agent_environment = _named_addressing(
+    project_name, agent_id, agent_environment, agent_region = _named_addressing(
         langsmith_extra.get("project_name"),
         langsmith_extra.get("agent_id"),
         langsmith_extra.get("agent_environment"),
+        langsmith_extra.get("agent_region"),
     )
     if isinstance(parent, Mapping):
         return run_trees.RunTree.from_headers(
@@ -1723,6 +1761,7 @@ def _get_parent_run(
             project_name=project_name,
             agent_id=agent_id,
             agent_environment=agent_environment,
+            agent_region=agent_region,
             replicas=langsmith_extra.get("replicas"),
         )
     if isinstance(parent, str):
@@ -1733,6 +1772,7 @@ def _get_parent_run(
             project_name=project_name,
             agent_id=agent_id,
             agent_environment=agent_environment,
+            agent_region=agent_region,
             replicas=langsmith_extra.get("replicas"),
         )
         return dort
@@ -1826,6 +1866,15 @@ def _setup_run(
         or langsmith_extra.get("agent_environment")
         or container_input.get("agent_environment")
         or _context._GLOBAL_AGENT_ENVIRONMENT,
+    )
+    selected_agent_region = _agent_addressing.resolve_region(
+        selected_agent_id,
+        selected_agent_environment,
+        _context._AGENT_REGION.get()
+        or (parent_run_.agent_region if parent_run_ else None)
+        or langsmith_extra.get("agent_region")
+        or container_input.get("agent_region")
+        or _context._GLOBAL_AGENT_REGION,
     )
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
@@ -1926,6 +1975,7 @@ def _setup_run(
             "project_name": selected_project,
             "agent_id": selected_agent_id,
             "agent_environment": selected_agent_environment,
+            "agent_region": selected_agent_region,
             "replicas": run_trees._REPLICAS.get(),
             "extra": extra_inner,
             "tags": tags_,
@@ -1961,6 +2011,7 @@ def _setup_run(
     # project -- otherwise a child would fall back to the default project.
     context.run(_context._AGENT_ID.set, selected_agent_id)
     context.run(_context._AGENT_ENVIRONMENT.set, selected_agent_environment)
+    context.run(_context._AGENT_REGION.set, selected_agent_region)
     # Store a weak reference (not the RunTree itself) in the copied context.
     # This prevents memory leaks when contexts are captured by asyncio operations
     # (call_later, create_task, etc.) — the captured context holds only a weakref,

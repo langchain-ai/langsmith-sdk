@@ -16,6 +16,7 @@ _AGENT_ID = contextvars.ContextVar[Optional[str]]("_AGENT_ID", default=None)
 _AGENT_ENVIRONMENT = contextvars.ContextVar[Optional[str]](
     "_AGENT_ENVIRONMENT", default=None
 )
+_AGENT_REGION = contextvars.ContextVar[Optional[str]]("_AGENT_REGION", default=None)
 _TAGS = contextvars.ContextVar[Optional[list[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[dict[str, Any]]]("_METADATA", default=None)
 
@@ -46,6 +47,7 @@ def get_current_run_tree() -> Optional["RunTree"]:
 _GLOBAL_PROJECT_NAME: Optional[str] = None
 _GLOBAL_AGENT_ID: Optional[str] = None
 _GLOBAL_AGENT_ENVIRONMENT: Optional[str] = None
+_GLOBAL_AGENT_REGION: Optional[str] = None
 _GLOBAL_TAGS: Optional[list[str]] = None
 _GLOBAL_METADATA: Optional[dict[str, Any]] = None
 _GLOBAL_TRACING_ENABLED: Optional[Union[bool, Literal["local"]]] = None
