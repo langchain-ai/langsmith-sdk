@@ -867,8 +867,8 @@ def _reset_agent_addressing_cache():
 def _agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     """Set up a clean LangSmith env with only `values` present."""
     for name in (
-        "LANGSMITH_TARGET_AGENT_ID",
-        "LANGSMITH_TARGET_ENVIRONMENT",
+        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
         "LANGSMITH_PROJECT",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
@@ -886,8 +886,8 @@ class TestRunTreeAgentAddressing:
     ) -> None:
         _agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_AGENT_ID="my-agent",
-            LANGSMITH_TARGET_ENVIRONMENT="staging",
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
         _reset_agent_addressing_cache()
         run = RunTree(name="foo", ls_client=_get_mock_client())
@@ -898,7 +898,7 @@ class TestRunTreeAgentAddressing:
     def test_explicit_project_wins_over_the_agent_env(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
-        _agent_env(monkeypatch, LANGSMITH_TARGET_AGENT_ID="my-agent")
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
         _reset_agent_addressing_cache()
         run = RunTree(name="foo", project_name="explicit", ls_client=_get_mock_client())
         assert run.session_name == "explicit"
@@ -913,7 +913,7 @@ class TestRunTreeAgentAddressing:
         Dropping it would fall back to the `default` project, so a typo would
         quietly succeed somewhere the caller never named.
         """
-        _agent_env(monkeypatch, LANGSMITH_TARGET_ENVIRONMENT="staging")
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ENVIRONMENT="staging")
         _reset_agent_addressing_cache()
         run = RunTree(name="foo", ls_client=_get_mock_client())
         assert run.agent_environment == "staging"
@@ -925,8 +925,8 @@ class TestRunTreeAgentAddressing:
     ) -> None:
         _agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_AGENT_ID="my-agent",
-            LANGSMITH_TARGET_ENVIRONMENT="staging",
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
         _reset_agent_addressing_cache()
         parent = RunTree(name="parent", ls_client=_get_mock_client())
@@ -938,7 +938,7 @@ class TestRunTreeAgentAddressing:
     def test_children_of_a_project_run_stay_project_addressed(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
-        _agent_env(monkeypatch, LANGSMITH_TARGET_AGENT_ID="my-agent")
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
         _reset_agent_addressing_cache()
         parent = RunTree(
             name="parent", project_name="explicit", ls_client=_get_mock_client()
@@ -974,7 +974,7 @@ class TestReplicaAgentAddressing:
     def test_replica_naming_neither_inherits_the_run_tree(
         self, monkeypatch: pytest.MonkeyPatch, _reset_agent_addressing_cache
     ) -> None:
-        _agent_env(monkeypatch, LANGSMITH_TARGET_AGENT_ID="my-agent")
+        _agent_env(monkeypatch, LANGSMITH_AGENT_ID="my-agent")
         _reset_agent_addressing_cache()
         run = RunTree(name="foo", ls_client=_get_mock_client())
         assert run._replica_addressing({}) == (None, "my-agent", None)
@@ -1002,8 +1002,8 @@ class TestBaggageAgentAddressing:
     ) -> None:
         _agent_env(
             monkeypatch,
-            LANGSMITH_TARGET_AGENT_ID="my-agent",
-            LANGSMITH_TARGET_ENVIRONMENT="staging",
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
         _reset_agent_addressing_cache()
         parent = RunTree(name="parent", ls_client=_get_mock_client())

@@ -2584,7 +2584,7 @@ class Client:
             target (Optional[Target]): (experimental) A `Target` from
                 `langsmith.target`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
-                same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
+                same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 Target addressing is in beta and enabled per workspace; a
                 workspace without it rejects the run, so the trace is lost
                 rather than falling back to a project.
