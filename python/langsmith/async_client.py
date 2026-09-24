@@ -1226,7 +1226,7 @@ class AsyncClient:
             agent_id: The agent to attach this feedback to, instead of a
                 project. Pass whatever the run being described was traced to.
                 Cannot be combined with `session_id` / `project_id`, and is
-                never read from `LANGSMITH_AGENT_ID`: feedback follows its run,
+                never read from `LANGSMITH_TARGET_ID`: feedback follows its run,
                 not the ambient environment. The agent must already exist;
                 unlike run ingestion, a feedback part never creates one.
             agent_environment: Narrows `agent_id`, and requires it. Defaults

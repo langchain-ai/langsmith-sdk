@@ -306,7 +306,7 @@ def configure(
 
             Pass `None` to explicitly clear the project name.
         agent_id: (experimental) Loose form of `target`; a missing half is
-            read from its `LANGSMITH_AGENT_*` env var. Mutually exclusive with
+            read from its `LANGSMITH_TARGET_*` env var. Mutually exclusive with
             `project_name`.
         agent_environment: (experimental) Loose form of `target`.
         target: (experimental) A `Target` handle from `langsmith.target`, to

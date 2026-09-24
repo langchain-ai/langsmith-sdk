@@ -200,8 +200,8 @@ def get_langchain_env_var_metadata() -> dict:
         for k, v in os.environ.items()
         if (k.startswith("LANGCHAIN_") or k.startswith("LANGSMITH_"))
         and k not in excluded
-        # Target addressing (`LANGSMITH_AGENT_*`), however many dimensions.
-        and not k.startswith("LANGSMITH_AGENT_")
+        # Target addressing (`LANGSMITH_TARGET_*`), however many dimensions.
+        and not k.startswith("LANGSMITH_TARGET_")
         and not any(sub in k.lower() for sub in _EXCLUDED_SUBSTRINGS)
     }
     env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)

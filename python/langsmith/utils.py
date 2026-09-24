@@ -463,7 +463,7 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def get_tracer_agent_environment() -> Optional[str]:
+def get_tracer_target_environment() -> Optional[str]:
     """Get the agent environment for a LangSmith tracer.
 
     Experimental: in beta and enabled per workspace. A workspace without
@@ -473,18 +473,18 @@ def get_tracer_agent_environment() -> Optional[str]:
     Not validated client-side: the server decides which environments it
     accepts, and one it rejects fails the whole batch.
 
-    Read from ``LANGSMITH_AGENT_ENVIRONMENT`` only. Unlike most LangSmith
+    Read from ``LANGSMITH_TARGET_ENVIRONMENT`` only. Unlike most LangSmith
     variables it has no ``LANGCHAIN_`` alias, so that the newer namespace is
     the only one to learn for this. There is also no default -- an
     agent-addressed run must name its environment.
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return get_env_var("AGENT_ENVIRONMENT", namespaces=("LANGSMITH",))
+    return get_env_var("TARGET_ENVIRONMENT", namespaces=("LANGSMITH",))
 
 
 @functools.lru_cache(maxsize=1)
-def get_tracer_agent_id() -> Optional[str]:
+def get_tracer_target_id() -> Optional[str]:
     """Get the agent ID for a LangSmith tracer.
 
     Experimental: in beta and enabled per workspace. A workspace without
@@ -493,7 +493,7 @@ def get_tracer_agent_id() -> Optional[str]:
 
     Must be 1 to 255 characters.
 
-    Read from ``LANGSMITH_AGENT_ID`` only -- there is no ``LANGCHAIN_`` alias,
+    Read from ``LANGSMITH_TARGET_ID`` only -- there is no ``LANGCHAIN_`` alias,
     so that the newer namespace is the only one to learn. This is an agent
     identifier, not a credential: the server resolves the agent by this ID and
     creates one if it doesn't exist yet. When unset the run is addressed by
@@ -501,7 +501,7 @@ def get_tracer_agent_id() -> Optional[str]:
 
     Read once per process and cached; call ``.cache_clear()`` to re-read.
     """
-    return get_env_var("AGENT_ID", namespaces=("LANGSMITH",))
+    return get_env_var("TARGET_ID", namespaces=("LANGSMITH",))
 
 
 class FilterPoolFullWarning(logging.Filter):
