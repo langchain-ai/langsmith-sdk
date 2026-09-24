@@ -2657,7 +2657,7 @@ class Client:
             project_name = None
         else:
             project_name, kwargs["target"] = _agent_addressing.resolve(
-                None, kwargs.get("target")
+                (None, kwargs.get("target"))
             )
         run_create = {
             **kwargs,
