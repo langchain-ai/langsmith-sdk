@@ -62,6 +62,10 @@ class Target:
         metadata=_wire("agent_environment", required=True)
     )
     """The target's environment, passed to the server as given."""
+    region: Optional[str] = dataclasses.field(
+        default=None, metadata=_wire("agent_region", required=False)
+    )
+    """Optionally, the target's region, passed to the server as given."""
 
     def __post_init__(self) -> None:
         for f in dataclasses.fields(self):
