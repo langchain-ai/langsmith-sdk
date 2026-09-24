@@ -2644,9 +2644,7 @@ class Client:
         # tree's fields that way -- where a project beside an agent means the
         # two were meant to travel together for the endpoint to refuse.
         _agent_addressing.reject_conflicting(
-            project=project_name,
-            agent_id=kwargs.get("agent_id"),
-            agent_environment=kwargs.get("agent_environment"),
+            project=project_name, target=kwargs.get("target")
         )
         if project_name:
             pass
@@ -2658,12 +2656,8 @@ class Client:
             # Already addressed by project id; leave it alone.
             project_name = None
         else:
-            (
-                project_name,
-                kwargs["agent_id"],
-                kwargs["agent_environment"],
-            ) = _agent_addressing.resolve(
-                None, kwargs.get("agent_id"), kwargs.get("agent_environment")
+            project_name, kwargs["target"] = _agent_addressing.resolve(
+                None, kwargs.get("target")
             )
         run_create = {
             **kwargs,
@@ -3928,8 +3922,7 @@ class Client:
             "extra": extra,
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
-            "agent_id": kwargs.pop("agent_id", None),
-            "agent_environment": kwargs.pop("agent_environment", None),
+            "target": kwargs.pop("target", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
         _agent_addressing.apply_to_payload(data, update=True)
@@ -4920,9 +4913,7 @@ class Client:
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
         _agent_addressing.reject_url(
-            getattr(run, "session_id", None),
-            getattr(run, "agent_id", None),
-            getattr(run, "agent_environment", None),
+            getattr(run, "session_id", None), getattr(run, "target", None)
         )
         if session_id := getattr(run, "session_id", None):
             pass
@@ -8446,9 +8437,14 @@ class Client:
             )
             ```
         """
-        agent_id, agent_environment = _agent_addressing.expand_target(
-            target, agent_id, agent_environment
-        )
+        # Loose fields keep their feedback semantics (never read from the
+        # environment, environment defaulted server-side), so they are not
+        # folded into a `Target`; a handle travels whole to the payload.
+        target = _agent_addressing.coerce_target(target)
+        if target is not None and (agent_id is not None or agent_environment):
+            raise ls_utils.LangSmithUserError(
+                "Pass either `target` or the loose `agent_*` fields, not both."
+            )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -8456,7 +8452,12 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None and agent_id is None:
+        if (
+            run_id is not None
+            and session_id is None
+            and agent_id is None
+            and target is None
+        ):
             # An agent pair locates the project directly, so it satisfies the
             # same requirement this gate exists for.
             _check_feedback_session_id(self.info)
@@ -8522,6 +8523,7 @@ class Client:
                 session_id=_session_id,
                 agent_id=agent_id,
                 agent_environment=agent_environment,
+                target=target,
                 start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
                     comparative_experiment_id, accept_null=True

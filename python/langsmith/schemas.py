@@ -714,6 +714,15 @@ class FeedbackCreate(FeedbackBase):
     extend_trace_retention: bool = True
     """When true, extend trace retention as a side effect of creating this feedback."""
     error: Optional[bool] = None
+    target: Optional[Any] = Field(default=None, exclude=True)
+    """(experimental) A `langsmith.Target`, rendered into its wire fields on dump."""
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """Dump, with `target` unpacked into its wire fields."""
+        dumped = super().model_dump(**kwargs)
+        if self.target is not None:
+            dumped.update(self.target.to_wire())
+        return dumped
 
 
 class Feedback(FeedbackBase):
