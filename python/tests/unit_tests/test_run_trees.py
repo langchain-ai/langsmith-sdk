@@ -857,8 +857,6 @@ def _reset_agent_addressing_cache():
 
     def _clear():
         ls_utils.get_env_var.cache_clear()
-        ls_utils.get_tracer_target_id.cache_clear()
-        ls_utils.get_tracer_target_environment.cache_clear()
         ls_utils.get_tracer_project.cache_clear()
 
     _clear()

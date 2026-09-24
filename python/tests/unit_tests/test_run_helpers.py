@@ -2762,8 +2762,6 @@ def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) 
     for name, value in values.items():
         monkeypatch.setenv(name, value)
     ls_utils.get_env_var.cache_clear()
-    ls_utils.get_tracer_target_id.cache_clear()
-    ls_utils.get_tracer_target_environment.cache_clear()
     ls_utils.get_tracer_project.cache_clear()
 
 

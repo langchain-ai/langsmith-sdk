@@ -141,8 +141,12 @@ class Target:
         except EnvTargetError:
             raise
         except utils.LangSmithUserError as e:
+            present = ", ".join(
+                f"{name}={value!r}" for name, value in cls.env_values().items() if value
+            )
             raise EnvTargetError(
-                f"The LANGSMITH_TARGET_* env vars name an incomplete target: {e}"
+                f"The LANGSMITH_TARGET_* env vars name an incomplete target "
+                f"({present}): {e}"
             ) from e
 
     @classmethod

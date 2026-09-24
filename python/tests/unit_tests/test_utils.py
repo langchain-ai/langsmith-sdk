@@ -93,45 +93,6 @@ class LangSmithProjectNameTest(unittest.TestCase):
                     self.assertEqual(project, case.expected_project_name)
 
 
-@pytest.mark.parametrize(
-    ("getter_name", "suffix"),
-    [
-        ("get_tracer_target_environment", "TARGET_ENVIRONMENT"),
-        ("get_tracer_target_id", "TARGET_AGENT_ID"),
-    ],
-)
-@pytest.mark.parametrize(
-    ("namespaces", "expected"),
-    [
-        ({}, None),
-        ({"LANGSMITH": "from-langsmith"}, "from-langsmith"),
-        # The target variables are LANGSMITH_-only: the legacy LANGCHAIN_
-        # namespace is not taking new members, so that spelling is not read.
-        ({"LANGCHAIN": "from-langchain"}, None),
-        (
-            {"LANGSMITH": "from-langsmith", "LANGCHAIN": "from-langchain"},
-            "from-langsmith",
-        ),
-        # Blank is treated as unset, same as every other LangSmith env var.
-        ({"LANGSMITH": ""}, None),
-        ({"LANGSMITH": "", "LANGCHAIN": "from-langchain"}, None),
-    ],
-)
-def test_get_tracer_target_env_vars(
-    getter_name: str,
-    suffix: str,
-    namespaces: dict,
-    expected: Optional[str],
-) -> None:
-    """`LANGSMITH_TARGET_ENVIRONMENT` / `LANGSMITH_TARGET_AGENT_ID` resolution."""
-    getter = getattr(ls_utils, getter_name)
-    envvars = {f"{ns}_{suffix}": value for ns, value in namespaces.items()}
-    ls_utils.get_env_var.cache_clear()
-    getter.cache_clear()
-    with patch.dict("os.environ", envvars, clear=True):
-        assert getter() == expected
-
-
 def test_tracing_enabled():
     ls_utils.get_env_var.cache_clear()
     with patch.dict(
@@ -704,8 +665,6 @@ def test_an_empty_project_variable_falls_back_to_default(
     for fn in (
         ls_utils.get_env_var,
         ls_utils.get_tracer_project,
-        ls_utils.get_tracer_target_id,
-        ls_utils.get_tracer_target_environment,
     ):
         fn.cache_clear()
 
