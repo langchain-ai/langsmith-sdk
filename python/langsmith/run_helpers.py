@@ -1393,33 +1393,34 @@ def _get_addressing(
 ) -> tuple[Optional[str], Optional[Target]]:
     """Resolve `(project_name, target)` for a new run.
 
-    Mirrors `_get_project_name`, but for both addressing modes. The two chains
-    are walked in the same order, so a target named where a project would have
-    been named takes effect at the same point.
+    Mirrors `_get_project_name`'s levels; the first level naming either mode
+    decides, and one naming both raises.
     """
-    return _agent_addressing.resolve(*_named_addressing(project_name, target))
+    return _agent_addressing.resolve(*_addressing_tiers(project_name, target))
 
 
-def _named_addressing(
+def _address_kwargs(tier: _agent_addressing.Tier) -> dict[str, Any]:
+    """Render one level's `(project, target)` as `RunTree` keyword arguments."""
+    project, target = tier
+    if project:
+        return {"project_name": project}
+    return {"target": target} if target is not None else {}
+
+
+def _addressing_tiers(
     project_name: Optional[str] = None, target: Optional[Target] = None
-) -> tuple[Optional[str], Optional[Target]]:
-    """Collect the addressing named in code, without consulting the environment.
+) -> tuple[_agent_addressing.Tier, ...]:
+    """Return the levels named in code, highest first, without the env vars.
 
-    The tiers an argument competes with: a context variable, the current run
-    tree, then `ls.configure`. Callers that want a destination either way pass
-    the result to `_agent_addressing.resolve`, which fills in from the
-    environment below these.
+    The argument, a context variable, the current run tree, then
+    `ls.configure` -- the order `_get_project_name` walks.
     """
     prt = get_current_run_tree()
     return (
-        project_name
-        or _context._PROJECT_NAME.get()
-        or (prt.session_name if prt else None)
-        or _context._GLOBAL_PROJECT_NAME,
-        target
-        or _context._TARGET.get()
-        or (prt.target if prt else None)
-        or _context._GLOBAL_TARGET,
+        (project_name, target),
+        (_context._PROJECT_NAME.get(), _context._TARGET.get()),
+        (prt.session_name if prt else None, prt.target if prt else None),
+        (_context._GLOBAL_PROJECT_NAME, _context._GLOBAL_TARGET),
     )
 
 
@@ -1669,34 +1670,36 @@ def _get_parent_run(
         return None
     if isinstance(parent, run_trees.RunTree):
         return parent
-    # Only what was named in code, and no default: `from_headers` reads a
-    # value here as the caller naming a destination, which outranks the
-    # `baggage` header. An ambient agent passed in would hijack a
-    # project-addressed upstream, and a defaulted project would mask the agent
-    # the header carries. What the header does not settle, the `RunTree`
-    # validator resolves from the environment.
-    project_name, target = _named_addressing(
-        langsmith_extra.get("project_name"), langsmith_extra.get("target")
+    # Only what was named in code, and no default: what nothing settles, the
+    # `RunTree` validator resolves from the environment. For a header parent,
+    # the header is its own level: below `tracing_context`, above the rest.
+    prt = get_current_run_tree()
+    above = _agent_addressing.first_named(
+        # 1 · tracing_context
+        (_context._PROJECT_NAME.get(), _context._TARGET.get()),
+    )
+    below = _agent_addressing.first_named(
+        # 3 · langsmith_extra
+        (langsmith_extra.get("project_name"), langsmith_extra.get("target")),
+        (prt.session_name if prt else None, prt.target if prt else None),
+        # 5 · ls.configure
+        (_context._GLOBAL_PROJECT_NAME, _context._GLOBAL_TARGET),
     )
     if isinstance(parent, Mapping):
         return run_trees.RunTree.from_headers(
             parent,
             client=langsmith_extra.get("client"),
-            # Precedence: headers -> cvar -> explicit -> env var
-            project_name=project_name,
-            target=target,
+            _address_above=_address_kwargs(above),
+            **_address_kwargs(below),
             replicas=langsmith_extra.get("replicas"),
         )
     if isinstance(parent, str):
-        dort = run_trees.RunTree.from_dotted_order(
+        return run_trees.RunTree.from_dotted_order(
             parent,
             client=langsmith_extra.get("client"),
-            # Precedence: cvar -> explicit ->  env var
-            project_name=project_name,
-            target=target,
+            **_address_kwargs(above if any(above) else below),
             replicas=langsmith_extra.get("replicas"),
         )
-        return dort
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
@@ -1757,27 +1760,25 @@ def _setup_run(
         project=langsmith_extra.get("project_name"),
         target=langsmith_extra.get("target"),
     )
-    project_cv = _context._PROJECT_NAME.get()
-    # Both chains collect the same tiers, but they do not compete tier by
-    # tier: a project named anywhere in code beats a target named anywhere in
-    # code, whichever sits higher. `evaluate()` relies on that -- it names its
-    # experiment on the call and has to keep working under an ambient target.
-    # A target is taken whole from the tier that names it, never mixed across
-    # tiers. Only values named in code go in; `resolve` consults the
-    # environment below them and settles which mode the run carries.
+    # One walk over the precedence levels, highest first: the first level
+    # naming a project or a target decides, and one naming both raises.
+    # `evaluate()` relies on this -- it names its experiment in a
+    # `tracing_context`, which outranks a target on the decorator or in the
+    # env. `resolve` consults the env vars as the last level.
     selected_project, selected_target = _agent_addressing.resolve(
-        project_cv  # From parent trace
-        or (
-            parent_run_.session_name if parent_run_ else None
-        )  # from parent run attempt 2 (not managed by traceable)
-        or langsmith_extra.get("project_name")  # at invocation time
-        or container_input["project_name"]  # at decorator time
-        or _context._GLOBAL_PROJECT_NAME,  # global fallback from ls.configure
-        _context._TARGET.get()
-        or (parent_run_.target if parent_run_ else None)
-        or langsmith_extra.get("target")
-        or container_input.get("target")
-        or _context._GLOBAL_TARGET,
+        # 1 · tracing_context
+        (_context._PROJECT_NAME.get(), _context._TARGET.get()),
+        # 2 · the parent run, e.g. from distributed-tracing headers
+        (
+            parent_run_.session_name if parent_run_ else None,
+            parent_run_.target if parent_run_ else None,
+        ),
+        # 3 · langsmith_extra, at call time
+        (langsmith_extra.get("project_name"), langsmith_extra.get("target")),
+        # 4 · @traceable, at decoration time
+        (container_input["project_name"], container_input.get("target")),
+        # 5 · ls.configure
+        (_context._GLOBAL_PROJECT_NAME, _context._GLOBAL_TARGET),
     )
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
