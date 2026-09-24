@@ -12,6 +12,7 @@ import uuid
 
 import pytest
 
+from langsmith import target as ls_target
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
     PROJECT,
@@ -52,16 +53,7 @@ CASES = [
     # Addressing passed per call rather than configured in the environment.
     Case(
         "explicit_agent",
-        kwargs={"agent_id": AGENT, "agent_environment": "staging"},
-        lands_in=InAgent("STAGING"),
-    ),
-    # Half the pair from the environment, half from the call. This is a
-    # complete, valid pair, and an earlier revision of the SDK rejected it at
-    # client construction because it could not yet see the call.
-    Case(
-        "env_environment_and_explicit_agent",
-        env={"LANGSMITH_TARGET_ENVIRONMENT": "staging"},
-        kwargs={"agent_id": AGENT},
+        kwargs={"target": ls_target(AGENT, environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A genuinely incomplete target is dropped and logged, not a run that

@@ -19,6 +19,7 @@ from typing import Any, Callable, Iterator, Optional, TypeVar, Union
 
 import pytest
 
+from langsmith import Target
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -206,6 +207,14 @@ class Harness:
             )
         if isinstance(value, dict):
             return {key: self.format(item, **names) for key, item in value.items()}
+        if isinstance(value, Target):
+            return dataclasses.replace(
+                value,
+                **{
+                    f.name: self.format(getattr(value, f.name), **names)
+                    for f in dataclasses.fields(value)
+                },
+            )
         return value
 
     def configure(self, case: Case) -> CallArgs:
@@ -247,8 +256,7 @@ class Harness:
         addressing: dict[str, Any]
         if isinstance(destination, InAgent):
             addressing = {
-                "agent_id": self.agent_key,
-                "agent_environment": destination.environment.lower(),
+                "target": Target(self.agent_key, destination.environment.lower())
             }
         else:
             assert isinstance(destination, InProject)
@@ -641,8 +649,6 @@ def _clear_env_caches() -> None:
     life of the process."""
     ls_utils.get_env_var.cache_clear()
     ls_utils.get_tracer_project.cache_clear()
-    ls_utils.get_tracer_target_id.cache_clear()
-    ls_utils.get_tracer_target_environment.cache_clear()
 
 
 def _wait_for(

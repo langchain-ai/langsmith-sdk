@@ -12,6 +12,7 @@ import dataclasses
 
 import pytest
 
+from langsmith import target as ls_target
 from langsmith.async_client import AsyncClient
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
@@ -49,7 +50,7 @@ class FeedbackCase(Case):
 CASES = [
     FeedbackCase(
         "agent_pair",
-        kwargs={"agent_id": AGENT, "agent_environment": "staging"},
+        kwargs={"target": ls_target(AGENT, environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # The legacy way: the run's own project.
@@ -62,8 +63,7 @@ CASES = [
     FeedbackCase(
         "agent_and_session_id",
         kwargs={
-            "agent_id": AGENT,
-            "agent_environment": "staging",
+            "target": ls_target(AGENT, environment="staging"),
             "session_id": RUN_PROJECT,
         },
         lands_in=Rejected(
@@ -71,18 +71,10 @@ CASES = [
             remedy="Address the feedback by agent_id, or by session_id, but not both",
         ),
     ),
-    FeedbackCase(
-        "agent_id_only",
-        kwargs={"agent_id": AGENT},
-        lands_in=Rejected(
-            reason="agent_id and agent_environment must be sent together",
-            remedy="Send agent_id and agent_environment together",
-        ),
-    ),
     # Unlike a run, feedback never creates the agent it names.
     FeedbackCase(
         "unknown_agent",
-        kwargs={"agent_id": OTHER_AGENT, "agent_environment": "staging"},
+        kwargs={"target": ls_target(OTHER_AGENT, environment="staging")},
         lands_in=REJECTED_UNKNOWN_AGENT,
     ),
     # An agent adopted from a project has production only, so staging is
@@ -90,7 +82,7 @@ CASES = [
     FeedbackCase(
         "missing_environment",
         run_in=InProject(PROJECT),
-        kwargs={"agent_id": PROJECT, "agent_environment": "staging"},
+        kwargs={"target": ls_target(PROJECT, environment="staging")},
         lands_in=REJECTED_UNKNOWN_AGENT,
     ),
     # No addressing on the call: the run is looked up, and the agent in the
@@ -111,7 +103,7 @@ CASES = [
     # `unknown_agent`, or a refusal from the SDK before sending.
     FeedbackCase(
         "agent_without_trace_id",
-        kwargs={"agent_id": OTHER_AGENT, "agent_environment": "staging"},
+        kwargs={"target": ls_target(OTHER_AGENT, environment="staging")},
         with_trace_id=False,
         lands_in=InAgent("STAGING"),
     ),
@@ -150,8 +142,7 @@ async def test_the_async_client_drops_the_pair_in_silence(ls: Harness) -> None:
         key="quality",
         score=1,
         trace_id=run.trace_id,
-        agent_id=ls.other_agent_key,
-        agent_environment="staging",
+        target=ls_target(ls.other_agent_key, environment="staging"),
     )
 
     ls.assert_feedback_landed(feedback.id, InAgent("STAGING"))

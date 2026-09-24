@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from langsmith import target as ls_target
 from langsmith.run_helpers import get_current_run_tree, traceable, tracing_context
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
@@ -22,7 +23,7 @@ from tests.integration_tests.agent_addressing.conftest import (
 )
 
 ENV_AGENT = {"LANGSMITH_TARGET_ID": AGENT, "LANGSMITH_TARGET_ENVIRONMENT": "staging"}
-CONTEXT_AGENT = {"agent_id": AGENT, "agent_environment": "staging"}
+CONTEXT_AGENT = {"target": ls_target(AGENT, environment="staging")}
 
 CASES = [
     # -- root, environment only ----------------------------------------------
@@ -79,13 +80,6 @@ CASES = [
     ),
     # -- root, an agent named in code -----------------------------------------
     Case("context_agent", context=CONTEXT_AGENT, lands_in=InAgent("STAGING")),
-    # Half from the context, half from the environment.
-    Case(
-        "context_agent_id_and_env_environment",
-        env={"LANGSMITH_TARGET_ENVIRONMENT": "staging"},
-        context={"agent_id": AGENT},
-        lands_in=InAgent("STAGING"),
-    ),
     # The mirror of `env_agent_and_decorator_project`: code beats environment.
     Case(
         "context_agent_and_env_project",
@@ -105,7 +99,7 @@ CASES = [
     # The decorator's own arguments, beside `project_name`.
     Case(
         "decorator_agent",
-        decorator={"agent_id": AGENT, "agent_environment": "staging"},
+        decorator={"target": ls_target(AGENT, environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # -- nested calls ----------------------------------------------------------
