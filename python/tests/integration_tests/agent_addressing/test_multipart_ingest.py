@@ -29,7 +29,10 @@ from tests.integration_tests.agent_addressing.conftest import (
 CASES = [
     Case(
         "env_agent",
-        env={"LANGSMITH_TARGET_ID": AGENT, "LANGSMITH_TARGET_ENVIRONMENT": "staging"},
+        env={
+            "LANGSMITH_TARGET_AGENT_ID": AGENT,
+            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+        },
         lands_in=InAgent("STAGING"),
     ),
     # Addressing on the run dict rather than in the environment.
@@ -41,7 +44,10 @@ CASES = [
     # A project on the run dict wins over an agent in the environment.
     Case(
         "env_agent_and_project_on_the_run",
-        env={"LANGSMITH_TARGET_ID": AGENT, "LANGSMITH_TARGET_ENVIRONMENT": "staging"},
+        env={
+            "LANGSMITH_TARGET_AGENT_ID": AGENT,
+            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+        },
         kwargs={"session_name": PROJECT},
         lands_in=InProject(PROJECT),
     ),

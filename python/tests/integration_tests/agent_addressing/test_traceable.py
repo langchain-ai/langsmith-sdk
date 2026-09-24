@@ -22,7 +22,10 @@ from tests.integration_tests.agent_addressing.conftest import (
     Untraced,
 )
 
-ENV_AGENT = {"LANGSMITH_TARGET_ID": AGENT, "LANGSMITH_TARGET_ENVIRONMENT": "staging"}
+ENV_AGENT = {
+    "LANGSMITH_TARGET_AGENT_ID": AGENT,
+    "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+}
 CONTEXT_AGENT = {"target": ls_target(AGENT, environment="staging")}
 
 CASES = [
@@ -32,7 +35,7 @@ CASES = [
     # and the SDK logs why.
     Case(
         "env_agent_id_only",
-        env={"LANGSMITH_TARGET_ID": AGENT},
+        env={"LANGSMITH_TARGET_AGENT_ID": AGENT},
         lands_in=Untraced(reason="incomplete target"),
     ),
     # The other half.

@@ -91,7 +91,7 @@ CASES = [
     FeedbackCase(
         "env_agent_not_read",
         env={
-            "LANGSMITH_TARGET_ID": OTHER_AGENT,
+            "LANGSMITH_TARGET_AGENT_ID": OTHER_AGENT,
             "LANGSMITH_TARGET_ENVIRONMENT": "staging",
         },
         lands_in=InAgent("STAGING"),

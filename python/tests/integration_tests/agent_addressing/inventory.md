@@ -18,7 +18,7 @@ is visible while reading that surface; delete the row's tag once it works.
 
 | Var | Notes |
 |---|---|
-| `LANGSMITH_TARGET_ID` | `LANGSMITH_` only, no `LANGCHAIN_` alias. `lru_cache`d for the process. |
+| `LANGSMITH_TARGET_AGENT_ID` | `LANGSMITH_` only, no `LANGCHAIN_` alias. `lru_cache`d for the process. |
 | `LANGSMITH_TARGET_ENVIRONMENT` | Same. Resolved independently of the id, so half a pair can come from the environment and half from code. |
 | `HOSTED_LANGSERVE_PROJECT_NAME` | No prefix. Beats every other project variable. |
 | `LANGSMITH_PROJECT` / `LANGCHAIN_PROJECT` | |

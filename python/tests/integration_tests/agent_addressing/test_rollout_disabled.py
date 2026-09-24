@@ -74,7 +74,7 @@ def test_a_refused_workspace_loses_the_run_without_raising(
         Case(
             "rollout_disabled",
             env={
-                "LANGSMITH_TARGET_ID": AGENT,
+                "LANGSMITH_TARGET_AGENT_ID": AGENT,
                 "LANGSMITH_TARGET_ENVIRONMENT": "staging",
             },
             lands_in=InAgent("STAGING"),

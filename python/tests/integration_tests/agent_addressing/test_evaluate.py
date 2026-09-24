@@ -21,7 +21,7 @@ from tests.integration_tests.agent_addressing.conftest import (
 )
 
 ENV_AGENT = {
-    "LANGSMITH_TARGET_ID": "{agent}",
+    "LANGSMITH_TARGET_AGENT_ID": "{agent}",
     "LANGSMITH_TARGET_ENVIRONMENT": "staging",
 }
 
