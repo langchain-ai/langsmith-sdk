@@ -6,8 +6,8 @@ Beats the decorator's own target, but loses to an enclosing
 
 import langsmith as ls
 
-support = ls.target("customer-support", environment="production")
-staging = support.with_environment("staging")
+support = ls.target("customer-support", agent_environment="production")
+staging = support.with_agent_environment("staging")
 
 
 @support.traceable

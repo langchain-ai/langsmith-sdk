@@ -6,7 +6,7 @@ Sets the context variable, so it beats `langsmith_extra`, the decorator,
 
 import langsmith as ls
 
-staging = ls.target("customer-support", environment="staging")
+staging = ls.target("customer-support", agent_environment="staging")
 
 
 @ls.traceable

@@ -1,11 +1,11 @@
 """6 · Env vars: process-wide default from configuration.
 
-No code at all. Every `Target` field has a `LANGSMITH_TARGET_<FIELD>`
+No code at all. Every `Target` field has a `LANGSMITH_<FIELD>`
 variable, derived from the field name:
 
-    LANGSMITH_TARGET_AGENT_ID=customer-support
-    LANGSMITH_TARGET_ENVIRONMENT=production
-    LANGSMITH_TARGET_REGION=eu            # optional
+    LANGSMITH_AGENT_ID=customer-support
+    LANGSMITH_AGENT_ENVIRONMENT=production
+    LANGSMITH_AGENT_REGION=eu            # optional
 
 An incomplete set is warned about at client construction and ignored, so runs
 go to the project instead.

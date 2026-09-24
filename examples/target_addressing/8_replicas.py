@@ -2,7 +2,7 @@
 
 import langsmith as ls
 
-support = ls.target("customer-support", environment="production")
+support = ls.target("customer-support", agent_environment="production")
 
 
 @ls.traceable
@@ -14,7 +14,7 @@ def answer(question: str) -> str:
 with ls.tracing_context(
     replicas=[
         support,  # a bare Target is a replica
-        support.with_environment("staging").replica(
+        support.with_agent_environment("staging").replica(
             updates={"metadata": {"mirrored": True}}
         ),
         {"project_name": "audit-log"},  # projects still work
