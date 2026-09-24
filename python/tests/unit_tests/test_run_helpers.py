@@ -2752,7 +2752,7 @@ def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str
 
 def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name in (
-        "LANGSMITH_TARGET_ID",
+        "LANGSMITH_TARGET_AGENT_ID",
         "LANGSMITH_TARGET_ENVIRONMENT",
         "LANGSMITH_PROJECT",
         "LANGCHAIN_PROJECT",
@@ -2781,7 +2781,7 @@ class TestADistributedParentKeepsTheAgent:
     ) -> None:
         _clean_agent_addressing_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="env-agent",
+            LANGSMITH_TARGET_AGENT_ID="env-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         upstream = RunTree(name="a", inputs={})
@@ -2815,7 +2815,7 @@ class TestADistributedParentKeepsTheAgent:
         upstream = dict(RunTree(name="a", project_name="upstream").to_headers())
         _clean_agent_addressing_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="ambient",
+            LANGSMITH_TARGET_AGENT_ID="ambient",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         parent = _get_parent_run(cast(Any, {"parent": upstream}))
@@ -2828,7 +2828,7 @@ class TestADistributedParentKeepsTheAgent:
     ) -> None:
         _clean_agent_addressing_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="env-agent",
+            LANGSMITH_TARGET_AGENT_ID="env-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
         )
         parent = dict(RunTree(name="a", inputs={}).to_headers())
@@ -3035,7 +3035,7 @@ class TestEveryEntryPointTakesAnAgent:
         """Neither is named in code, so the endpoint arbitrates, not the SDK."""
         _clean_agent_addressing_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="env-agent",
+            LANGSMITH_TARGET_AGENT_ID="env-agent",
             LANGSMITH_TARGET_ENVIRONMENT="staging",
             LANGSMITH_PROJECT="env-proj",
         )
@@ -3105,7 +3105,7 @@ class TestTracingContextAgentAddressing:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The decorator path has to honor it too, not just `trace`."""
-        _clean_agent_addressing_env(monkeypatch, LANGSMITH_TARGET_ID="env-agent")
+        _clean_agent_addressing_env(monkeypatch, LANGSMITH_TARGET_AGENT_ID="env-agent")
         mock_client = _get_mock_client()
         seen: dict = {}
 
@@ -3152,7 +3152,7 @@ class TestTracingContextAgentAddressing:
         quietly moving the trace to the agent."""
         _clean_agent_addressing_env(
             monkeypatch,
-            LANGSMITH_TARGET_ID="env-agent",
+            LANGSMITH_TARGET_AGENT_ID="env-agent",
             LANGSMITH_PROJECT="env-proj",
         )
         mock_client = _get_mock_client()

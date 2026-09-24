@@ -65,8 +65,8 @@ class Target:
     construction; which values exist is left to the server.
     """
 
-    id: str = dataclasses.field(metadata=_wire("agent_id", required=True))
-    """The target's immutable ID."""
+    agent_id: str = dataclasses.field(metadata=_wire("agent_id", required=True))
+    """The agent's immutable ID."""
     environment: str = dataclasses.field(
         metadata=_wire("agent_environment", required=True)
     )
@@ -81,9 +81,9 @@ class Target:
                 raise utils.LangSmithUserError(
                     f"Target {f.name} must be a non-empty string, got {value!r}."
                 )
-        if len(self.id) > _MAX_ID_LENGTH:
+        if len(self.agent_id) > _MAX_ID_LENGTH:
             raise utils.LangSmithUserError(
-                f"Target id must be at most {_MAX_ID_LENGTH} characters."
+                f"Target agent_id must be at most {_MAX_ID_LENGTH} characters."
             )
 
     # -- Generic over the fields: the only code that knows what a target holds.
@@ -218,11 +218,11 @@ def _env_value(field_name: str) -> Optional[str]:
     return utils.get_env_var(f"TARGET_{field_name.upper()}", namespaces=("LANGSMITH",))
 
 
-def target(id: str, *, environment: str, **dimensions: Optional[str]) -> Target:
+def target(agent_id: str, *, environment: str, **dimensions: Optional[str]) -> Target:
     """(experimental) Build a handle that addresses runs to a target.
 
     Args:
-        id: The target's ID. The server creates it on first use.
+        agent_id: The agent's ID. The server creates it on first use.
         environment: The target's environment. Not validated client-side; the
             server decides which environments are accepted.
         **dimensions: Any further `Target` fields.
@@ -230,4 +230,4 @@ def target(id: str, *, environment: str, **dimensions: Optional[str]) -> Target:
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    return Target(id, environment, **dimensions)
+    return Target(agent_id, environment, **dimensions)
