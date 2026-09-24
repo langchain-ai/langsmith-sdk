@@ -15,14 +15,14 @@ Example:
     ```python
     import langsmith as ls
 
-    support = ls.target("customer-support", environment="production")
+    support = ls.target("customer-support", agent_environment="production")
 
 
     @support.traceable
     def handle(order): ...
 
 
-    with support.with_environment("staging").tracing_context():
+    with support.with_agent_environment("staging").tracing_context():
         handle(order)
     ```
 """
@@ -45,7 +45,7 @@ _MAX_ID_LENGTH = 255
 
 
 class EnvTargetError(utils.LangSmithUserError):
-    """The `LANGSMITH_TARGET_*` / project env vars can't address a run.
+    """The `LANGSMITH_AGENT_*` / project env vars can't address a run.
 
     Raised for half a target, or a target beside a project. Tracing entry
     points catch it, log it and leave the call untraced, so a bad environment
@@ -67,14 +67,14 @@ class Target:
 
     agent_id: str = dataclasses.field(metadata=_wire("agent_id", required=True))
     """The agent's immutable ID."""
-    environment: str = dataclasses.field(
+    agent_environment: str = dataclasses.field(
         metadata=_wire("agent_environment", required=True)
     )
-    """The target's environment, passed to the server as given."""
-    region: Optional[str] = dataclasses.field(
+    """The agent's environment, passed to the server as given."""
+    agent_region: Optional[str] = dataclasses.field(
         default=None, metadata=_wire("agent_region", required=False)
     )
-    """Optionally, the target's region, passed to the server as given."""
+    """Optionally, the agent's region, passed to the server as given."""
 
     def __post_init__(self) -> None:
         for f in dataclasses.fields(self):
@@ -130,7 +130,7 @@ class Target:
 
     @classmethod
     def from_env(cls) -> Optional[Target]:
-        """Read the target named by `LANGSMITH_TARGET_*` env vars, if any.
+        """Read the target named by `LANGSMITH_AGENT_*` env vars, if any.
 
         Raises:
             EnvTargetError: If only some of the required ones are set.
@@ -149,13 +149,13 @@ class Target:
                 f"{name}={value!r}" for name, value in cls.env_values().items() if value
             )
             raise EnvTargetError(
-                f"The LANGSMITH_TARGET_* env vars name an incomplete target "
+                f"The LANGSMITH_AGENT_* env vars name an incomplete target "
                 f"({present}): {e}"
             ) from e
 
     @classmethod
     def env_values(cls) -> dict[str, Optional[str]]:
-        """Return each `LANGSMITH_TARGET_*` env var a target reads, with its value."""
+        """Return each `LANGSMITH_AGENT_*` env var a target reads, with its value."""
         return {_env_name(f.name): _env_value(f.name) for f in dataclasses.fields(cls)}
 
     def seed(self) -> str:
@@ -164,16 +164,16 @@ class Target:
 
     # -- Sugar.
 
-    def with_environment(self, environment: str) -> Target:
-        """Return a handle to the same target in another environment."""
-        return dataclasses.replace(self, environment=environment)
+    def with_agent_environment(self, agent_environment: str) -> Target:
+        """Return a handle to the same agent in another environment."""
+        return dataclasses.replace(self, agent_environment=agent_environment)
 
     def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         named = [k for k in ("target", "project_name") if k in kwargs]
         if named:
             raise utils.LangSmithUserError(
                 f"A Target already addresses the run; drop {named}, or use "
-                "another one (e.g. `target.with_environment(...)`) to change it."
+                "another one (e.g. `target.with_agent_environment(...)`) to change it."
             )
         return {**kwargs, "target": self}
 
@@ -219,23 +219,25 @@ class Target:
 
 
 def _env_name(field_name: str) -> str:
-    return f"LANGSMITH_TARGET_{field_name.upper()}"
+    return f"LANGSMITH_{field_name.upper()}"
 
 
 def _env_value(field_name: str) -> Optional[str]:
-    return utils.get_env_var(f"TARGET_{field_name.upper()}", namespaces=("LANGSMITH",))
+    return utils.get_env_var(field_name.upper(), namespaces=("LANGSMITH",))
 
 
-def target(agent_id: str, *, environment: str, **dimensions: Optional[str]) -> Target:
+def target(
+    agent_id: str, *, agent_environment: str, **dimensions: Optional[str]
+) -> Target:
     """(experimental) Build a handle that addresses runs to a target.
 
     Args:
         agent_id: The agent's ID. The server creates it on first use.
-        environment: The target's environment. Not validated client-side; the
-            server decides which environments are accepted.
+        agent_environment: The agent's environment. Not validated
+            client-side; the server decides which environments are accepted.
         **dimensions: Any further `Target` fields.
 
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    return Target(agent_id, environment, **dimensions)
+    return Target(agent_id, agent_environment, **dimensions)

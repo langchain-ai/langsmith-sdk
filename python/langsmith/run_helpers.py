@@ -195,7 +195,7 @@ def tracing_context(
         project_name: The name of the project to log the run to.
         target: (experimental) A `Target` from `langsmith.target`, to log the
             run to instead of a project. Cannot be combined with a project in
-            the same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
+            the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.
@@ -450,7 +450,7 @@ def traceable(
             Defaults to `None`, which will use the default project.
         target: (experimental) A `Target` from `langsmith.target`, to log the
             run to instead of a project. Cannot be combined with a project in
-            the same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
+            the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         process_inputs: Custom serialization / processing function for inputs.
 
             Defaults to `None`.
@@ -1058,7 +1058,7 @@ class trace:
         project_name: Project name to associate the run with.
         target: (experimental) A `Target` from `langsmith.target`, to log the
             run to instead of a project. Cannot be combined with a project in
-            the same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
+            the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         parent: Parent run.
 
             Can be a `RunTree`, dotted order string, or tracing headers.
