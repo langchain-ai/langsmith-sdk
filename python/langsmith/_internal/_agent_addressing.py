@@ -83,10 +83,10 @@ def resolve(
     project. Half an agent named in code is completed from the environment
     rather than competing with it.
 
-    When only the environment addresses the run, both modes travel and the
-    endpoint refuses the pair -- there is no tier to choose between, and
-    picking one would move the caller's traces without telling them. Only the
-    `default` project the SDK would otherwise invent is suppressed.
+    When only the environment addresses the run, `LANGSMITH_AGENT_ID` takes
+    precedence over a configured project, which is dropped (`warn_on_env`
+    says so at client construction). A lone `LANGSMITH_AGENT_ENVIRONMENT`
+    still travels with the project, so the endpoint reports the mistake.
 
     A project variable set to the empty string names no project, so it falls
     back to `default` the way an unset one does.
@@ -99,7 +99,9 @@ def resolve(
     env_agent_environment = utils.get_tracer_agent_environment()
     if is_addressed(env_agent_id, env_agent_environment):
         return (
-            utils.get_tracer_project(return_default_value=False) or None,
+            None
+            if env_agent_id is not None
+            else utils.get_tracer_project(return_default_value=False) or None,
             env_agent_id,
             env_agent_environment,
         )
@@ -112,7 +114,7 @@ def warn_on_env() -> None:
     Either half of the pair addresses a run, so either half alone is refused
     with a 400 that takes the whole batch with it -- and `AGENT_ENVIRONMENT`
     is a generic enough name to be set by accident. A project configured
-    beside a complete pair is refused the same way.
+    beside a complete pair is ignored in favor of the agent.
 
     Emitted at client construction rather than per run, so it is seen once
     instead of drowned out by the background flush's warnings, which only
@@ -144,10 +146,10 @@ def warn_on_env() -> None:
         return
     warnings.warn(
         f"LANGSMITH_AGENT_ID ({agent_id!r}) and a configured project "
-        f"({project!r}) both address runs, and the API accepts only one. "
-        "Unset LANGSMITH_AGENT_ID to trace to the project, or unset "
-        "LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / LANGCHAIN_SESSION) to "
-        "trace to the agent.",
+        f"({project!r}) are both set. LANGSMITH_AGENT_ID takes precedence and "
+        "the project is ignored. Unset LANGSMITH_AGENT_ID to trace to the "
+        "project, or unset LANGSMITH_PROJECT (and LANGCHAIN_PROJECT / "
+        "LANGCHAIN_SESSION) to silence this warning.",
         utils.LangSmithWarning,
         stacklevel=3,
     )

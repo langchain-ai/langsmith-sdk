@@ -2996,8 +2996,7 @@ class TestEveryEntryPointTakesAnAgent:
     ) -> None:
         """The mirror of a project in code beating an agent in the environment.
 
-        Both modes travel together only when both come from the environment,
-        where there is no tier to choose between. Forwarding an env project
+        Forwarding an env project
         beside an agent named in code would earn a 400 and lose the trace.
         """
         _clean_agent_addressing_env(monkeypatch, LANGSMITH_PROJECT="env-proj")
@@ -3029,10 +3028,10 @@ class TestEveryEntryPointTakesAnAgent:
 
         assert seen["value"] == ("code-agent", "staging", None)
 
-    def test_both_from_the_environment_travel_together(
+    def test_agent_id_wins_when_both_come_from_the_environment(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Neither is named in code, so the endpoint arbitrates, not the SDK."""
+        """Neither is named in code, so `LANGSMITH_AGENT_ID` takes precedence."""
         _clean_agent_addressing_env(
             monkeypatch,
             LANGSMITH_AGENT_ID="env-agent",
@@ -3051,7 +3050,7 @@ class TestEveryEntryPointTakesAnAgent:
         with tracing_context(enabled=True, client=mock_client):
             foo()
 
-        assert seen["value"] == ("env-agent", "staging", "env-proj")
+        assert seen["value"] == ("env-agent", "staging", None)
 
     def test_a_project_named_in_the_same_call_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch
@@ -3145,11 +3144,10 @@ class TestTracingContextAgentAddressing:
 
         assert seen == {"agent_environment": "staging", "session_name": None}
 
-    def test_traceable_keeps_a_configured_project_beside_the_agent(
+    def test_traceable_drops_a_configured_project_beside_the_agent(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Both travel so the endpoint refuses the pair, rather than the SDK
-        quietly moving the trace to the agent."""
+        """`LANGSMITH_AGENT_ID` takes precedence over a configured project."""
         _clean_agent_addressing_env(
             monkeypatch,
             LANGSMITH_AGENT_ID="env-agent",
@@ -3168,7 +3166,7 @@ class TestTracingContextAgentAddressing:
         with tracing_context(enabled=True, client=mock_client):
             foo()
 
-        assert seen == {"agent_id": "env-agent", "session_name": "env-proj"}
+        assert seen == {"agent_id": "env-agent", "session_name": None}
 
     def test_nested_traceables_inherit_agent_addressing(
         self, monkeypatch: pytest.MonkeyPatch

@@ -8398,15 +8398,13 @@ class TestConflictingAddressingRaises:
         assert child.agent_id is None
 
 
-class TestAConfiguredProjectTravelsWithTheAgent:
-    """`LANGSMITH_AGENT_ID` beside `LANGSMITH_PROJECT` must not relocate a trace.
+class TestAgentIdTakesPrecedenceOverAConfiguredProject:
+    """`LANGSMITH_AGENT_ID` beside `LANGSMITH_PROJECT` addresses the agent.
 
-    Only the `"default"` project the SDK would invent on its own is suppressed.
-    A project the caller configured goes out alongside the agent, so the
-    endpoint reports the conflict instead of the SDK silently picking one.
+    The configured project is dropped, and the client warns at construction.
     """
 
-    def test_a_configured_project_is_forwarded_alongside(
+    def test_a_configured_project_is_dropped(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _clean_agent_env(
@@ -8425,7 +8423,7 @@ class TestAConfiguredProjectTravelsWithTheAgent:
             "my-agent",
             "staging",
         )
-        assert body.get("session_name") == "my-proj"
+        assert body.get("session_name") is None
 
     def test_a_per_call_project_still_wins(
         self, monkeypatch: pytest.MonkeyPatch
@@ -8452,9 +8450,8 @@ class TestAConfiguredProjectTravelsWithTheAgent:
     ) -> None:
         """`RunTree.post` sends the tree's resolved fields as `create_run` kwargs.
 
-        A project beside an agent there is the pair this resolution built, not a
-        caller naming two destinations, so it must reach the endpoint rather
-        than trip the caller-conflict check.
+        Those fields are this resolution's output, not a caller naming two
+        destinations, so they must not trip the caller-conflict check.
         """
         _clean_agent_env(
             monkeypatch,
@@ -8472,22 +8469,19 @@ class TestAConfiguredProjectTravelsWithTheAgent:
             "my-agent",
             "staging",
         )
-        assert body.get("session_name") == "my-proj"
+        assert body.get("session_name") is None
 
     def test_the_client_warns_once_at_construction(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The endpoint's 400 lands in a background thread, so it only logs.
-
-        Warning where the client is built is the one place the caller sees it.
-        """
+        """The dropped project is reported where the client is built."""
         _clean_agent_env(
             monkeypatch,
             LANGSMITH_AGENT_ID="my-agent",
             LANGSMITH_AGENT_ENVIRONMENT="staging",
             LANGSMITH_PROJECT="my-proj",
         )
-        with pytest.warns(ls_utils.LangSmithWarning, match="LANGSMITH_AGENT_ID"):
+        with pytest.warns(ls_utils.LangSmithWarning, match="takes precedence"):
             Client(api_url="http://localhost:1984", api_key="123")
 
 
