@@ -33,23 +33,6 @@ def check_target(target: Any) -> Optional[Target]:
     )
 
 
-def reject_loose_fields(values: Any, where: str) -> None:
-    """Refuse the removed `agent_*` keys, which `target=` replaced.
-
-    Passed through, they would reach the endpoint beside a defaulted project
-    and get the whole batch refused.
-
-    Raises:
-        utils.LangSmithUserError: If `values` holds any of them.
-    """
-    named = [key for key in Target.wire_keys() if key in values]
-    if named:
-        raise utils.LangSmithUserError(
-            f"{where} no longer takes {', '.join(named)}; pass "
-            "`target=langsmith.target(agent_id, environment=...)` instead."
-        )
-
-
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
     """Put a bare `Target` replica in a `target` key, and check the rest."""
     if replicas is None:
@@ -59,7 +42,6 @@ def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
         if isinstance(replica, Target):
             normalized.append({"target": replica})
             continue
-        reject_loose_fields(replica, "A write replica")
         check_target(replica.get("target"))
         normalized.append(dict(replica))
     return normalized
@@ -235,7 +217,6 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     target from the post that established it, and one naming nothing is
     resolved by run id.
     """
-    reject_loose_fields(payload, "A run")
     target = check_target(payload.pop("target", None))
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
