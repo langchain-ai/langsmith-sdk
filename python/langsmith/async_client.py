@@ -616,13 +616,12 @@ class AsyncClient:
         """Create a run.
 
         !!! warning "Experimental"
-            `agent_id` / `agent_environment` address the run to an agent
-            instead of a project. Agent addressing is in beta and enabled per
-            workspace; a workspace without it rejects the run, so the trace is
-            lost rather than falling back to a project. Both may change
-            without notice. A `target` handle may be passed in their place.
+            `target` addresses the run to a target instead of a project. It is
+            in beta and enabled per workspace; a workspace without it rejects
+            the run, so the trace is lost rather than falling back to a
+            project. It may change without notice.
         """
-        _agent_addressing.pop_target(kwargs)
+        _agent_addressing.check_target(kwargs.get("target"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
@@ -667,19 +666,15 @@ class AsyncClient:
 
         Args:
             run_id: The run to update.
-            **kwargs: The fields to update, and `agent_id` / `agent_environment`
-                (or a `target` handle in their place).
+            **kwargs: The fields to update, and `target`.
 
                 !!! warning "Experimental"
-                    `agent_id` / `agent_environment` are in beta. They address
-                    the patch to an agent, and must match the post they belong
-                    to: an update that names neither is resolved by run id, as
-                    every update was before. Agent addressing is enabled per
-                    workspace; a workspace without it rejects the runs. Both
-                    may change without notice.
+                    `target` is in beta. It addresses the patch to a target,
+                    and must match the post it belongs to: an update that
+                    names none is resolved by run id, as every update was
+                    before. It may change without notice.
         """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
-        _agent_addressing.pop_target(data)
         _agent_addressing.apply_to_payload(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
@@ -1184,19 +1179,17 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
-        agent_id: Optional[str] = None,
-        agent_environment: Optional[str] = None,
         target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
 
         !!! warning "Experimental"
-            `agent_id` / `agent_environment` are in beta. Agent addressing is
-            enabled per workspace; a workspace without it rejects the feedback,
-            so it is lost rather than falling back to a project. The agent must
-            already exist -- unlike run ingestion, a feedback part never creates
-            one. Both may change without notice.
+            `target` is in beta. Target addressing is enabled per workspace; a
+            workspace without it rejects the feedback, so it is lost rather
+            than falling back to a project. The target must already exist --
+            unlike run ingestion, a feedback part never creates one. It may
+            change without notice.
 
         Args:
             run_id: The ID of the run to provide feedback for. At least one of
@@ -1228,15 +1221,11 @@ class AsyncClient:
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
-            agent_id: The agent to attach this feedback to, instead of a
+            target: The target to attach this feedback to, instead of a
                 project. Pass whatever the run being described was traced to.
                 Cannot be combined with `session_id` / `project_id`, and is
-                never read from `LANGSMITH_TARGET_ID`: feedback follows its run,
-                not the ambient environment. The agent must already exist;
-                unlike run ingestion, a feedback part never creates one.
-            agent_environment: Narrows `agent_id`, and requires it. Defaults
-                server-side to `production` when omitted.
-            target: A `Target` handle, in place of `agent_id` / `agent_environment`.
+                never read from the env vars: feedback follows its run, not
+                the ambient environment.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1245,14 +1234,7 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        # Loose fields keep their feedback semantics (never read from the
-        # environment, environment defaulted server-side), so they are not
-        # folded into a `Target`; a handle travels whole to the payload.
-        target = _agent_addressing.coerce_target(target)
-        if target is not None and (agent_id is not None or agent_environment):
-            raise ls_utils.LangSmithUserError(
-                "Pass either `target` or the loose `agent_*` fields, not both."
-            )
+        target = _agent_addressing.check_target(target)
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -1260,14 +1242,9 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if (
-            run_id is not None
-            and session_id is None
-            and agent_id is None
-            and target is None
-        ):
-            # An agent pair locates the project directly, so it satisfies the
-            # same requirement this gate exists for.
+        if run_id is not None and session_id is None and target is None:
+            # A target locates the project directly, so it satisfies the same
+            # requirement this gate exists for.
             ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
@@ -1322,8 +1299,6 @@ class AsyncClient:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=session_id_,
-            agent_id=agent_id,
-            agent_environment=agent_environment,
             target=target,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(

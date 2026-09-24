@@ -63,10 +63,9 @@ class WriteReplica(TypedDict, total=False):
     """Configuration for a write replica endpoint.
 
     !!! warning "Experimental"
-        `target` (or the loose `agent_id` / `agent_environment`) is in beta.
-        Agent addressing is enabled per workspace; a workspace without it
-        rejects the runs, so tracing is lost rather than falling back to a
-        project. These keys may change without notice.
+        `target` is in beta. Target addressing is enabled per workspace; a
+        workspace without it rejects the runs, so tracing is lost rather than
+        falling back to a project. It may change without notice.
     """
 
     api_url: Optional[str]
@@ -74,10 +73,6 @@ class WriteReplica(TypedDict, total=False):
     auth: AuthHeaders
     project_name: Optional[str]
     target: Optional[Target]
-    agent_id: Optional[str]
-    """Loose form of `target`; folded into it when the replica is read."""
-    agent_environment: Optional[str]
-    """Loose form of `target`; folded into it when the replica is read."""
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -212,11 +207,8 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
-# The whole target, as URL-encoded JSON of its wire fields; the two keys below
-# also carry its required fields on their own, and are read when it is absent.
+# The whole target, as URL-encoded JSON of its wire fields.
 LANGSMITH_TARGET = sys.intern(f"{LANGSMITH_PREFIX}target")
-LANGSMITH_TARGET_ID = sys.intern(f"{LANGSMITH_PREFIX}target-id")
-LANGSMITH_TARGET_ENVIRONMENT = sys.intern(f"{LANGSMITH_PREFIX}target-environment")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -263,8 +255,6 @@ def configure(
     client: Optional[Client] = _SENTINEL,
     enabled: Optional[bool] = _SENTINEL,
     project_name: Optional[str] = _SENTINEL,
-    agent_id: Optional[str] = _SENTINEL,
-    agent_environment: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
     target: Optional[Target] = _SENTINEL,
@@ -281,10 +271,9 @@ def configure(
     use the `tracing_context` context manager instead.
 
     !!! warning "Experimental"
-        `agent_id` / `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the runs, so
-        tracing is lost rather than falling back to a project. Both may change
-        without notice.
+        `target` is in beta. Target addressing is enabled per workspace; a
+        workspace without it rejects the runs, so tracing is lost rather than
+        falling back to a project. It may change without notice.
 
     Args:
         client: A LangSmith Client instance to use for all tracing operations.
@@ -305,12 +294,9 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        agent_id: (experimental) Loose form of `target`; a missing half is
-            read from its `LANGSMITH_TARGET_*` env var. Mutually exclusive with
+        target: (experimental) A `Target` from `langsmith.target`, to send
+            traces to instead of a project. Mutually exclusive with
             `project_name`.
-        agent_environment: (experimental) Loose form of `target`.
-        target: (experimental) A `Target` handle from `langsmith.target`, to
-            send traces to instead of a project.
 
             Pass `None` to explicitly clear it.
         tags: A list of tags to be applied to all traced runs.
@@ -352,19 +338,9 @@ def configure(
         >>> ls.configure(enabled=False)
     """
     global _CLIENT
-    loose = {
-        key: value
-        for key, value in (
-            ("agent_id", agent_id),
-            ("agent_environment", agent_environment),
-        )
-        if value is not _SENTINEL
-    }
-    set_target = target is not _SENTINEL or bool(loose)
+    set_target = target is not _SENTINEL
     if set_target:
-        target = _agent_addressing.coerce_target(
-            None if target is _SENTINEL else target, loose
-        )
+        target = _agent_addressing.check_target(target)
     _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
         target=target if set_target else None,
@@ -428,7 +404,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     `default_factory` from reaching for the environment afterwards and
     overriding what was settled.
     """
-    _agent_addressing.pop_target(values)
+    _agent_addressing.check_target(values.get("target"))
     named_project = next(
         (
             values[key]
@@ -570,7 +546,6 @@ class RunTree(ls_schemas.RunBase):
         if values.get("replicas") is None:
             values["replicas"] = _REPLICAS.get()
         values["replicas"] = _ensure_write_replicas(values["replicas"])
-        _agent_addressing.pop_target(values)
         _apply_agent_addressing(values)
         return values
 
@@ -838,16 +813,6 @@ class RunTree(ls_schemas.RunBase):
         )
         self.child_runs.append(run)
         return run
-
-    @property
-    def agent_id(self) -> Optional[str]:
-        """(experimental) The target's id, if the run is target-addressed."""
-        return self.target.id if self.target is not None else None
-
-    @property
-    def agent_environment(self) -> Optional[str]:
-        """(experimental) The target's environment, if target-addressed."""
-        return self.target.environment if self.target is not None else None
 
     def _get_dicts_safe(self):
         # Things like generators cannot be copied
@@ -1404,7 +1369,7 @@ class RunTree(ls_schemas.RunBase):
 
 def _take_address(values: dict[str, Any]) -> dict[str, Any]:
     """Pop and return the project and target keys `values` names."""
-    _agent_addressing.pop_target(values)
+    _agent_addressing.check_target(values.get("target"))
     return {
         key: value
         for key in (*_PROJECT_ADDRESSING_KEYS, "target")
@@ -1439,7 +1404,6 @@ class _Baggage:
         tags = []
         project_name = None
         target_wire: dict[str, Any] = {}
-        field_target_wire: dict[str, Any] = {}
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1454,10 +1418,6 @@ class _Baggage:
                     parsed = json.loads(urllib.parse.unquote(value))
                     if isinstance(parsed, dict):
                         target_wire = parsed
-                elif key == LANGSMITH_TARGET_ID:
-                    field_target_wire["agent_id"] = urllib.parse.unquote(value)
-                elif key == LANGSMITH_TARGET_ENVIRONMENT:
-                    field_target_wire["agent_environment"] = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1510,7 +1470,7 @@ class _Baggage:
             tags=tags,
             project_name=project_name,
             replicas=replicas,
-            target=_target_from_header(target_wire or field_target_wire),
+            target=_target_from_header(target_wire),
         )
 
     @classmethod
@@ -1542,11 +1502,6 @@ class _Baggage:
         if self.target is not None:
             wire = self.target.to_wire()
             items.append(f"{LANGSMITH_TARGET}={urllib.parse.quote(_dumps_json(wire))}")
-            items.append(f"{LANGSMITH_TARGET_ID}={urllib.parse.quote(self.target.id)}")
-            items.append(
-                f"{LANGSMITH_TARGET_ENVIRONMENT}="
-                f"{urllib.parse.quote(self.target.environment)}"
-            )
         return ",".join(items)
 
 

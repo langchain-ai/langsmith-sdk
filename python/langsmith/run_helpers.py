@@ -174,8 +174,6 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    agent_environment: Optional[str] = None,
     target: Optional[Target] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
@@ -189,20 +187,15 @@ def tracing_context(
     """Set the tracing context for a block of code.
 
     !!! warning "Experimental"
-        `agent_id` / `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the runs, so
-        tracing is lost rather than falling back to a project. Both may change
-        without notice.
+        `target` is in beta. Target addressing is enabled per workspace; a
+        workspace without it rejects the runs, so tracing is lost rather than
+        falling back to a project. It may change without notice.
 
     Args:
         project_name: The name of the project to log the run to.
-        agent_id: (experimental) The agent to log the run to, instead of a
-            project. Cannot be combined with a project in the same call.
-            Defaults to `LANGSMITH_TARGET_ID`.
-        agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_TARGET_ENVIRONMENT`.
-        target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment`.
+        target: (experimental) A `Target` from `langsmith.target`, to log the
+            run to instead of a project. Cannot be combined with a project in
+            the same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
         tags: The tags to add to the run.
         metadata: The metadata to add to the run.
         parent: The parent run to use for the context.
@@ -226,9 +219,7 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
-    target = _agent_addressing.coerce_target(
-        target, {"agent_id": agent_id, "agent_environment": agent_environment}
-    )
+    target = _agent_addressing.check_target(target)
     replicas = _agent_addressing.normalize_replicas(replicas)
     current_context = get_tracing_context()
     if project_name is not None and target == current_context.get("target"):
@@ -294,8 +285,6 @@ def ensure_traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    agent_environment: Optional[str] = None,
     target: Optional[Target] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -311,8 +300,6 @@ def ensure_traceable(
         client=client,
         reduce_fn=reduce_fn,
         project_name=project_name,
-        agent_id=agent_id,
-        agent_environment=agent_environment,
         target=target,
         process_inputs=process_inputs,
         process_outputs=process_outputs,
@@ -342,12 +329,8 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional run tree (deprecated)."""
     project_name: Optional[str]
     """Optional name of the project."""
-    agent_id: Optional[str]
-    """(experimental) Optional agent to log the run to, instead of a project."""
-    agent_environment: Optional[str]
-    """(experimental) Narrows `agent_id`; required alongside it."""
     target: Optional[Target]
-    """(experimental) A `Target` handle, in place of `agent_id` / `agent_environment`."""
+    """(experimental) A `Target` to log the run to, instead of a project."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
     tags: Optional[list[str]]
@@ -419,8 +402,6 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    agent_environment: Optional[str] = None,
     target: Optional[Target] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -439,10 +420,9 @@ def traceable(
     """Trace a function with langsmith.
 
     !!! warning "Experimental"
-        `agent_id` / `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the runs, so
-        tracing is lost rather than falling back to a project. Both may change
-        without notice.
+        `target` is in beta. Target addressing is enabled per workspace; a
+        workspace without it rejects the runs, so tracing is lost rather than
+        falling back to a project. It may change without notice.
 
     Args:
         run_type: The type of run (span) to create.
@@ -468,13 +448,9 @@ def traceable(
         project_name: The name of the project to log the run to.
 
             Defaults to `None`, which will use the default project.
-        agent_id: (experimental) The agent to log the run to, instead of a
-            project. Cannot be combined with a project in the same call.
-            Defaults to `LANGSMITH_TARGET_ID`.
-        agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_TARGET_ENVIRONMENT`.
-        target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment`.
+        target: (experimental) A `Target` from `langsmith.target`, to log the
+            run to instead of a project. Cannot be combined with a project in
+            the same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
         process_inputs: Custom serialization / processing function for inputs.
 
             Defaults to `None`.
@@ -654,7 +630,6 @@ def traceable(
         )
     reduce_fn = kwargs.pop("reduce_fn", None)
     enabled = kwargs.pop("enabled", None)
-    _agent_addressing.pop_target(kwargs)
     container_input = _ContainerInput(
         # TODO: Deprecate raw extra
         extra_outer=kwargs.pop("extra", None),
@@ -663,7 +638,7 @@ def traceable(
         tags=kwargs.pop("tags", None),
         client=kwargs.pop("client", None),
         project_name=kwargs.pop("project_name", None),
-        target=kwargs.pop("target", None),
+        target=_agent_addressing.check_target(kwargs.pop("target", None)),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         process_chunk=kwargs.pop("process_chunk", None),
@@ -1072,23 +1047,18 @@ class trace:
     This class can be used as both a synchronous and asynchronous context manager.
 
     !!! warning "Experimental"
-        `agent_id` / `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the runs, so
-        tracing is lost rather than falling back to a project. Both may change
-        without notice.
+        `target` is in beta. Target addressing is enabled per workspace; a
+        workspace without it rejects the runs, so tracing is lost rather than
+        falling back to a project. It may change without notice.
 
     Args:
         name: Name of the run.
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
         inputs: Initial input data for the run.
         project_name: Project name to associate the run with.
-        agent_id: (experimental) The agent to log the run to, instead of a
-            project. Cannot be combined with a project in the same call.
-            Defaults to `LANGSMITH_TARGET_ID`.
-        agent_environment: (experimental) Narrows `agent_id`; meaningless
-            without it. Defaults to `LANGSMITH_TARGET_ENVIRONMENT`.
-        target: (experimental) A `Target` handle from `langsmith.target`, in
-            place of `agent_id` / `agent_environment`.
+        target: (experimental) A `Target` from `langsmith.target`, to log the
+            run to instead of a project. Cannot be combined with a project in
+            the same call. Defaults to the `LANGSMITH_TARGET_*` env vars.
         parent: Parent run.
 
             Can be a `RunTree`, dotted order string, or tracing headers.
@@ -1150,8 +1120,6 @@ class trace:
         inputs: Optional[dict] = None,
         extra: Optional[dict] = None,
         project_name: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        agent_environment: Optional[str] = None,
         target: Optional[Target] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
@@ -1181,9 +1149,7 @@ class trace:
         self.inputs = inputs
         self.attachments = attachments
         self.extra = extra
-        self.target = _agent_addressing.coerce_target(
-            target, {"agent_id": agent_id, "agent_environment": agent_environment}
-        )
+        self.target = _agent_addressing.check_target(target)
         _agent_addressing.reject_conflicting(project=project_name, target=self.target)
         self.project_name = project_name
         self.parent = parent
@@ -1792,7 +1758,7 @@ def _setup_run(
     )
     outer_project = _context._PROJECT_NAME.get()
     langsmith_extra = LangSmithExtra(**(langsmith_extra or {}))
-    _agent_addressing.pop_target(cast(dict, langsmith_extra))
+    _agent_addressing.check_target(langsmith_extra.get("target"))
     if "replicas" in langsmith_extra:
         langsmith_extra["replicas"] = _agent_addressing.normalize_replicas(
             langsmith_extra["replicas"]

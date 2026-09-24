@@ -106,14 +106,8 @@ class Target:
         }
 
     @classmethod
-    def from_wire(
-        cls, values: Mapping[str, Any], *, complete_from_env: bool = False
-    ) -> Optional[Target]:
+    def from_wire(cls, values: Mapping[str, Any]) -> Optional[Target]:
         """Build from payload-keyed values, or `None` if none are set.
-
-        With `complete_from_env`, a field left unset is read from its
-        `LANGSMITH_TARGET_<FIELD>` env var -- how a caller naming half an
-        address in code gets the other half from the environment.
 
         Raises:
             LangSmithUserError: If some but not all required fields are set.
@@ -123,11 +117,6 @@ class Target:
         }
         if all(v is None for v in fields.values()):
             return None
-        if complete_from_env:
-            fields = {
-                name: value if value is not None else _env_value(name)
-                for name, value in fields.items()
-            }
         missing = [
             f.metadata["wire"]
             for f in dataclasses.fields(cls)
@@ -135,9 +124,7 @@ class Target:
         ]
         if missing:
             raise utils.LangSmithUserError(
-                f"An agent address needs {' and '.join(missing)} as well; set "
-                f"them in code or through their LANGSMITH_ env vars, or pass a "
-                "`langsmith.target(...)` instead."
+                f"A target needs {' and '.join(missing)} as well."
             )
         return cls(**fields)  # type: ignore[arg-type]
 
@@ -178,9 +165,7 @@ class Target:
         return dataclasses.replace(self, environment=environment)
 
     def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        named = [
-            k for k in ("target", "project_name", *self.wire_keys()) if k in kwargs
-        ]
+        named = [k for k in ("target", "project_name") if k in kwargs]
         if named:
             raise utils.LangSmithUserError(
                 f"A Target already addresses the run; drop {named}, or use "
