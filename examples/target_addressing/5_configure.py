@@ -2,7 +2,7 @@
 
 import langsmith as ls
 
-ls.configure(target=ls.target("customer-support", environment="production"))
+ls.configure(target=ls.target("customer-support", agent_environment="production"))
 
 
 @ls.traceable

@@ -6,7 +6,9 @@ downstream root joins the same target without naming one.
 
 import langsmith as ls
 
-support_eu = ls.target("customer-support", environment="production", region="eu")
+support_eu = ls.target(
+    "customer-support", agent_environment="production", agent_region="eu"
+)
 
 
 @ls.traceable

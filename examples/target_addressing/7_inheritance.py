@@ -3,7 +3,7 @@
 import langsmith as ls
 from langsmith.run_trees import RunTree
 
-support = ls.target("customer-support", environment="production")
+support = ls.target("customer-support", agent_environment="production")
 
 
 @ls.traceable
@@ -15,7 +15,7 @@ def answer(question: str) -> str:
 @support.traceable
 def root() -> None:
     """Start a trace, then try to move a child elsewhere."""
-    with support.with_environment("staging").tracing_context():
+    with support.with_agent_environment("staging").tracing_context():
         answer("child")  # still customer-support / production
 
 
