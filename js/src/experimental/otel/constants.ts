@@ -23,6 +23,9 @@ export const GEN_AI_SERIALIZED_NAME = "gen_ai.serialized.name";
 export const GEN_AI_SERIALIZED_SIGNATURE = "gen_ai.serialized.signature";
 export const GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc";
 export const GEN_AI_RESPONSE_ID = "gen_ai.response.id";
+export const GEN_AI_TOOL_NAME = "gen_ai.tool.name";
+export const GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id";
+export const GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions";
 export const GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier";
 export const GEN_AI_RESPONSE_SYSTEM_FINGERPRINT =
   "gen_ai.response.system_fingerprint";
