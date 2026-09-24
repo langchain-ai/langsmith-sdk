@@ -18,8 +18,8 @@ is visible while reading that surface; delete the row's tag once it works.
 
 | Var | Notes |
 |---|---|
-| `LANGSMITH_TARGET_AGENT_ID` | `LANGSMITH_` only, no `LANGCHAIN_` alias. `lru_cache`d for the process. |
-| `LANGSMITH_TARGET_ENVIRONMENT` | Same. Resolved independently of the id, so half a pair can come from the environment and half from code. |
+| `LANGSMITH_AGENT_ID` | `LANGSMITH_` only, no `LANGCHAIN_` alias. `lru_cache`d for the process. |
+| `LANGSMITH_AGENT_ENVIRONMENT` | Same. Resolved independently of the id, so half a pair can come from the environment and half from code. |
 | `HOSTED_LANGSERVE_PROJECT_NAME` | No prefix. Beats every other project variable. |
 | `LANGSMITH_PROJECT` / `LANGCHAIN_PROJECT` | |
 | `LANGSMITH_SESSION` / `LANGCHAIN_SESSION` | Legacy, lowest precedence. Falls back to `"default"`. |
@@ -158,7 +158,7 @@ environment variables, despite the names.
    agent in silence. Not yet pinned: distributed tracing is a later file.
 
 Fixed since first written, kept green by a case each: a lone
-`LANGSMITH_TARGET_ENVIRONMENT` reaching the endpoint (`env_environment_only`),
+`LANGSMITH_AGENT_ENVIRONMENT` reaching the endpoint (`env_environment_only`),
 an env project beside an env agent travelling together
 (`env_agent_and_env_project`, `env_agent_and_hosted_project`), and the
 decorator's agent arguments (`decorator_agent`).

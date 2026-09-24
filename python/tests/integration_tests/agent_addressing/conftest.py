@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 # order below, and HOSTED_LANGSERVE_PROJECT_NAME beats all of them. The agent
 # pair is LANGSMITH_-only by design: there is no LANGCHAIN_ alias.
 ADDRESSING_ENV_VARS = (
-    "LANGSMITH_TARGET_AGENT_ID",
-    "LANGSMITH_TARGET_ENVIRONMENT",
+    "LANGSMITH_AGENT_ID",
+    "LANGSMITH_AGENT_ENVIRONMENT",
     "HOSTED_LANGSERVE_PROJECT_NAME",
     "LANGSMITH_PROJECT",
     "LANGCHAIN_PROJECT",

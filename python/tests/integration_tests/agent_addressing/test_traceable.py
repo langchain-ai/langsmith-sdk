@@ -23,10 +23,10 @@ from tests.integration_tests.agent_addressing.conftest import (
 )
 
 ENV_AGENT = {
-    "LANGSMITH_TARGET_AGENT_ID": AGENT,
-    "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+    "LANGSMITH_AGENT_ID": AGENT,
+    "LANGSMITH_AGENT_ENVIRONMENT": "staging",
 }
-CONTEXT_AGENT = {"target": ls_target(AGENT, environment="staging")}
+CONTEXT_AGENT = {"target": ls_target(AGENT, agent_environment="staging")}
 
 CASES = [
     # -- root, environment only ----------------------------------------------
@@ -35,13 +35,13 @@ CASES = [
     # and the SDK logs why.
     Case(
         "env_agent_id_only",
-        env={"LANGSMITH_TARGET_AGENT_ID": AGENT},
+        env={"LANGSMITH_AGENT_ID": AGENT},
         lands_in=Untraced(reason="incomplete target"),
     ),
     # The other half.
     Case(
         "env_environment_only",
-        env={"LANGSMITH_TARGET_ENVIRONMENT": "staging"},
+        env={"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
         lands_in=Untraced(reason="incomplete target"),
     ),
     Case(
@@ -102,7 +102,7 @@ CASES = [
     # The decorator's own arguments, beside `project_name`.
     Case(
         "decorator_agent",
-        decorator={"target": ls_target(AGENT, environment="staging")},
+        decorator={"target": ls_target(AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # -- nested calls ----------------------------------------------------------

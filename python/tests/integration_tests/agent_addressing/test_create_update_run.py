@@ -28,8 +28,8 @@ CASES = [
     Case(
         "env_agent",
         env={
-            "LANGSMITH_TARGET_AGENT_ID": AGENT,
-            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+            "LANGSMITH_AGENT_ID": AGENT,
+            "LANGSMITH_AGENT_ENVIRONMENT": "staging",
         },
         lands_in=InAgent("STAGING"),
     ),
@@ -38,8 +38,8 @@ CASES = [
     Case(
         "env_agent_and_explicit_project",
         env={
-            "LANGSMITH_TARGET_AGENT_ID": AGENT,
-            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+            "LANGSMITH_AGENT_ID": AGENT,
+            "LANGSMITH_AGENT_ENVIRONMENT": "staging",
         },
         kwargs={"project_name": PROJECT},
         lands_in=InProject(PROJECT),
@@ -50,8 +50,8 @@ CASES = [
     Case(
         "env_agent_and_env_project",
         env={
-            "LANGSMITH_TARGET_AGENT_ID": AGENT,
-            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+            "LANGSMITH_AGENT_ID": AGENT,
+            "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             "LANGSMITH_PROJECT": PROJECT,
         },
         lands_in=Untraced(reason="are both set in the environment"),
@@ -59,14 +59,14 @@ CASES = [
     # Addressing passed per call rather than configured in the environment.
     Case(
         "explicit_agent",
-        kwargs={"target": ls_target(AGENT, environment="staging")},
+        kwargs={"target": ls_target(AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A genuinely incomplete target is dropped and logged, not a run that
     # quietly landed in `default`.
     Case(
         "env_agent_id_only",
-        env={"LANGSMITH_TARGET_AGENT_ID": AGENT},
+        env={"LANGSMITH_AGENT_ID": AGENT},
         lands_in=Untraced(reason="incomplete target"),
     ),
     # The legacy path, unchanged: a project by name, and no addressing at all.
@@ -120,8 +120,8 @@ def test_an_unknown_agent_is_created_with_every_environment(ls: Harness) -> None
         Case(
             "created",
             env={
-                "LANGSMITH_TARGET_AGENT_ID": AGENT,
-                "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+                "LANGSMITH_AGENT_ID": AGENT,
+                "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             },
             lands_in=InAgent("STAGING"),
         )
@@ -210,8 +210,8 @@ def test_a_run_off_the_multipart_path_falls_back_to_the_default_project(
         Case(
             "off_the_multipart_path",
             env={
-                "LANGSMITH_TARGET_AGENT_ID": AGENT,
-                "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+                "LANGSMITH_AGENT_ID": AGENT,
+                "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             },
             lands_in=InProject("default"),
         )

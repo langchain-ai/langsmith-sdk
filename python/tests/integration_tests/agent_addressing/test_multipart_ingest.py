@@ -30,23 +30,23 @@ CASES = [
     Case(
         "env_agent",
         env={
-            "LANGSMITH_TARGET_AGENT_ID": AGENT,
-            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+            "LANGSMITH_AGENT_ID": AGENT,
+            "LANGSMITH_AGENT_ENVIRONMENT": "staging",
         },
         lands_in=InAgent("STAGING"),
     ),
     # Addressing on the run dict rather than in the environment.
     Case(
         "agent_on_the_run",
-        kwargs={"target": ls_target(AGENT, environment="staging")},
+        kwargs={"target": ls_target(AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A project on the run dict wins over an agent in the environment.
     Case(
         "env_agent_and_project_on_the_run",
         env={
-            "LANGSMITH_TARGET_AGENT_ID": AGENT,
-            "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+            "LANGSMITH_AGENT_ID": AGENT,
+            "LANGSMITH_AGENT_ENVIRONMENT": "staging",
         },
         kwargs={"session_name": PROJECT},
         lands_in=InProject(PROJECT),

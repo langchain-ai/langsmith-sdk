@@ -74,8 +74,8 @@ def test_a_refused_workspace_loses_the_run_without_raising(
         Case(
             "rollout_disabled",
             env={
-                "LANGSMITH_TARGET_AGENT_ID": AGENT,
-                "LANGSMITH_TARGET_ENVIRONMENT": "staging",
+                "LANGSMITH_AGENT_ID": AGENT,
+                "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             },
             lands_in=InAgent("STAGING"),
         )
@@ -100,7 +100,7 @@ def test_a_refused_workspace_loses_the_run_without_raising(
     # The stub refuses any multipart request, so without this the test would
     # pass for a project-addressed run too.
     assert (sent["target"], sent["session_name"]) == (
-        ls_target(ls.agent_key, environment="staging"),
+        ls_target(ls.agent_key, agent_environment="staging"),
         None,
     )
     ls.assert_rejected(REFUSED)
@@ -121,7 +121,7 @@ def test_a_refused_workspace_loses_the_feedback_without_raising(
         key="quality",
         score=1,
         trace_id=run.trace_id,
-        target=ls_target(ls.agent_key, environment="staging"),
+        target=ls_target(ls.agent_key, agent_environment="staging"),
     )
     sent["id"] = feedback.id
     ls.client.flush()
