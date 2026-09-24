@@ -3,7 +3,7 @@
 No code at all. Every `Target` field has a `LANGSMITH_TARGET_<FIELD>`
 variable, derived from the field name:
 
-    LANGSMITH_TARGET_ID=customer-support
+    LANGSMITH_TARGET_AGENT_ID=customer-support
     LANGSMITH_TARGET_ENVIRONMENT=production
     LANGSMITH_TARGET_REGION=eu            # optional
 
