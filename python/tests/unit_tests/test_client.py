@@ -8107,8 +8107,6 @@ def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _clear_agent_addressing_caches() -> None:
     ls_utils.get_env_var.cache_clear()
-    ls_utils.get_tracer_target_id.cache_clear()
-    ls_utils.get_tracer_target_environment.cache_clear()
     ls_utils.get_tracer_project.cache_clear()
     # The beta warning fires once per process, so without this the first test
     # to address a run to an agent would silence every test after it.

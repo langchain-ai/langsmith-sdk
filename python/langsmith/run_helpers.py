@@ -1178,35 +1178,35 @@ class trace:
         """
         self.old_ctx = get_tracing_context()
         enabled = utils.tracing_is_enabled(self.old_ctx)
-        try:
-            project_name_, target_ = _get_addressing(self.project_name, self.target)
-        except _agent_addressing.EnvTargetError as e:
-            # A bad environment must not break the block it would have traced:
-            # the run tree is built but never sent.
-            _agent_addressing.log_untraced(e)
-            self._untraced = True
-            enabled = False
-            project_name_, target_ = "default", None
 
         outer_tags = _context._TAGS.get() or _context._GLOBAL_TAGS
         outer_metadata = _context._METADATA.get() or _context._GLOBAL_METADATA
         client_ = self.client or self.old_ctx.get("client")
         parent_run_ = None
-        if not self._untraced:
-            try:
-                parent_run_ = _get_parent_run(
-                    {
-                        "parent": self.parent,
-                        "run_tree": self.run_tree,
-                        "client": client_,
-                        "project_name": self.project_name,
-                    }
+        project_name_: Optional[str] = "default"
+        target_: Optional[Target] = None
+        try:
+            parent_run_ = _get_parent_run(
+                {
+                    "parent": self.parent,
+                    "run_tree": self.run_tree,
+                    "client": client_,
+                    "project_name": self.project_name,
+                }
+            )
+            # A child copies its parent's address, so only a root resolves one.
+            if parent_run_ is None or not enabled:
+                project_name_, target_ = _get_addressing(
+                    self.project_name, self.target, parent_run_
                 )
-            except _agent_addressing.EnvTargetError as e:
+        except _agent_addressing.EnvTargetError as e:
+            # A bad environment must not break the block it would have traced:
+            # the run tree is built but never sent.
+            if enabled:
                 _agent_addressing.log_untraced(e)
-                self._untraced = True
-                enabled = False
-                project_name_, target_ = "default", None
+            self._untraced = True
+            enabled = False
+            parent_run_ = None
 
         tags_ = sorted(set((self.tags or []) + (outer_tags or [])))
         metadata = {
@@ -1371,14 +1371,20 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
 
 
 def _get_addressing(
-    project_name: Optional[str], target: Optional[Target] = None
+    project_name: Optional[str],
+    target: Optional[Target] = None,
+    parent: Optional[run_trees.RunTree] = None,
 ) -> tuple[Optional[str], Optional[Target]]:
     """Resolve `(project_name, target)` for a new run.
 
-    Mirrors `_get_project_name`'s levels; the first level naming either mode
-    decides, and one naming both raises.
+    Mirrors `_get_project_name`'s levels, with `parent` (e.g. from headers)
+    after the context vars; the first level naming either mode decides, and
+    one naming both raises.
     """
-    return _agent_addressing.resolve(*_addressing_tiers(project_name, target))
+    tiers = list(_addressing_tiers(project_name, target))
+    if parent is not None:
+        tiers.insert(2, (parent.session_name, parent.target))
+    return _agent_addressing.resolve(*tiers)
 
 
 def _address_kwargs(tier: _agent_addressing.Tier) -> dict[str, Any]:
@@ -1769,31 +1775,38 @@ def _setup_run(
         project=langsmith_extra.get("project_name"),
         target=langsmith_extra.get("target"),
     )
+    reference_example_id = langsmith_extra.get("reference_example_id")
+    id_ = langsmith_extra.get("run_id")
+    enabled = container_input.get("enabled")
+    selected_project, selected_target = None, None
+    env_error: Optional[_agent_addressing.EnvTargetError] = None
     try:
         parent_run_ = _get_parent_run(
             {**langsmith_extra, "client": client_}, kwargs.get("config")
         )
-        selected_project, selected_target = _resolve_traceable_addressing(
-            parent_run_, langsmith_extra, container_input
-        )
-        untraced = False
     except _agent_addressing.EnvTargetError as e:
-        # A bad environment must not break the call it would have traced.
-        _agent_addressing.log_untraced(e)
-        parent_run_, selected_project, selected_target = None, None, None
-        untraced = True
-    reference_example_id = langsmith_extra.get("reference_example_id")
-    id_ = langsmith_extra.get("run_id")
-    enabled = container_input.get("enabled")
+        parent_run_, env_error = None, e
     # Determine if tracing should be enabled for this function:
     # - enabled=False: never trace
     # - enabled=True: always trace
     # - enabled=None: use context/environment setting
-    if (
-        untraced
-        or enabled is False
-        or (enabled is not True and not (parent_run_ or utils.tracing_is_enabled()))
-    ):
+    tracing = enabled is not False and (
+        enabled is True or bool(parent_run_ or utils.tracing_is_enabled())
+    )
+    # Resolved only when tracing: an untraced call has no destination to
+    # settle, and nothing to warn about.
+    if tracing and env_error is None:
+        try:
+            selected_project, selected_target = _resolve_traceable_addressing(
+                parent_run_, langsmith_extra, container_input
+            )
+        except _agent_addressing.EnvTargetError as e:
+            env_error = e
+    if tracing and env_error is not None:
+        # A bad environment must not break the call it would have traced.
+        _agent_addressing.log_untraced(env_error)
+        tracing = False
+    if not tracing:
         utils.log_once(
             logging.DEBUG,
             "LangSmith tracing is not enabled, returning original function.",

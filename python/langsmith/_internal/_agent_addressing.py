@@ -7,6 +7,7 @@ trees, replicas, headers -- and is unpacked into wire fields only here, in
 
 from __future__ import annotations
 
+import functools
 import logging
 import warnings
 from typing import Any, Optional
@@ -32,6 +33,23 @@ def check_target(target: Any) -> Optional[Target]:
     )
 
 
+def reject_loose_fields(values: Any, where: str) -> None:
+    """Refuse the removed `agent_*` keys, which `target=` replaced.
+
+    Passed through, they would reach the endpoint beside a defaulted project
+    and get the whole batch refused.
+
+    Raises:
+        utils.LangSmithUserError: If `values` holds any of them.
+    """
+    named = [key for key in Target.wire_keys() if key in values]
+    if named:
+        raise utils.LangSmithUserError(
+            f"{where} no longer takes {', '.join(named)}; pass "
+            "`target=langsmith.target(agent_id, environment=...)` instead."
+        )
+
+
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
     """Put a bare `Target` replica in a `target` key, and check the rest."""
     if replicas is None:
@@ -41,6 +59,7 @@ def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
         if isinstance(replica, Target):
             normalized.append({"target": replica})
             continue
+        reject_loose_fields(replica, "A write replica")
         check_target(replica.get("target"))
         normalized.append(dict(replica))
     return normalized
@@ -119,8 +138,13 @@ def _both_at_one_level(
 
 
 def log_untraced(error: EnvTargetError) -> None:
-    """Log that a call runs untraced because the env can't address it."""
-    _LOGGER.warning("LangSmith is not tracing this call: %s", error)
+    """Log, once per distinct cause, that calls run untraced for a bad env."""
+    _log_untraced_once(str(error))
+
+
+@functools.cache
+def _log_untraced_once(message: str) -> None:
+    _LOGGER.warning("LangSmith is not tracing this call: %s", message)
 
 
 def warn_on_env() -> None:
@@ -211,6 +235,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     target from the post that established it, and one naming nothing is
     resolved by run id.
     """
+    reject_loose_fields(payload, "A run")
     target = check_target(payload.pop("target", None))
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
