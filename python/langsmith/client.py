@@ -68,7 +68,6 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._agent import Agent
 from langsmith._internal import (
     _agent_addressing,
     _orjson,
@@ -133,6 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
+from langsmith._target import Target
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -2590,8 +2590,8 @@ class Client:
             agent_environment (Optional[str]): (experimental) Narrows
                 `agent_id`; required alongside it. Defaults to
                 `LANGSMITH_AGENT_ENVIRONMENT`.
-            agent (Optional[Agent]): (experimental) An `Agent` handle from
-                `langsmith.agent`, in place of `agent_id` / `agent_environment`.
+            target (Optional[Target]): (experimental) A `Target` handle from
+                `langsmith.target`, in place of `agent_id` / `agent_environment`.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
@@ -2637,7 +2637,7 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        _agent_addressing.pop_agent(kwargs)
+        _agent_addressing.pop_target(kwargs)
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body -- `RunTree.post` sends the
@@ -3869,7 +3869,7 @@ class Client:
             authorization (Optional[str]): The Authorization header value.
             cookie (Optional[str]): The Cookie header value.
             **kwargs (Any): Ignored, except `agent_id` / `agent_environment`
-                or an `agent` handle in their place.
+                or a `target` handle in their place.
 
                 !!! warning "Experimental"
                     `agent_id` / `agent_environment` are in beta. They address
@@ -3916,7 +3916,7 @@ class Client:
         replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
             "_replica_auths", None
         )
-        _agent_addressing.pop_agent(kwargs)
+        _agent_addressing.pop_target(kwargs)
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -8310,7 +8310,7 @@ class Client:
         extend_trace_retention: bool = True,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
-        agent: Optional[Agent] = None,
+        target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8394,8 +8394,8 @@ class Client:
             agent_environment (Optional[str]):
                 Narrows `agent_id`, and requires it. Defaults server-side to
                 `production` when omitted.
-            agent (Optional[Agent]):
-                An `Agent` handle, in place of `agent_id` / `agent_environment`.
+            target (Optional[Target]):
+                A `Target` handle, in place of `agent_id` / `agent_environment`.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -8446,8 +8446,8 @@ class Client:
             )
             ```
         """
-        agent_id, agent_environment = _agent_addressing.expand_agent(
-            agent, agent_id, agent_environment
+        agent_id, agent_environment = _agent_addressing.expand_target(
+            target, agent_id, agent_environment
         )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:

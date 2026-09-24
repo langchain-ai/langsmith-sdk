@@ -3,7 +3,6 @@
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from langsmith._agent import Agent, agent
     from langsmith._expect import expect
     from langsmith._openapi_client._exceptions import (
         APIConnectionError,
@@ -21,6 +20,7 @@ if TYPE_CHECKING:
         RateLimitError,
         UnprocessableEntityError,
     )
+    from langsmith._target import Target, target
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client, TracingMode
     from langsmith.evaluation import (
@@ -120,14 +120,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation import aevaluate_existing
 
         return aevaluate_existing
-    elif name == "agent":
-        from langsmith._agent import agent
+    elif name == "target":
+        from langsmith._target import target
 
-        return agent
-    elif name == "Agent":
-        from langsmith._agent import Agent
+        return target
+    elif name == "Target":
+        from langsmith._target import Target
 
-        return Agent
+        return Target
     elif name == "tracing_context":
         from langsmith.run_helpers import tracing_context
 
@@ -258,8 +258,8 @@ __all__ = [
     "aevaluate",
     "tracing_context",
     "get_tracing_context",
-    "agent",
-    "Agent",
+    "target",
+    "Target",
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",

@@ -20,9 +20,9 @@ from typing_extensions import NotRequired, TypedDict
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith._agent import Agent
 from langsmith._internal import _agent_addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
+from langsmith._target import Target
 from langsmith.client import (
     ID_TYPE,
     RUN_TYPE_T,
@@ -263,7 +263,7 @@ def configure(
     agent_environment: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
-    agent: Optional[Agent] = _SENTINEL,
+    target: Optional[Target] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -309,7 +309,7 @@ def configure(
             arguments are required together.
 
             Pass `None` to explicitly clear it.
-        agent: (experimental) An `Agent` handle from `langsmith.agent`, in
+        target: (experimental) A `Target` handle from `langsmith.target`, in
             place of `agent_id` / `agent_environment`.
 
             Pass `None` to clear both.
@@ -352,12 +352,12 @@ def configure(
         >>> ls.configure(enabled=False)
     """
     global _CLIENT
-    if agent is not _SENTINEL:
+    if target is not _SENTINEL:
         if agent_id is not _SENTINEL or agent_environment is not _SENTINEL:
             raise utils.LangSmithUserError(
-                "Pass either `agent` or `agent_id` / `agent_environment`, not both."
+                "Pass either `target` or `agent_id` / `agent_environment`, not both."
             )
-        agent_id, agent_environment = _agent_addressing.expand_agent(agent)
+        agent_id, agent_environment = _agent_addressing.expand_target(target)
     _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
         agent_id=None if agent_id is _SENTINEL else agent_id,
@@ -584,7 +584,7 @@ class RunTree(ls_schemas.RunBase):
         if values.get("replicas") is None:
             values["replicas"] = _REPLICAS.get()
         values["replicas"] = _ensure_write_replicas(values["replicas"])
-        _agent_addressing.pop_agent(values)
+        _agent_addressing.pop_target(values)
         _apply_agent_addressing(values)
         return values
 
@@ -1710,7 +1710,7 @@ def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
 
 
 def _ensure_write_replicas(
-    replicas: Optional[Sequence[Union[WriteReplica, Agent]]],
+    replicas: Optional[Sequence[Union[WriteReplica, Target]]],
 ) -> list[WriteReplica]:
     """Convert replicas to WriteReplica format."""
     ensured = (

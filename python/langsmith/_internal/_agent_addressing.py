@@ -12,59 +12,59 @@ import warnings
 from typing import Any, Optional
 
 from langsmith import utils
-from langsmith._agent import Agent
 from langsmith._internal._beta_decorator import _warn_once
+from langsmith._target import Target
 
 
-def expand_agent(
-    agent: Optional[Agent],
+def expand_target(
+    target: Optional[Target],
     agent_id: Optional[str] = None,
     agent_environment: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str]]:
-    """Unpack an `Agent` handle into `(agent_id, agent_environment)`.
+    """Unpack a `Target` handle into `(agent_id, agent_environment)`.
 
     Every entry point that takes the loose pair also takes a handle; this is
     the one place that turns it back into the pair, so everything downstream
     is unchanged.
 
     Raises:
-        utils.LangSmithUserError: If `agent` is not an `Agent`, or is passed
+        utils.LangSmithUserError: If `target` is not a `Target`, or is passed
             together with `agent_id` / `agent_environment`.
     """
-    if agent is None:
+    if target is None:
         return agent_id, agent_environment
-    if not isinstance(agent, Agent):
+    if not isinstance(target, Target):
         raise utils.LangSmithUserError(
-            f"`agent` must be a `langsmith.Agent`, got {type(agent).__name__}. "
-            "Build one with `langsmith.agent(agent_id, environment=...)`."
+            f"`target` must be a `langsmith.Target`, got {type(target).__name__}. "
+            "Build one with `langsmith.target(agent_id, environment=...)`."
         )
     if agent_id is not None or agent_environment is not None:
         raise utils.LangSmithUserError(
-            "Pass either `agent` or `agent_id` / `agent_environment`, not both."
+            "Pass either `target` or `agent_id` / `agent_environment`, not both."
         )
-    return agent.id, agent.environment
+    return target.id, target.environment
 
 
-def pop_agent(values: dict) -> None:
-    """Replace an `agent` key in `values` with `agent_id` / `agent_environment`.
+def pop_target(values: dict) -> None:
+    """Replace a `target` key in `values` with `agent_id` / `agent_environment`.
 
     For entry points that take the addressing through a dict or `**kwargs`.
     """
-    agent = values.pop("agent", None)
-    if agent is None:
+    target = values.pop("target", None)
+    if target is None:
         return
-    agent_id, agent_environment = expand_agent(
-        agent, values.get("agent_id"), values.get("agent_environment")
+    agent_id, agent_environment = expand_target(
+        target, values.get("agent_id"), values.get("agent_environment")
     )
     values["agent_id"] = agent_id
     values["agent_environment"] = agent_environment
 
 
 def expand_replicas(replicas: Optional[Any]) -> Optional[list]:
-    """Turn any `Agent` in a replica list into a `WriteReplica` dict."""
+    """Turn any `Target` in a replica list into a `WriteReplica` dict."""
     if replicas is None:
         return None
-    return [r._replica() if isinstance(r, Agent) else r for r in replicas]
+    return [r._replica() if isinstance(r, Target) else r for r in replicas]
 
 
 def resolve_pair(

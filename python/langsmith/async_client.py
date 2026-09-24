@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._agent import Agent
 from langsmith._internal import _agent_addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
@@ -51,6 +50,7 @@ from langsmith._internal._v2_migration_utils import (
     _v2_run_to_schema,
     get_query_backend,
 )
+from langsmith._target import Target
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -620,9 +620,9 @@ class AsyncClient:
             instead of a project. Agent addressing is in beta and enabled per
             workspace; a workspace without it rejects the run, so the trace is
             lost rather than falling back to a project. Both may change
-            without notice. An `agent` handle may be passed in their place.
+            without notice. A `target` handle may be passed in their place.
         """
-        _agent_addressing.pop_agent(kwargs)
+        _agent_addressing.pop_target(kwargs)
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
@@ -671,7 +671,7 @@ class AsyncClient:
         Args:
             run_id: The run to update.
             **kwargs: The fields to update, and `agent_id` / `agent_environment`
-                (or an `agent` handle in their place).
+                (or a `target` handle in their place).
 
                 !!! warning "Experimental"
                     `agent_id` / `agent_environment` are in beta. They address
@@ -682,7 +682,7 @@ class AsyncClient:
                     may change without notice.
         """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
-        _agent_addressing.pop_agent(data)
+        _agent_addressing.pop_target(data)
         _agent_addressing.apply_to_payload(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
@@ -1189,7 +1189,7 @@ class AsyncClient:
         extend_trace_retention: bool = True,
         agent_id: Optional[str] = None,
         agent_environment: Optional[str] = None,
-        agent: Optional[Agent] = None,
+        target: Optional[Target] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -1239,7 +1239,7 @@ class AsyncClient:
                 unlike run ingestion, a feedback part never creates one.
             agent_environment: Narrows `agent_id`, and requires it. Defaults
                 server-side to `production` when omitted.
-            agent: An `Agent` handle, in place of `agent_id` / `agent_environment`.
+            target: A `Target` handle, in place of `agent_id` / `agent_environment`.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1248,8 +1248,8 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        agent_id, agent_environment = _agent_addressing.expand_agent(
-            agent, agent_id, agent_environment
+        agent_id, agent_environment = _agent_addressing.expand_target(
+            target, agent_id, agent_environment
         )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
