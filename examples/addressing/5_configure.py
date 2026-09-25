@@ -2,7 +2,9 @@
 
 import langsmith as ls
 
-ls.configure(address=ls.address("customer-support", agent_environment="production"))
+ls.configure(
+    address=ls.address(agent_id="customer-support", agent_environment="production")
+)
 
 
 @ls.traceable

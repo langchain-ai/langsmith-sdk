@@ -3,7 +3,7 @@
 import langsmith as ls
 from langsmith.run_trees import RunTree
 
-support = ls.address("customer-support", agent_environment="production")
+support = ls.address(agent_id="customer-support", agent_environment="production")
 
 
 @ls.traceable
