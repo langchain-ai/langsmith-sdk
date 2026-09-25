@@ -180,14 +180,17 @@ class TestConfigure:
         assert _context._GLOBAL_ADDRESS == SUPPORT
         ls.configure(tags=None, enabled=None)
 
-    @pytest.mark.parametrize("project_name", ["p", None])
-    def test_naming_a_project_replaces_the_address(
-        self, project_name: Optional[str]
-    ) -> None:
+    def test_naming_a_project_replaces_the_address(self) -> None:
         ls.configure(address=SUPPORT)
-        ls.configure(project_name=project_name)
+        ls.configure(project_name="p")
         assert _context._GLOBAL_ADDRESS is None
-        assert _context._GLOBAL_PROJECT_NAME == project_name
+        assert _context._GLOBAL_PROJECT_NAME == "p"
+
+    def test_clearing_the_project_keeps_the_address(self) -> None:
+        """`project_name=None` clears the project, as `address=None` does."""
+        ls.configure(address=SUPPORT)
+        ls.configure(project_name=None)
+        assert _context._GLOBAL_ADDRESS == SUPPORT
 
     def test_naming_an_address_replaces_the_project(self) -> None:
         ls.configure(project_name="p")
