@@ -1,0 +1,20 @@
+python/tests/unit_tests/test_address.py
+  s_1494656ad43aad::t_2cb8fcb517b585 98,150,172,232-233,363
+  s_1494656ad43aad::t_8d3e59b334a43e 1-97,99-149,151-171,173-231,234-362,364-394
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bedb5efb292efed6d9c0f1cca8b2bc393edd197d",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
