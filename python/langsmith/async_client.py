@@ -616,7 +616,7 @@ class AsyncClient:
         """Create a run.
 
         !!! warning "Experimental"
-            `address` addresses the run to an address instead of a project. It is
+            `address` sends the run to an address instead of a project. It is
             in beta and enabled per workspace; a workspace without it rejects
             the run, so the trace is lost rather than falling back to a
             project. It may change without notice.
@@ -671,7 +671,7 @@ class AsyncClient:
             **kwargs: The fields to update, and `address`.
 
                 !!! warning "Experimental"
-                    `address` is in beta. It addresses the patch to an address,
+                    `address` is in beta. It sends the patch to an address,
                     and must match the post it belongs to: an update that
                     names none is resolved by run id, as every update was
                     before. It may change without notice.
@@ -1187,7 +1187,7 @@ class AsyncClient:
         """Create feedback for a run.
 
         !!! warning "Experimental"
-            `address` is in beta. Address addressing is enabled per workspace; a
+            `address` is in beta. It is enabled per workspace; a
             workspace without it rejects the feedback, so it is lost rather
             than falling back to a project. The address must already exist --
             unlike run ingestion, a feedback part never creates one. It may
