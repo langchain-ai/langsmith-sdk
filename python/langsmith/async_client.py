@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._address import Address
 from langsmith._internal import _agent_addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
@@ -50,7 +51,6 @@ from langsmith._internal._v2_migration_utils import (
     _v2_run_to_schema,
     get_query_backend,
 )
-from langsmith._target import Target
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -616,17 +616,17 @@ class AsyncClient:
         """Create a run.
 
         !!! warning "Experimental"
-            `target` addresses the run to a target instead of a project. It is
+            `address` addresses the run to an address instead of a project. It is
             in beta and enabled per workspace; a workspace without it rejects
             the run, so the trace is lost rather than falling back to a
             project. It may change without notice.
         """
-        _agent_addressing.check_target(kwargs.get("target"))
+        _agent_addressing.check_address(kwargs.get("address"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
         _agent_addressing.reject_conflicting(
-            project=project_name, target=kwargs.get("target")
+            project=project_name, address=kwargs.get("address")
         )
         if (
             kwargs.get("session_name") is not None
@@ -636,10 +636,10 @@ class AsyncClient:
             session_name = project_name
         else:
             try:
-                session_name, kwargs["target"] = _agent_addressing.resolve(
-                    (project_name, kwargs.get("target"))
+                session_name, kwargs["address"] = _agent_addressing.resolve(
+                    (project_name, kwargs.get("address"))
                 )
-            except _agent_addressing.EnvTargetError as e:
+            except _agent_addressing.EnvAddressError as e:
                 # Dropped, not raised: tracing must not break the caller.
                 _agent_addressing.log_untraced(e)
                 return
@@ -666,10 +666,10 @@ class AsyncClient:
 
         Args:
             run_id: The run to update.
-            **kwargs: The fields to update, and `target`.
+            **kwargs: The fields to update, and `address`.
 
                 !!! warning "Experimental"
-                    `target` is in beta. It addresses the patch to a target,
+                    `address` is in beta. It addresses the patch to an address,
                     and must match the post it belongs to: an update that
                     names none is resolved by run id, as every update was
                     before. It may change without notice.
@@ -1179,15 +1179,15 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
-        target: Optional[Target] = None,
+        address: Optional[Address] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
 
         !!! warning "Experimental"
-            `target` is in beta. Target addressing is enabled per workspace; a
+            `address` is in beta. Address addressing is enabled per workspace; a
             workspace without it rejects the feedback, so it is lost rather
-            than falling back to a project. The target must already exist --
+            than falling back to a project. The address must already exist --
             unlike run ingestion, a feedback part never creates one. It may
             change without notice.
 
@@ -1221,7 +1221,7 @@ class AsyncClient:
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
-            target: The target to attach this feedback to, instead of a
+            address: The address to attach this feedback to, instead of a
                 project. Pass whatever the run being described was traced to.
                 Cannot be combined with `session_id` / `project_id`, and is
                 never read from the env vars: feedback follows its run, not
@@ -1234,7 +1234,7 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        target = _agent_addressing.check_target(target)
+        address = _agent_addressing.check_address(address)
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -1242,8 +1242,8 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None and target is None:
-            # A target locates the project directly, so it satisfies the same
+        if run_id is not None and session_id is None and address is None:
+            # An address locates the project directly, so it satisfies the same
             # requirement this gate exists for.
             ls_client._check_feedback_session_id(await self.info())
         if kwargs:
@@ -1299,7 +1299,7 @@ class AsyncClient:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=session_id_,
-            target=target,
+            address=address,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(
                 comparative_experiment_id, accept_null=True
