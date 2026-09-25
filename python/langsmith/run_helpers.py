@@ -187,7 +187,7 @@ def tracing_context(
     """Set the tracing context for a block of code.
 
     !!! warning "Experimental"
-        `address` is in beta. Address addressing is enabled per workspace; a
+        `address` is in beta. It is enabled per workspace; a
         workspace without it rejects the runs, so tracing is lost rather than
         falling back to a project. It may change without notice.
 
@@ -420,7 +420,7 @@ def traceable(
     """Trace a function with langsmith.
 
     !!! warning "Experimental"
-        `address` is in beta. Address addressing is enabled per workspace; a
+        `address` is in beta. It is enabled per workspace; a
         workspace without it rejects the runs, so tracing is lost rather than
         falling back to a project. It may change without notice.
 
@@ -1047,7 +1047,7 @@ class trace:
     This class can be used as both a synchronous and asynchronous context manager.
 
     !!! warning "Experimental"
-        `address` is in beta. Address addressing is enabled per workspace; a
+        `address` is in beta. It is enabled per workspace; a
         workspace without it rejects the runs, so tracing is lost rather than
         falling back to a project. It may change without notice.
 
