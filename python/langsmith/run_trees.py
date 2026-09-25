@@ -357,7 +357,7 @@ def configure(
             project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
-        if set_address or project_name is not _SENTINEL:
+        if set_address or (project_name is not _SENTINEL and project_name is not None):
             address = address if set_address else None
             _context._ADDRESS.set(address)
             _context._GLOBAL_ADDRESS = address
