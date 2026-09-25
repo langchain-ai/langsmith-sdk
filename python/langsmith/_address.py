@@ -50,8 +50,11 @@ class EnvAddressError(utils.LangSmithUserError):
     """The `LANGSMITH_AGENT_*` / project env vars can't address a run.
 
     Raised for half an address, or an address beside a project. Tracing entry
-    points catch it, log it and leave the call untraced, so a bad environment
-    never breaks the code being traced.
+    points (`@traceable`, `trace`, `tracing_context`, `create_run`) catch it,
+    log it and leave the call untraced, so a bad environment never breaks the
+    code being traced. Explicit ingestion calls (`batch_ingest_runs`,
+    `multipart_ingest`) let it raise for runs that name no destination, rather
+    than drop part of a batch the caller built.
     """
 
 
