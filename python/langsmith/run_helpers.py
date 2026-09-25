@@ -1661,34 +1661,26 @@ def _get_parent_run(
         return None
     if isinstance(parent, run_trees.RunTree):
         return parent
-    # Only what was named in code, and no default: what nothing settles, the
-    # `RunTree` validator resolves from the environment. For a header parent,
-    # the header is its own level: below `tracing_context`, above the rest.
-    prt = get_current_run_tree()
-    above = _agent_addressing.first_named(
-        # 1 · tracing_context
-        (_context._PROJECT_NAME.get(), _context._ADDRESS.get()),
-    )
-    below = _agent_addressing.first_named(
-        # 3 · langsmith_extra
-        (langsmith_extra.get("project_name"), langsmith_extra.get("address")),
-        (prt.session_name if prt else None, prt.address if prt else None),
-        # 5 · ls.configure
-        (_context._GLOBAL_PROJECT_NAME, _context._GLOBAL_ADDRESS),
+    # Only what was named in code, and no default, in the order `main` used
+    # for `project_name`: what nothing settles, the `RunTree` validator
+    # resolves from the environment. A header's own destination outranks it.
+    named = _agent_addressing.first_named(
+        *_addressing_tiers(
+            langsmith_extra.get("project_name"), langsmith_extra.get("address")
+        )
     )
     if isinstance(parent, Mapping):
         return run_trees.RunTree.from_headers(
             parent,
             client=langsmith_extra.get("client"),
-            _address_above=_address_kwargs(above),
-            **_address_kwargs(below),
+            **_address_kwargs(named),
             replicas=langsmith_extra.get("replicas"),
         )
     if isinstance(parent, str):
         return run_trees.RunTree.from_dotted_order(
             parent,
             client=langsmith_extra.get("client"),
-            **_address_kwargs(above if any(above) else below),
+            **_address_kwargs(named),
             replicas=langsmith_extra.get("replicas"),
         )
     run_tree = langsmith_extra.get("run_tree")
