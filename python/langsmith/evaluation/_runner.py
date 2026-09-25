@@ -1263,7 +1263,7 @@ def _addressed_to_project(context: dict, project_name: str) -> dict:
     addressing keys move together: overriding the project alone would leave a
     snapshot naming two destinations.
     """
-    return {**context, "project_name": project_name, "target": None}
+    return {**context, "project_name": project_name, "address": None}
 
 
 class _ExperimentManagerMixin:
