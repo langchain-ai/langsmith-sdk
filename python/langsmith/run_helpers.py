@@ -1195,7 +1195,10 @@ class trace:
                 }
             )
             # A child copies its parent's address, so only a root resolves one.
-            if parent_run_ is None or not enabled:
+            if parent_run_ is not None and enabled:
+                # The context below reads what the child inherits.
+                project_name_, address_ = parent_run_.session_name, parent_run_.address
+            else:
                 project_name_, address_ = _get_addressing(
                     self.project_name, self.address, parent_run_
                 )
