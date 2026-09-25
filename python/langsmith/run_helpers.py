@@ -1790,7 +1790,12 @@ def _setup_run(
     )
     # Resolved only when tracing: an untraced call has no destination to
     # settle, and nothing to warn about.
-    if tracing and env_error is None:
+    if tracing and parent_run_ is not None:
+        # `create_child` copies the parent's addressing, so only a root
+        # resolves one; the context below reads what the child inherits.
+        selected_project = parent_run_.session_name
+        selected_address = parent_run_.address
+    elif tracing and env_error is None:
         try:
             selected_project, selected_address = _resolve_traceable_addressing(
                 parent_run_, langsmith_extra, container_input
