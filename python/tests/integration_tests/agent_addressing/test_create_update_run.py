@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from langsmith import target as ls_target
+from langsmith import address as ls_address
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
     PROJECT,
@@ -59,15 +59,15 @@ CASES = [
     # Addressing passed per call rather than configured in the environment.
     Case(
         "explicit_agent",
-        kwargs={"target": ls_target(AGENT, agent_environment="staging")},
+        kwargs={"address": ls_address(AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
-    # A genuinely incomplete target is dropped and logged, not a run that
+    # A genuinely incomplete address is dropped and logged, not a run that
     # quietly landed in `default`.
     Case(
         "env_agent_id_only",
         env={"LANGSMITH_AGENT_ID": AGENT},
-        lands_in=Untraced(reason="incomplete target"),
+        lands_in=Untraced(reason="incomplete address"),
     ),
     # The legacy path, unchanged: a project by name, and no addressing at all.
     Case(

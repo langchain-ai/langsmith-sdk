@@ -16,7 +16,7 @@ import uuid
 
 import pytest
 
-from langsmith import target as ls_target
+from langsmith import address as ls_address
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
     PROJECT,
@@ -38,7 +38,7 @@ CASES = [
     # Addressing on the run dict rather than in the environment.
     Case(
         "agent_on_the_run",
-        kwargs={"target": ls_target(AGENT, agent_environment="staging")},
+        kwargs={"address": ls_address(AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A project on the run dict wins over an agent in the environment.

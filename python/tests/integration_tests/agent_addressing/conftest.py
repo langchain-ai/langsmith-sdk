@@ -19,7 +19,7 @@ from typing import Any, Callable, Iterator, Optional, TypeVar, Union
 
 import pytest
 
-from langsmith import Target
+from langsmith import Address
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -207,7 +207,7 @@ class Harness:
             )
         if isinstance(value, dict):
             return {key: self.format(item, **names) for key, item in value.items()}
-        if isinstance(value, Target):
+        if isinstance(value, Address):
             return dataclasses.replace(
                 value,
                 **{
@@ -256,7 +256,7 @@ class Harness:
         addressing: dict[str, Any]
         if isinstance(destination, InAgent):
             addressing = {
-                "target": Target(self.agent_key, destination.environment.lower())
+                "address": Address(self.agent_key, destination.environment.lower())
             }
         else:
             assert isinstance(destination, InProject)

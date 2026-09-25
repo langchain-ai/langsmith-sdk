@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from langsmith import target as ls_target
+from langsmith import address as ls_address
 from langsmith.run_helpers import get_current_run_tree, traceable, tracing_context
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
@@ -26,23 +26,23 @@ ENV_AGENT = {
     "LANGSMITH_AGENT_ID": AGENT,
     "LANGSMITH_AGENT_ENVIRONMENT": "staging",
 }
-CONTEXT_AGENT = {"target": ls_target(AGENT, agent_environment="staging")}
+CONTEXT_AGENT = {"address": ls_address(AGENT, agent_environment="staging")}
 
 CASES = [
     # -- root, environment only ----------------------------------------------
     Case("env_agent", env=ENV_AGENT, lands_in=InAgent("STAGING")),
-    # Half a target is not dropped into `default`: the call runs untraced,
+    # Half an address is not dropped into `default`: the call runs untraced,
     # and the SDK logs why.
     Case(
         "env_agent_id_only",
         env={"LANGSMITH_AGENT_ID": AGENT},
-        lands_in=Untraced(reason="incomplete target"),
+        lands_in=Untraced(reason="incomplete address"),
     ),
     # The other half.
     Case(
         "env_environment_only",
         env={"LANGSMITH_AGENT_ENVIRONMENT": "staging"},
-        lands_in=Untraced(reason="incomplete target"),
+        lands_in=Untraced(reason="incomplete address"),
     ),
     Case(
         "env_project", env={"LANGSMITH_PROJECT": PROJECT}, lands_in=InProject(PROJECT)
@@ -102,7 +102,7 @@ CASES = [
     # The decorator's own arguments, beside `project_name`.
     Case(
         "decorator_agent",
-        decorator={"target": ls_target(AGENT, agent_environment="staging")},
+        decorator={"address": ls_address(AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # -- nested calls ----------------------------------------------------------

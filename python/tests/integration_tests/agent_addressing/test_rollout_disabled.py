@@ -12,7 +12,7 @@ from typing import Callable
 import pytest
 import requests
 
-from langsmith import target as ls_target
+from langsmith import address as ls_address
 from langsmith.run_helpers import get_current_run_tree, traceable
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
@@ -85,7 +85,7 @@ def test_a_refused_workspace_loses_the_run_without_raising(
     @traceable
     def traced_function() -> str:
         run = get_current_run_tree()
-        sent.update(id=run.id, target=run.target, session_name=run.session_name)
+        sent.update(id=run.id, address=run.address, session_name=run.session_name)
         return "ok"
 
     # Read lazily: the run id exists only after the call, the refusal only on
@@ -99,8 +99,8 @@ def test_a_refused_workspace_loses_the_run_without_raising(
 
     # The stub refuses any multipart request, so without this the test would
     # pass for a project-addressed run too.
-    assert (sent["target"], sent["session_name"]) == (
-        ls_target(ls.agent_key, agent_environment="staging"),
+    assert (sent["address"], sent["session_name"]) == (
+        ls_address(ls.agent_key, agent_environment="staging"),
         None,
     )
     ls.assert_rejected(REFUSED)
@@ -121,7 +121,7 @@ def test_a_refused_workspace_loses_the_feedback_without_raising(
         key="quality",
         score=1,
         trace_id=run.trace_id,
-        target=ls_target(ls.agent_key, agent_environment="staging"),
+        address=ls_address(ls.agent_key, agent_environment="staging"),
     )
     sent["id"] = feedback.id
     ls.client.flush()
