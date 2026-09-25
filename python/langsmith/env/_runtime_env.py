@@ -200,7 +200,7 @@ def get_langchain_env_var_metadata() -> dict:
         for k, v in os.environ.items()
         if (k.startswith("LANGCHAIN_") or k.startswith("LANGSMITH_"))
         and k not in excluded
-        # Address addressing (`LANGSMITH_AGENT_*`), however many dimensions.
+        # Address env vars (`LANGSMITH_AGENT_*`), however many dimensions.
         and not k.startswith("LANGSMITH_AGENT_")
         and not any(sub in k.lower() for sub in _EXCLUDED_SUBSTRINGS)
     }
