@@ -26,7 +26,7 @@ ENV_AGENT = {
     "LANGSMITH_AGENT_ID": AGENT,
     "LANGSMITH_AGENT_ENVIRONMENT": "staging",
 }
-CONTEXT_AGENT = {"address": ls_address(AGENT, agent_environment="staging")}
+CONTEXT_AGENT = {"address": ls_address(agent_id=AGENT, agent_environment="staging")}
 
 CASES = [
     # -- root, environment only ----------------------------------------------
@@ -102,7 +102,7 @@ CASES = [
     # The decorator's own arguments, beside `project_name`.
     Case(
         "decorator_agent",
-        decorator={"address": ls_address(AGENT, agent_environment="staging")},
+        decorator={"address": ls_address(agent_id=AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # -- nested calls ----------------------------------------------------------

@@ -59,7 +59,7 @@ CASES = [
     # Addressing passed per call rather than configured in the environment.
     Case(
         "explicit_agent",
-        kwargs={"address": ls_address(AGENT, agent_environment="staging")},
+        kwargs={"address": ls_address(agent_id=AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A genuinely incomplete address is dropped and logged, not a run that

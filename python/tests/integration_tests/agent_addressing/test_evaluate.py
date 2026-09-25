@@ -83,7 +83,9 @@ def test_an_agent_in_the_context_leaks_nowhere(ls: Harness) -> None:
     restored pair is not read as a second destination, and `evaluate` clears
     it besides, so the project named here addresses the run on its own.
     """
-    with tracing_context(address=ls_address(ls.agent_key, agent_environment="staging")):
+    with tracing_context(
+        address=ls_address(agent_id=ls.agent_key, agent_environment="staging")
+    ):
         experiment, run_id = _evaluate(ls)
     _assert_all_in_projects(ls, experiment, run_id)
 
@@ -102,7 +104,7 @@ def test_a_target_addressing_an_agent_stays_in_the_experiment(ls: Harness) -> No
 
     def target(inputs: dict) -> dict:
         with tracing_context(
-            address=ls_address(ls.agent_key, agent_environment="staging")
+            address=ls_address(agent_id=ls.agent_key, agent_environment="staging")
         ):
             return answer(inputs)
 

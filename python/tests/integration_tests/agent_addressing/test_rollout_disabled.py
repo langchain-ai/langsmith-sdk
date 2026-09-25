@@ -100,7 +100,7 @@ def test_a_refused_workspace_loses_the_run_without_raising(
     # The stub refuses any multipart request, so without this the test would
     # pass for a project-addressed run too.
     assert (sent["address"], sent["session_name"]) == (
-        ls_address(ls.agent_key, agent_environment="staging"),
+        ls_address(agent_id=ls.agent_key, agent_environment="staging"),
         None,
     )
     ls.assert_rejected(REFUSED)
@@ -121,7 +121,7 @@ def test_a_refused_workspace_loses_the_feedback_without_raising(
         key="quality",
         score=1,
         trace_id=run.trace_id,
-        address=ls_address(ls.agent_key, agent_environment="staging"),
+        address=ls_address(agent_id=ls.agent_key, agent_environment="staging"),
     )
     sent["id"] = feedback.id
     ls.client.flush()

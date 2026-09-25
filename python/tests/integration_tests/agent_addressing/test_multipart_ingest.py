@@ -38,7 +38,7 @@ CASES = [
     # Addressing on the run dict rather than in the environment.
     Case(
         "agent_on_the_run",
-        kwargs={"address": ls_address(AGENT, agent_environment="staging")},
+        kwargs={"address": ls_address(agent_id=AGENT, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A project on the run dict wins over an agent in the environment.
