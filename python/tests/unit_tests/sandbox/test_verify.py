@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from jwt.algorithms import OKPAlgorithm
 from pytest_httpx import HTTPXMock
 
+from langsmith import utils as ls_utils
 from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox import (
     SandboxTokenVerificationError,
@@ -26,6 +27,13 @@ APP_URL = "https://app.example.com"
 SERVICE_HOST = "0190aaaa-0000-7000-8000-000000000001--8080.svc.example.com"
 CALLBACK_URL = "https://integrator.example.com/sandbox-callback"
 KID = "test-kid"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_env_cache():
+    ls_utils.get_env_var.cache_clear()
+    yield
+    ls_utils.get_env_var.cache_clear()
 
 
 def _jwk(key: Ed25519PrivateKey, kid: str) -> dict:
