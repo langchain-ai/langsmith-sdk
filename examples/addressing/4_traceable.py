@@ -2,10 +2,10 @@
 
 import langsmith as ls
 
-support = ls.target("customer-support", agent_environment="production")
+support = ls.address("customer-support", agent_environment="production")
 
 
-@ls.traceable(target=support)
+@ls.traceable(address=support)
 def classify(ticket: str) -> str:
     """Classify a ticket."""
     return "billing"

@@ -1,8 +1,8 @@
-"""Fan-out: write replicas send one run to several targets, or projects."""
+"""Fan-out: write replicas send one run to several addresses, or projects."""
 
 import langsmith as ls
 
-support = ls.target("customer-support", agent_environment="production")
+support = ls.address("customer-support", agent_environment="production")
 
 
 @ls.traceable
@@ -13,7 +13,7 @@ def answer(question: str) -> str:
 
 with ls.tracing_context(
     replicas=[
-        support,  # a bare Target is a replica
+        support,  # a bare Address is a replica
         support.with_agent_environment("staging").replica(
             updates={"metadata": {"mirrored": True}}
         ),
