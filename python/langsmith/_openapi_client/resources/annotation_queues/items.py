@@ -291,8 +291,10 @@ class ItemsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ItemDeleteAllResponse:
-        """
-        Remove RUN or THREAD items from a single annotation queue by item ID.
+        """Remove RUN or THREAD items from a single annotation queue by item ID.
+
+        Both
+        active and completed items can be removed.
 
         Args:
           extra_headers: Send extra headers
@@ -676,8 +678,10 @@ class AsyncItemsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> ItemDeleteAllResponse:
-        """
-        Remove RUN or THREAD items from a single annotation queue by item ID.
+        """Remove RUN or THREAD items from a single annotation queue by item ID.
+
+        Both
+        active and completed items can be removed.
 
         Args:
           extra_headers: Send extra headers

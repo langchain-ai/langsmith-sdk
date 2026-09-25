@@ -81,7 +81,8 @@ export class Items extends APIResource {
   }
 
   /**
-   * Remove RUN or THREAD items from a single annotation queue by item ID.
+   * Remove RUN or THREAD items from a single annotation queue by item ID. Both
+   * active and completed items can be removed.
    */
   deleteAll(
     queueID: string,
