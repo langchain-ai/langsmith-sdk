@@ -76,6 +76,10 @@ class Address:
         metadata=_wire("agent_environment", required=True)
     )
     """The agent's environment, passed to the server as given."""
+    agent_region: Optional[str] = dataclasses.field(
+        default=None, metadata=_wire("agent_region", required=False)
+    )
+    """Optionally, the agent's region, passed to the server as given."""
 
     def __post_init__(self) -> None:
         for f in dataclasses.fields(self):
@@ -227,15 +231,18 @@ def _env_value(field_name: str) -> Optional[str]:
     return utils.get_env_var(field_name.upper(), namespaces=("LANGSMITH",))
 
 
-def address(*, agent_id: str, agent_environment: str) -> Address:
+def address(
+    *, agent_id: str, agent_environment: str, agent_region: Optional[str] = None
+) -> Address:
     """(experimental) Build an address to send runs to.
 
     Args:
         agent_id: The agent's ID. The server creates it on first use.
         agent_environment: The agent's environment. Not validated
             client-side; the server decides which environments are accepted.
+        agent_region: Optionally, the agent's region. Not validated client-side.
 
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    return Address(agent_id, agent_environment)
+    return Address(agent_id, agent_environment, agent_region)
