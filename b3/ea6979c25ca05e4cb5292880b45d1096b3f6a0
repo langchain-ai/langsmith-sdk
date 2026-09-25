@@ -1,0 +1,19 @@
+python/langsmith/_address.py
+  s_1494656ad43aad::t_8e71356d1b171e 53-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b3ea6979c25ca05e4cb5292880b45d1096b3f6a0",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
