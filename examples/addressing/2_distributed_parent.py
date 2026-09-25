@@ -1,12 +1,12 @@
 """2 · A parent run from headers: ambient, carried across services.
 
-The upstream service's target travels in the `baggage` header, so the
-downstream root joins the same target without naming one.
+The upstream service's address travels in the `baggage` header, so the
+downstream root joins the same address without naming one.
 """
 
 import langsmith as ls
 
-support_eu = ls.target(
+support_eu = ls.address(
     "customer-support", agent_environment="production", agent_region="eu"
 )
 

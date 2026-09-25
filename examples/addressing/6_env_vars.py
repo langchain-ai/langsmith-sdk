@@ -1,6 +1,6 @@
 """6 · Env vars: process-wide default from configuration.
 
-No code at all. Every `Target` field has a `LANGSMITH_<FIELD>`
+No code at all. Every `Address` field has a `LANGSMITH_<FIELD>`
 variable, derived from the field name:
 
     LANGSMITH_AGENT_ID=customer-support
@@ -20,5 +20,5 @@ def answer(question: str) -> str:
     return f"echo: {question}"
 
 
-print("from env:", ls.Target.from_env())  # noqa: T201
-answer("hello")  # -> the env target, when nothing above names one
+print("from env:", ls.Address.from_env())  # noqa: T201
+answer("hello")  # -> the env address, when nothing above names one

@@ -2,7 +2,7 @@
 
 import langsmith as ls
 
-ls.configure(target=ls.target("customer-support", agent_environment="production"))
+ls.configure(address=ls.address("customer-support", agent_environment="production"))
 
 
 @ls.traceable
@@ -13,4 +13,4 @@ def answer(question: str) -> str:
 
 answer("hello")  # -> customer-support / production
 
-ls.configure(target=None)  # clear it again
+ls.configure(address=None)  # clear it again

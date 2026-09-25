@@ -68,6 +68,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._address import Address
 from langsmith._internal import (
     _agent_addressing,
     _orjson,
@@ -132,7 +133,6 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
-from langsmith._target import Target
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -2581,11 +2581,11 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            target (Optional[Target]): (experimental) A `Target` from
-                `langsmith.target`, to send the run to instead of a project.
+            address (Optional[Address]): (experimental) An `Address` from
+                `langsmith.address`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
-                Target addressing is in beta and enabled per workspace; a
+                Address addressing is in beta and enabled per workspace; a
                 workspace without it rejects the run, so the trace is lost
                 rather than falling back to a project.
             api_key (Optional[str]): The API key to use for this specific run.
@@ -2633,14 +2633,14 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        _agent_addressing.check_target(kwargs.get("target"))
+        _agent_addressing.check_address(kwargs.get("address"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body -- `RunTree.post` sends the
         # tree's fields that way -- where a project beside an agent means the
         # two were meant to travel together for the endpoint to refuse.
         _agent_addressing.reject_conflicting(
-            project=project_name, target=kwargs.get("target")
+            project=project_name, address=kwargs.get("address")
         )
         if project_name:
             pass
@@ -2653,10 +2653,10 @@ class Client:
             project_name = None
         else:
             try:
-                project_name, kwargs["target"] = _agent_addressing.resolve(
-                    (None, kwargs.get("target"))
+                project_name, kwargs["address"] = _agent_addressing.resolve(
+                    (None, kwargs.get("address"))
                 )
-            except _agent_addressing.EnvTargetError as e:
+            except _agent_addressing.EnvAddressError as e:
                 # Dropped, not raised: tracing must not break the caller.
                 _agent_addressing.log_untraced(e)
                 return
@@ -3863,10 +3863,10 @@ class Client:
             tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
             authorization (Optional[str]): The Authorization header value.
             cookie (Optional[str]): The Cookie header value.
-            **kwargs (Any): Ignored, except `target`.
+            **kwargs (Any): Ignored, except `address`.
 
                 !!! warning "Experimental"
-                    `target` is in beta. It addresses the patch to a target,
+                    `address` is in beta. It addresses the patch to an address,
                     and must match the post it belongs to: an update that
                     names none is resolved by run id, as every update was
                     before. It may change without notice.
@@ -3908,7 +3908,7 @@ class Client:
         replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
             "_replica_auths", None
         )
-        _agent_addressing.check_target(kwargs.get("target"))
+        _agent_addressing.check_address(kwargs.get("address"))
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3920,7 +3920,7 @@ class Client:
             "extra": extra,
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
-            "target": kwargs.pop("target", None),
+            "address": kwargs.pop("address", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
         _agent_addressing.apply_to_payload(data, update=True)
@@ -4911,7 +4911,7 @@ class Client:
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
         _agent_addressing.reject_url(
-            getattr(run, "session_id", None), getattr(run, "target", None)
+            getattr(run, "session_id", None), getattr(run, "address", None)
         )
         if session_id := getattr(run, "session_id", None):
             pass
@@ -8297,7 +8297,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        target: Optional[Target] = None,
+        address: Optional[Address] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8308,9 +8308,9 @@ class Client:
             specify `trace_id`. *We highly encourage this for latency-sensitive environments.*
 
         !!! warning "Experimental"
-            `target` is in beta. Target addressing is enabled per workspace; a
+            `address` is in beta. Address addressing is enabled per workspace; a
             workspace without it rejects the feedback, so it is lost rather
-            than falling back to a project. The target must already exist --
+            than falling back to a project. The address must already exist --
             unlike run ingestion, a feedback part never creates one. It may
             change without notice.
 
@@ -8370,10 +8370,10 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
-            target (Optional[Target]):
-                The target to attach this feedback to, instead of a project.
+            address (Optional[Address]):
+                The address to attach this feedback to, instead of a project.
                 Pass whatever the run being described was traced to -- for a
-                run created in this process, `run_tree.target`. Cannot be
+                run created in this process, `run_tree.address`. Cannot be
                 combined with `session_id` / `project_id`, and is never read
                 from the env vars: feedback follows its run, not the ambient
                 environment.
@@ -8427,7 +8427,7 @@ class Client:
             )
             ```
         """
-        target = _agent_addressing.check_target(target)
+        address = _agent_addressing.check_address(address)
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -8435,8 +8435,8 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None and target is None:
-            # A target locates the project directly, so it satisfies the same
+        if run_id is not None and session_id is None and address is None:
+            # An address locates the project directly, so it satisfies the same
             # requirement this gate exists for.
             _check_feedback_session_id(self.info)
         if kwargs:
@@ -8499,7 +8499,7 @@ class Client:
                 modified_at=datetime.datetime.now(datetime.timezone.utc),
                 feedback_config=feedback_config,
                 session_id=_session_id,
-                target=target,
+                address=address,
                 start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
                     comparative_experiment_id, accept_null=True

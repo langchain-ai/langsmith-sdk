@@ -6,7 +6,7 @@ Sets the context variable, so it beats `langsmith_extra`, the decorator,
 
 import langsmith as ls
 
-staging = ls.target("customer-support", agent_environment="staging")
+staging = ls.address("customer-support", agent_environment="staging")
 
 
 @ls.traceable
@@ -15,7 +15,7 @@ def answer(question: str) -> str:
     return f"echo: {question}"
 
 
-with ls.tracing_context(target=staging):
+with ls.tracing_context(address=staging):
     answer("hello")  # -> customer-support / staging
 
 # Same thing, from the handle.

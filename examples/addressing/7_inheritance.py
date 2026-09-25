@@ -1,9 +1,9 @@
-"""Inherit: below the root, the target is copied, never re-resolved."""
+"""Inherit: below the root, the address is copied, never re-resolved."""
 
 import langsmith as ls
 from langsmith.run_trees import RunTree
 
-support = ls.target("customer-support", agent_environment="production")
+support = ls.address("customer-support", agent_environment="production")
 
 
 @ls.traceable
@@ -21,7 +21,7 @@ def root() -> None:
 
 root()
 
-# Built by hand, a child copies its parent's target too.
-parent = RunTree(name="manual", target=support)
+# Built by hand, a child copies its parent's address too.
+parent = RunTree(name="manual", address=support)
 child = parent.create_child(name="step")
-assert child.target == support
+assert child.address == support
