@@ -1,0 +1,20 @@
+python/tests/integration_tests/agent_addressing/conftest.py
+  s_1494656ad43aad::t_bde3edc20bd778 14,31-47
+  s_1494656ad43aad::t_03024b2eea744b 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f50a56cb244943d73f2364282409ae9ac8ead1cf",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
