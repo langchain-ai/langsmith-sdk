@@ -2457,6 +2457,9 @@ class Client:
         """
         if hasattr(run, "model_dump") and callable(getattr(run, "model_dump")):
             run_create: dict = run.model_dump()  # type: ignore
+            # `RunTree.address` is excluded from the dump; put it back.
+            if getattr(run, "address", None) is not None:
+                run_create["address"] = run.address  # type: ignore[union-attr]
         else:
             run_create = cast(dict, run)
         if "id" not in run_create:

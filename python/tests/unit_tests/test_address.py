@@ -352,6 +352,18 @@ class TestWire:
         assert "address" not in payload
         assert "session_name" not in payload
 
+    @pytest.mark.parametrize("update", [False, True])
+    def test_a_run_tree_keeps_its_address_on_the_batch_path(
+        self, client: Client, update: bool
+    ) -> None:
+        """`batch_ingest_runs` / `multipart_ingest` dump pydantic runs."""
+        run = RunTree(name="r", address=SUPPORT)
+        payload = client._run_transform(run, update=update)
+        assert (payload["agent_id"], payload["agent_environment"]) == (
+            "support",
+            "production",
+        )
+
     def test_a_project_payload_is_untouched(self) -> None:
         payload = {"name": "r", "session_name": "p"}
         _agent_addressing.apply_to_payload(payload)
