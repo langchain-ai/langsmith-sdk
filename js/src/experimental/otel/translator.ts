@@ -237,6 +237,17 @@ export class LangSmithToOTELTranslator {
     // Set other parameters from invocation_params
     this.setInvocationParameters(span, runInfo);
 
+    if ("run_type" in runInfo && runInfo.run_type === "tool") {
+      if ("name" in runInfo && runInfo.name) {
+        span.setAttribute(constants.GEN_AI_TOOL_NAME, runInfo.name);
+      }
+      // LangChain JS drops toolCallId, read extra.tool_call_id once it's forwarded
+      const toolCallId = runInfo.extra?.metadata?.tool_call_id;
+      if (toolCallId != null) {
+        span.setAttribute(constants.GEN_AI_TOOL_CALL_ID, String(toolCallId));
+      }
+    }
+
     // Set metadata and tags if available
     const metadata = runInfo.extra?.metadata || {};
     for (const [key, value] of Object.entries(metadata)) {
@@ -337,6 +348,14 @@ export class LangSmithToOTELTranslator {
     span: OTELSpan,
     runInfo: RunCreate | RunUpdate,
   ): void {
+    const tools = runInfo.extra?.invocation_params?.tools;
+    if (Array.isArray(tools) && tools.length > 0) {
+      span.setAttribute(
+        constants.GEN_AI_TOOL_DEFINITIONS,
+        JSON.stringify(tools),
+      );
+    }
+
     if (!runInfo.extra?.metadata?.invocation_params) {
       return;
     }

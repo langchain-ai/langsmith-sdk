@@ -411,3 +411,73 @@ describe("token counts from outputs", () => {
     expect(span._attributes["gen_ai.usage.total_tokens"]).toBe(280);
   });
 });
+
+function attributesForRun(overrides: Record<string, any>) {
+  const span = makeSpanMock();
+  makeTranslator(span).exportBatch(
+    [
+      {
+        operation: "post",
+        id: "run-1",
+        trace_id: "trace-1",
+        run: makeRunCreate({
+          end_time: new Date().toISOString(),
+          ...overrides,
+        }),
+      },
+    ],
+    new Map([["run-1", DUMMY_CONTEXT]]),
+  );
+  return span._attributes;
+}
+
+describe("tool attributes", () => {
+  it("sets tool name and call id on tool runs", () => {
+    const attrs = attributesForRun({
+      run_type: "tool",
+      name: "Bash",
+      extra: { metadata: { tool_call_id: "toolu_123" } },
+    });
+
+    expect(attrs["gen_ai.tool.name"]).toBe("Bash");
+    expect(attrs["gen_ai.tool.call.id"]).toBe("toolu_123");
+  });
+
+  it("omits tool name and call id on non-tool runs", () => {
+    const attrs = attributesForRun({
+      name: "Bash",
+      extra: { metadata: { tool_call_id: "toolu_123" } },
+    });
+
+    expect(attrs).not.toHaveProperty("gen_ai.tool.name");
+    expect(attrs).not.toHaveProperty("gen_ai.tool.call.id");
+  });
+
+  it("passes tool definitions through in provider shapes", () => {
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "get_weather",
+          description: "Get the weather",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+      { name: "search", description: "Search", input_schema: {} },
+      { type: "tool_search" },
+    ];
+    const attrs = attributesForRun({ extra: { invocation_params: { tools } } });
+
+    expect(JSON.parse(attrs["gen_ai.tool.definitions"])).toEqual(tools);
+  });
+
+  it.each([
+    {},
+    { invocation_params: {} },
+    { invocation_params: { tools: [] } },
+  ])("omits tool definitions without tools (%j)", (extra) => {
+    expect(attributesForRun({ extra })).not.toHaveProperty(
+      "gen_ai.tool.definitions",
+    );
+  });
+});
