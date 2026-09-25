@@ -1738,6 +1738,9 @@ pytest = [
     { name = "rich" },
     { name = "vcrpy" },
 ]
+sandbox-auth = [
+    { name = "pyjwt", extra = ["crypto"] },
+]
 strands-agents = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -1779,6 +1782,7 @@ dev = [
     { name = "pillow" },
     { name = "psutil" },
     { name = "py-spy" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pyperf" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1845,6 +1849,7 @@ requires-dist = [
     { name = "packaging", specifier = ">=23.2" },
     { name = "pipecat-ai", marker = "python_full_version >= '3.11' and extra == 'pipecat'", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2,<3" },
+    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'sandbox-auth'", specifier = ">=2.8.0" },
     { name = "pytest", marker = "extra == 'pytest'", specifier = ">=7.0.0" },
     { name = "requests", specifier = ">=2.0.0" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
@@ -1861,7 +1866,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "gemini-live", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "strands-agents", "vcr"]
+provides-extras = ["claude-agent-sdk", "gemini-live", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "sandbox-auth", "strands-agents", "vcr"]
 
 [package.metadata.requires-dev]
 bench = [
@@ -1892,6 +1897,7 @@ dev = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "psutil", specifier = ">=5.9.5" },
     { name = "py-spy", specifier = ">=0.3.14" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8.0" },
     { name = "pyperf", specifier = ">=2.7.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },

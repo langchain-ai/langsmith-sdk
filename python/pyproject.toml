@@ -125,6 +125,10 @@ vcr = ["vcrpy>=7.0.0"]
 # Kept for backward compatibility; `websockets` is now a core dependency.
 sandbox = []
 
+# Enabled via `pip install langsmith[sandbox-auth]` to verify sandbox user tokens
+# and proxy callback signatures.
+sandbox-auth = ["PyJWT[crypto]>=2.8.0"]
+
 [dependency-groups]
 # Development dependencies
 dev = [
@@ -176,6 +180,7 @@ dev = [
     "wrapt>=1.16.0",
     "google-adk>=1.0.0",
     "pytest-timeout>=2.3.1",
+    "PyJWT[crypto]>=2.8.0",
 ]
 
 # Benchmarking dependencies (`make benchmark-codspeed`, `make benchmark-datadog`).
