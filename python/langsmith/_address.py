@@ -1,7 +1,7 @@
 """A handle that names where runs are sent.
 
 !!! warning "Experimental"
-    Addressing runs to a target is in beta and enabled per workspace. A
+    Addressing runs to an address is in beta and enabled per workspace. A
     workspace without it rejects the runs, so tracing is lost rather than
     falling back to a project. This API may change without notice.
 
@@ -15,7 +15,7 @@ Example:
     ```python
     import langsmith as ls
 
-    support = ls.target("customer-support", agent_environment="production")
+    support = ls.address("customer-support", agent_environment="production")
 
 
     @support.traceable
@@ -44,10 +44,10 @@ if TYPE_CHECKING:
 _MAX_ID_LENGTH = 255
 
 
-class EnvTargetError(utils.LangSmithUserError):
+class EnvAddressError(utils.LangSmithUserError):
     """The `LANGSMITH_AGENT_*` / project env vars can't address a run.
 
-    Raised for half a target, or a target beside a project. Tracing entry
+    Raised for half an address, or an address beside a project. Tracing entry
     points catch it, log it and leave the call untraced, so a bad environment
     never breaks the code being traced.
     """
@@ -58,10 +58,10 @@ def _wire(name: str, *, required: bool) -> dict[str, Any]:
 
 
 @dataclasses.dataclass(frozen=True)
-class Target:
+class Address:
     """(experimental) A destination that runs can be addressed to.
 
-    Build one with `langsmith.target`. Required fields must be set at
+    Build one with `langsmith.address`. Required fields must be set at
     construction; which values exist is left to the server.
     """
 
@@ -83,18 +83,18 @@ class Target:
                 continue
             if not isinstance(value, str) or not value:
                 raise utils.LangSmithUserError(
-                    f"Target {f.name} must be a non-empty string, got {value!r}."
+                    f"Address {f.name} must be a non-empty string, got {value!r}."
                 )
         if len(self.agent_id) > _MAX_ID_LENGTH:
             raise utils.LangSmithUserError(
-                f"Target agent_id must be at most {_MAX_ID_LENGTH} characters."
+                f"Address agent_id must be at most {_MAX_ID_LENGTH} characters."
             )
 
-    # -- Generic over the fields: the only code that knows what a target holds.
+    # -- Generic over the fields: the only code that knows what an address holds.
 
     @classmethod
     def wire_keys(cls) -> tuple[str, ...]:
-        """Return the payload keys a target renders to."""
+        """Return the payload keys an address renders to."""
         return tuple(f.metadata["wire"] for f in dataclasses.fields(cls))
 
     def to_wire(self) -> dict[str, str]:
@@ -106,7 +106,7 @@ class Target:
         }
 
     @classmethod
-    def from_wire(cls, values: Mapping[str, Any]) -> Optional[Target]:
+    def from_wire(cls, values: Mapping[str, Any]) -> Optional[Address]:
         """Build from payload-keyed values, or `None` if none are set.
 
         Raises:
@@ -124,16 +124,16 @@ class Target:
         ]
         if missing:
             raise utils.LangSmithUserError(
-                f"A target needs {' and '.join(missing)} as well."
+                f"An address needs {' and '.join(missing)} as well."
             )
         return cls(**fields)  # type: ignore[arg-type]
 
     @classmethod
-    def from_env(cls) -> Optional[Target]:
-        """Read the target named by `LANGSMITH_AGENT_*` env vars, if any.
+    def from_env(cls) -> Optional[Address]:
+        """Read the address named by `LANGSMITH_AGENT_*` env vars, if any.
 
         Raises:
-            EnvTargetError: If only some of the required ones are set.
+            EnvAddressError: If only some of the required ones are set.
         """
         try:
             return cls.from_wire(
@@ -142,20 +142,20 @@ class Target:
                     for f in dataclasses.fields(cls)
                 }
             )
-        except EnvTargetError:
+        except EnvAddressError:
             raise
         except utils.LangSmithUserError as e:
             present = ", ".join(
                 f"{name}={value!r}" for name, value in cls.env_values().items() if value
             )
-            raise EnvTargetError(
-                f"The LANGSMITH_AGENT_* env vars name an incomplete target "
+            raise EnvAddressError(
+                f"The LANGSMITH_AGENT_* env vars name an incomplete address "
                 f"({present}): {e}"
             ) from e
 
     @classmethod
     def env_values(cls) -> dict[str, Optional[str]]:
-        """Return each `LANGSMITH_AGENT_*` env var a target reads, with its value."""
+        """Return each `LANGSMITH_AGENT_*` env var an address reads, with its value."""
         return {_env_name(f.name): _env_value(f.name) for f in dataclasses.fields(cls)}
 
     def seed(self) -> str:
@@ -164,21 +164,21 @@ class Target:
 
     # -- Sugar.
 
-    def with_agent_environment(self, agent_environment: str) -> Target:
+    def with_agent_environment(self, agent_environment: str) -> Address:
         """Return a handle to the same agent in another environment."""
         return dataclasses.replace(self, agent_environment=agent_environment)
 
     def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        named = [k for k in ("target", "project_name") if k in kwargs]
+        named = [k for k in ("address", "project_name") if k in kwargs]
         if named:
             raise utils.LangSmithUserError(
-                f"A Target already addresses the run; drop {named}, or use "
-                "another one (e.g. `target.with_agent_environment(...)`) to change it."
+                f"An Address already addresses the run; drop {named}, or use "
+                "another one (e.g. `address.with_agent_environment(...)`) to change it."
             )
-        return {**kwargs, "target": self}
+        return {**kwargs, "address": self}
 
     def traceable(self, func: Optional[Callable] = None, /, **kwargs: Any) -> Any:
-        """`langsmith.traceable`, addressed to this target.
+        """`langsmith.traceable`, addressed to this address.
 
         Usable bare (`@support.traceable`) or with arguments
         (`@support.traceable(run_type="llm")`). Binds at decorator time, so an
@@ -194,13 +194,13 @@ class Target:
     def trace(
         self, name: str, run_type: Any = "chain", **kwargs: Any
     ) -> run_helpers.trace:
-        """`langsmith.trace`, addressed to this target."""
+        """`langsmith.trace`, addressed to this address."""
         from langsmith import run_helpers
 
         return run_helpers.trace(name, run_type, **self._with_address(kwargs))
 
     def tracing_context(self, **kwargs: Any) -> AbstractContextManager[None]:
-        """`langsmith.tracing_context`, addressed to this target.
+        """`langsmith.tracing_context`, addressed to this address.
 
         Sets the context variables, so it beats an `@traceable` binding inside
         it. Like any address, it can't move a child of a run already in flight.
@@ -210,7 +210,7 @@ class Target:
         return run_helpers.tracing_context(**self._with_address(kwargs))
 
     def replica(self, **kwargs: Any) -> WriteReplica:
-        """Build a `WriteReplica` that sends runs to this target.
+        """Build a `WriteReplica` that sends runs to this address.
 
         Only needed to set other replica fields; the handle itself can be
         passed in `replicas`.
@@ -226,18 +226,18 @@ def _env_value(field_name: str) -> Optional[str]:
     return utils.get_env_var(field_name.upper(), namespaces=("LANGSMITH",))
 
 
-def target(
-    agent_id: str, *, agent_environment: str, **dimensions: Optional[str]
-) -> Target:
-    """(experimental) Build a handle that addresses runs to a target.
+def address(
+    agent_id: str, *, agent_environment: str, agent_region: Optional[str] = None
+) -> Address:
+    """(experimental) Build an address to send runs to.
 
     Args:
         agent_id: The agent's ID. The server creates it on first use.
         agent_environment: The agent's environment. Not validated
             client-side; the server decides which environments are accepted.
-        **dimensions: Any further `Target` fields.
+        agent_region: Optionally, the agent's region. Not validated client-side.
 
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    return Target(agent_id, agent_environment, **dimensions)
+    return Address(agent_id, agent_environment, agent_region)
