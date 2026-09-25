@@ -241,7 +241,7 @@ export class LangSmithToOTELTranslator {
       if ("name" in runInfo && runInfo.name) {
         span.setAttribute(constants.GEN_AI_TOOL_NAME, runInfo.name);
       }
-      // ponytail: LangChain JS drops toolCallId, read extra.tool_call_id once it's forwarded
+      // LangChain JS drops toolCallId, read extra.tool_call_id once it's forwarded
       const toolCallId = runInfo.extra?.metadata?.tool_call_id;
       if (toolCallId != null) {
         span.setAttribute(constants.GEN_AI_TOOL_CALL_ID, String(toolCallId));
