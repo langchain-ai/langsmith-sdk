@@ -4588,6 +4588,9 @@ class Client:
             "prompt_tokens",
             "reference_example_id",
             "run_type",
+            # Needed for run.attachments; the server only returns it when
+            # selected.
+            "s3_urls",
             "session_id",
             "start_time",
             "status",
@@ -4711,6 +4714,9 @@ class Client:
             "reference_example_id",
             "feedback_stats",
             "app_path",
+            # Needed for run.attachments; the server only returns it when
+            # selected.
+            "s3_urls",
         ]
         body_query: dict[str, Any] = {
             "session": [session_id],

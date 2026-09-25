@@ -89,6 +89,7 @@ GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc"
 GEN_AI_RESPONSE_ID = "gen_ai.response.id"
 GEN_AI_TOOL_NAME = "gen_ai.tool.name"
 GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
 GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier"
 GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
 GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
@@ -594,7 +595,7 @@ class OTELExporter:
             tool_name = run_info.get("name")
             if tool_name:
                 span.set_attribute(GEN_AI_TOOL_NAME, str(tool_name))
-            tool_call_id = metadata.get("tool_call_id")
+            tool_call_id = extra.get("tool_call_id") or metadata.get("tool_call_id")
             if tool_call_id is not None:
                 span.set_attribute(GEN_AI_TOOL_CALL_ID, str(tool_call_id))
 
@@ -673,12 +674,16 @@ class OTELExporter:
         setattr(span, "_gen_ai_system", system)
 
     def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
-        """Set invocation parameters on the span.
+        """Process the invocation parameters associated with the span.
 
         Args:
             span: The span to set attributes on.
             run_info: The deserialized run info.
         """
+        invocation_params = (run_info.get("extra") or {}).get("invocation_params") or {}
+        tools = invocation_params.get("tools")
+        if tools and (tool_definitions := otel_safe_attribute_value(tools)):
+            span.set_attribute(GEN_AI_TOOL_DEFINITIONS, tool_definitions)
         if not (run_info.get("extra") and run_info["extra"].get("metadata")):
             return
 
