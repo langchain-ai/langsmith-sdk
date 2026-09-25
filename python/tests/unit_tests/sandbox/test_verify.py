@@ -1,10 +1,12 @@
 """Tests for sandbox user-token and proxy-callback verification."""
 
+import asyncio
 import base64
 import hashlib
 import json
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import jwt
 import pytest
@@ -12,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from jwt.algorithms import OKPAlgorithm
 from pytest_httpx import HTTPXMock
 
+from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox import (
     SandboxTokenVerificationError,
     SandboxTokenVerifier,
@@ -185,6 +188,56 @@ class TestUserToken:
             _sign(key, _user_claims()), audience=SERVICE_HOST
         )
         assert user.subject == "user-123"
+
+
+class TestJWKSFetch:
+    def test_concurrent_misses_share_one_fetch(
+        self, httpx_mock: HTTPXMock, key, verifier
+    ):
+        def slow_jwks(request):
+            time.sleep(0.2)
+            return httpx.Response(200, json={"keys": [_jwk(key, KID)]})
+
+        httpx_mock.add_callback(slow_jwks, url=JWKS_URL, is_reusable=True)
+        token = _sign(key, _user_claims())
+        with ThreadPoolExecutor(8) as pool:
+            users = list(
+                pool.map(
+                    lambda _: verifier.verify_user_token(token, audience=SERVICE_HOST),
+                    range(8),
+                )
+            )
+        assert {u.subject for u in users} == {"user-123"}
+        assert len(httpx_mock.get_requests()) == 1
+
+    async def test_concurrent_async_misses_share_one_fetch(
+        self, httpx_mock: HTTPXMock, key, verifier
+    ):
+        async def slow_jwks(request):
+            await asyncio.sleep(0.2)
+            return httpx.Response(200, json={"keys": [_jwk(key, KID)]})
+
+        httpx_mock.add_callback(slow_jwks, url=JWKS_URL, is_reusable=True)
+        token = _sign(key, _user_claims(), kid="unknown")
+        results = await asyncio.gather(
+            *(
+                verifier.averify_user_token(token, audience=SERVICE_HOST)
+                for _ in range(8)
+            ),
+            return_exceptions=True,
+        )
+        assert all(isinstance(r, SandboxTokenVerificationError) for r in results)
+        assert len(httpx_mock.get_requests()) == 1
+
+    @pytest.mark.parametrize(
+        "body", [None, {"keys": {}}, {"keys": [None, 1]}, [], "keys"]
+    )
+    def test_malformed_jwks(self, httpx_mock: HTTPXMock, key, verifier, body):
+        httpx_mock.add_response(url=JWKS_URL, json=body)
+        with pytest.raises(SandboxTokenVerificationError, match="JWKS"):
+            verifier.verify_user_token(
+                _sign(key, _user_claims()), audience=SERVICE_HOST
+            )
 
 
 class TestCallback:

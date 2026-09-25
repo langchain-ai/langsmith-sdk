@@ -214,6 +214,44 @@ describe("SandboxTokenVerifier", () => {
     });
   });
 
+  describe("JWKS fetch", () => {
+    it("shares one fetch across concurrent misses", async () => {
+      const v = verifier();
+      const token = await sign(pair, userClaims());
+      const users = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          v.verifyUserToken(token, { audience: SERVICE_HOST }),
+        ),
+      );
+      expect(users.every((u) => u.subject === "user-123")).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["null", null],
+      ["keys object", { keys: {} }],
+      ["array", []],
+    ])("rejects a malformed JWKS (%s)", async (_name, body) => {
+      fetchMock.mockImplementation(async () => Response.json(body));
+      await expect(
+        verifier().verifyUserToken(await sign(pair, userClaims()), {
+          audience: SERVICE_HOST,
+        }),
+      ).rejects.toThrow(LangSmithSandboxTokenVerificationError);
+    });
+
+    it("skips non-object JWKS entries", async () => {
+      fetchMock.mockImplementation(async () =>
+        Response.json({ keys: [null, 1, await jwk(pair, KID)] }),
+      );
+      const user = await verifier().verifyUserToken(
+        await sign(pair, userClaims()),
+        { audience: SERVICE_HOST },
+      );
+      expect(user.subject).toBe("user-123");
+    });
+  });
+
   describe("verifyCallback", () => {
     it("returns the payload for a valid callback", async () => {
       const body = callbackBody();

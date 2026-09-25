@@ -5,6 +5,7 @@ Requires the ``sandbox-auth`` extra: ``pip install "langsmith[sandbox-auth]"``.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -160,6 +161,9 @@ class SandboxTokenVerifier:
             self._jwks_url = _default_jwks_url()
         self._timeout = timeout
         self._lock = threading.Lock()
+        self._fetch_lock = threading.Lock()
+        self._afetch_lock: Optional[asyncio.Lock] = None
+        self._afetch_loop: Optional[asyncio.AbstractEventLoop] = None
         self._keys: Optional[PyJWKSet] = None
         self._fetched_at = 0.0
 
@@ -325,9 +329,14 @@ class SandboxTokenVerifier:
         return key, keys is None or not fresh or may_refresh
 
     def _store(self, data: Any, now: float) -> Any:
+        if not isinstance(data, dict) or not isinstance(data.get("keys"), list):
+            raise SandboxTokenVerificationError(
+                "invalid JWKS: expected an object with a keys array"
+            )
+        usable = [k for k in data["keys"] if isinstance(k, dict)]
         try:
-            keys = self._jwt.PyJWKSet.from_dict(data)
-        except self._jwt.PyJWTError as e:
+            keys = self._jwt.PyJWKSet.from_dict({"keys": usable})
+        except (self._jwt.PyJWTError, KeyError, TypeError, ValueError) as e:
             raise SandboxTokenVerificationError(f"invalid JWKS: {e}") from e
         with self._lock:
             self._keys = keys
@@ -335,34 +344,49 @@ class SandboxTokenVerifier:
         return keys
 
     def _key_sync(self, kid: str) -> Any:
-        now = time.monotonic()
-        key, refresh = self._cached_key(kid, now)
+        key, refresh = self._cached_key(kid, time.monotonic())
         if refresh:
-            try:
-                resp = httpx.get(self._jwks_url, timeout=self._timeout)
-                resp.raise_for_status()
-                data = resp.json()
-            except (httpx.HTTPError, ValueError) as e:
-                raise SandboxTokenVerificationError(
-                    f"failed to fetch JWKS from {self._jwks_url}: {e}"
-                ) from e
-            key = _find_key(self._store(data, now), kid)
+            # Serialized and re-checked so concurrent misses share one fetch.
+            with self._fetch_lock:
+                now = time.monotonic()
+                key, refresh = self._cached_key(kid, now)
+                if refresh:
+                    try:
+                        resp = httpx.get(self._jwks_url, timeout=self._timeout)
+                        resp.raise_for_status()
+                        data = resp.json()
+                    except (httpx.HTTPError, ValueError) as e:
+                        raise SandboxTokenVerificationError(
+                            f"failed to fetch JWKS from {self._jwks_url}: {e}"
+                        ) from e
+                    key = _find_key(self._store(data, now), kid)
         return _require_key(key, kid)
 
+    def _async_fetch_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            if self._afetch_lock is None or self._afetch_loop is not loop:
+                self._afetch_lock = asyncio.Lock()
+                self._afetch_loop = loop
+            return self._afetch_lock
+
     async def _key_async(self, kid: str) -> Any:
-        now = time.monotonic()
-        key, refresh = self._cached_key(kid, now)
+        key, refresh = self._cached_key(kid, time.monotonic())
         if refresh:
-            try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.get(self._jwks_url)
-                resp.raise_for_status()
-                data = resp.json()
-            except (httpx.HTTPError, ValueError) as e:
-                raise SandboxTokenVerificationError(
-                    f"failed to fetch JWKS from {self._jwks_url}: {e}"
-                ) from e
-            key = _find_key(self._store(data, now), kid)
+            async with self._async_fetch_lock():
+                now = time.monotonic()
+                key, refresh = self._cached_key(kid, now)
+                if refresh:
+                    try:
+                        async with httpx.AsyncClient(timeout=self._timeout) as client:
+                            resp = await client.get(self._jwks_url)
+                        resp.raise_for_status()
+                        data = resp.json()
+                    except (httpx.HTTPError, ValueError) as e:
+                        raise SandboxTokenVerificationError(
+                            f"failed to fetch JWKS from {self._jwks_url}: {e}"
+                        ) from e
+                    key = _find_key(self._store(data, now), kid)
         return _require_key(key, kid)
 
 

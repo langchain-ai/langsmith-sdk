@@ -344,7 +344,7 @@ export class SandboxTokenVerifier {
   }
 
   private async refresh(): Promise<void> {
-    let body: { keys?: Jwk[] };
+    let body: unknown;
     try {
       const resp = await fetch(this.jwksUrl, {
         signal: AbortSignal.timeout(this.timeoutMs),
@@ -356,8 +356,13 @@ export class SandboxTokenVerifier {
         `failed to fetch JWKS from ${this.jwksUrl}: ${(e as Error).message}`,
       );
     }
+    const entries = (body as { keys?: unknown } | null)?.keys;
+    if (!Array.isArray(entries)) {
+      fail("invalid JWKS: expected an object with a keys array");
+    }
     const keys = new Map<string, Promise<CryptoKey>>();
-    for (const jwk of body.keys ?? []) {
+    for (const jwk of entries as (Jwk | null)[]) {
+      if (typeof jwk !== "object" || jwk === null) continue;
       if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || !jwk.kid || !jwk.x)
         continue;
       const imported = subtle().importKey(
