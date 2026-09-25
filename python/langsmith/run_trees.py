@@ -357,7 +357,7 @@ def configure(
             project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
-        if set_address or project_name is not None:
+        if set_address or (project_name is not _SENTINEL and project_name is not None):
             address = address if set_address else None
             _context._ADDRESS.set(address)
             _context._GLOBAL_ADDRESS = address
@@ -1338,7 +1338,14 @@ class RunTree(ls_schemas.RunBase):
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
-        run_tree = RunTree(**init_args)
+        try:
+            run_tree = RunTree(**init_args)
+        except _agent_addressing.EnvAddressError as e:
+            # Neither the header nor the caller names a destination, and the
+            # env can't: treat it like a missing parent rather than break the
+            # request handling it.
+            _agent_addressing.log_untraced(e)
+            return None  # type: ignore[return-value]
 
         # Set the distributed parent ID to this run's ID for rerooting
         _DISTRIBUTED_PARENT_ID.set(str(run_tree.id))
