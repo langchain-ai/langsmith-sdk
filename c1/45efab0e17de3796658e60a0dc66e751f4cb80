@@ -1,0 +1,49 @@
+python/langsmith/integrations/deepgram_voice/__init__.py
+  s_86c05ddb2edbfc::t_6e331546eeedaf 1-8
+python/langsmith/integrations/deepgram_voice/_connection.py
+  s_86c05ddb2edbfc::t_6e331546eeedaf 1-16,18-34,46-48,70-81,86,88-89,91,106-122,125-138,141-144,146-148,165,172,175,177-195,201-202,218-229,231,233-240,242,244-245,252-254,256,263-265,267-273,277-283,285-289,291-298,307-340,360,363-364,375-380,384-385,393-440,457,462-506,508-561,563-564,568-580
+  s_86c05ddb2edbfc::t_20a7d13bebfe40 35-42,45,266,284,290,299-306
+  s_86c05ddb2edbfc::t_ee3632e6372acf 43-44,82-85,87,90,92-93,139-140,145,149-155,157-161,163-164,196,198,203,216-217,230,341,343-355,365-366,386-392
+  s_86c05ddb2edbfc::t_a847497025613c 232,507
+  s_86c05ddb2edbfc::t_1639a7de7fc799 255
+  s_86c05ddb2edbfc::t_2984741e388467 274-276
+  s_86c05ddb2edbfc::t_50c9227ae6b528 49-69,441-456,458-461,562,565-567
+  s_86c05ddb2edbfc::t_da3f3c31d5ae1f 94-105,123-124,166-171,173-174,176,197,199-200,204-215,241,243,246-251,257-262,367-374,381-383
+  s_86c05ddb2edbfc::t_c1ff38629c3500 17,156,162,342,356-359,361-362
+python/langsmith/_internal/voice/session.py
+  s_86c05ddb2edbfc::t_adc9e95143462f 94,104,124-126,128-141,144-145,148-151,153-156,158-163,306,341-343,394-395,434
+  s_86c05ddb2edbfc::t_6b3b800a176e8e 85-89,176-201,203-213
+  s_86c05ddb2edbfc::t_2984741e388467 157,202
+  s_86c05ddb2edbfc::t_ee3632e6372acf 108-111,147
+  s_86c05ddb2edbfc::t_684d77be85ed32 214
+python/tests/unit_tests/wrappers/test_deepgram_voice.py
+  s_86c05ddb2edbfc::t_93335aaf94dd44 67-111,163-254,437
+  s_86c05ddb2edbfc::t_1a05ee4a793dad 268,271,279-280,282-292,312-313,327,335,347-351,353-358,360-361,363-381,384-392,395-415,417-420
+  s_86c05ddb2edbfc::t_2340f0ca21d3fb 444-445,448,453-454,473,481-492,494-503,505-511,514
+  s_86c05ddb2edbfc::t_2984741e388467 493
+  s_86c05ddb2edbfc::t_2230b329ba6088 261-264,346
+  s_86c05ddb2edbfc::t_3430513dd1b39f 257,315-326,328-330,332-334,339-345,352,359,362,382-383,393-394
+  s_86c05ddb2edbfc::t_6e331546eeedaf 1-66,112-162,255-256,258-260,265-267,269-270,272-278,281,293-300,302-311,314,331,336-338,416,421-435,455,461-468,474-480,515-573
+  s_86c05ddb2edbfc::t_21d9a87e9199a6 301
+  s_86c05ddb2edbfc::t_f13beba41a51cb 436,438-443,446-447,449-452,456-460,469-472,504,512-513
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_86c05ddb2edbfc::t_d22df7c1963236 182-211,256-257
+  s_86c05ddb2edbfc::t_ee3632e6372acf 245,255
+  s_86c05ddb2edbfc::t_f13beba41a51cb 214-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c145efab0e17de3796658e60a0dc66e751f4cb80",
+  "prompts": {},
+  "sessions": {
+    "s_86c05ddb2edbfc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cf2e-b565-7912-94ea-e54e5ed32ecd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}
