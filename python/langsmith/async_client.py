@@ -635,6 +635,8 @@ class AsyncClient:
             # Already addressed by an incoming run body; leave it alone.
             session_name = project_name
         else:
+            # A `session_name=None` in `kwargs` would override the result below.
+            kwargs.pop("session_name", None)
             try:
                 session_name, kwargs["address"] = _agent_addressing.resolve(
                     (project_name, kwargs.get("address"))

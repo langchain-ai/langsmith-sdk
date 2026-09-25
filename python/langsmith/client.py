@@ -2644,14 +2644,15 @@ class Client:
         )
         if project_name:
             pass
-        elif "session_name" in kwargs:
-            # Passed through, even as None: a caller that says "no project"
-            # gets no project.
+        elif kwargs.get("session_name") is not None:
             project_name = kwargs.pop("session_name")
         elif kwargs.get("session_id") is not None:
             # Already addressed by project id; leave it alone.
             project_name = None
         else:
+            # No project, `session_name=None` included: resolve here, where a
+            # bad env is caught, rather than in `_run_transform`.
+            kwargs.pop("session_name", None)
             try:
                 project_name, kwargs["address"] = _agent_addressing.resolve(
                     (None, kwargs.get("address"))
