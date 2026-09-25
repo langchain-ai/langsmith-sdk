@@ -2588,7 +2588,7 @@ class Client:
                 `langsmith.address`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
-                Address addressing is in beta and enabled per workspace; a
+                This is in beta and enabled per workspace; a
                 workspace without it rejects the run, so the trace is lost
                 rather than falling back to a project.
             api_key (Optional[str]): The API key to use for this specific run.
@@ -3870,7 +3870,7 @@ class Client:
             **kwargs (Any): Ignored, except `address`.
 
                 !!! warning "Experimental"
-                    `address` is in beta. It addresses the patch to an address,
+                    `address` is in beta. It sends the patch to an address,
                     and must match the post it belongs to: an update that
                     names none is resolved by run id, as every update was
                     before. It may change without notice.
@@ -8312,7 +8312,7 @@ class Client:
             specify `trace_id`. *We highly encourage this for latency-sensitive environments.*
 
         !!! warning "Experimental"
-            `address` is in beta. Address addressing is enabled per workspace; a
+            `address` is in beta. It is enabled per workspace; a
             workspace without it rejects the feedback, so it is lost rather
             than falling back to a project. The address must already exist --
             unlike run ingestion, a feedback part never creates one. It may

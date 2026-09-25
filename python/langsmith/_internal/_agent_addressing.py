@@ -53,7 +53,7 @@ def warn_is_beta() -> None:
     `_warn_once` caches on the message, so this fires once per process.
     """
     _warn_once(
-        "Address addressing (`langsmith.address`) is in beta and is enabled per "
+        "Addressing runs with `langsmith.address` is in beta and is enabled per "
         "workspace. A workspace without it rejects the run, so the trace is "
         "lost rather than falling back to a project. The behavior may change "
         "without notice."
@@ -133,8 +133,8 @@ def warn_on_env() -> None:
     """Warn when the environment's address cannot be used.
 
     Half an address, or one beside a configured project, leaves calls that name
-    nothing in code untraced -- and a name like `TARGET_ENVIRONMENT` is generic
-    enough to be set by accident.
+    nothing in code untraced -- and a name like `LANGSMITH_AGENT_ENVIRONMENT`
+    is generic enough to be set by accident.
 
     Emitted at client construction rather than per run, so it is seen once.
     """
@@ -158,8 +158,7 @@ def warn_on_env() -> None:
     if project is None:
         return
     warnings.warn(
-        f"LANGSMITH_AGENT_ID ({address.agent_id!r}) and a configured "
-        f"project "
+        f"LANGSMITH_AGENT_ID ({address.agent_id!r}) and a configured project "
         f"({project!r}) are both set in the environment, so calls that name "
         "no destination in code are not traced. Unset one of them.",
         utils.LangSmithWarning,
@@ -176,7 +175,7 @@ def reject_url(session_id: Optional[Any], address: Optional[Address]) -> None:
     if session_id is not None or address is None:
         return
     raise utils.LangSmithUserError(
-        "No run URL is available for an address-addressed run yet. The endpoint "
+        "No run URL is available for an addressed run yet. The endpoint "
         "resolves the address to its project, so only it knows the project this "
         "run is in. Read the run back and build the URL from its `session_id`."
     )

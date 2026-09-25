@@ -63,7 +63,7 @@ class WriteReplica(TypedDict, total=False):
     """Configuration for a write replica endpoint.
 
     !!! warning "Experimental"
-        `address` is in beta. Address addressing is enabled per workspace; a
+        `address` is in beta. It is enabled per workspace; a
         workspace without it rejects the runs, so tracing is lost rather than
         falling back to a project. It may change without notice.
     """
@@ -271,7 +271,7 @@ def configure(
     use the `tracing_context` context manager instead.
 
     !!! warning "Experimental"
-        `address` is in beta. Address addressing is enabled per workspace; a
+        `address` is in beta. It is enabled per workspace; a
         workspace without it rejects the runs, so tracing is lost rather than
         falling back to a project. It may change without notice.
 
@@ -453,7 +453,7 @@ class RunTree(ls_schemas.RunBase):
     )
     """The project to ingest this run into.
 
-    `None` only for an address-addressed run, where the backend resolves the
+    `None` only for an addressed run, where the backend resolves the
     project from `address` instead.
     """
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
@@ -888,7 +888,7 @@ class RunTree(ls_schemas.RunBase):
         ):
             return run_dict
         # Runs are duplicated per destination, so the derivation seed has to
-        # identify the destination -- an address-addressed replica has no project.
+        # identify the destination -- an addressed replica has no project.
         seed = (
             project_name
             if project_name is not None
