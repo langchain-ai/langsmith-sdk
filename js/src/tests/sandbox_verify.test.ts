@@ -214,6 +214,35 @@ describe("SandboxTokenVerifier", () => {
     });
   });
 
+  describe("JWKS URL", () => {
+    it.each([
+      "http://localhost:1984/.well-known/jwks.json",
+      "http://127.0.0.1:1984/.well-known/jwks.json",
+      "http://[::1]:1984/.well-known/jwks.json",
+    ])("allows http loopback %s", (jwksUrl) => {
+      expect(() => new SandboxTokenVerifier({ jwksUrl })).not.toThrow();
+    });
+
+    it.each([
+      [{ jwksUrl: "http://langsmith.internal/.well-known/jwks.json" }],
+      [{ apiUrl: "http://langsmith.internal/api/v1" }],
+      [{ jwksUrl: "http://127.example.com/.well-known/jwks.json" }],
+      [{ jwksUrl: "ftp://langsmith.internal/jwks.json" }],
+    ])("rejects insecure %j", (config) => {
+      expect(() => new SandboxTokenVerifier(config)).toThrow("https");
+    });
+
+    it("allows plain http with allowInsecureJwks", () => {
+      expect(
+        () =>
+          new SandboxTokenVerifier({
+            jwksUrl: "http://langsmith.internal/.well-known/jwks.json",
+            allowInsecureJwks: true,
+          }),
+      ).not.toThrow();
+    });
+  });
+
   describe("JWKS fetch", () => {
     it("shares one fetch across concurrent misses", async () => {
       const v = verifier();

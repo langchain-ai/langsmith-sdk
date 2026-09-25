@@ -339,6 +339,44 @@ class TestCallback:
         assert cb.port == 443
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:1984/.well-known/jwks.json",
+        "http://127.0.0.1:1984/.well-known/jwks.json",
+        "http://[::1]:1984/.well-known/jwks.json",
+    ],
+)
+def test_allows_http_loopback_jwks(url):
+    SandboxTokenVerifier(jwks_url=url)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"jwks_url": "http://langsmith.internal/.well-known/jwks.json"},
+        {"api_url": "http://langsmith.internal/api/v1"},
+        {"jwks_url": "ftp://langsmith.internal/jwks.json"},
+    ],
+)
+def test_rejects_insecure_jwks(kwargs):
+    with pytest.raises(ValueError, match="https"):
+        SandboxTokenVerifier(**kwargs)
+
+
+def test_rejects_insecure_default_endpoint(monkeypatch):
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "http://langsmith.internal/api/v1")
+    with pytest.raises(ValueError, match="https"):
+        SandboxTokenVerifier()
+
+
+def test_allow_insecure_jwks_opt_out():
+    SandboxTokenVerifier(
+        jwks_url="http://langsmith.internal/.well-known/jwks.json",
+        allow_insecure_jwks=True,
+    )
+
+
 def test_default_jwks_url_uses_endpoint_origin(httpx_mock: HTTPXMock, key, monkeypatch):
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.example.com/api/v1")
     httpx_mock.add_response(url=JWKS_URL, json={"keys": [_jwk(key, KID)]})

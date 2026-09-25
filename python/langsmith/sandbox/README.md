@@ -868,7 +868,9 @@ async with await client.sandbox(snapshot_id=snapshot_id) as sb:
 
 Install the extra: `pip install "langsmith[sandbox-auth]"`. `SandboxTokenVerifier`
 checks EdDSA signatures against LangSmith's JWKS (derived from
-`LANGSMITH_ENDPOINT`, cached).
+`LANGSMITH_ENDPOINT`, cached). The JWKS must be served over HTTPS (localhost is
+exempt); for a plain-HTTP self-hosted deployment on a trusted network, pass
+`allow_insecure_jwks=True`.
 
 ### Service URL Users
 

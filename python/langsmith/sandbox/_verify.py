@@ -10,6 +10,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
 import json
 import threading
 import time
@@ -106,6 +107,27 @@ def _default_jwks_url() -> str:
     return f"{parts.scheme}://{parts.netloc}{_JWKS_PATH}"
 
 
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _check_jwks_url(url: str, allow_insecure: bool) -> None:
+    parts = urlsplit(url)
+    if parts.scheme == "https" or allow_insecure:
+        return
+    if parts.scheme == "http" and _is_loopback(parts.hostname or ""):
+        return
+    raise ValueError(
+        f"JWKS URL must use https, got {url!r}; pass allow_insecure_jwks=True "
+        "only if the network path to LangSmith is trusted"
+    )
+
+
 def _service_host(audience: str) -> str:
     if "://" in audience:
         host = urlsplit(audience).netloc
@@ -142,6 +164,7 @@ class SandboxTokenVerifier:
         api_url: Optional[str] = None,
         jwks_url: Optional[str] = None,
         timeout: float = 10.0,
+        allow_insecure_jwks: bool = False,
     ) -> None:
         """Initialize the verifier.
 
@@ -150,6 +173,9 @@ class SandboxTokenVerifier:
                 LANGSMITH_ENDPOINT.
             jwks_url: Full JWKS URL; overrides ``api_url``.
             timeout: HTTP timeout in seconds for fetching the JWKS.
+            allow_insecure_jwks: Allow fetching the JWKS over plain HTTP from a
+                non-loopback host. Anyone who can tamper with that traffic can
+                forge tokens this verifier accepts.
         """
         self._jwt = _import_jwt()
         if jwks_url:
@@ -159,6 +185,7 @@ class SandboxTokenVerifier:
             self._jwks_url = f"{parts.scheme}://{parts.netloc}{_JWKS_PATH}"
         else:
             self._jwks_url = _default_jwks_url()
+        _check_jwks_url(self._jwks_url, allow_insecure_jwks)
         self._timeout = timeout
         self._lock = threading.Lock()
         self._fetch_lock = threading.Lock()

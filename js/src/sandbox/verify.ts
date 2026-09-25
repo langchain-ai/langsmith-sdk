@@ -58,6 +58,11 @@ export interface SandboxTokenVerifierConfig {
   jwksUrl?: string;
   /** Timeout in milliseconds for fetching the JWKS. */
   timeoutMs?: number;
+  /**
+   * Allow fetching the JWKS over plain HTTP from a non-loopback host. Anyone
+   * who can tamper with that traffic can forge tokens this verifier accepts.
+   */
+  allowInsecureJwks?: boolean;
 }
 
 export interface VerifyUserTokenOptions {
@@ -121,6 +126,24 @@ function decodeJson(segment: string): Claims {
     throw new Error("not a JSON object");
   }
   return value as Claims;
+}
+
+function isLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "[::1]" ||
+    /^127(\.\d{1,3}){3}$/.test(hostname)
+  );
+}
+
+function checkJwksUrl(url: string, allowInsecure: boolean): void {
+  const { protocol, hostname } = new URL(url);
+  if (protocol === "https:" || allowInsecure) return;
+  if (protocol === "http:" && isLoopback(hostname)) return;
+  throw new Error(
+    `JWKS URL must use https, got ${JSON.stringify(url)}; pass ` +
+      "allowInsecureJwks: true only if the network path to LangSmith is trusted",
+  );
 }
 
 function jwksUrlFrom(apiUrl: string): string {
@@ -191,6 +214,7 @@ export class SandboxTokenVerifier {
           getLangSmithEnvironmentVariable("ENDPOINT") ??
           "https://api.smith.langchain.com",
       );
+    checkJwksUrl(this.jwksUrl, config.allowInsecureJwks ?? false);
     this.timeoutMs = config.timeoutMs ?? 10_000;
   }
 
