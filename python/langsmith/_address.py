@@ -15,7 +15,9 @@ Example:
     ```python
     import langsmith as ls
 
-    support = ls.address("customer-support", agent_environment="production")
+    support = ls.address(
+        agent_id="customer-support", agent_environment="production"
+    )
 
 
     @support.traceable
@@ -222,7 +224,7 @@ def _env_value(field_name: str) -> Optional[str]:
     return utils.get_env_var(field_name.upper(), namespaces=("LANGSMITH",))
 
 
-def address(agent_id: str, *, agent_environment: str) -> Address:
+def address(*, agent_id: str, agent_environment: str) -> Address:
     """(experimental) Build an address to send runs to.
 
     Args:

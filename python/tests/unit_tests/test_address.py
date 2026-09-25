@@ -17,7 +17,7 @@ from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree
 from langsmith.schemas import FeedbackCreate
 
-SUPPORT = ls.address("support", agent_environment="production")
+SUPPORT = ls.address(agent_id="support", agent_environment="production")
 STAGING = SUPPORT.with_agent_environment("staging")
 UNTRACED = "LangSmith is not tracing this call"
 
@@ -80,7 +80,7 @@ class TestAddress:
     )
     def test_invalid_values_fail_at_construction(self, kwargs: dict) -> None:
         with pytest.raises(ls_utils.LangSmithUserError):
-            ls.address(kwargs.pop("agent_id"), **kwargs)
+            ls.address(**kwargs)
 
     def test_renders_to_the_wire_fields(self) -> None:
         assert SUPPORT.to_wire() == {
@@ -96,7 +96,7 @@ class TestAddress:
     def test_reads_the_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert ls.Address.from_env() is None
         _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
-        assert ls.Address.from_env() == ls.address("a", agent_environment="e")
+        assert ls.Address.from_env() == ls.address(agent_id="a", agent_environment="e")
 
     def test_half_an_address_in_the_env_raises(
         self, monkeypatch: pytest.MonkeyPatch
@@ -149,7 +149,7 @@ class TestPrecedence:
     ) -> None:
         _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
         with ls.tracing_context(enabled=True, client=client):
-            assert _root() == (None, ls.address("a", agent_environment="e"))
+            assert _root() == (None, ls.address(agent_id="a", agent_environment="e"))
 
     @pytest.mark.parametrize(
         "call",
