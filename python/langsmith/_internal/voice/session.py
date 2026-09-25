@@ -82,9 +82,11 @@ class EventSession:
     _agent_bytes: int = field(default=0, init=False)
     _audio_truncated: bool = field(default=False, init=False)
     event_count: int = 0
-    # Conversation transcript, in turn order: {"role", "content"} per line.
-    # Surfaced as the root span's ``outputs`` at finalize.
-    messages: list[dict[str, str]] = field(default_factory=list)
+    # Conversation transcript, in turn order. Most entries are
+    # {"role", "content"}; tool activity uses OpenAI-style assistant
+    # ``tool_calls`` and ``tool`` result messages. Surfaced as the root span's
+    # ``outputs`` at finalize.
+    messages: list[dict[str, Any]] = field(default_factory=list)
     # Optional turn grouping (see ``start_turn``). When a turn is open, event
     # spans nest under it instead of directly under the root; adapters that
     # never call ``start_turn`` get the original flat shape unchanged.
@@ -102,10 +104,10 @@ class EventSession:
         """Open a new conversational-turn span, closing the previous one.
 
         Subsequent ``event_span`` calls nest under this turn until the next
-        ``start_turn`` (or ``finalize``). The turn's ``outputs`` become the
-        transcript lines added during it, so each turn previews its own
-        exchange. Opt-in: an adapter that never calls this keeps the flat root
-        layout.
+        ``start_turn`` / ``end_turn`` (or ``finalize``). User transcript lines
+        become the turn's ``inputs`` and assistant transcript lines become its
+        ``outputs``, so each turn reads like a normal chain run. Opt-in: an
+        adapter that never calls this keeps the flat root layout.
         """
         self._close_turn()
         self._turn_count += 1
@@ -120,14 +122,30 @@ class EventSession:
         turn.post()
         self._current_turn = turn
 
-    def _close_turn(self) -> None:
+    def _close_turn(self) -> RunTree | None:
         """End the currently open turn span, if any, with its transcript."""
-        if self._current_turn is None:
-            return
+        turn = self._current_turn
+        if turn is None:
+            return None
         msgs = self.messages[self._turn_msg_start :]
-        self._current_turn.end(outputs={"messages": msgs} if msgs else {})
-        self._current_turn.patch()
+        inputs = [msg for msg in msgs if msg["role"] == "user"]
+        outputs = [msg for msg in msgs if msg["role"] != "user"]
+        turn.set(inputs={"messages": inputs} if inputs else {})
+        turn.end(outputs={"messages": outputs} if outputs else {})
+        # The transcript only exists once the turn ends; ``patch`` omits inputs
+        # by default, so re-send them explicitly.
+        turn.patch(exclude_inputs=False)
         self._current_turn = None
+        return turn
+
+    def end_turn(self) -> RunTree | None:
+        """Close the current turn; returns it so late metadata can still land."""
+        return self._close_turn()
+
+    @property
+    def has_open_turn(self) -> bool:
+        """Whether a conversation turn is currently collecting events."""
+        return self._current_turn is not None
 
     def add_message(self, role: str, content: str) -> None:
         """Append one transcript line to the conversation rollup.
@@ -139,6 +157,37 @@ class EventSession:
         content = (content or "").strip()
         if content:
             self.messages.append({"role": role, "content": scrub(content)})
+
+    def add_tool_calls(self, calls: Sequence[tuple[str, str, Any]]) -> None:
+        """Append one allowlisted assistant tool-call message.
+
+        ``calls`` contains ``(id, name, arguments)`` tuples curated by the
+        provider adapter. Only the standard tool-call fields are retained;
+        arguments are scrubbed and bounded like all other trace payloads.
+        """
+        tool_calls = [
+            {
+                "id": scrub(call_id),
+                "type": "function",
+                "function": {"name": scrub(name), "arguments": scrub(arguments)},
+            }
+            for call_id, name, arguments in calls
+        ]
+        if tool_calls:
+            self.messages.append(
+                {"role": "assistant", "content": "", "tool_calls": tool_calls}
+            )
+
+    def add_tool_result(self, *, tool_call_id: str, name: str, content: Any) -> None:
+        """Append one allowlisted tool result to the conversation transcript."""
+        self.messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": scrub(tool_call_id),
+                "name": scrub(name),
+                "content": scrub(content),
+            }
+        )
 
     def record_user(self, t: float, data: bytes) -> None:
         """Record a timestamped chunk of user (mic) PCM16 for the stereo WAV.
@@ -210,13 +259,8 @@ class EventSession:
         currently open turn, so call it before the next ``start_turn`` closes
         that turn.
         """
-        if self._current_turn is None:
-            return
-        extra = self._current_turn.extra or {}
-        metadata = dict(extra.get("metadata") or {})
-        metadata.update(kv)
-        extra["metadata"] = metadata
-        self._current_turn.extra = extra
+        if self._current_turn is not None:
+            add_metadata(self._current_turn, **kv)
 
     @contextmanager
     def event_span(
@@ -385,11 +429,7 @@ class EventSession:
         if usage_metadata is not None:
             run.set(usage_metadata=cast("Any", usage_metadata))
         if metadata:
-            extra = run.extra or {}
-            merged = dict(extra.get("metadata") or {})
-            merged.update(scrub(metadata))
-            extra["metadata"] = merged
-            run.extra = extra
+            add_metadata(run, **metadata)
         run.end(outputs=scrub(outputs) if outputs is not None else {})
         run.patch()
 
@@ -446,6 +486,15 @@ class EventSession:
         # pane without expanding a single child span.
         self.run.end(outputs={"messages": self.messages} if self.messages else {})
         self.run.patch()
+
+
+def add_metadata(run: RunTree, **kv: Any) -> None:
+    """Merge scrubbed key/values into ``run``'s metadata (does not patch)."""
+    extra = run.extra or {}
+    metadata = dict(extra.get("metadata") or {})
+    metadata.update(scrub(kv))
+    extra["metadata"] = metadata
+    run.extra = extra
 
 
 def start_session(

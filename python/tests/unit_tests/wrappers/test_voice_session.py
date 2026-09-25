@@ -179,12 +179,62 @@ class TestTranscriptAndTitle:
             ]
         }
 
+    def test_tool_calls_and_results_roll_up_with_allowlisted_fields(self):
+        s = _session()
+        s.add_message("user", "weather?")
+        s.add_tool_calls(
+            [
+                (
+                    "call-1",
+                    "lookup_weather",
+                    {"city": "Paris", "note": "x" * 3000},
+                )
+            ]
+        )
+        s.add_tool_result(
+            tool_call_id="call-1",
+            name="lookup_weather",
+            content={"temperature": 21},
+        )
+        s.finalize()
+
+        messages = s.run.outputs["messages"]
+        assert messages[1]["role"] == "assistant"
+        assert messages[1]["tool_calls"][0]["function"]["name"] == "lookup_weather"
+        assert len(messages[1]["tool_calls"][0]["function"]["arguments"]["note"]) < 3000
+        assert messages[2] == {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "name": "lookup_weather",
+            "content": {"temperature": 21},
+        }
+
 
 class TestTurns:
+    def test_turn_patch_resends_inputs_learned_after_post(self):
+        s = _session()
+        patched = []
+        real_patch = session_mod.RunTree.patch
+
+        def spy_patch(self, *args, **kwargs):
+            if self.name == "turn":
+                patched.append((dict(self.inputs), kwargs.get("exclude_inputs")))
+            return real_patch(self, *args, **kwargs)
+
+        with mock.patch.object(session_mod.RunTree, "patch", spy_patch):
+            s.start_turn()
+            s.add_message("user", "weather?")
+            s.end_turn()
+
+        assert patched == [
+            ({"messages": [{"role": "user", "content": "weather?"}]}, False)
+        ]
+
     def test_turn_groups_messages_and_carries_metadata(self):
         s = _session()
         s.start_turn()
         s.add_message("user", "weather?")
+        s.add_message("assistant", "sunny")
         s.add_turn_metadata(was_interrupted=True, latency_to_first_audio_ms=120)
         # Read the open turn span before finalize closes it.
         turn = s._current_turn
@@ -194,8 +244,9 @@ class TestTurns:
         assert meta["was_interrupted"] is True
         assert meta["latency_to_first_audio_ms"] == 120
         s.finalize()
-        # Its messages were rolled up as the turn's outputs on close.
-        assert turn.outputs == {"messages": [{"role": "user", "content": "weather?"}]}
+        # User messages are inputs; assistant messages are outputs.
+        assert turn.inputs == {"messages": [{"role": "user", "content": "weather?"}]}
+        assert turn.outputs == {"messages": [{"role": "assistant", "content": "sunny"}]}
 
     def test_add_turn_metadata_noop_without_open_turn(self):
         s = _session()
