@@ -1322,19 +1322,24 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-        # The header is one precedence level: an address named above it (a
-        # `tracing_context`, passed privately as `_address_above`) wins, and
-        # it beats the caller's own arguments, whichever mode each names.
-        above = init_args.pop("_address_above", None) or {}
-        below = _take_address(init_args)
+        # As for `project_name` on `main`: the header's destination, project or
+        # address, outranks the caller's, so a child joins its parent's.
+        caller = _take_address(init_args)
         from_baggage: dict[str, Any] = {}
-        if baggage.project_name:
-            # Untrusted input must never raise, so a header naming both keeps
-            # the project, as it always has.
+        if baggage.project_name and baggage.address is not None:
+            # Both at one level. Untrusted input must never raise, so the
+            # header's destination is ignored instead.
+            logger.warning(
+                "Ignoring a distributed-tracing `baggage` header that names both "
+                "a project (%r) and an address (%r).",
+                baggage.project_name,
+                baggage.address,
+            )
+        elif baggage.project_name:
             from_baggage["project_name"] = baggage.project_name
         elif baggage.address is not None:
             from_baggage["address"] = baggage.address
-        init_args.update(above or from_baggage or below)
+        init_args.update(from_baggage or caller)
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
