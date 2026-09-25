@@ -9,6 +9,7 @@ from enum import Enum
 from html import escape as _html_escape
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     NamedTuple,
@@ -27,8 +28,13 @@ from pydantic import (
     StrictBool,
     StrictFloat,
     StrictInt,
+    field_validator,
 )
 from typing_extensions import Literal, NotRequired, TypedDict
+
+if TYPE_CHECKING:
+    # Type-checking only: `_address` imports `utils`, which imports this module.
+    from langsmith._address import Address
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[dict, str, StrictBool, StrictInt, StrictFloat, None]
@@ -538,14 +544,7 @@ class RunTypeEnum(str, Enum):
 
 
 class RunLikeDict(TypedDict, total=False):
-    """Run-like dictionary, for type-hinting.
-
-    !!! warning "Experimental"
-        `agent_id` and `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the runs, so
-        tracing is lost rather than falling back to a project. Both keys may
-        change without notice.
-    """
+    """Run-like dictionary, for type-hinting."""
 
     name: str
     run_type: RunTypeEnum
@@ -565,8 +564,8 @@ class RunLikeDict(TypedDict, total=False):
     id: Optional[UUID]
     session_id: Optional[UUID]
     session_name: Optional[str]
-    agent_id: Optional[str]
-    agent_environment: Optional[str]
+    address: Optional[Address]
+    """(experimental) An address to send the run to, instead of a project."""
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
@@ -623,15 +622,7 @@ class FeedbackSourceType(Enum):
 
 
 class FeedbackBase(BaseModel):
-    """Feedback schema.
-
-    !!! warning "Experimental"
-        `agent_id` / `agent_environment` are in beta. Agent addressing is
-        enabled per workspace; a workspace without it rejects the feedback,
-        so it is lost rather than falling back to a project. The agent must
-        already exist -- unlike run ingestion, a feedback part never creates
-        one. Both may change without notice.
-    """
+    """Feedback schema."""
 
     id: UUID
     """The unique ID of the feedback."""
@@ -657,16 +648,6 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
     session_id: Optional[UUID] = None
     """The associated project ID (Session = Project) this feedback is logged for."""
-    agent_id: Optional[str] = None
-    """The agent this feedback is logged for, instead of a project.
-
-    Copied from the run the feedback describes, never read from the environment:
-    feedback follows its run, so an ambient `LANGSMITH_AGENT_ID` must not
-    redirect it somewhere the run never went. Mutually exclusive with
-    `session_id`.
-    """
-    agent_environment: Optional[str] = None
-    """Narrows `agent_id`; meaningless without it."""
     start_time: Optional[datetime] = None
     """The start time of the run this feedback is associated with."""
     comparative_experiment_id: Optional[UUID] = None
@@ -714,6 +695,27 @@ class FeedbackCreate(FeedbackBase):
     extend_trace_retention: bool = True
     """When true, extend trace retention as a side effect of creating this feedback."""
     error: Optional[bool] = None
+    if TYPE_CHECKING:
+        address: Optional[Address] = None
+    else:
+        # `Address` can't be imported here at runtime (see the import above),
+        # so the field is declared loosely and checked by `_check_address`.
+        address: Optional[Any] = Field(default=None, exclude=True)
+    """(experimental) An address, rendered into its wire fields on dump."""
+
+    @field_validator("address")
+    @classmethod
+    def _check_address(cls, value: Any) -> Optional[Address]:
+        from langsmith._internal._agent_addressing import check_address
+
+        return check_address(value)
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """Dump, with `address` unpacked into its wire fields."""
+        dumped = super().model_dump(**kwargs)
+        if self.address is not None:
+            dumped.update(self.address.to_wire())
+        return dumped
 
 
 class Feedback(FeedbackBase):

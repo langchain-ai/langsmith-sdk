@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._address import Address
 from langsmith._internal import _agent_addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
@@ -615,19 +616,17 @@ class AsyncClient:
         """Create a run.
 
         !!! warning "Experimental"
-            `agent_id` / `agent_environment` address the run to an agent
-            instead of a project. Agent addressing is in beta and enabled per
-            workspace; a workspace without it rejects the run, so the trace is
-            lost rather than falling back to a project. Both may change
-            without notice.
+            `address` sends the run to an address instead of a project. It is
+            in beta and enabled per workspace; a workspace without it rejects
+            the run, so the trace is lost rather than falling back to a
+            project. It may change without notice.
         """
+        _agent_addressing.check_address(kwargs.get("address"))
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
         _agent_addressing.reject_conflicting(
-            project=project_name,
-            agent_id=kwargs.get("agent_id"),
-            agent_environment=kwargs.get("agent_environment"),
+            project=project_name, address=kwargs.get("address")
         )
         if (
             kwargs.get("session_name") is not None
@@ -636,15 +635,16 @@ class AsyncClient:
             # Already addressed by an incoming run body; leave it alone.
             session_name = project_name
         else:
-            (
-                session_name,
-                kwargs["agent_id"],
-                kwargs["agent_environment"],
-            ) = _agent_addressing.resolve(
-                project_name,
-                kwargs.get("agent_id"),
-                kwargs.get("agent_environment"),
-            )
+            # A `session_name=None` in `kwargs` would override the result below.
+            kwargs.pop("session_name", None)
+            try:
+                session_name, kwargs["address"] = _agent_addressing.resolve(
+                    (project_name, kwargs.get("address"))
+                )
+            except _agent_addressing.EnvAddressError as e:
+                # Dropped, not raised: tracing must not break the caller.
+                _agent_addressing.log_untraced(e)
+                return
         run_create = {
             "name": name,
             "id": kwargs.get("id") or uuid.uuid4(),
@@ -668,15 +668,13 @@ class AsyncClient:
 
         Args:
             run_id: The run to update.
-            **kwargs: The fields to update, and `agent_id` / `agent_environment`.
+            **kwargs: The fields to update, and `address`.
 
                 !!! warning "Experimental"
-                    `agent_id` / `agent_environment` are in beta. They address
-                    the patch to an agent, and must match the post they belong
-                    to: an update that names neither is resolved by run id, as
-                    every update was before. Agent addressing is enabled per
-                    workspace; a workspace without it rejects the runs. Both
-                    may change without notice.
+                    `address` is in beta. It sends the patch to an address,
+                    and must match the post it belongs to: an update that
+                    names none is resolved by run id, as every update was
+                    before. It may change without notice.
         """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
         _agent_addressing.apply_to_payload(data, update=True)
@@ -1183,18 +1181,17 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
-        agent_id: Optional[str] = None,
-        agent_environment: Optional[str] = None,
+        address: Optional[Address] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
 
         !!! warning "Experimental"
-            `agent_id` / `agent_environment` are in beta. Agent addressing is
-            enabled per workspace; a workspace without it rejects the feedback,
-            so it is lost rather than falling back to a project. The agent must
-            already exist -- unlike run ingestion, a feedback part never creates
-            one. Both may change without notice.
+            `address` is in beta. It is enabled per workspace; a
+            workspace without it rejects the feedback, so it is lost rather
+            than falling back to a project. The address must already exist --
+            unlike run ingestion, a feedback part never creates one. It may
+            change without notice.
 
         Args:
             run_id: The ID of the run to provide feedback for. At least one of
@@ -1226,14 +1223,11 @@ class AsyncClient:
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
-            agent_id: The agent to attach this feedback to, instead of a
+            address: The address to attach this feedback to, instead of a
                 project. Pass whatever the run being described was traced to.
                 Cannot be combined with `session_id` / `project_id`, and is
-                never read from `LANGSMITH_AGENT_ID`: feedback follows its run,
-                not the ambient environment. The agent must already exist;
-                unlike run ingestion, a feedback part never creates one.
-            agent_environment: Narrows `agent_id`, and requires it. Defaults
-                server-side to `production` when omitted.
+                never read from the env vars: feedback follows its run, not
+                the ambient environment.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1242,6 +1236,7 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
+        address = _agent_addressing.check_address(address)
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -1249,9 +1244,9 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None and agent_id is None:
-            # An agent pair locates the project directly, so it satisfies the
-            # same requirement this gate exists for.
+        if run_id is not None and session_id is None and address is None:
+            # An address locates the project directly, so it satisfies the same
+            # requirement this gate exists for.
             ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
@@ -1306,8 +1301,7 @@ class AsyncClient:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=session_id_,
-            agent_id=agent_id,
-            agent_environment=agent_environment,
+            address=address,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(
                 comparative_experiment_id, accept_null=True
