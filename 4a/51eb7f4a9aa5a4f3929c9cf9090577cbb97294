@@ -1,0 +1,57 @@
+python/langsmith/utils.py
+  s_c849eb4dd0e538::t_f28a5db49de948 510-539
+python/tests/unit_tests/test_run_trees.py
+  s_c849eb4dd0e538::t_f28a5db49de948 1109-1143
+python/langsmith/client.py
+  s_c849eb4dd0e538::t_f28a5db49de948 2454,2467-2474,2498-2501,2725,2730,4003
+  s_c849eb4dd0e538::t_f90ad55fb03d7d 8441-8451
+  s_c849eb4dd0e538::t_e1e9262e88b3d3 8573-8574
+  s_c849eb4dd0e538::t_21ad3b23ff5ec2 8374-8375
+  s_c849eb4dd0e538::t_8fa72687971fd5 8509-8511
+python/tests/unit_tests/test_client.py
+  s_c849eb4dd0e538::t_553ed5dd515a6c 53,8450-8517
+  s_c849eb4dd0e538::t_0f4f04cbacfac2 8579,8659
+  s_c849eb4dd0e538::t_cc2b212398d204 8657-8658,8660
+  s_c849eb4dd0e538::t_a18d40dc27086f 8667
+  s_c849eb4dd0e538::t_684365ba2d48bd 8164
+  s_c849eb4dd0e538::t_d240725dfbfa5f 8558-8560,8587-8589,8591,8594-8595,8598,8608,8613-8639,8644-8656,8661-8666,8668-8669
+  s_c849eb4dd0e538::t_caa7d17ffc747c 52,55
+  s_c849eb4dd0e538::t_93966915f67224 8561,8571
+  s_c849eb4dd0e538::t_e615f51a674896 8562-8565,8568-8570,8572-8578,8580-8586,8590,8596-8597,8599-8607
+  s_c849eb4dd0e538::t_b71a929a558b3f 8592-8593,8609-8612,8640-8643
+  s_c849eb4dd0e538::t_98ec59bc4ca4dc 8566-8567
+  s_c849eb4dd0e538::t_1bda3af9751c27 8450-8451
+  s_c849eb4dd0e538::t_75b00ec5dea76c 8518-8519
+  s_c849eb4dd0e538::t_7f6892b23a2f26 8556-8557
+python/langsmith/run_helpers.py
+  s_c849eb4dd0e538::t_f28a5db49de948 1394,1404-1406
+python/langsmith/run_trees.py
+  s_c849eb4dd0e538::t_f28a5db49de948 206,432-433,435,1357-1365,1367-1377,1380
+python/langsmith/async_client.py
+  s_c849eb4dd0e538::t_f28a5db49de948 632,637-638,669
+  s_c849eb4dd0e538::t_900284ab641993 1289-1290
+  s_c849eb4dd0e538::t_820a1eda9256ec 1209-1216
+  s_c849eb4dd0e538::t_beb1fc10e4026c 1173-1174
+  s_c849eb4dd0e538::t_0e9cae329a53e6 1232-1234
+python/langsmith/schemas.py
+  s_c849eb4dd0e538::t_612c94196dd46c 652-661
+python/langsmith/_internal/_operations.py
+  s_c849eb4dd0e538::t_89b9e03ec532c1 185-191
+  s_c849eb4dd0e538::t_70771a92993ae9 184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4a51eb7f4a9aa5a4f3929c9cf9090577cbb97294",
+  "prompts": {},
+  "sessions": {
+    "s_c849eb4dd0e538": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8765c25-fb1f-4465-a790-ed0986da2072",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

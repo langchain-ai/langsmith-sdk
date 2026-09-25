@@ -1,0 +1,31 @@
+examples/addressing/7_inheritance.py
+  s_1494656ad43aad::t_68c140946216fd 6
+examples/addressing/8_replicas.py
+  s_1494656ad43aad::t_68c140946216fd 5
+examples/addressing/5_configure.py
+  s_1494656ad43aad::t_68c140946216fd 5-7
+examples/addressing/2_distributed_parent.py
+  s_1494656ad43aad::t_68c140946216fd 10
+examples/addressing/1_tracing_context.py
+  s_1494656ad43aad::t_68c140946216fd 9
+examples/addressing/3_langsmith_extra.py
+  s_1494656ad43aad::t_68c140946216fd 9
+examples/addressing/4_traceable.py
+  s_1494656ad43aad::t_68c140946216fd 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7457ed890adfe03fb514b649acc62715be1e53c5",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

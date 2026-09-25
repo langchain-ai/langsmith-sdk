@@ -1,0 +1,29 @@
+python/tests/integration_tests/agent_addressing/test_create_feedback.py
+  s_211bb965a94e13::t_15cc79e952050a 53,66,77-79,87,108-110,149
+python/tests/integration_tests/agent_addressing/test_create_update_run.py
+  s_211bb965a94e13::t_02a1e3090df78f 62
+python/tests/integration_tests/agent_addressing/test_evaluate.py
+  s_211bb965a94e13::t_d9782aa8500bce 86-88,107
+python/tests/integration_tests/agent_addressing/test_multipart_ingest.py
+  s_211bb965a94e13::t_51a454976ac9cc 41
+python/tests/integration_tests/agent_addressing/test_rollout_disabled.py
+  s_211bb965a94e13::t_302fbef982379c 103,124
+python/tests/integration_tests/agent_addressing/test_traceable.py
+  s_211bb965a94e13::t_7fc410c6728011 29,105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ef10c0814be1d982be4a6e06a0091dabdfcd239f",
+  "prompts": {},
+  "sessions": {
+    "s_211bb965a94e13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfd3be77-faca-4494-9cc1-aa4d0cbb1e09",
+        "model": "unknown"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

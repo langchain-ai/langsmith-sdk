@@ -1,0 +1,21 @@
+js/package.json
+  s_3e8aa13e781cbf::t_4c583f7880c5c5 3
+js/src/index.ts
+  s_3e8aa13e781cbf::t_4c583f7880c5c5 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f1d97aff16f6e10f4ef3f236677fabfc9d8d4ea3",
+  "prompts": {},
+  "sessions": {
+    "s_3e8aa13e781cbf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "99ab56c5-252b-459b-a9ab-efcc9dc32f7c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
