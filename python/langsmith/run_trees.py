@@ -357,7 +357,7 @@ def configure(
             project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
-        if set_address or (project_name is not _SENTINEL and project_name is not None):
+        if set_address or project_name is not _SENTINEL:
             address = address if set_address else None
             _context._ADDRESS.set(address)
             _context._GLOBAL_ADDRESS = address
@@ -1327,15 +1327,16 @@ class RunTree(ls_schemas.RunBase):
         caller = _take_address(init_args)
         from_baggage: dict[str, Any] = {}
         if baggage.project_name and baggage.address is not None:
-            # Both at one level. Untrusted input must never raise, so the
-            # header's destination is ignored instead.
+            # Both at one level. Untrusted input must never raise, and joining
+            # the upstream trace in some other destination would misfile it,
+            # so the header parent is rejected outright. The values are
+            # untrusted, so they are not logged.
             logger.warning(
-                "Ignoring a distributed-tracing `baggage` header that names both "
-                "a project (%r) and an address (%r).",
-                baggage.project_name,
-                baggage.address,
+                "Ignoring a distributed-tracing parent whose `baggage` header "
+                "names both a project and an address."
             )
-        elif baggage.project_name:
+            return None  # type: ignore[return-value]
+        if baggage.project_name:
             from_baggage["project_name"] = baggage.project_name
         elif baggage.address is not None:
             from_baggage["address"] = baggage.address
