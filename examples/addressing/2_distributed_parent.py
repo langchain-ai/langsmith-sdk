@@ -7,7 +7,7 @@ downstream root joins the same address without naming one.
 import langsmith as ls
 
 support_eu = ls.address(
-    "customer-support", agent_environment="production", agent_region="eu"
+    agent_id="customer-support", agent_environment="production", agent_region="eu"
 )
 
 

@@ -1661,14 +1661,16 @@ def _get_parent_run(
         return None
     if isinstance(parent, run_trees.RunTree):
         return parent
-    # Only what was named in code, and no default, in the order `main` used
-    # for `project_name`: what nothing settles, the `RunTree` validator
-    # resolves from the environment. A header's own destination outranks it.
-    named = _agent_addressing.first_named(
-        *_addressing_tiers(
-            langsmith_extra.get("project_name"), langsmith_extra.get("address")
+    if isinstance(parent, (Mapping, str)):
+        # Only what was named in code, and no default, in the order `main`
+        # used for `project_name`: what nothing settles, the `RunTree`
+        # validator resolves from the environment. A header's own destination
+        # outranks it. Resolved only here, the one case that needs it.
+        named = _agent_addressing.first_named(
+            *_addressing_tiers(
+                langsmith_extra.get("project_name"), langsmith_extra.get("address")
+            )
         )
-    )
     if isinstance(parent, Mapping):
         return run_trees.RunTree.from_headers(
             parent,

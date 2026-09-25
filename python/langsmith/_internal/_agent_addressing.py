@@ -29,7 +29,7 @@ def check_address(address: Any) -> Optional[Address]:
         return address
     raise utils.LangSmithUserError(
         f"`address` must be a `langsmith.Address`, got {type(address).__name__}. "
-        "Build one with `langsmith.address(agent_id, agent_environment=...)`."
+        "Build one with `langsmith.address(agent_id=..., agent_environment=...)`."
     )
 
 
