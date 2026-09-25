@@ -11,7 +11,6 @@ import contextlib
 import dataclasses
 import datetime
 import logging
-import pathlib
 import time
 import urllib.parse
 import uuid
@@ -27,24 +26,6 @@ from langsmith import utils as ls_utils
 from langsmith.client import Client
 from langsmith.run_helpers import get_current_run_tree, traceable, tracing_context
 from langsmith.run_trees import configure as ls_configure
-
-_HERE = pathlib.Path(__file__).parent
-
-# TEMPORARY: the CI workspace (LANGSMITH_API_KEY_BETA on beta) doesn't have
-# agent addressing enabled, so every addressed run is refused there. Remove
-# once it is, to run the suite again.
-_DISABLED_REASON = "agent addressing is not enabled in the CI workspace yet"
-
-
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
-    """Skip every test in this folder until the CI workspace supports it."""
-    skip = pytest.mark.skip(reason=_DISABLED_REASON)
-    for item in items:
-        if _HERE in item.path.parents:
-            item.add_marker(skip)
-
 
 logger = logging.getLogger(__name__)
 
