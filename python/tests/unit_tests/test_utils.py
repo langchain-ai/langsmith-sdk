@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 import attr
 import dataclasses_json
 import pytest
+import requests
 from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
@@ -711,3 +712,25 @@ def test_an_empty_project_variable_falls_back_to_default(
 
     assert ls_utils.get_tracer_project() == ""
     assert _agent_addressing.resolve()[0] == "default"
+
+
+def test_raise_for_status_with_text_keeps_the_requests_response():
+    # A positional argument lands in `.args`, not `.response`, so the status code and
+    # headers of the failed request were unreachable from the raised error even
+    # though the exception it was raised from still carried them.
+    response = requests.Response()
+    response.status_code = 429
+    response.reason = "Too Many Requests"
+    response.headers["Retry-After"] = "7"
+    response._content = b"rate limited"
+    response.url = "https://example.test/api"
+
+    with pytest.raises(requests.HTTPError) as exc_info:
+        ls_utils.raise_for_status_with_text(response)
+
+    error = exc_info.value
+    assert error.response is response
+    assert error.response.status_code == 429
+    assert error.response.headers["Retry-After"] == "7"
+    # `.args` is unchanged, so callers reading the text positionally still work.
+    assert error.args[1] == "rate limited"
