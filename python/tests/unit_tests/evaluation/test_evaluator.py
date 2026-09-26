@@ -431,3 +431,89 @@ def test_check_value_non_numeric(caplog):
         "Numeric values should be provided in the 'score' field, not 'value'."
         not in caplog.text
     )
+
+
+# ── Regression tests for langchain#31802 ──────────────────────────
+# feedback_config must preserve arbitrary dict keys without silent dropping.
+
+
+def test_feedback_config_preserves_arbitrary_keys():
+    """feedback_config must preserve arbitrary dict keys (the bug from #31802)."""
+    result = EvaluationResult(
+        key="sentiment",
+        value="positive",
+        feedback_config={"threshold": 1.0},
+    )
+    assert result.feedback_config == {"threshold": 1.0}
+
+
+def test_feedback_config_preserves_multiple_keys():
+    """feedback_config must preserve multiple arbitrary keys."""
+    result = EvaluationResult(
+        key="accuracy",
+        score=0.95,
+        feedback_config={"threshold": 0.8, "weight": 2.0, "custom_flag": True},
+    )
+    expected = {"threshold": 0.8, "weight": 2.0, "custom_flag": True}
+    assert result.feedback_config == expected
+
+
+def test_feedback_config_valid_feedbackconfig():
+    """Valid FeedbackConfig dicts must still work."""
+    result = EvaluationResult(
+        key="score",
+        score=0.9,
+        feedback_config={"type": "continuous", "min": 0.0, "max": 1.0},
+    )
+    assert result.feedback_config == {"type": "continuous", "min": 0.0, "max": 1.0}
+
+
+def test_feedback_config_none():
+    """None feedback_config must work."""
+    result = EvaluationResult(key="test", value="ok")
+    assert result.feedback_config is None
+
+
+def test_feedback_config_empty_dict():
+    """Empty dict must be preserved."""
+    result = EvaluationResult(key="test", value="ok", feedback_config={})
+    assert result.feedback_config == {}
+
+
+def test_feedback_config_with_model_validate():
+    """model_validate must also preserve arbitrary keys."""
+    result = EvaluationResult.model_validate(
+        {
+            "key": "test",
+            "value": "ok",
+            "feedback_config": {"threshold": 1.0, "custom": "value"},
+        }
+    )
+    assert result.feedback_config == {"threshold": 1.0, "custom": "value"}
+
+
+def test_model_level_extra_still_forbidden():
+    """Extra fields at model level must still be rejected."""
+    with pytest.raises(Exception):
+        EvaluationResult(key="test", value="ok", unknown_field="should_fail")
+
+
+def test_feedback_config_invalid_type_rejected():
+    """Invalid 'type' in feedback_config must be rejected (real behavioral change)."""
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="feedback_config.type must be one of"):
+        EvaluationResult(
+            key="test",
+            feedback_config={"type": "invalid_type", "threshold": 1.0},
+        )
+
+
+def test_feedback_config_valid_type_accepted():
+    """Valid 'type' values must be accepted."""
+    for valid_type in ["continuous", "categorical", "freeform"]:
+        result = EvaluationResult(
+            key="test",
+            feedback_config={"type": valid_type, "threshold": 1.0},
+        )
+        assert result.feedback_config["type"] == valid_type
+        assert result.feedback_config["threshold"] == 1.0
