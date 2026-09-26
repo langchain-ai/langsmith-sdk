@@ -59,11 +59,19 @@ export interface RegistryListResponse {
 export interface RegistryResponse {
   id?: string;
 
+  auth_type?: 'DOCKER_CONFIG' | 'AWS_ROLE';
+
+  aws_role_arn?: string;
+
   created_at?: string;
 
   created_by?: string;
 
   name?: string;
+
+  provider?: 'DOCKER_REGISTRY' | 'HARBOR' | 'GHCR' | 'ECR' | 'GAR' | 'DOCKER_HUB';
+
+  repository_search_mode?: 'GLOBAL' | 'SCOPED' | 'NONE';
 
   updated_at?: string;
 
@@ -75,14 +83,22 @@ export interface RegistryResponse {
 export interface RegistryCreateParams {
   name: string;
 
-  password: string;
-
   url: string;
 
-  username: string;
+  auth_type?: 'DOCKER_CONFIG' | 'AWS_ROLE';
+
+  aws_role_arn?: string;
+
+  password?: string;
+
+  username?: string;
 }
 
 export interface RegistryUpdateParams {
+  auth_type?: 'DOCKER_CONFIG' | 'AWS_ROLE';
+
+  aws_role_arn?: string;
+
   name?: string;
 
   password?: string;

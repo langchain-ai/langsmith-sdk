@@ -6,9 +6,13 @@ import * as BoxesAPI from './boxes.js';
 import {
   BoxCreateParams,
   BoxCreateSnapshotParams,
+  BoxDeleteServiceURLParams,
   BoxGenerateDownloadURLParams,
   BoxGenerateServiceURLParams,
   BoxListParams,
+  BoxListServiceURLsParams,
+  BoxListServiceURLsResponse,
+  BoxListServiceURLsResponsesItemsCursorGetPagination,
   BoxUpdateParams,
   Boxes,
 } from './boxes.js';
@@ -28,13 +32,41 @@ import {
   SnapshotRetrieveByNameResponse,
   Snapshots,
 } from './snapshots.js';
-import { ItemsCursorGetPagination } from '../../core/pagination.js';
+import {
+  ItemsCursorGetPagination,
+  type ItemsCursorGetPaginationParams,
+  PagePromise,
+} from '../../core/pagination.js';
+import { RequestOptions } from '../../internal/request-options.js';
 
 export class Sandboxes extends APIResource {
   boxes: BoxesAPI.Boxes = new BoxesAPI.Boxes(this._client);
   registries: RegistriesAPI.Registries = new RegistriesAPI.Registries(this._client);
   snapshots: SnapshotsAPI.Snapshots = new SnapshotsAPI.Snapshots(this._client);
+
+  /**
+   * Returns priced usage per sandbox or snapshot and UTC hour in the half-open
+   * requested interval. LCU uses the recorded compute amount for sandboxes;
+   * snapshots have zero LCU. LSU allocates the recorded workspace storage amount
+   * proportionally to attributed bytes, including checkpoints on their sandbox and
+   * snapshots as separate resources. Resource filters preserve each resource's
+   * share. Rate changes do not reprice recorded amounts. An access-filtered page can
+   * have no items and a non-null next_cursor; continue until next_cursor is null.
+   */
+  listUsageCosts(
+    query: SandboxListUsageCostsParams,
+    options?: RequestOptions,
+  ): PagePromise<SandboxListUsageCostsResponsesItemsCursorGetPagination, SandboxListUsageCostsResponse> {
+    return this._client.getAPIList(
+      '/api/v2/sandboxes/usage/costs',
+      ItemsCursorGetPagination<SandboxListUsageCostsResponse>,
+      { query, ...options },
+    );
+  }
 }
+
+export type SandboxListUsageCostsResponsesItemsCursorGetPagination =
+  ItemsCursorGetPagination<SandboxListUsageCostsResponse>;
 
 export type SandboxResponsesItemsCursorGetPagination = ItemsCursorGetPagination<SandboxResponse>;
 
@@ -78,6 +110,12 @@ export interface SandboxListResponse {
 export interface SandboxResponse {
   id?: string;
 
+  /**
+   * AccessDelegation is the LangSmith access this sandbox was granted, absent when
+   * it has none. It is reported exactly as it was requested at create.
+   */
+  access_delegation?: SandboxResponse.AccessDelegation;
+
   cpu_millicores?: number;
 
   created_at?: string;
@@ -104,6 +142,12 @@ export interface SandboxResponse {
 
   proxy_config?: SandboxResponse.ProxyConfig;
 
+  /**
+   * RunConfig is what the sandbox's commands run with: the user, working directory
+   * and base env beneath env_vars.
+   */
+  run_config?: SandboxResponse.RunConfig;
+
   size_class?: string;
 
   snapshot_id?: string;
@@ -122,6 +166,16 @@ export interface SandboxResponse {
 }
 
 export namespace SandboxResponse {
+  /**
+   * AccessDelegation is the LangSmith access this sandbox was granted, absent when
+   * it has none. It is reported exactly as it was requested at create.
+   */
+  export interface AccessDelegation {
+    mode: 'INHERIT' | 'EXPLICIT';
+
+    permissions?: Array<string>;
+  }
+
   export interface MountConfig {
     auth?: MountConfig.Auth;
 
@@ -135,19 +189,33 @@ export namespace SandboxResponse {
 
   export namespace MountConfig {
     export interface Auth {
-      aws?: Auth.Aws;
+      aws?: Auth.SandboxesSandboxAwsMountRoleAuthConfig | Auth.SandboxesSandboxAwsMountStaticAuthConfig;
 
       gcp?: Auth.Gcp;
     }
 
     export namespace Auth {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesSandboxAwsMountRoleAuthConfig {
+        /**
+         * IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+         * exclusive with static credentials. Configure only at creation.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesSandboxAwsMountStaticAuthConfig {
+        access_key_id: SandboxesSandboxAwsMountStaticAuthConfig.AccessKeyID;
+
+        secret_access_key: SandboxesSandboxAwsMountStaticAuthConfig.SecretAccessKey;
+
+        /**
+         * IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+         * exclusive with static credentials. Configure only at creation.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesSandboxAwsMountStaticAuthConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -494,6 +562,12 @@ export namespace SandboxResponse {
 
     callbacks?: Array<ProxyConfig.Callback>;
 
+    /**
+     * Description says what this configuration as a whole lets the sandbox reach,
+     * complementing the per-rule descriptions. At most 1024 characters.
+     */
+    description?: string;
+
     no_proxy?: Array<string>;
 
     rules?: Array<ProxyConfig.Rule>;
@@ -533,7 +607,13 @@ export namespace SandboxResponse {
     export interface Rule {
       name: string;
 
-      aws?: Rule.Aws;
+      aws?: Rule.SandboxesProxyAwsRoleConfig | Rule.SandboxesProxyAwsStaticConfig;
+
+      /**
+       * Description says what this rule lets the sandbox reach, so an agent driving the
+       * sandbox can be told its capabilities. At most 1024 characters.
+       */
+      description?: string;
 
       enabled?: boolean;
 
@@ -563,13 +643,29 @@ export namespace SandboxResponse {
     }
 
     export namespace Rule {
-      export interface Aws {
-        access_key_id: Aws.AccessKeyID;
-
-        secret_access_key: Aws.SecretAccessKey;
+      export interface SandboxesProxyAwsRoleConfig {
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn: string;
       }
 
-      export namespace Aws {
+      export interface SandboxesProxyAwsStaticConfig {
+        access_key_id: SandboxesProxyAwsStaticConfig.AccessKeyID;
+
+        secret_access_key: SandboxesProxyAwsStaticConfig.SecretAccessKey;
+
+        /**
+         * RoleARN selects automatically renewed IAM-role credentials instead of static
+         * keys. Access follows the role's effective AWS permissions, not the sandbox's
+         * mount scope. Configure at creation; the role cannot be changed afterward.
+         */
+        role_arn?: '';
+      }
+
+      export namespace SandboxesProxyAwsStaticConfig {
         export interface AccessKeyID {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -614,6 +710,18 @@ export namespace SandboxResponse {
       }
     }
   }
+
+  /**
+   * RunConfig is what the sandbox's commands run with: the user, working directory
+   * and base env beneath env_vars.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
 }
 
 export interface SandboxStatusResponse {
@@ -623,7 +731,16 @@ export interface SandboxStatusResponse {
 }
 
 export interface ServiceURLResponse {
+  /**
+   * Token and ExpiresAt are empty in LangSmith login mode (no token is minted).
+   */
   token?: string;
+
+  /**
+   * Access echoes the enabled LangSmith login level ("restricted"/"workspace");
+   * omitted in token mode.
+   */
+  access?: 'restricted' | 'workspace';
 
   browser_url?: string;
 
@@ -663,6 +780,12 @@ export interface SnapshotResponse {
 
   created_by?: string;
 
+  /**
+   * Description says what this snapshot's image can do, so a caller can hand it to
+   * an agent as a capability summary.
+   */
+  description?: string;
+
   docker_image?: string;
 
   fs_capacity_bytes?: number;
@@ -684,6 +807,12 @@ export interface SnapshotResponse {
 
   registry_id?: string;
 
+  /**
+   * RunConfig is what sandboxes from this snapshot boot with. Absent on snapshots
+   * built before it was recorded, which run as root with their own env.
+   */
+  run_config?: SnapshotResponse.RunConfig;
+
   source_sandbox_id?: string;
 
   status?: string;
@@ -699,6 +828,69 @@ export interface SnapshotResponse {
   updated_at?: string;
 }
 
+export namespace SnapshotResponse {
+  /**
+   * RunConfig is what sandboxes from this snapshot boot with. Absent on snapshots
+   * built before it was recorded, which run as root with their own env.
+   */
+  export interface RunConfig {
+    env_vars?: { [key: string]: string };
+
+    user?: string;
+
+    work_dir?: string;
+  }
+}
+
+export interface SandboxListUsageCostsResponse {
+  /**
+   * Recorded compute usage in LangSmith Compute Units (LCU), as a decimal string
+   * with up to six fractional digits and trailing zeros omitted. Snapshots return
+   * "0".
+   */
+  lcu: string;
+
+  /**
+   * Allocated storage usage in LangSmith Storage Units (LSU), as a decimal string
+   * with up to six fractional digits and trailing zeros omitted.
+   */
+  lsu: string;
+
+  period_start: string;
+
+  resource_id: string;
+
+  resource_type: 'SANDBOX' | 'SNAPSHOT';
+}
+
+export interface SandboxListUsageCostsParams extends ItemsCursorGetPaginationParams {
+  /**
+   * Exclusive RFC3339 end time; the range must not exceed 31 days
+   */
+  end_time: string;
+
+  /**
+   * Inclusive RFC3339 start time
+   */
+  start_time: string;
+
+  /**
+   * HOUR returns hourly buckets. RESOURCE sums each resource over the requested
+   * interval and sets period_start to start_time.
+   */
+  granularity?: 'HOUR' | 'RESOURCE';
+
+  /**
+   * Resource UUID filter; repeat this parameter up to 100 times
+   */
+  resource_ids?: Array<string>;
+
+  /**
+   * Resource type filter
+   */
+  resource_type?: 'SANDBOX' | 'SNAPSHOT';
+}
+
 Sandboxes.Boxes = Boxes;
 Sandboxes.Registries = Registries;
 Sandboxes.Snapshots = Snapshots;
@@ -712,16 +904,23 @@ export declare namespace Sandboxes {
     type ServiceURLResponse as ServiceURLResponse,
     type SnapshotListResponse as SnapshotListResponse,
     type SnapshotResponse as SnapshotResponse,
+    type SandboxListUsageCostsResponse as SandboxListUsageCostsResponse,
+    type SandboxListUsageCostsResponsesItemsCursorGetPagination as SandboxListUsageCostsResponsesItemsCursorGetPagination,
+    type SandboxListUsageCostsParams as SandboxListUsageCostsParams,
   };
 
   export {
     Boxes as Boxes,
+    type BoxListServiceURLsResponse as BoxListServiceURLsResponse,
+    type BoxListServiceURLsResponsesItemsCursorGetPagination as BoxListServiceURLsResponsesItemsCursorGetPagination,
     type BoxCreateParams as BoxCreateParams,
     type BoxUpdateParams as BoxUpdateParams,
     type BoxListParams as BoxListParams,
     type BoxCreateSnapshotParams as BoxCreateSnapshotParams,
+    type BoxDeleteServiceURLParams as BoxDeleteServiceURLParams,
     type BoxGenerateDownloadURLParams as BoxGenerateDownloadURLParams,
     type BoxGenerateServiceURLParams as BoxGenerateServiceURLParams,
+    type BoxListServiceURLsParams as BoxListServiceURLsParams,
   };
 
   export {

@@ -7,11 +7,14 @@ from .._models import BaseModel
 
 __all__ = [
     "SandboxResponse",
+    "AccessDelegation",
     "MountConfig",
     "MountConfigAuth",
     "MountConfigAuthAws",
-    "MountConfigAuthAwsAccessKeyID",
-    "MountConfigAuthAwsSecretAccessKey",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey",
     "MountConfigAuthGcp",
     "MountConfigAuthGcpServiceAccountJson",
     "MountConfigMount",
@@ -49,15 +52,36 @@ __all__ = [
     "ProxyConfigCallbackRequestHeader",
     "ProxyConfigRule",
     "ProxyConfigRuleAws",
-    "ProxyConfigRuleAwsAccessKeyID",
-    "ProxyConfigRuleAwsSecretAccessKey",
+    "ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey",
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
+    "RunConfig",
 ]
 
 
-class MountConfigAuthAwsAccessKeyID(BaseModel):
+class AccessDelegation(BaseModel):
+    """
+    AccessDelegation is the LangSmith access this sandbox was granted, absent when it has none. It is reported exactly as it was requested at create.
+    """
+
+    mode: Literal["INHERIT", "EXPLICIT"]
+
+    permissions: Optional[List[str]] = None
+
+
+class MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig(BaseModel):
+    role_arn: str
+    """
+    IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+    exclusive with static credentials. Configure only at creation.
+    """
+
+
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID(BaseModel):
     type: Literal["plaintext", "opaque", "workspace_secret"]
 
     is_set: Optional[bool] = None
@@ -65,7 +89,7 @@ class MountConfigAuthAwsAccessKeyID(BaseModel):
     value: Optional[str] = None
 
 
-class MountConfigAuthAwsSecretAccessKey(BaseModel):
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey(BaseModel):
     type: Literal["plaintext", "opaque", "workspace_secret"]
 
     is_set: Optional[bool] = None
@@ -73,10 +97,21 @@ class MountConfigAuthAwsSecretAccessKey(BaseModel):
     value: Optional[str] = None
 
 
-class MountConfigAuthAws(BaseModel):
-    access_key_id: MountConfigAuthAwsAccessKeyID
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig(BaseModel):
+    access_key_id: MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID
 
-    secret_access_key: MountConfigAuthAwsSecretAccessKey
+    secret_access_key: MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey
+
+    role_arn: Optional[Literal[""]] = None
+    """
+    IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+    exclusive with static credentials. Configure only at creation.
+    """
+
+
+MountConfigAuthAws: TypeAlias = Union[
+    MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig, MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig
+]
 
 
 class MountConfigAuthGcpServiceAccountJson(BaseModel):
@@ -431,7 +466,16 @@ class ProxyConfigCallback(BaseModel):
     request_headers: Optional[List[ProxyConfigCallbackRequestHeader]] = None
 
 
-class ProxyConfigRuleAwsAccessKeyID(BaseModel):
+class ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig(BaseModel):
+    role_arn: str
+    """
+    RoleARN selects automatically renewed IAM-role credentials instead of static
+    keys. Access follows the role's effective AWS permissions, not the sandbox's
+    mount scope. Configure at creation; the role cannot be changed afterward.
+    """
+
+
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID(BaseModel):
     type: Literal["plaintext", "opaque", "workspace_secret"]
 
     is_set: Optional[bool] = None
@@ -439,7 +483,7 @@ class ProxyConfigRuleAwsAccessKeyID(BaseModel):
     value: Optional[str] = None
 
 
-class ProxyConfigRuleAwsSecretAccessKey(BaseModel):
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey(BaseModel):
     type: Literal["plaintext", "opaque", "workspace_secret"]
 
     is_set: Optional[bool] = None
@@ -447,10 +491,22 @@ class ProxyConfigRuleAwsSecretAccessKey(BaseModel):
     value: Optional[str] = None
 
 
-class ProxyConfigRuleAws(BaseModel):
-    access_key_id: ProxyConfigRuleAwsAccessKeyID
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig(BaseModel):
+    access_key_id: ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID
 
-    secret_access_key: ProxyConfigRuleAwsSecretAccessKey
+    secret_access_key: ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey
+
+    role_arn: Optional[Literal[""]] = None
+    """
+    RoleARN selects automatically renewed IAM-role credentials instead of static
+    keys. Access follows the role's effective AWS permissions, not the sandbox's
+    mount scope. Configure at creation; the role cannot be changed afterward.
+    """
+
+
+ProxyConfigRuleAws: TypeAlias = Union[
+    ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig, ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig
+]
 
 
 class ProxyConfigRuleGcpServiceAccountJson(BaseModel):
@@ -481,6 +537,12 @@ class ProxyConfigRule(BaseModel):
     name: str
 
     aws: Optional[ProxyConfigRuleAws] = None
+
+    description: Optional[str] = None
+    """
+    Description says what this rule lets the sandbox reach, so an agent driving the
+    sandbox can be told its capabilities. At most 1024 characters.
+    """
 
     enabled: Optional[bool] = None
 
@@ -514,13 +576,37 @@ class ProxyConfig(BaseModel):
 
     callbacks: Optional[List[ProxyConfigCallback]] = None
 
+    description: Optional[str] = None
+    """
+    Description says what this configuration as a whole lets the sandbox reach,
+    complementing the per-rule descriptions. At most 1024 characters.
+    """
+
     no_proxy: Optional[List[str]] = None
 
     rules: Optional[List[ProxyConfigRule]] = None
 
 
+class RunConfig(BaseModel):
+    """
+    RunConfig is what the sandbox's commands run with: the user, working directory and base env beneath env_vars.
+    """
+
+    env_vars: Optional[Dict[str, str]] = None
+
+    user: Optional[str] = None
+
+    work_dir: Optional[str] = None
+
+
 class SandboxResponse(BaseModel):
     id: Optional[str] = None
+
+    access_delegation: Optional[AccessDelegation] = None
+    """
+    AccessDelegation is the LangSmith access this sandbox was granted, absent when
+    it has none. It is reported exactly as it was requested at create.
+    """
 
     cpu_millicores: Optional[int] = None
 
@@ -547,6 +633,12 @@ class SandboxResponse(BaseModel):
     preserve_memory_on_stop: Optional[bool] = None
 
     proxy_config: Optional[ProxyConfig] = None
+
+    run_config: Optional[RunConfig] = None
+    """
+    RunConfig is what the sandbox's commands run with: the user, working directory
+    and base env beneath env_vars.
+    """
 
     size_class: Optional[str] = None
 

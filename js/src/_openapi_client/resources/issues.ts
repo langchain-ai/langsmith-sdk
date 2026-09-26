@@ -13,8 +13,12 @@ export class Issues extends APIResource {
    *
    * Returns one issue for the authenticated tenant.
    */
-  retrieve(id: string, options?: RequestOptions): APIPromise<Issue> {
-    return this._client.get(path`/api/v1/platform/issues/${id}`, options);
+  retrieve(
+    id: string,
+    query: IssueRetrieveParams | null | undefined = {},
+    options?: RequestOptions,
+  ): APIPromise<Issue> {
+    return this._client.get(path`/api/v1/platform/issues/${id}`, { query, ...options });
   }
 
   /**
@@ -53,19 +57,38 @@ export interface Issue {
 
   description?: string;
 
+  /**
+   * Nil for the trace-list issues that are the norm.
+   */
+  evidence?: Issue.Evidence | null;
+
   first_seen_at?: string;
 
+  /**
+   * Legacy: branch of the oldest fix in the board's oldest connected repository.
+   */
   fix_branch?: string;
 
   fix_dispatched_at?: string;
 
   fix_pr_number?: number;
 
+  /**
+   * Issue-level: the problem every fix shares, and the last time a fix run was
+   * dispatched for this issue — one run works several fixes.
+   */
   fix_prompt?: string;
 
-  fix_verification?: unknown;
+  fix_verification?: Issue.FixVerification;
+
+  /**
+   * Newest first.
+   */
+  fixes?: Array<Issue.Fix>;
 
   last_seen_at?: string;
+
+  linear_context?: Issue.LinearContext;
 
   linear_sync?: Issue.LinearSync;
 
@@ -99,10 +122,226 @@ export interface Issue {
 
   updated_at?: string;
 
+  validation_result?: Issue.ValidationResult;
+
   watching_since?: string;
 }
 
 export namespace Issue {
+  /**
+   * Nil for the trace-list issues that are the norm.
+   */
+  export interface Evidence {
+    type: 'series';
+
+    series?: Evidence.Series;
+  }
+
+  export namespace Evidence {
+    export interface Series {
+      metric_definition: Series.MetricDefinition;
+
+      /**
+       * Narrows what is measured; the renderer ANDs its root scope over it.
+       */
+      run_filter?: string;
+
+      window_end?: string;
+
+      /**
+       * The view the chart opens at, not a clamp. Start alone renders start -> now.
+       */
+      window_start?: string;
+    }
+
+    export namespace Series {
+      export interface MetricDefinition {
+        /**
+         * histogram is reserved and rejected; the tag publishes what is accepted.
+         */
+        type: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'percentile' | 'ratio' | 'histogram';
+
+        denominator?: MetricDefinition.Denominator;
+
+        /**
+         * Entity selects what a type=count metric counts. Only valid when type=count;
+         * defaults to MetricEntityRun. entity=feedback requires params.feedback_key and
+         * counts individual feedback records rather than runs.
+         */
+        entity?: 'run' | 'feedback';
+
+        field?:
+          | 'latency_seconds'
+          | 'first_token_seconds'
+          | 'total_tokens'
+          | 'prompt_tokens'
+          | 'completion_tokens'
+          | 'total_cost'
+          | 'prompt_cost'
+          | 'completion_cost'
+          | 'feedback_score';
+
+        /**
+         * Numerator and Denominator are required when type=ratio.
+         */
+        numerator?: MetricDefinition.Numerator;
+
+        /**
+         * percentile p or histogram bucket_count
+         */
+        params?: MetricDefinition.Params;
+      }
+
+      export namespace MetricDefinition {
+        export interface Denominator {
+          /**
+           * An operand is non-composite, so ratio is rejected here too.
+           */
+          type: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'percentile' | 'ratio' | 'histogram';
+
+          /**
+           * Entity selects what a type=count metric counts. Only valid when type=count;
+           * defaults to MetricEntityRun. entity=feedback requires params.feedback_key and
+           * counts individual feedback records rather than runs.
+           */
+          entity?: 'run' | 'feedback';
+
+          field?:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost'
+            | 'feedback_score';
+
+          filter?: string;
+
+          /**
+           * required when type=percentile
+           */
+          params?: Denominator.Params;
+        }
+
+        export namespace Denominator {
+          /**
+           * required when type=percentile
+           */
+          export interface Params {
+            bucket_count?: number;
+
+            feedback_key?: string;
+
+            p?: number;
+          }
+        }
+
+        /**
+         * Numerator and Denominator are required when type=ratio.
+         */
+        export interface Numerator {
+          /**
+           * An operand is non-composite, so ratio is rejected here too.
+           */
+          type: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'percentile' | 'ratio' | 'histogram';
+
+          /**
+           * Entity selects what a type=count metric counts. Only valid when type=count;
+           * defaults to MetricEntityRun. entity=feedback requires params.feedback_key and
+           * counts individual feedback records rather than runs.
+           */
+          entity?: 'run' | 'feedback';
+
+          field?:
+            | 'latency_seconds'
+            | 'first_token_seconds'
+            | 'total_tokens'
+            | 'prompt_tokens'
+            | 'completion_tokens'
+            | 'total_cost'
+            | 'prompt_cost'
+            | 'completion_cost'
+            | 'feedback_score';
+
+          filter?: string;
+
+          /**
+           * required when type=percentile
+           */
+          params?: Numerator.Params;
+        }
+
+        export namespace Numerator {
+          /**
+           * required when type=percentile
+           */
+          export interface Params {
+            bucket_count?: number;
+
+            feedback_key?: string;
+
+            p?: number;
+          }
+        }
+
+        /**
+         * percentile p or histogram bucket_count
+         */
+        export interface Params {
+          bucket_count?: number;
+
+          feedback_key?: string;
+
+          p?: number;
+        }
+      }
+    }
+  }
+
+  export interface FixVerification {
+    attempt?: number;
+
+    baseline_experiment_id?: string;
+
+    dataset_id?: string;
+
+    parent_deployment_id?: string;
+
+    preview_deployment_id?: string;
+
+    preview_experiment_id?: string;
+
+    reason?: string;
+
+    root_trace_ids?: Array<string>;
+
+    status?: 'awaiting_preview' | 'verifying' | 'passed' | 'failed' | 'inconclusive' | 'timeout' | 'error';
+
+    updated_at?: string;
+  }
+
+  export interface Fix {
+    id: string;
+
+    branch: string | null;
+
+    created_at: string;
+
+    pr_number: number | null;
+
+    repo_url: string;
+
+    updated_at: string;
+  }
+
+  export interface LinearContext {
+    github_pr_urls?: Array<string>;
+
+    workflow_state?: string;
+  }
+
   export interface LinearSync {
     identifier?: string;
 
@@ -120,9 +359,40 @@ export namespace Issue {
 
     url?: string;
   }
+
+  export interface ValidationResult {
+    active_revision_id?: string;
+
+    baseline_experiment_id?: string;
+
+    completed_at?: string;
+
+    dataset_id?: string;
+
+    deployment_id?: string;
+
+    outcome?: 'reproduced' | 'not_reproduced' | 'inconclusive' | 'error';
+
+    reason?: string;
+
+    root_trace_ids?: Array<string>;
+  }
+}
+
+export interface IssueRetrieveParams {
+  /**
+   * Include current Linear workflow state and validated linked GitHub pull request
+   * URLs
+   */
+  include_linear_context?: boolean;
 }
 
 export interface IssueListParams extends OffsetPaginationIssuesParams {
+  /**
+   * Filter by Engine activity (repeatable; OR semantics)
+   */
+  activity?: Array<'fixing' | 'watching' | 'recurred'>;
+
   /**
    * Filter by session ID (UUID)
    */
@@ -139,14 +409,31 @@ export interface IssueListParams extends OffsetPaginationIssuesParams {
   severity?: 0 | 1 | 2 | 3;
 
   /**
+   * Filter by exact severity (repeatable; OR semantics)
+   */
+  severity_exact?: Array<0 | 1 | 2 | 3>;
+
+  /**
    * Sort field
    */
-  sort_by?: 'created_at' | 'updated_at' | 'severity';
+  sort_by?:
+    | 'default'
+    | 'created_at'
+    | 'updated_at'
+    | 'last_seen'
+    | 'last_updated'
+    | 'trace_count'
+    | 'severity';
 
   /**
    * Filter by status
    */
   status?: 'open' | 'fixing' | 'watching' | 'completed' | 'ignored';
+
+  /**
+   * Group results by issue lifecycle status before applying sort_by
+   */
+  status_first?: boolean;
 
   /**
    * Filter by tag (exact match)
@@ -168,6 +455,7 @@ export declare namespace Issues {
   export {
     type Issue as Issue,
     type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueRetrieveParams as IssueRetrieveParams,
     type IssueListParams as IssueListParams,
   };
 }

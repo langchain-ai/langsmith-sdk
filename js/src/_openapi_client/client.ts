@@ -41,7 +41,13 @@ import * as Uploads from './core/uploads.js';
 import * as API from './resources/index.js';
 import { APIPromise } from './core/api-promise.js';
 import { Info, InfoListResponse } from './resources/info.js';
-import { Issue, IssueListParams, Issues, IssuesOffsetPaginationIssues } from './resources/issues.js';
+import {
+  Issue,
+  IssueListParams,
+  IssueRetrieveParams,
+  Issues,
+  IssuesOffsetPaginationIssues,
+} from './resources/issues.js';
 import {
   BulkDeleteEvaluatorFailedItem,
   BulkDeleteEvaluatorsResponse,
@@ -72,16 +78,11 @@ import {
   UpdateOnlineLlmEvaluatorRequest,
 } from './resources/online-evaluators.js';
 import {
-  Thread,
-  ThreadListTracesParams,
-  ThreadQueryParams,
-  ThreadStats,
-  ThreadStatsParams,
-  ThreadTrace,
-  ThreadTracesItemsCursorGetPagination,
-  Threads,
-  ThreadsItemsCursorPostPagination,
-} from './resources/threads.js';
+  ProductFeedback,
+  ProductFeedbackCreateParams,
+  ProductFeedbackCreateResponse,
+  ProductFeedbackRetrieveResponse,
+} from './resources/product-feedback.js';
 import {
   Trace,
   TraceAggregates,
@@ -126,6 +127,7 @@ import {
   Missing,
   SortByDatasetColumn,
 } from './resources/datasets/datasets.js';
+import { Fleet } from './resources/fleet/fleet.js';
 import { Public } from './resources/public/public.js';
 import {
   ResponseBodyForRunsGenerateQuery,
@@ -149,6 +151,9 @@ import {
 import {
   DownloadURLResponse,
   SandboxListResponse,
+  SandboxListUsageCostsParams,
+  SandboxListUsageCostsResponse,
+  SandboxListUsageCostsResponsesItemsCursorGetPagination,
   SandboxResponse,
   SandboxStatusResponse,
   Sandboxes,
@@ -156,6 +161,19 @@ import {
   SnapshotListResponse,
   SnapshotResponse,
 } from './resources/sandboxes/sandboxes.js';
+import {
+  Thread,
+  ThreadAggregateStatsParams,
+  ThreadAggregateStatsResponse,
+  ThreadListTracesParams,
+  ThreadQueryParams,
+  ThreadStats,
+  ThreadStatsParams,
+  ThreadTrace,
+  ThreadTracesItemsCursorGetPagination,
+  Threads,
+  ThreadsItemsCursorPostPagination,
+} from './resources/threads/threads.js';
 import { type Fetch } from './internal/builtin-types.js';
 import { HeadersLike, NullableHeaders, buildHeaders } from './internal/headers.js';
 import { FinalRequestOptions, RequestOptions } from './internal/request-options.js';
@@ -295,7 +313,7 @@ export class Langsmith {
     };
 
     this.baseURL = options.baseURL!;
-    this.timeout = options.timeout ?? Langsmith.DEFAULT_TIMEOUT; /* 1.5 minutes */
+    this.timeout = options.timeout ?? Langsmith.DEFAULT_TIMEOUT /* 1.5 minutes */;
     this.logger = options.logger ?? console;
     const defaultLogLevel = 'warn';
     // Set default logLevel early so that we can log a warning in parseLogLevel.
@@ -584,7 +602,9 @@ export class Langsmith {
       throw new Errors.APIConnectionError({ cause: response });
     }
 
-    const responseInfo = `[${requestLogID}${retryLogStr}] ${req.method} ${url} ${response.ok ? 'succeeded' : 'failed'} with status ${response.status} in ${headersTime - startTime}ms`;
+    const responseInfo = `[${requestLogID}${retryLogStr}] ${req.method} ${url} ${
+      response.ok ? 'succeeded' : 'failed'
+    } with status ${response.status} in ${headersTime - startTime}ms`;
 
     if (!response.ok) {
       const shouldRetry = await this.shouldRetry(response);
@@ -922,6 +942,8 @@ export class Langsmith {
 
   static toFile = Uploads.toFile;
 
+  productFeedback: API.ProductFeedback = new API.ProductFeedback(this);
+  fleet: API.Fleet = new API.Fleet(this);
   datasets: API.Datasets = new API.Datasets(this);
   runs: API.Runs = new API.Runs(this);
   threads: API.Threads = new API.Threads(this);
@@ -934,6 +956,8 @@ export class Langsmith {
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
 }
 
+Langsmith.ProductFeedback = ProductFeedback;
+Langsmith.Fleet = Fleet;
 Langsmith.Datasets = Datasets;
 Langsmith.Runs = Runs;
 Langsmith.Threads = Threads;
@@ -1003,6 +1027,15 @@ export declare namespace Langsmith {
   };
 
   export {
+    ProductFeedback as ProductFeedback,
+    type ProductFeedbackCreateResponse as ProductFeedbackCreateResponse,
+    type ProductFeedbackRetrieveResponse as ProductFeedbackRetrieveResponse,
+    type ProductFeedbackCreateParams as ProductFeedbackCreateParams,
+  };
+
+  export { Fleet as Fleet };
+
+  export {
     Datasets as Datasets,
     type DataType as DataType,
     type Dataset as Dataset,
@@ -1038,8 +1071,10 @@ export declare namespace Langsmith {
     type Thread as Thread,
     type ThreadStats as ThreadStats,
     type ThreadTrace as ThreadTrace,
+    type ThreadAggregateStatsResponse as ThreadAggregateStatsResponse,
     type ThreadTracesItemsCursorGetPagination as ThreadTracesItemsCursorGetPagination,
     type ThreadsItemsCursorPostPagination as ThreadsItemsCursorPostPagination,
+    type ThreadAggregateStatsParams as ThreadAggregateStatsParams,
     type ThreadListTracesParams as ThreadListTracesParams,
     type ThreadQueryParams as ThreadQueryParams,
     type ThreadStatsParams as ThreadStatsParams,
@@ -1119,6 +1154,7 @@ export declare namespace Langsmith {
     Issues as Issues,
     type Issue as Issue,
     type IssuesOffsetPaginationIssues as IssuesOffsetPaginationIssues,
+    type IssueRetrieveParams as IssueRetrieveParams,
     type IssueListParams as IssueListParams,
   };
 
@@ -1131,5 +1167,8 @@ export declare namespace Langsmith {
     type ServiceURLResponse as ServiceURLResponse,
     type SnapshotListResponse as SnapshotListResponse,
     type SnapshotResponse as SnapshotResponse,
+    type SandboxListUsageCostsResponse as SandboxListUsageCostsResponse,
+    type SandboxListUsageCostsResponsesItemsCursorGetPagination as SandboxListUsageCostsResponsesItemsCursorGetPagination,
+    type SandboxListUsageCostsParams as SandboxListUsageCostsParams,
   };
 }

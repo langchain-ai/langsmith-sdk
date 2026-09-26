@@ -3,12 +3,16 @@
 
 export {
   Boxes,
+  type BoxListServiceURLsResponse,
   type BoxCreateParams,
   type BoxUpdateParams,
   type BoxListParams,
   type BoxCreateSnapshotParams,
+  type BoxDeleteServiceURLParams,
   type BoxGenerateDownloadURLParams,
   type BoxGenerateServiceURLParams,
+  type BoxListServiceURLsParams,
+  type BoxListServiceURLsResponsesItemsCursorGetPagination,
 } from './boxes.js';
 export {
   Registries,
@@ -27,8 +31,11 @@ export {
   type ServiceURLResponse,
   type SnapshotListResponse,
   type SnapshotResponse,
+  type SandboxListUsageCostsResponse,
+  type SandboxListUsageCostsParams,
   type SandboxResponsesItemsCursorGetPagination,
   type SnapshotResponsesItemsCursorGetPagination,
+  type SandboxListUsageCostsResponsesItemsCursorGetPagination,
 } from './sandboxes.js';
 export {
   Snapshots,

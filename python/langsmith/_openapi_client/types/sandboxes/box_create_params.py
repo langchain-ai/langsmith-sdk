@@ -9,11 +9,14 @@ from ..._types import SequenceNotStr
 
 __all__ = [
     "BoxCreateParams",
+    "AccessDelegation",
     "MountConfig",
     "MountConfigAuth",
     "MountConfigAuthAws",
-    "MountConfigAuthAwsAccessKeyID",
-    "MountConfigAuthAwsSecretAccessKey",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID",
+    "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey",
     "MountConfigAuthGcp",
     "MountConfigAuthGcpServiceAccountJson",
     "MountConfigMount",
@@ -51,15 +54,24 @@ __all__ = [
     "ProxyConfigCallbackRequestHeader",
     "ProxyConfigRule",
     "ProxyConfigRuleAws",
-    "ProxyConfigRuleAwsAccessKeyID",
-    "ProxyConfigRuleAwsSecretAccessKey",
+    "ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID",
+    "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey",
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
+    "RunConfig",
 ]
 
 
 class BoxCreateParams(TypedDict, total=False):
+    access_delegation: AccessDelegation
+    """
+    AccessDelegation lets code inside the sandbox call the LangSmith API as you,
+    with at most the permissions granted here. Omit for no access.
+    """
+
     cpu_millicores: int
     """CPUMillicores optionally requests CPU at millicore granularity (e.g.
 
@@ -115,6 +127,13 @@ class BoxCreateParams(TypedDict, total=False):
     Applies to this request only.
     """
 
+    run_config: RunConfig
+    """
+    RunConfig overrides the snapshot's run config for this sandbox: user and
+    work_dir replace the snapshot's, env_vars merge over it. The result is what the
+    sandbox boots with, and what a snapshot captured from it carries.
+    """
+
     snapshot: str
     """Snapshot is a Docker-style name or name:tag reference to boot from.
 
@@ -134,7 +153,25 @@ class BoxCreateParams(TypedDict, total=False):
     vcpus: int
 
 
-class MountConfigAuthAwsAccessKeyID(TypedDict, total=False):
+class AccessDelegation(TypedDict, total=False):
+    """
+    AccessDelegation lets code inside the sandbox call the LangSmith API as you, with at most the permissions granted here. Omit for no access.
+    """
+
+    mode: Required[Literal["INHERIT", "EXPLICIT"]]
+
+    permissions: SequenceNotStr[str]
+
+
+class MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig(TypedDict, total=False):
+    role_arn: Required[str]
+    """
+    IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+    exclusive with static credentials. Configure only at creation.
+    """
+
+
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -142,7 +179,7 @@ class MountConfigAuthAwsAccessKeyID(TypedDict, total=False):
     value: str
 
 
-class MountConfigAuthAwsSecretAccessKey(TypedDict, total=False):
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -150,10 +187,21 @@ class MountConfigAuthAwsSecretAccessKey(TypedDict, total=False):
     value: str
 
 
-class MountConfigAuthAws(TypedDict, total=False):
-    access_key_id: Required[MountConfigAuthAwsAccessKeyID]
+class MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig(TypedDict, total=False):
+    access_key_id: Required[MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID]
 
-    secret_access_key: Required[MountConfigAuthAwsSecretAccessKey]
+    secret_access_key: Required[MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey]
+
+    role_arn: Literal[""]
+    """
+    IAM role to assume with permissions scoped to the configured S3 mounts. Mutually
+    exclusive with static credentials. Configure only at creation.
+    """
+
+
+MountConfigAuthAws: TypeAlias = Union[
+    MountConfigAuthAwsSandboxesSandboxAwsMountRoleAuthConfig, MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig
+]
 
 
 class MountConfigAuthGcpServiceAccountJson(TypedDict, total=False):
@@ -508,7 +556,16 @@ class ProxyConfigCallback(TypedDict, total=False):
     request_headers: Iterable[ProxyConfigCallbackRequestHeader]
 
 
-class ProxyConfigRuleAwsAccessKeyID(TypedDict, total=False):
+class ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig(TypedDict, total=False):
+    role_arn: Required[str]
+    """
+    RoleARN selects automatically renewed IAM-role credentials instead of static
+    keys. Access follows the role's effective AWS permissions, not the sandbox's
+    mount scope. Configure at creation; the role cannot be changed afterward.
+    """
+
+
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -516,7 +573,7 @@ class ProxyConfigRuleAwsAccessKeyID(TypedDict, total=False):
     value: str
 
 
-class ProxyConfigRuleAwsSecretAccessKey(TypedDict, total=False):
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -524,10 +581,22 @@ class ProxyConfigRuleAwsSecretAccessKey(TypedDict, total=False):
     value: str
 
 
-class ProxyConfigRuleAws(TypedDict, total=False):
-    access_key_id: Required[ProxyConfigRuleAwsAccessKeyID]
+class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig(TypedDict, total=False):
+    access_key_id: Required[ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID]
 
-    secret_access_key: Required[ProxyConfigRuleAwsSecretAccessKey]
+    secret_access_key: Required[ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey]
+
+    role_arn: Literal[""]
+    """
+    RoleARN selects automatically renewed IAM-role credentials instead of static
+    keys. Access follows the role's effective AWS permissions, not the sandbox's
+    mount scope. Configure at creation; the role cannot be changed afterward.
+    """
+
+
+ProxyConfigRuleAws: TypeAlias = Union[
+    ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig, ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig
+]
 
 
 class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):
@@ -558,6 +627,12 @@ class ProxyConfigRule(TypedDict, total=False):
     name: Required[str]
 
     aws: ProxyConfigRuleAws
+
+    description: str
+    """
+    Description says what this rule lets the sandbox reach, so an agent driving the
+    sandbox can be told its capabilities. At most 1024 characters.
+    """
 
     enabled: bool
 
@@ -591,6 +666,26 @@ class ProxyConfig(TypedDict, total=False):
 
     callbacks: Iterable[ProxyConfigCallback]
 
+    description: str
+    """
+    Description says what this configuration as a whole lets the sandbox reach,
+    complementing the per-rule descriptions. At most 1024 characters.
+    """
+
     no_proxy: SequenceNotStr[str]
 
     rules: Iterable[ProxyConfigRule]
+
+
+class RunConfig(TypedDict, total=False):
+    """
+    RunConfig overrides the snapshot's run config for this sandbox: user and
+    work_dir replace the snapshot's, env_vars merge over it. The result is
+    what the sandbox boots with, and what a snapshot captured from it carries.
+    """
+
+    env_vars: Dict[str, str]
+
+    user: str
+
+    work_dir: str

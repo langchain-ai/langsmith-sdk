@@ -215,6 +215,13 @@ export interface Run {
   latency_seconds?: number;
 
   /**
+   * `ls_user_id` identifies the LangSmith user whose credential traced the run. It
+   * is absent for runs traced with a service-account API key, which has no
+   * associated user.
+   */
+  ls_user_id?: string;
+
+  /**
    * `manifest` is the serialized configuration of the traced component (for example
    * the model parameters, prompt template, or pipeline definition), when recorded.
    */
@@ -707,7 +714,8 @@ export type RunSelectField =
   | 'IS_IN_DATASET'
   | 'LAST_QUEUED_AT'
   | 'SHARE_URL'
-  | 'FEEDBACK_STATS';
+  | 'FEEDBACK_STATS'
+  | 'LS_USER_ID';
 
 /**
  * Query params for run stats.
@@ -834,7 +842,11 @@ export type RunTypeEnum = 'tool' | 'chain' | 'llm' | 'retriever' | 'embedding' |
  * Enum for run data source types.
  */
 export type RunsFilterDataSourceTypeEnum =
-  'current' | 'historical' | 'lite' | 'root_lite' | 'runs_feedbacks_rmt_wide';
+  | 'current'
+  | 'historical'
+  | 'lite'
+  | 'root_lite'
+  | 'runs_feedbacks_rmt_wide';
 
 export interface RunGetURLResponse {
   url?: string;
@@ -958,7 +970,7 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }
@@ -1020,6 +1032,7 @@ export interface RunRetrieveV2Params {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**
@@ -1091,6 +1104,7 @@ export interface RunRetrieveParams {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**
@@ -1206,7 +1220,7 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }
