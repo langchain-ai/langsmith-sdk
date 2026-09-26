@@ -90,6 +90,12 @@ import { warnOnce } from "./utils/warn.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
+  warnOnAgentAddressingEnv,
+  rejectConflictingAgentAddressing,
+  rejectAgentRunUrl,
+  applyAgentAddressingToPayload,
+} from "./utils/agent_addressing.js";
+import {
   raiseForStatus,
   isLangSmithNotFoundError,
   isLangSmithConflictError,
@@ -492,6 +498,15 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
   session_id?: string;
+  /**
+   * Experimental. The agent this feedback is logged for, instead of a
+   * project; copied from the run it describes, never read from the
+   * environment. The agent must already exist -- unlike run ingestion, a
+   * feedback part never creates one.
+   */
+  agent_id?: string;
+  /** Narrows `agent_id`; meaningless without it. */
+  agent_environment?: string;
   start_time?: number | string;
   comparative_experiment_id?: string;
   extend_trace_retention?: boolean;
@@ -533,6 +548,10 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  /** Experimental. The agent to address this run to, instead of a project. */
+  agent_id?: string | null;
+  /** Experimental. Narrows `agent_id`; required alongside it. */
+  agent_environment?: string | null;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -574,6 +593,18 @@ export type CreateFeedbackOptions = {
   startTime?: number | string;
   /** If false, create feedback without extending the trace's retention tier. */
   extendTraceRetention?: boolean;
+  /**
+   * Experimental. The agent to attach this feedback to, instead of a project.
+   * Pass whatever the run being described was traced to -- for a run created
+   * in this process, the run tree's `agent_id`. Cannot be combined with
+   * `sessionId` / `projectId`, and is never read from
+   * `LANGSMITH_AGENT_ID`: feedback follows its run, not the ambient
+   * environment. The agent must already exist; unlike run ingestion, a
+   * feedback part never creates one.
+   */
+  agentId?: string;
+  /** Experimental. Narrows `agentId`, and requires it. Defaults server-side to `production` when omitted. */
+  agentEnvironment?: string;
 };
 
 /** @deprecated Pass all params within an object and populate sessionId. */
@@ -595,8 +626,8 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
     | {
         /** The run to provide feedback on. */
         runId: string;
-        /** The session (project) ID of the run. */
-        sessionId: string;
+        /** The session (project) ID of the run. Required unless an agent pair names the destination. */
+        sessionId?: string;
         projectId?: never;
       }
     | {
@@ -1472,6 +1503,11 @@ export class Client implements LangSmithTracingClientInterface {
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
+    // An environment whose agent addressing cannot reach the endpoint drops
+    // every batch it sends, so say so while there is still a chance to fix
+    // it rather than in the flush's logs.
+    warnOnAgentAddressingEnv();
+
     // Initialize prompt cache
     // Handle backwards compatibility for deprecated `cache` parameter
     if (config.cache !== undefined && config.disablePromptCache) {
@@ -2241,7 +2277,7 @@ export class Client implements LangSmithTracingClientInterface {
             !this._runCompressionDisabled &&
             serverInfo?.instance_flags?.gzip_body_enabled;
           try {
-            await this.multipartIngestRuns(ingestParams, {
+            await this._multipartIngestRuns(ingestParams, {
               ...options,
               useGzip,
               sizeBytes: batchSizeBytes,
@@ -2252,7 +2288,7 @@ export class Client implements LangSmithTracingClientInterface {
               // Fallback to batch ingest if multipart endpoint returns 404
               // Disable multipart for future requests
               this._multipartDisabled = true;
-              await this.batchIngestRuns(ingestParams, {
+              await this._batchIngestRuns(ingestParams, {
                 ...options,
                 sizeBytes: batchSizeBytes,
               });
@@ -2261,7 +2297,7 @@ export class Client implements LangSmithTracingClientInterface {
             }
           }
         } else {
-          await this.batchIngestRuns(ingestParams, {
+          await this._batchIngestRuns(ingestParams, {
             ...options,
             sizeBytes: batchSizeBytes,
           });
@@ -2493,6 +2529,17 @@ export class Client implements LangSmithTracingClientInterface {
     run: CreateRunParams,
     options?: { apiKey?: string; apiUrl?: string; workspaceId?: string },
   ): Promise<void> {
+    // Raised before anything is queued, as in Python: sent on, the pair would
+    // earn a 400 that, under auto-batching, drops unrelated runs with it.
+    // Only `project_name`, this method's own parameter, counts as naming a
+    // project; a `session_name` arrives as part of an already-resolved body
+    // (`RunTree.postRun` sends that), where a project beside an agent is
+    // meant to travel for the endpoint to refuse.
+    rejectConflictingAgentAddressing({
+      project: run.project_name,
+      agentId: run.agent_id ?? undefined,
+      agentEnvironment: run.agent_environment ?? undefined,
+    });
     if (!this._filterForSampling([run]).length) {
       return;
     }
@@ -2508,6 +2555,9 @@ export class Client implements LangSmithTracingClientInterface {
       ...run,
       start_time: run.start_time ?? Date.now(),
     } as RunCreate);
+    applyAgentAddressingToPayload(
+      runCreate as unknown as Record<string, unknown>,
+    );
     if (
       this.autoBatchTracing &&
       runCreate.trace_id !== undefined &&
@@ -2550,10 +2600,60 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Resolve the addressing of runs handed directly to a public ingest method,
+   * the way `createRun` / `updateRun` do. Creates without a project pick up
+   * the agent env vars; updates never consult the environment, since a patch
+   * inherits its post's target. Operates on copies so callers' objects are
+   * not mutated.
+   */
+  private _addressDirectIngestRuns({
+    runCreates,
+    runUpdates,
+  }: {
+    runCreates?: RunCreate[];
+    runUpdates?: RunUpdate[];
+  }): { runCreates?: RunCreate[]; runUpdates?: RunUpdate[] } {
+    return {
+      runCreates: runCreates?.map((create) => {
+        const addressed = { ...create };
+        applyAgentAddressingToPayload(
+          addressed as unknown as Record<string, unknown>,
+        );
+        return addressed;
+      }),
+      runUpdates: runUpdates?.map((update) => {
+        const addressed = { ...update };
+        applyAgentAddressingToPayload(
+          addressed as unknown as Record<string, unknown>,
+          true,
+        );
+        return addressed;
+      }),
+    };
+  }
+
+  /**
    * Batch ingest/upsert multiple runs in the Langsmith system.
    * @param runs
    */
   public async batchIngestRuns(
+    runs: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      sizeBytes?: number;
+    },
+  ) {
+    // Runs queued by `createRun` / `updateRun` were addressed on the way in
+    // and drain through the private method; only direct callers need it here.
+    return this._batchIngestRuns(this._addressDirectIngestRuns(runs), options);
+  }
+
+  private async _batchIngestRuns(
     {
       runCreates,
       runUpdates,
@@ -2687,6 +2787,27 @@ export class Client implements LangSmithTracingClientInterface {
    * @param runs
    */
   public async multipartIngestRuns(
+    runs: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      workspaceId?: string;
+      useGzip?: boolean;
+      sizeBytes?: number;
+    },
+  ) {
+    // Runs queued by `createRun` / `updateRun` were addressed on the way in
+    // and drain through the private method; only direct callers need it here.
+    return this._multipartIngestRuns(
+      this._addressDirectIngestRuns(runs),
+      options,
+    );
+  }
+
+  private async _multipartIngestRuns(
     {
       runCreates,
       runUpdates,
@@ -3106,6 +3227,13 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.events) {
       run.events = this._filterNewTokenEvents(run.events);
     }
+    // Applied to `run` before `data` is copied from it: the non-batch path
+    // below serializes `run` and the batch path queues `data`, so both have
+    // to see the same addressed payload.
+    applyAgentAddressingToPayload(
+      run as unknown as Record<string, unknown>,
+      true,
+    );
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
@@ -3244,6 +3372,10 @@ export class Client implements LangSmithTracingClientInterface {
       } else if (projectOpts?.projectId) {
         sessionId = projectOpts?.projectId;
       } else {
+        // A run URL is keyed on the project id, which an agent-addressed run
+        // only has after being read back -- refusing beats linking the
+        // literal `default` project.
+        rejectAgentRunUrl(undefined, run.agent_id, run.agent_environment);
         const project = await this.readProject({
           projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
         });
@@ -5515,6 +5647,8 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId,
       startTime,
       extendTraceRetention,
+      agentId,
+      agentEnvironment,
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
@@ -5524,7 +5658,14 @@ export class Client implements LangSmithTracingClientInterface {
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
-    if (runId && sessionId === undefined) {
+    rejectConflictingAgentAddressing({
+      sessionId: sessionId ?? projectId,
+      agentId,
+      agentEnvironment,
+    });
+    if (runId && sessionId === undefined && agentId === undefined) {
+      // An agent pair locates the project directly, so it satisfies the
+      // same requirement this gate exists for.
       await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
@@ -5557,6 +5698,8 @@ export class Client implements LangSmithTracingClientInterface {
       comparative_experiment_id: comparativeExperimentId,
       feedbackConfig,
       session_id: sessionId ?? projectId,
+      agent_id: agentId,
+      agent_environment: agentEnvironment,
       start_time: startTime,
       extend_trace_retention: extendTraceRetention,
     };

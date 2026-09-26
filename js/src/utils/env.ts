@@ -115,6 +115,11 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGSMITH_CONFIG_FILE",
     "LANGSMITH_PROJECT",
     "LANGSMITH_SESSION",
+    // First-class run fields, not metadata: an ambient `LANGSMITH_AGENT_ID`
+    // is resolved into the run body, so echoing it into every run's
+    // metadata would duplicate it on the payload.
+    "LANGSMITH_AGENT_ID",
+    "LANGSMITH_AGENT_ENVIRONMENT",
   ];
 
   for (const [key, value] of Object.entries(allEnvVars)) {
