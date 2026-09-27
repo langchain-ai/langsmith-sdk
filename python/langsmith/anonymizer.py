@@ -285,11 +285,15 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "pattern": re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
         "replace": SECRET_PLACEHOLDER,
     },
-    # PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK")
+    # PEM private key blocks (RSA/EC/OPENSSH/DSA/plain + PGP "...KEY BLOCK").
+    # A block with no END line (e.g. truncated output) is redacted to the end
+    # of the string. Besides not leaking a partial key, this keeps the rule
+    # linear: requiring the END line made every BEGIN line rescan the rest of
+    # the string, which is quadratic when many BEGIN lines have no END.
     {
         "pattern": re.compile(
             r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----"
-            r"[\s\S]+?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----"
+            r"[\s\S]+?(?:-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY(?: BLOCK)?-----|\Z)"
         ),
         "replace": SECRET_PLACEHOLDER,
     },
