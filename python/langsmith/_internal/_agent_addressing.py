@@ -1,8 +1,21 @@
 """Resolving whether a run is addressed by project or by address.
 
-An `Address` (see `langsmith._address`) names an agent and environment to send
-runs to instead of a project; project addressing stays supported until then.
-Design: https://www.notion.so/3e5808527b17810b9e6cf1ebdd189924
+A run goes to exactly one destination: a project (`project_name`) or an
+`Address` (`langsmith.address(agent_id=..., agent_environment=...)`), which
+names an agent and one of its environments. The server resolves an address to
+the agent environment's project, so traces follow the agent rather than a
+project name. Addressing is in beta and enabled per workspace; project
+addressing keeps working alongside it.
+
+A run with a parent, in-process or from distributed-tracing headers, joins its
+parent's destination. A root run takes the first of these levels that names a
+project or an address, whichever it names; naming both at one level raises:
+
+1. `tracing_context`
+2. `langsmith_extra`
+3. the `@traceable` / `trace` arguments
+4. `configure`
+5. the env vars (`LANGSMITH_PROJECT`, `LANGSMITH_AGENT_*`)
 
 The address travels as a whole `Address` everywhere -- context variables, run
 trees, replicas, headers -- and is unpacked into wire fields only here, in
