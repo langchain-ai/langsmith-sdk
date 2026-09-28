@@ -3,7 +3,6 @@
 End-to-end tests for addressing a run by agent instead of by project, against a
 real LangSmith backend.
 
-Design doc: [POST /api/v1/runs/multipart](https://app.notion.com/p/3d7808527b178194bcd6d441bac8e2ba).
 The wire shape is flat `agent_id` / `agent_environment`, and only
 `POST /runs/multipart` reads it.
 
