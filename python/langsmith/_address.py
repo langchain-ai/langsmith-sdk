@@ -62,7 +62,7 @@ def _wire(name: str, *, required: bool) -> dict[str, Any]:
     return {"wire": name, "required": required}
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class Address:
     """(experimental) A destination that runs can be addressed to.
 
@@ -238,4 +238,4 @@ def address(*, agent_id: str, agent_environment: str) -> Address:
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    return Address(agent_id, agent_environment)
+    return Address(agent_id=agent_id, agent_environment=agent_environment)
