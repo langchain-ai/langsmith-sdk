@@ -121,6 +121,8 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     if (
       typeof value === "string" &&
       !excluded.includes(key) &&
+      // Address env vars (`LANGSMITH_AGENT_*`), however many dimensions.
+      !key.startsWith("LANGSMITH_AGENT_") &&
       !isSensitiveEnvVarName(key)
     ) {
       if (key === "LANGCHAIN_REVISION_ID") {

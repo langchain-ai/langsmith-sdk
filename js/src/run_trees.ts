@@ -21,7 +21,6 @@ import {
   getEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
-import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import {
@@ -29,6 +28,14 @@ import {
   nonCryptographicUuid7Deterministic,
 } from "./utils/_uuid.js";
 import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
+import {
+  Address,
+  EnvAddressError,
+  checkAddress,
+  logUntraced,
+  rejectConflicting,
+  resolve as resolveAddressing,
+} from "./utils/agent_addressing.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -84,6 +91,12 @@ export interface RunTreeConfig {
   run_type?: string;
   id?: string;
   project_name?: string;
+  /**
+   * (experimental) An `Address` from `address()`, to send the run to instead
+   * of a project. Addressing is in beta and enabled per workspace; a
+   * workspace without it rejects the run.
+   */
+  address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -162,6 +175,8 @@ export type WriteReplica = {
   apiKey?: string;
   workspaceId?: string;
   projectName?: string;
+  /** (experimental) An `Address` to send the replica to, instead of a project. */
+  address?: Address;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
   updates?: KVMap | undefined;
@@ -175,14 +190,64 @@ export type WriteReplica = {
    */
   client?: Client;
 };
-type Replica = ProjectReplica | WriteReplica;
+type Replica = ProjectReplica | WriteReplica | Address;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
+  // Routing identifiers: a distributed child has to know where its parent's
+  // replica sent runs. Credentials stay out by omission.
   "projectName",
   "primary",
   "updates",
   "reroot",
+  ...Address.wireKeys(),
 ]);
+
+// The whole address, as URL-encoded JSON of its wire fields.
+const LANGSMITH_ADDRESS = "langsmith-address";
+
+/** Build an address from untrusted header input, or `undefined` if unusable. */
+function addressFromHeader(wire: unknown): Address | undefined {
+  if (wire == null || typeof wire !== "object" || Array.isArray(wire)) {
+    return undefined;
+  }
+  const allowed: Record<string, unknown> = {};
+  for (const key of Address.wireKeys()) {
+    if (key in wire) {
+      allowed[key] = (wire as Record<string, unknown>)[key];
+    }
+  }
+  try {
+    return Address.fromWire(allowed);
+  } catch {
+    // The values are untrusted, so they are not logged.
+    console.warn("Ignoring an unusable address in a `baggage` header.");
+    return undefined;
+  }
+}
+
+/**
+ * Turn a header replica's address wire fields into an `address`, or drop the
+ * replica if it names no usable destination.
+ */
+function addressReplicaFromHeader(
+  replica: WriteReplica,
+): WriteReplica | undefined {
+  const filtered: Record<string, unknown> = { ...replica };
+  const wire: Record<string, unknown> = {};
+  for (const key of Address.wireKeys()) {
+    if (key in filtered) {
+      wire[key] = filtered[key];
+      delete filtered[key];
+    }
+  }
+  if (Object.keys(wire).length === 0 || filtered.projectName) {
+    // Naming both would throw once resolved, and a header must not be able
+    // to do that; the project takes precedence, so drop the address.
+    return filtered as WriteReplica;
+  }
+  const address = addressFromHeader(wire);
+  return address ? ({ ...filtered, address } as WriteReplica) : undefined;
+}
 
 function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
   const filtered: WriteReplica = {};
@@ -205,16 +270,19 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
+  address: Address | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
+    address?: Address,
   ) {
     this.metadata = metadata;
     this.tags = tags;
     this.project_name = project_name;
     this.replicas = replicas;
+    this.address = address;
   }
 
   static fromHeader(value: string) {
@@ -223,6 +291,7 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
+    let address: Address | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -232,18 +301,27 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
+      } else if (key === LANGSMITH_ADDRESS) {
+        try {
+          address = addressFromHeader(JSON.parse(value));
+        } catch {
+          console.warn("Ignoring a malformed address in a `baggage` header.");
+        }
       } else if (key === "langsmith-replicas") {
-        const parsed = JSON.parse(value) as Replica[];
-        replicas = parsed.map((replica) => {
+        const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
+        replicas = parsed.flatMap((replica): Replica[] => {
           if (Array.isArray(replica)) {
-            return replica;
+            return [replica];
           }
-          return filterReplicaForHeaders(replica);
+          const addressed = addressReplicaFromHeader(
+            filterReplicaForHeaders(replica),
+          );
+          return addressed ? [addressed] : [];
         });
       }
     }
 
-    return new Baggage(metadata, tags, project_name, replicas);
+    return new Baggage(metadata, tags, project_name, replicas, address);
   }
 
   toHeader(): string {
@@ -261,6 +339,13 @@ class Baggage {
     if (this.project_name) {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
     }
+    if (this.address) {
+      items.push(
+        `${LANGSMITH_ADDRESS}=${encodeURIComponent(
+          JSON.stringify(this.address.toWire()),
+        )}`,
+      );
+    }
 
     return items.join(",");
   }
@@ -277,7 +362,14 @@ export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
   run_type: string;
-  project_name: string;
+  /**
+   * The project the run is sent to. Unset for a run sent to an `address`.
+   */
+  project_name?: string;
+  /**
+   * (experimental) The address the run is sent to, instead of a project.
+   */
+  address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -338,6 +430,7 @@ export class RunTree implements BaseRun {
       delete config.id;
     }
     Object.assign(this, { ...defaultConfig, ...config, client });
+    this._resolveAddressing(config);
 
     this.execution_order ??= 1;
     this.child_execution_order ??= 1;
@@ -380,6 +473,38 @@ export class RunTree implements BaseRun {
     }
   }
 
+  /**
+   * Settle on one destination: a project or an address.
+   *
+   * A config naming both throws. One naming neither falls back to the env
+   * vars; if those can't address the run (half an address, or an address
+   * beside a project), the run is left untraced rather than breaking the
+   * code being traced.
+   */
+  private _resolveAddressing(config: RunTreeConfig): void {
+    const address = checkAddress(config.address);
+    const project = config.project_name || undefined;
+    rejectConflicting(project, address);
+    if (project || address) {
+      this.project_name = project;
+      this.address = address;
+      return;
+    }
+    try {
+      [this.project_name, this.address] = resolveAddressing();
+    } catch (e) {
+      if (!(e instanceof EnvAddressError)) {
+        throw e;
+      }
+      if (isEnvTracingEnabled(this.tracingEnabled)) {
+        logUntraced(e);
+      }
+      this.project_name = undefined;
+      this.address = undefined;
+      this.tracingEnabled = false;
+    }
+  }
+
   set metadata(metadata: KVMap) {
     this.extra = {
       ...this.extra,
@@ -398,7 +523,6 @@ export class RunTree implements BaseRun {
     const start_time = Date.now();
     return {
       run_type: "chain",
-      project_name: getDefaultProjectName(),
       child_runs: [],
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
@@ -433,7 +557,9 @@ export class RunTree implements BaseRun {
     const child = new RunTree({
       ...config,
       parent_run: this,
+      // A child joins its parent's destination, project or address.
       project_name: this.project_name,
+      address: this.address,
       replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
@@ -563,6 +689,7 @@ export class RunTree implements BaseRun {
       inputs: run.inputs,
       outputs: run.outputs,
       session_name: run.project_name,
+      address: run.address,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
       trace_id: run.trace_id,
@@ -633,8 +760,30 @@ export class RunTree implements BaseRun {
     }
   }
 
+  /**
+   * Resolve one replica's `[projectName, address]`.
+   *
+   * The replica's own project wins over its own address, and a replica that
+   * names neither inherits the run tree's destination whole rather than
+   * mixing the two.
+   */
+  private _replicaAddressing(
+    replica: WriteReplica,
+  ): [string | undefined, Address | undefined] {
+    const address = checkAddress(replica.address);
+    if (replica.projectName != null) {
+      rejectConflicting(replica.projectName, address);
+      return [replica.projectName, undefined];
+    }
+    if (address) {
+      return [undefined, address];
+    }
+    return [this.project_name, this.address];
+  }
+
   private _remapForProject(params: {
-    projectName: string;
+    projectName?: string;
+    address?: Address;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -646,6 +795,7 @@ export class RunTree implements BaseRun {
   }): RunCreate & { id: string } {
     const {
       projectName,
+      address,
       primary,
       runtimeEnv,
       excludeChildRuns = true,
@@ -661,13 +811,18 @@ export class RunTree implements BaseRun {
     if (
       primary === undefined &&
       !this.replicas?.some((r) => r.primary === true) &&
-      projectName === this.project_name
+      projectName === this.project_name &&
+      (address === this.address || !!address?.equals(this.address))
     ) {
       return {
         ...baseRun,
         session_name: projectName,
+        address,
       };
     }
+    // Runs are duplicated per destination, so the derivation seed has to
+    // identify the destination -- an addressed replica has no project.
+    const seed = projectName ?? address?.seed() ?? "agent//";
 
     // Apply reroot logic before ID remapping
     if (reroot) {
@@ -692,7 +847,7 @@ export class RunTree implements BaseRun {
       // Store this run's original ID in context vars so descendants know the new trace root
       // We store the original ID (before remapping) so it can be found in dotted_order
       const replicaKey = getReplicaKey({
-        projectName,
+        projectName: seed,
         apiUrl,
         apiKey,
         workspaceId,
@@ -710,7 +865,7 @@ export class RunTree implements BaseRun {
           string
         >) ?? {};
       const replicaKey = getReplicaKey({
-        projectName,
+        projectName: seed,
         apiUrl,
         apiKey,
         workspaceId,
@@ -750,6 +905,7 @@ export class RunTree implements BaseRun {
       return {
         ...baseRun,
         session_name: projectName,
+        address,
       };
     }
 
@@ -757,15 +913,12 @@ export class RunTree implements BaseRun {
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = nonCryptographicUuid7Deterministic(oldId, projectName);
+    const newId = nonCryptographicUuid7Deterministic(oldId, seed);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = nonCryptographicUuid7Deterministic(
-        baseRun.trace_id,
-        projectName,
-      );
+      newTraceId = nonCryptographicUuid7Deterministic(baseRun.trace_id, seed);
     } else {
       newTraceId = newId;
     }
@@ -775,7 +928,7 @@ export class RunTree implements BaseRun {
     if (baseRun.parent_run_id) {
       newParentId = nonCryptographicUuid7Deterministic(
         baseRun.parent_run_id,
-        projectName,
+        seed,
       );
     }
 
@@ -786,10 +939,7 @@ export class RunTree implements BaseRun {
       const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = nonCryptographicUuid7Deterministic(
-          segId,
-          projectName,
-        );
+        const remappedId = nonCryptographicUuid7Deterministic(segId, seed);
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
       });
@@ -803,6 +953,7 @@ export class RunTree implements BaseRun {
       parent_run_id: newParentId,
       dotted_order: newDottedOrder,
       session_name: projectName,
+      address,
     };
   }
 
@@ -814,17 +965,19 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const {
-          projectName,
-          primary,
-          apiKey,
-          apiUrl,
-          workspaceId,
-          reroot,
-          client: replicaClient,
-        } of this.replicas) {
+        for (const replica of this.replicas) {
+          const {
+            primary,
+            apiKey,
+            apiUrl,
+            workspaceId,
+            reroot,
+            client: replicaClient,
+          } = replica;
+          const [projectName, address] = this._replicaAddressing(replica);
           const runCreate = this._remapForProject({
-            projectName: projectName ?? this.project_name,
+            projectName,
+            address,
             primary,
             runtimeEnv,
             excludeChildRuns: true,
@@ -880,18 +1033,20 @@ export class RunTree implements BaseRun {
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
     const excludeInputs = options?.excludeInputs ?? getExcludeInputsOnPatch();
     if (this.replicas && this.replicas.length > 0) {
-      for (const {
-        projectName,
-        primary,
-        apiKey,
-        apiUrl,
-        workspaceId,
-        updates,
-        reroot,
-        client: replicaClient,
-      } of this.replicas) {
+      for (const replica of this.replicas) {
+        const {
+          primary,
+          apiKey,
+          apiUrl,
+          workspaceId,
+          updates,
+          reroot,
+          client: replicaClient,
+        } = replica;
+        const [projectName, address] = this._replicaAddressing(replica);
         const runData = this._remapForProject({
-          projectName: projectName ?? this.project_name,
+          projectName,
+          address,
           primary,
           runtimeEnv: undefined,
           excludeChildRuns: true,
@@ -910,6 +1065,7 @@ export class RunTree implements BaseRun {
           error: runData.error,
           parent_run_id: runData.parent_run_id,
           session_name: runData.session_name,
+          address: runData.address,
           reference_example_id: runData.reference_example_id,
           end_time: runData.end_time,
           dotted_order: runData.dotted_order,
@@ -951,6 +1107,7 @@ export class RunTree implements BaseRun {
           tags: this.tags,
           attachments: this.attachments,
           session_name: this.project_name,
+          address: this.address,
         };
         // Important that inputs is not a key in the run update
         // if excluded because it will overwrite the run create if the
@@ -1025,7 +1182,8 @@ export class RunTree implements BaseRun {
         ...props,
         client,
         tracingEnabled,
-        project_name: projectName,
+        // An address named in code outranks the tracer's project.
+        project_name: props.address ? undefined : projectName,
       });
     }
 
@@ -1092,7 +1250,26 @@ export class RunTree implements BaseRun {
       const baggage = Baggage.fromHeader(rawHeaders["baggage"]);
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
-      config.project_name = baggage.project_name;
+      if (baggage.project_name && baggage.address) {
+        // Both at one level. Untrusted input must never throw, and joining
+        // the upstream trace in some other destination would misfile it, so
+        // the header parent is rejected outright. The values are untrusted,
+        // so they are not logged.
+        console.warn(
+          "Ignoring a distributed-tracing parent whose `baggage` header " +
+            "names both a project and an address.",
+        );
+        return undefined;
+      }
+      // The header's destination, project or address, outranks the
+      // caller's, so a child joins its parent's.
+      if (baggage.project_name) {
+        config.project_name = baggage.project_name;
+        delete config.address;
+      } else if (baggage.address) {
+        config.address = baggage.address;
+        delete config.project_name;
+      }
       config.replicas = baggage.replicas;
     }
 
@@ -1110,6 +1287,7 @@ export class RunTree implements BaseRun {
         this.tags,
         this.project_name,
         this.replicas,
+        this.address,
       ).toHeader(),
     };
 
@@ -1289,6 +1467,10 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
             updates: replica[1],
           };
         }
+        if (replica instanceof Address) {
+          return { address: replica };
+        }
+        checkAddress(replica.address);
         return replica;
       })
     : _getWriteReplicasFromEnv();
