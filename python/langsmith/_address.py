@@ -32,12 +32,14 @@ Example:
 from __future__ import annotations
 
 import dataclasses
+import re
 from collections.abc import Mapping
 from typing import Any, Optional
 
 from langsmith import utils
 
-_MAX_ID_LENGTH = 255
+# The server's agent id rule: a DNS label, so a hostname can carry the id.
+_AGENT_ID_PATTERN = re.compile(r"[a-z]([a-z0-9-]{0,61}[a-z0-9])?")
 
 
 class EnvAddressError(utils.LangSmithUserError):
@@ -84,10 +86,7 @@ class Address:
                 raise utils.LangSmithUserError(
                     f"Address {f.name} must be a non-empty string, got {value!r}."
                 )
-        if len(self.agent_id) > _MAX_ID_LENGTH:
-            raise utils.LangSmithUserError(
-                f"Address agent_id must be at most {_MAX_ID_LENGTH} characters."
-            )
+        _validate_agent_id(self.agent_id)
 
     # -- Generic over the fields: the only code that knows what an address holds.
 
@@ -132,7 +131,8 @@ class Address:
         """Read the address named by `LANGSMITH_AGENT_*` env vars, if any.
 
         Raises:
-            EnvAddressError: If only some of the required ones are set.
+            EnvAddressError: If only some of the required ones are set, or a
+                value is invalid.
         """
         try:
             return cls._from_wire(
@@ -150,8 +150,7 @@ class Address:
                 if value
             )
             raise EnvAddressError(
-                f"The LANGSMITH_AGENT_* env vars name an incomplete address "
-                f"({present}): {e}"
+                f"The LANGSMITH_AGENT_* env vars can't address a run ({present}): {e}"
             ) from e
 
     @classmethod
@@ -168,6 +167,22 @@ class Address:
         return dataclasses.replace(self, agent_environment=agent_environment)
 
 
+def _validate_agent_id(agent_id: str) -> None:
+    """Raise unless `agent_id` is one the server accepts.
+
+    Raises:
+        LangSmithUserError: If `agent_id` is not 1 to 63 lowercase ASCII
+            letters, digits or hyphens, starting with a letter and ending with
+            a letter or digit.
+    """
+    if not _AGENT_ID_PATTERN.fullmatch(agent_id):
+        raise utils.LangSmithUserError(
+            f"Address agent_id must be 1 to 63 lowercase ASCII letters, digits, "
+            f"or hyphens, start with a letter, and end with a letter or digit, "
+            f"got {agent_id!r}. Use an id such as 'support-agent'."
+        )
+
+
 def _env_name(field_name: str) -> str:
     return f"LANGSMITH_{field_name.upper()}"
 
@@ -182,7 +197,9 @@ def address(
     """(beta) Build an address to send runs to.
 
     Args:
-        agent_id: The agent's ID. The server creates it on first use.
+        agent_id: The agent's ID: 1 to 63 lowercase ASCII letters, digits or
+            hyphens, starting with a letter and ending with a letter or digit.
+            The server creates the agent on first use.
         agent_environment: The agent's environment. Not validated
             client-side; the server decides which environments are accepted.
         agent_region: Optionally, the agent's region. Not validated client-side.
