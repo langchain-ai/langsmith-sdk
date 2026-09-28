@@ -3153,9 +3153,10 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.events) {
       run.events = this._filterNewTokenEvents(run.events);
     }
+    // On `run` too: the direct path below serializes it.
+    applyToPayload(run, { update: true });
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
-    applyToPayload(data, { update: true });
     if (!this._filterForSampling([data]).length) {
       return;
     }

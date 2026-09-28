@@ -245,3 +245,20 @@ describe("Client", () => {
     expect(JSON.parse(init.body)).toMatchObject(SUPPORT_WIRE);
   });
 });
+
+test("a direct updateRun sends the address as wire fields", async () => {
+  const { client, callSpy } = mockClient();
+  await client.updateRun("00000000-0000-0000-0000-000000000001", {
+    address: SUPPORT,
+  });
+  const [, init] = callSpy.mock.calls.find(
+    ([, init]: [string, any]) => init?.method === "PATCH",
+  );
+  const body = JSON.parse(
+    typeof init.body === "string"
+      ? init.body
+      : new TextDecoder().decode(init.body),
+  );
+  expect(body).toMatchObject(SUPPORT_WIRE);
+  expect(body).not.toHaveProperty("address");
+});
