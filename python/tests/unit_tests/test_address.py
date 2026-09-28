@@ -76,15 +76,33 @@ class TestAddress:
         [
             ({"agent_id": "", "agent_environment": "prod"}, "agent_id must be"),
             ({"agent_id": "x", "agent_environment": ""}, "agent_environment must be"),
-            ({"agent_id": "x" * 256, "agent_environment": "prod"}, "at most 255"),
+            ({"agent_id": "x" * 64, "agent_environment": "prod"}, "1 to 63"),
+            ({"agent_id": "Support", "agent_environment": "prod"}, "lowercase"),
+            ({"agent_id": "1support", "agent_environment": "prod"}, "start with"),
+            ({"agent_id": "support-", "agent_environment": "prod"}, "end with"),
+            ({"agent_id": "sup_port", "agent_environment": "prod"}, "hyphens"),
         ],
-        ids=["empty_agent_id", "empty_agent_environment", "agent_id_too_long"],
+        ids=[
+            "empty_agent_id",
+            "empty_agent_environment",
+            "agent_id_too_long",
+            "uppercase",
+            "leading_digit",
+            "trailing_hyphen",
+            "underscore",
+        ],
     )
     def test_invalid_values_fail_at_construction(
         self, kwargs: dict, error: str
     ) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match=error):
             ls.address(**kwargs)
+
+    @pytest.mark.parametrize("agent_id", ["a", "a" * 63, "support-v2"])
+    def test_valid_agent_ids(self, agent_id: str) -> None:
+        assert ls.address(agent_id=agent_id, agent_environment="prod").agent_id == (
+            agent_id
+        )
 
     def test_renders_to_the_wire_fields(self) -> None:
         assert SUPPORT._to_wire() == {
@@ -281,7 +299,11 @@ class TestBadEnv:
 @pytest.mark.parametrize(
     ("env", "warning"),
     [
-        ({"LANGSMITH_AGENT_ID": "a"}, "not every LANGSMITH_AGENT_"),
+        ({"LANGSMITH_AGENT_ID": "a"}, "needs agent_environment"),
+        (
+            {"LANGSMITH_AGENT_ID": "Bad_Id", "LANGSMITH_AGENT_ENVIRONMENT": "e"},
+            "1 to 63",
+        ),
         (
             {
                 "LANGSMITH_AGENT_ID": "a",
@@ -292,7 +314,7 @@ class TestBadEnv:
         ),
         ({"LANGSMITH_AGENT_ID": "a", "LANGSMITH_AGENT_ENVIRONMENT": "e"}, None),
     ],
-    ids=["half_an_address", "address_and_project", "address_only"],
+    ids=["half_an_address", "invalid_agent_id", "address_and_project", "address_only"],
 )
 def test_client_warns_about_an_unusable_env(
     monkeypatch: pytest.MonkeyPatch, env: dict, warning: Optional[str]
