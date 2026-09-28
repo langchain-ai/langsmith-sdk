@@ -52,6 +52,7 @@ export class StreamManager {
     agentType?: string;
   }[] = [];
   private pendingAgentTools: Map<string, Record<string, unknown>> = new Map();
+  private subagentPrompts: Map<string, string> = new Map();
   private agentToToolUseId: Map<string, string> = new Map();
   private transcriptPathKeys: Set<string> = new Set();
   private resultModelUsage?: SDKResultMessage["modelUsage"];
@@ -130,7 +131,23 @@ export class StreamManager {
       this.namespaces[namespace]?.start_time ??
       eventTime;
 
-    this.history[namespace] ??= [];
+    if (this.history[namespace] == null) {
+      const subagentPrompt = this.subagentPrompts.get(namespace);
+      this.history[namespace] =
+        message.type === "assistant" && subagentPrompt != null
+          ? [
+              {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text: subagentPrompt }],
+                },
+                parent_tool_use_id: namespace,
+                session_id: "",
+              },
+            ]
+          : [];
+    }
 
     if (message.type === "assistant") {
       const messageId = message.message.id;
@@ -486,6 +503,9 @@ export class StreamManager {
       }) ?? this.subagents[block.id];
 
     this.namespaces[block.id] ??= this.subagents[block.id];
+    if (typeof input.prompt === "string") {
+      this.subagentPrompts.set(block.id, input.prompt);
+    }
   }
 
   private resolveSubagentNamespace(agentType?: string): string | undefined {

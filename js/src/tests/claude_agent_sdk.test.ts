@@ -3035,7 +3035,7 @@ describe("wrapClaudeAgentSDK", () => {
     });
   });
 
-  test("isolates concurrent subagent histories from each other and the root", async () => {
+  test("isolates concurrent subagent histories and seeds background subagent prompts", async () => {
     const { client, callSpy } = mockClient();
     const mockSDK = {
       ...createMockSDK(),
@@ -3057,7 +3057,11 @@ describe("wrapClaudeAgentSDK", () => {
                 type: "tool_use",
                 id: "agent_b",
                 name: "Agent",
-                input: { subagent_type: "beta", prompt: "Task for beta" },
+                input: {
+                  subagent_type: "beta",
+                  prompt: "Task for beta",
+                  run_in_background: true,
+                },
               },
             ],
             usage: { input_tokens: 10, output_tokens: 5 },
@@ -3073,10 +3077,23 @@ describe("wrapClaudeAgentSDK", () => {
         };
         yield {
           type: "user",
-          parent_tool_use_id: "agent_b",
+          parent_tool_use_id: null,
           message: {
             role: "user",
-            content: [{ type: "text", text: "Task for beta" }],
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "agent_b",
+                content: "Async agent launched successfully.",
+              },
+            ],
+          },
+          tool_use_result: {
+            status: "async_launched",
+            agentId: "beta_agent",
+            description: "Background task",
+            prompt: "Task for beta",
+            outputFile: "/tmp/beta.output",
           },
         };
         yield {
