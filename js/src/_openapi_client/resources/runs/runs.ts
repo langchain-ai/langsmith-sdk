@@ -510,6 +510,20 @@ export namespace Run {
 export interface RunIngest {
   id?: string;
 
+  /**
+   * Experimental. The Agent environment the run belongs to, case-insensitive;
+   * requires agent_id. Only workspaces enabled for Agent addressing accept it;
+   * others get a 403.
+   */
+  agent_environment?: 'LOCAL' | 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION';
+
+  /**
+   * Experimental. Addresses the run to an Agent, with agent_environment, in place of
+   * session_id or session_name. Only workspaces enabled for Agent addressing accept
+   * it; others get a 403.
+   */
+  agent_id?: string;
+
   dotted_order?: string;
 
   end_time?: string;
