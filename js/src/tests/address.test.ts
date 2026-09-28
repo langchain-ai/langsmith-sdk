@@ -137,6 +137,19 @@ describe("RunTree", () => {
     expect(body).not.toHaveProperty("session_name");
   });
 
+  test("a replica equal to the run's address keeps its ids", async () => {
+    const { client, callSpy } = mockClient();
+    const run = new RunTree({
+      name: "r",
+      address: SUPPORT,
+      client,
+      replicas: [address({ ...SUPPORT })],
+    });
+    await run.postRun();
+    const [body] = await postedRuns(callSpy, client);
+    expect(body.id).toBe(run.id);
+  });
+
   test("an Address replica gets its own ids", async () => {
     const { client, callSpy } = mockClient();
     await new RunTree({

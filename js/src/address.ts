@@ -114,6 +114,14 @@ export class Address {
     return ["agent", ...Object.values(this.toWire())].join("/");
   }
 
+  equals(other: Address | undefined): boolean {
+    return (
+      other instanceof Address &&
+      this.agentId === other.agentId &&
+      this.agentEnvironment === other.agentEnvironment
+    );
+  }
+
   withAgentEnvironment(agentEnvironment: string): Address {
     return new Address({ agentId: this.agentId, agentEnvironment });
   }
