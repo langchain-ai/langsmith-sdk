@@ -1,11 +1,15 @@
 """Resolving whether a run is addressed by project or by address.
 
+!!! warning "Beta"
+    Addressing runs to an address is enabled per workspace. A workspace
+    without it rejects the runs, so tracing is lost rather than falling back
+    to a project. This API may change without notice.
+
 A run goes to exactly one destination: a project (`project_name`) or an
 `Address` (`langsmith.address(agent_id=..., agent_environment=...)`), which
 names an agent and one of its environments. The server resolves an address to
 the agent environment's project, so traces follow the agent rather than a
-project name. Addressing is in beta and enabled per workspace; project
-addressing keeps working alongside it.
+project name. Project addressing keeps working alongside it.
 
 A run with a parent, in-process or from distributed-tracing headers, joins its
 parent's destination. A root run takes the first of these levels that names a
