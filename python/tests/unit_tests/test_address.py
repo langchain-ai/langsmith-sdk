@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any, Optional
 from unittest import mock
 
@@ -170,6 +171,13 @@ class TestPrecedence:
             with pytest.raises(ls_utils.LangSmithUserError):
                 call()
 
+    @pytest.mark.parametrize(
+        "settle", [_agent_addressing.resolve, _agent_addressing.first_named]
+    )
+    def test_the_level_naming_both_is_reported(self, settle: Any) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="precedence level 2"):
+            settle((None, None), ("p", SUPPORT))
+
 
 class TestConfigure:
     def test_configure_sets_the_address(self) -> None:
@@ -270,6 +278,36 @@ class TestBadEnv:
         assert not [r for r in caplog.records if UNTRACED in r.getMessage()]
 
 
+@pytest.mark.parametrize(
+    ("env", "warning"),
+    [
+        ({"LANGSMITH_AGENT_ID": "a"}, "not every LANGSMITH_AGENT_"),
+        (
+            {
+                "LANGSMITH_AGENT_ID": "a",
+                "LANGSMITH_AGENT_ENVIRONMENT": "e",
+                "LANGSMITH_PROJECT": "p",
+            },
+            "both set",
+        ),
+        ({"LANGSMITH_AGENT_ID": "a", "LANGSMITH_AGENT_ENVIRONMENT": "e"}, None),
+    ],
+    ids=["half_an_address", "address_and_project", "address_only"],
+)
+def test_client_warns_about_an_unusable_env(
+    monkeypatch: pytest.MonkeyPatch, env: dict, warning: Optional[str]
+) -> None:
+    _set_env(monkeypatch, **env)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _agent_addressing.warn_on_env()
+    messages = [str(w.message) for w in caught]
+    if warning is None:
+        assert messages == []
+    else:
+        assert len(messages) == 1 and warning in messages[0]
+
+
 def test_a_parent_naming_a_destination_survives_a_bad_env(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -306,11 +344,14 @@ class TestPropagation:
         assert (ctx["project_name"], ctx["address"]) == (None, SUPPORT)
 
     def test_headers_round_trip(self) -> None:
-        headers = RunTree(name="up", address=SUPPORT).to_headers()
+        headers = RunTree(
+            name="up", address=SUPPORT, tags=["t"], extra={"metadata": {"k": "v"}}
+        ).to_headers()
         assert "langsmith-address=" in headers["baggage"]
         child = RunTree.from_headers(headers)
         assert child is not None
         assert _destination(child) == (None, SUPPORT)
+        assert (child.tags, child.metadata["k"]) == (["t"], "v")
 
     def test_the_header_beats_the_receiver(self, client: Client) -> None:
         """As for `project_name` on `main`: a child joins its parent's."""
