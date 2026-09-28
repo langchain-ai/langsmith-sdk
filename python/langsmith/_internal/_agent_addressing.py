@@ -153,7 +153,8 @@ def _log_untraced_once(message: str) -> None:
 def warn_on_env() -> None:
     """Warn when the environment's address cannot be used.
 
-    Half an address, or one beside a configured project, leaves calls that name
+    Half an address, an invalid one, or one beside a configured project, leaves
+    calls that name
     nothing in code untraced -- and a name like `LANGSMITH_AGENT_ENVIRONMENT`
     is generic enough to be set by accident.
 
@@ -164,11 +165,9 @@ def warn_on_env() -> None:
         return
     try:
         address = Address._from_env()
-    except EnvAddressError:
+    except EnvAddressError as e:
         warnings.warn(
-            f"{', '.join(present)} is set, but not every LANGSMITH_AGENT_* "
-            "variable an address needs, so calls that name no destination in "
-            "code are not traced.",
+            f"{e} Calls that name no destination in code are not traced.",
             utils.LangSmithWarning,
             stacklevel=3,
         )
