@@ -18,7 +18,7 @@ def answer(question: str) -> str:
 
 
 # Service A: start a trace and forward its headers.
-with support_eu.trace("checkout") as upstream:
+with ls.trace("checkout", address=support_eu) as upstream:
     headers = upstream.to_headers()
 
 # Service B: adopt the parent from the incoming headers.

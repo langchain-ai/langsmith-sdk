@@ -17,7 +17,3 @@ def answer(question: str) -> str:
 
 with ls.tracing_context(address=staging):
     answer("hello")  # -> customer-support / staging
-
-# Same thing, from the handle.
-with staging.tracing_context():
-    answer("hello")  # -> customer-support / staging
