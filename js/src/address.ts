@@ -9,7 +9,18 @@ const FIELDS = {
   agentEnvironment: "agent_environment",
 } as const;
 
-const MAX_ID_LENGTH = 255;
+// The server's agent id rule: a DNS label, so a hostname can carry the id.
+const AGENT_ID_PATTERN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+function validateAgentId(agentId: string): void {
+  if (!AGENT_ID_PATTERN.test(agentId)) {
+    throw new Error(
+      "Address agentId must be 1 to 63 lowercase ASCII letters, digits, or " +
+        "hyphens, start with a letter, and end with a letter or digit, got " +
+        `${JSON.stringify(agentId)}. Use an id such as "support-agent".`,
+    );
+  }
+}
 
 // Not `utils/env`: it imports the package index, which imports this module.
 function getEnv(name: string): string | undefined {
@@ -45,11 +56,7 @@ export class Address {
         throw new Error(`Address ${name} must be a non-empty string.`);
       }
     }
-    if (fields.agentId.length > MAX_ID_LENGTH) {
-      throw new Error(
-        `Address agentId must be at most ${MAX_ID_LENGTH} characters.`,
-      );
-    }
+    validateAgentId(fields.agentId);
     this.agentId = fields.agentId;
     this.agentEnvironment = fields.agentEnvironment;
     Object.freeze(this);
@@ -108,7 +115,7 @@ export class Address {
       return Address.fromWire(values);
     } catch (e) {
       throw new EnvAddressError(
-        `The LANGSMITH_AGENT_* env vars name an incomplete address: ${
+        `The LANGSMITH_AGENT_* env vars can't address a run: ${
           (e as Error).message
         }`,
       );

@@ -76,9 +76,14 @@ function headersWith(baggage: string) {
 describe("Address", () => {
   test("validates its fields", () => {
     expect(() => address({ agentId: "", agentEnvironment: "e" })).toThrow();
-    expect(() =>
-      address({ agentId: "a".repeat(256), agentEnvironment: "e" }),
-    ).toThrow(/at most 255/);
+    for (const agentId of ["a".repeat(64), "Support", "1a", "a-", "a_b"]) {
+      expect(() => address({ agentId, agentEnvironment: "e" })).toThrow(
+        /1 to 63 lowercase/,
+      );
+    }
+    for (const agentId of ["a", "a".repeat(63), "support-v2"]) {
+      expect(address({ agentId, agentEnvironment: "e" }).agentId).toBe(agentId);
+    }
     expect(() => Address.fromWire({ agent_id: "a" })).toThrow(
       /agent_environment/,
     );
