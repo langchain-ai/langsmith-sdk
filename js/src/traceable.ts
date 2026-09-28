@@ -39,11 +39,7 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { __version__ } from "./index.js";
-import {
-  checkAddress,
-  firstNamed,
-  rejectConflicting,
-} from "./utils/agent_addressing.js";
+import { firstNamed, rejectConflicting } from "./utils/agent_addressing.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
@@ -764,8 +760,6 @@ export function traceable<Func extends (...args: any[]) => any>(
     ...runTreeConfig
   } = config ?? {};
 
-  // Naming both at one level is a bug in the caller's code: fail at wrap time.
-  checkAddress(runTreeConfig.address);
   rejectConflicting(runTreeConfig.project_name, runTreeConfig.address);
 
   const processInputsFn = processInputs ?? ((x) => x);
@@ -827,11 +821,9 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
       runtimeConfig = undefined;
     }
-    // The first level naming a project or an address decides, whichever mode
-    // it names: a runtime project outranks a decorator address. A runtime
-    // config naming both throws, like a decorator config.
+    // Runtime config outranks decorator config, whichever mode each names.
     [ensuredConfig.project_name, ensuredConfig.address] = firstNamed(
-      [runtimeConfig?.project_name, checkAddress(runtimeConfig?.address)],
+      [runtimeConfig?.project_name, runtimeConfig?.address],
       [runTreeConfig.project_name, runTreeConfig.address],
     );
 

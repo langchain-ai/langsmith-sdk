@@ -29,13 +29,12 @@ import {
 } from "./utils/_uuid.js";
 import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 import {
-  Address,
-  EnvAddressError,
   checkAddress,
   logUntraced,
   rejectConflicting,
-  resolve as resolveAddressing,
+  resolveFromEnv,
 } from "./utils/agent_addressing.js";
+import { Address, EnvAddressError } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -91,11 +90,7 @@ export interface RunTreeConfig {
   run_type?: string;
   id?: string;
   project_name?: string;
-  /**
-   * (experimental) An `Address` from `address()`, to send the run to instead
-   * of a project. Addressing is in beta and enabled per workspace; a
-   * workspace without it rejects the run.
-   */
+  /** (experimental) Send the run to this address instead of a project. */
   address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
@@ -175,7 +170,7 @@ export type WriteReplica = {
   apiKey?: string;
   workspaceId?: string;
   projectName?: string;
-  /** (experimental) An `Address` to send the replica to, instead of a project. */
+  /** (experimental) Send the replica to this address instead of a project. */
   address?: Address;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
@@ -193,8 +188,6 @@ export type WriteReplica = {
 type Replica = ProjectReplica | WriteReplica | Address;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
-  // Routing identifiers: a distributed child has to know where its parent's
-  // replica sent runs. Credentials stay out by omission.
   "projectName",
   "primary",
   "updates",
@@ -202,51 +195,31 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   ...Address.wireKeys(),
 ]);
 
-// The whole address, as URL-encoded JSON of its wire fields.
+// URL-encoded JSON of the address's wire fields.
 const LANGSMITH_ADDRESS = "langsmith-address";
 
-/** Build an address from untrusted header input, or `undefined` if unusable. */
-function addressFromHeader(wire: unknown): Address | undefined {
-  if (wire == null || typeof wire !== "object" || Array.isArray(wire)) {
-    return undefined;
-  }
-  const allowed: Record<string, unknown> = {};
+/** Pops the address wire keys off untrusted `values`; never throws. */
+function takeHeaderAddress(values: Record<string, unknown>): {
+  named: boolean;
+  address?: Address;
+} {
+  const wire: Record<string, unknown> = {};
   for (const key of Address.wireKeys()) {
-    if (key in wire) {
-      allowed[key] = (wire as Record<string, unknown>)[key];
+    if (key in values) {
+      wire[key] = values[key];
+      delete values[key];
     }
   }
   try {
-    return Address.fromWire(allowed);
+    return {
+      named: Object.keys(wire).length > 0,
+      address: Address.fromWire(wire),
+    };
   } catch {
-    // The values are untrusted, so they are not logged.
-    console.warn("Ignoring an unusable address in a `baggage` header.");
-    return undefined;
+    // Values are untrusted, so not logged.
+    console.warn("Ignoring an invalid address in a `baggage` header.");
+    return { named: true };
   }
-}
-
-/**
- * Turn a header replica's address wire fields into an `address`, or drop the
- * replica if it names no usable destination.
- */
-function addressReplicaFromHeader(
-  replica: WriteReplica,
-): WriteReplica | undefined {
-  const filtered: Record<string, unknown> = { ...replica };
-  const wire: Record<string, unknown> = {};
-  for (const key of Address.wireKeys()) {
-    if (key in filtered) {
-      wire[key] = filtered[key];
-      delete filtered[key];
-    }
-  }
-  if (Object.keys(wire).length === 0 || filtered.projectName) {
-    // Naming both would throw once resolved, and a header must not be able
-    // to do that; the project takes precedence, so drop the address.
-    return filtered as WriteReplica;
-  }
-  const address = addressFromHeader(wire);
-  return address ? ({ ...filtered, address } as WriteReplica) : undefined;
 }
 
 function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
@@ -302,10 +275,14 @@ class Baggage {
       } else if (key === "langsmith-project") {
         project_name = value;
       } else if (key === LANGSMITH_ADDRESS) {
+        let parsed: unknown;
         try {
-          address = addressFromHeader(JSON.parse(value));
+          parsed = JSON.parse(value);
         } catch {
-          console.warn("Ignoring a malformed address in a `baggage` header.");
+          parsed = undefined;
+        }
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          address = takeHeaderAddress({ ...parsed }).address;
         }
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
@@ -313,10 +290,16 @@ class Baggage {
           if (Array.isArray(replica)) {
             return [replica];
           }
-          const addressed = addressReplicaFromHeader(
-            filterReplicaForHeaders(replica),
+          const filtered = filterReplicaForHeaders(replica);
+          const { named, address } = takeHeaderAddress(
+            filtered as Record<string, unknown>,
           );
-          return addressed ? [addressed] : [];
+          // A project wins over an address; a replica with an invalid
+          // address and no project is dropped.
+          if (filtered.projectName || !named) {
+            return [filtered];
+          }
+          return address ? [{ ...filtered, address }] : [];
         });
       }
     }
@@ -362,13 +345,9 @@ export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
   run_type: string;
-  /**
-   * The project the run is sent to. Unset for a run sent to an `address`.
-   */
+  /** Unset for a run sent to an `address`. */
   project_name?: string;
-  /**
-   * (experimental) The address the run is sent to, instead of a project.
-   */
+  /** (experimental) Set instead of `project_name` for an addressed run. */
   address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
@@ -473,14 +452,7 @@ export class RunTree implements BaseRun {
     }
   }
 
-  /**
-   * Settle on one destination: a project or an address.
-   *
-   * A config naming both throws. One naming neither falls back to the env
-   * vars; if those can't address the run (half an address, or an address
-   * beside a project), the run is left untraced rather than breaking the
-   * code being traced.
-   */
+  /** Falls back to the env; a bad env leaves the run untraced. */
   private _resolveAddressing(config: RunTreeConfig): void {
     const address = checkAddress(config.address);
     const project = config.project_name || undefined;
@@ -491,7 +463,7 @@ export class RunTree implements BaseRun {
       return;
     }
     try {
-      [this.project_name, this.address] = resolveAddressing();
+      [this.project_name, this.address] = resolveFromEnv();
     } catch (e) {
       if (!(e instanceof EnvAddressError)) {
         throw e;
@@ -557,7 +529,6 @@ export class RunTree implements BaseRun {
     const child = new RunTree({
       ...config,
       parent_run: this,
-      // A child joins its parent's destination, project or address.
       project_name: this.project_name,
       address: this.address,
       replicas: childReplicas,
@@ -760,13 +731,7 @@ export class RunTree implements BaseRun {
     }
   }
 
-  /**
-   * Resolve one replica's `[projectName, address]`.
-   *
-   * The replica's own project wins over its own address, and a replica that
-   * names neither inherits the run tree's destination whole rather than
-   * mixing the two.
-   */
+  /** A replica naming neither inherits the run tree's destination. */
   private _replicaAddressing(
     replica: WriteReplica,
   ): [string | undefined, Address | undefined] {
@@ -812,7 +777,7 @@ export class RunTree implements BaseRun {
       primary === undefined &&
       !this.replicas?.some((r) => r.primary === true) &&
       projectName === this.project_name &&
-      (address === this.address || !!address?.equals(this.address))
+      address === this.address
     ) {
       return {
         ...baseRun,
@@ -820,8 +785,6 @@ export class RunTree implements BaseRun {
         address,
       };
     }
-    // Runs are duplicated per destination, so the derivation seed has to
-    // identify the destination -- an addressed replica has no project.
     const seed = projectName ?? address?.seed() ?? "agent//";
 
     // Apply reroot logic before ID remapping
@@ -1182,7 +1145,6 @@ export class RunTree implements BaseRun {
         ...props,
         client,
         tracingEnabled,
-        // An address named in code outranks the tracer's project.
         project_name: props.address ? undefined : projectName,
       });
     }
@@ -1251,18 +1213,12 @@ export class RunTree implements BaseRun {
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
       if (baggage.project_name && baggage.address) {
-        // Both at one level. Untrusted input must never throw, and joining
-        // the upstream trace in some other destination would misfile it, so
-        // the header parent is rejected outright. The values are untrusted,
-        // so they are not logged.
         console.warn(
-          "Ignoring a distributed-tracing parent whose `baggage` header " +
-            "names both a project and an address.",
+          "Ignoring a `baggage` header that names both a project and an address.",
         );
         return undefined;
       }
-      // The header's destination, project or address, outranks the
-      // caller's, so a child joins its parent's.
+      // The header's destination outranks the caller's.
       if (baggage.project_name) {
         config.project_name = baggage.project_name;
         delete config.address;

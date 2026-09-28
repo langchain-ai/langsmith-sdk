@@ -87,15 +87,13 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import type { Address } from "./address.js";
+import { type Address, EnvAddressError } from "./address.js";
 import {
-  EnvAddressError,
   applyToPayload,
   checkAddress,
   logUntraced,
   rejectConflicting,
-  rejectUrl,
-  resolve as resolveAddressing,
+  resolveFromEnv,
   warnOnEnv,
 } from "./utils/agent_addressing.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
@@ -544,14 +542,10 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
-  /**
-   * (experimental) An `Address` from `address()`, to send the run to instead
-   * of a project. Addressing is in beta and enabled per workspace; a
-   * workspace without it rejects the run.
-   */
+  /** (experimental) Send the run to this address instead of a project. */
   address?: Address;
+  /** Set by `RunTree.postRun` for a project run. */
   session_name?: string;
-  session_id?: string;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -622,11 +616,7 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
     | {
         /** The run to provide feedback on. */
         runId: string;
-        /**
-         * (experimental) The address the run was sent to, instead of its
-         * project -- for a run created in this process, `runTree.address`.
-         * The address must already exist.
-         */
+        /** (experimental) The address the run was sent to, e.g. `runTree.address`. */
         address: Address;
         sessionId?: never;
         projectId?: never;
@@ -2562,29 +2552,18 @@ export class Client implements LangSmithTracingClientInterface {
       "Content-Type": "application/json",
     };
     const address = checkAddress(run.address);
-    // Only `project_name` counts as the caller naming a project here.
-    // `session_name` / `session_id` arrive as part of an already-resolved run
-    // body -- `RunTree.postRun` sends the tree's fields that way.
     rejectConflicting(run.project_name, address);
     const session_name = run.project_name;
     delete run.project_name;
-    if (
-      !session_name &&
-      run.session_name == null &&
-      run.session_id == null &&
-      address === undefined
-    ) {
-      // Nothing named: an env address fills in here, where a bad env can be
-      // caught, rather than in the payload rendering.
+    if (!session_name && run.session_name == null && !address) {
       try {
-        run.address = resolveAddressing()[1];
+        run.address = resolveFromEnv()[1];
       } catch (e) {
-        if (e instanceof EnvAddressError) {
-          // Dropped, not thrown: tracing must not break the caller.
-          logUntraced(e);
-          return;
+        if (!(e instanceof EnvAddressError)) {
+          throw e;
         }
-        throw e;
+        logUntraced(e);
+        return;
       }
     }
 
@@ -3176,7 +3155,6 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
-    // Updates sent directly skip `prepareRunCreateOrUpdateInputs`.
     applyToPayload(data, { update: true });
     if (!this._filterForSampling([data]).length) {
       return;
@@ -3304,7 +3282,9 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      rejectUrl(run.session_id, (run as { address?: Address }).address);
+      if (!run.session_id && (run as { address?: Address }).address) {
+        throw new Error("Addressed runs have no URL until read back.");
+      }
       let sessionId: string;
       if (run.session_id) {
         sessionId = run.session_id;
@@ -5603,9 +5583,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
-    if (runId && sessionId === undefined && address === undefined) {
-      // An address locates the project directly, so it satisfies the same
-      // requirement this check exists for.
+    if (runId && sessionId === undefined && !address) {
       await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
