@@ -130,7 +130,7 @@ export class StreamManager {
       this.namespaces[namespace]?.start_time ??
       eventTime;
 
-    this.history[namespace] ??= this.history["root"].slice();
+    this.history[namespace] ??= [];
 
     if (message.type === "assistant") {
       const messageId = message.message.id;
