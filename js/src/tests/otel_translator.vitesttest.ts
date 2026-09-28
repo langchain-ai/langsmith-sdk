@@ -443,6 +443,18 @@ describe("tool attributes", () => {
     expect(attrs["gen_ai.tool.call.id"]).toBe("toolu_123");
   });
 
+  it("prefers the top-level tool call id over metadata", () => {
+    const attrs = attributesForRun({
+      run_type: "tool",
+      extra: {
+        tool_call_id: "toolu_extra",
+        metadata: { tool_call_id: "toolu_metadata" },
+      },
+    });
+
+    expect(attrs["gen_ai.tool.call.id"]).toBe("toolu_extra");
+  });
+
   it("omits tool name and call id on non-tool runs", () => {
     const attrs = attributesForRun({
       name: "Bash",
