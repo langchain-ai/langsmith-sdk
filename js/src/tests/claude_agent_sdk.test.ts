@@ -563,6 +563,247 @@ describe("wrapClaudeAgentSDK", () => {
     });
   });
 
+  test("adds a string prompt to root inputs once regardless of system messages", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (_params: MockQueryParams) {
+        yield { type: "system", subtype: "init", session_id: "session_1" };
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_1",
+            role: "assistant",
+            content: "First response",
+            usage: { input_tokens: 5, output_tokens: 3 },
+          },
+        };
+        yield {
+          type: "system",
+          subtype: "task_started",
+          session_id: "session_1",
+        };
+        yield {
+          type: "system",
+          subtype: "task_progress",
+          session_id: "session_1",
+        };
+        yield {
+          type: "system",
+          subtype: "task_notification",
+          session_id: "session_1",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_2",
+            role: "assistant",
+            content: "Second response",
+            usage: { input_tokens: 8, output_tokens: 5 },
+          },
+        };
+        yield {
+          type: "result",
+          usage: { input_tokens: 13, output_tokens: 8 },
+          session_id: "session_1",
+        };
+        yield { type: "system", subtype: "init", session_id: "session_1" };
+        yield {
+          type: "system",
+          subtype: "background_tasks_changed",
+          session_id: "session_1",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_3",
+            role: "assistant",
+            content: "Third response",
+            usage: { input_tokens: 10, output_tokens: 4 },
+          },
+        };
+        yield {
+          type: "result",
+          usage: { input_tokens: 10, output_tokens: 4 },
+          session_id: "session_1",
+        };
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+    const messages: MockSDKMessage[] = [];
+    for await (const message of wrapped.query({ prompt: "Fix it" })) {
+      messages.push(message);
+    }
+
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+    ).toMatchObject({
+      nodes: [
+        "claude.conversation:0",
+        "claude.assistant.turn:1",
+        "claude.assistant.turn:2",
+        "claude.assistant.turn:3",
+      ],
+      edges: [
+        ["claude.conversation:0", "claude.assistant.turn:1"],
+        ["claude.conversation:0", "claude.assistant.turn:2"],
+        ["claude.conversation:0", "claude.assistant.turn:3"],
+      ],
+      data: {
+        "claude.assistant.turn:1": {
+          inputs: { messages: [{ content: "Fix it", role: "user" }] },
+        },
+        "claude.assistant.turn:2": {
+          inputs: {
+            messages: [
+              { content: "Fix it", role: "user" },
+              { content: "First response", role: "assistant" },
+            ],
+          },
+        },
+        "claude.assistant.turn:3": {
+          inputs: {
+            messages: [
+              { content: "Fix it", role: "user" },
+              { content: "First response", role: "assistant" },
+              { content: "Second response", role: "assistant" },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  test("adds async iterable prompt inputs to root inputs once as they are consumed", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (params: MockQueryParams) {
+        const inputs = (params.prompt as AsyncIterable<MockSDKMessage>)[
+          Symbol.asyncIterator
+        ]();
+        await inputs.next();
+        yield { type: "system", subtype: "init", session_id: "session_1" };
+        yield {
+          type: "system",
+          subtype: "task_started",
+          session_id: "session_1",
+        };
+        yield {
+          type: "system",
+          subtype: "task_progress",
+          session_id: "session_1",
+        };
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_1",
+            role: "assistant",
+            content: "Hi there",
+            usage: { input_tokens: 5, output_tokens: 3 },
+          },
+        };
+        yield {
+          type: "result",
+          usage: { input_tokens: 5, output_tokens: 3 },
+          session_id: "session_1",
+        };
+        await inputs.next();
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_2",
+            role: "assistant",
+            content: "Doing well",
+            usage: { input_tokens: 8, output_tokens: 3 },
+          },
+        };
+        yield {
+          type: "result",
+          usage: { input_tokens: 8, output_tokens: 3 },
+          session_id: "session_1",
+        };
+        yield { type: "system", subtype: "init", session_id: "session_1" };
+        yield {
+          type: "assistant",
+          message: {
+            id: "msg_3",
+            role: "assistant",
+            content: "Anything else?",
+            usage: { input_tokens: 10, output_tokens: 4 },
+          },
+        };
+        yield {
+          type: "result",
+          usage: { input_tokens: 10, output_tokens: 4 },
+          session_id: "session_1",
+        };
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+
+    async function* promptStream(): AsyncIterable<MockSDKMessage> {
+      yield { type: "user", message: { role: "user", content: "Hello" } };
+      yield {
+        type: "user",
+        message: { role: "user", content: "How are you?" },
+      };
+    }
+
+    const messages: MockSDKMessage[] = [];
+    for await (const message of wrapped.query({ prompt: promptStream() })) {
+      messages.push(message);
+    }
+
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+    ).toMatchObject({
+      nodes: [
+        "claude.assistant.turn:0",
+        "claude.assistant.turn:1",
+        "claude.assistant.turn:2",
+        "claude.conversation:3",
+      ],
+      edges: [
+        ["claude.conversation:3", "claude.assistant.turn:0"],
+        ["claude.conversation:3", "claude.assistant.turn:1"],
+        ["claude.conversation:3", "claude.assistant.turn:2"],
+      ],
+      data: {
+        "claude.assistant.turn:0": {
+          inputs: { messages: [{ content: "Hello", role: "user" }] },
+        },
+        "claude.assistant.turn:1": {
+          inputs: {
+            messages: [
+              { content: "Hello", role: "user" },
+              { content: "Hi there", role: "assistant" },
+              { content: "How are you?", role: "user" },
+            ],
+          },
+        },
+        "claude.assistant.turn:2": {
+          inputs: {
+            messages: [
+              { content: "Hello", role: "user" },
+              { content: "Hi there", role: "assistant" },
+              { content: "How are you?", role: "user" },
+              { content: "Doing well", role: "assistant" },
+            ],
+          },
+        },
+      },
+    });
+  });
+
   test("adjusts output tokens correctly for final result", async () => {
     const { client, callSpy } = mockClient();
     const mockSDK = {
