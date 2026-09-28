@@ -15,6 +15,7 @@ import pytest
 from langsmith import address as ls_address
 from tests.integration_tests.agent_addressing.conftest import (
     AGENT,
+    AGENT_ID,
     PROJECT,
     Case,
     Harness,
@@ -59,7 +60,7 @@ CASES = [
     # Addressing passed per call rather than configured in the environment.
     Case(
         "explicit_agent",
-        kwargs={"address": ls_address(agent_id=AGENT, agent_environment="staging")},
+        kwargs={"address": ls_address(agent_id=AGENT_ID, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # A genuinely incomplete address is dropped and logged, not a run that

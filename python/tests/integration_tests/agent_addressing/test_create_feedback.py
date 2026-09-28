@@ -15,9 +15,11 @@ import pytest
 from langsmith import address as ls_address
 from langsmith.async_client import AsyncClient
 from tests.integration_tests.agent_addressing.conftest import (
-    AGENT,
+    AGENT_ID,
     OTHER_AGENT,
+    OTHER_AGENT_ID,
     PROJECT,
+    PROJECT_ID,
     Case,
     Destination,
     Harness,
@@ -50,7 +52,7 @@ class FeedbackCase(Case):
 CASES = [
     FeedbackCase(
         "agent_pair",
-        kwargs={"address": ls_address(agent_id=AGENT, agent_environment="staging")},
+        kwargs={"address": ls_address(agent_id=AGENT_ID, agent_environment="staging")},
         lands_in=InAgent("STAGING"),
     ),
     # The legacy way: the run's own project.
@@ -63,7 +65,7 @@ CASES = [
     FeedbackCase(
         "agent_and_session_id",
         kwargs={
-            "address": ls_address(agent_id=AGENT, agent_environment="staging"),
+            "address": ls_address(agent_id=AGENT_ID, agent_environment="staging"),
             "session_id": RUN_PROJECT,
         },
         lands_in=Rejected(
@@ -75,7 +77,7 @@ CASES = [
     FeedbackCase(
         "unknown_agent",
         kwargs={
-            "address": ls_address(agent_id=OTHER_AGENT, agent_environment="staging")
+            "address": ls_address(agent_id=OTHER_AGENT_ID, agent_environment="staging")
         },
         lands_in=REJECTED_UNKNOWN_AGENT,
     ),
@@ -84,7 +86,9 @@ CASES = [
     FeedbackCase(
         "missing_environment",
         run_in=InProject(PROJECT),
-        kwargs={"address": ls_address(agent_id=PROJECT, agent_environment="staging")},
+        kwargs={
+            "address": ls_address(agent_id=PROJECT_ID, agent_environment="staging")
+        },
         lands_in=REJECTED_UNKNOWN_AGENT,
     ),
     # No addressing on the call: the run is looked up, and the agent in the
@@ -106,7 +110,7 @@ CASES = [
     FeedbackCase(
         "agent_without_trace_id",
         kwargs={
-            "address": ls_address(agent_id=OTHER_AGENT, agent_environment="staging")
+            "address": ls_address(agent_id=OTHER_AGENT_ID, agent_environment="staging")
         },
         with_trace_id=False,
         lands_in=InAgent("STAGING"),

@@ -49,6 +49,12 @@ ADDRESSING_ENV_VARS = (
 AGENT = "{agent}"
 PROJECT = "{project}"
 OTHER_AGENT = "{other_agent}"
+# An `Address` validates its agent id at construction, so its placeholders are
+# valid ids that `Harness.format` swaps for the names above.
+AGENT_ID = "placeholder-agent"
+PROJECT_ID = "placeholder-project"
+OTHER_AGENT_ID = "placeholder-other-agent"
+_ID_PLACEHOLDERS = {AGENT_ID: AGENT, PROJECT_ID: PROJECT, OTHER_AGENT_ID: OTHER_AGENT}
 
 PRODUCTION_HOSTS = frozenset({"api.smith.langchain.com", "eu.api.smith.langchain.com"})
 
@@ -197,6 +203,7 @@ class Harness:
         run it just sent. An unknown placeholder is left as is.
         """
         if isinstance(value, str):
+            value = _ID_PLACEHOLDERS.get(value, value)
             return value.format_map(
                 _Names(
                     agent=self.agent_key,
@@ -256,7 +263,10 @@ class Harness:
         addressing: dict[str, Any]
         if isinstance(destination, InAgent):
             addressing = {
-                "address": Address(self.agent_key, destination.environment.lower())
+                "address": Address(
+                    agent_id=self.agent_key,
+                    agent_environment=destination.environment.lower(),
+                )
             }
         else:
             assert isinstance(destination, InProject)
