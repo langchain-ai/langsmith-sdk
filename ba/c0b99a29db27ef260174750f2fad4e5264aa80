@@ -1,0 +1,26 @@
+python/langsmith/_internal/_agent_addressing.py
+  s_1494656ad43aad::t_f26a97c4a419ba 156-157,168,170
+python/langsmith/_address.py
+  s_1494656ad43aad::t_752b561d411f75 35,41-42,85,166-181,194-196
+  s_1494656ad43aad::t_f26a97c4a419ba 130-131,149
+python/tests/unit_tests/test_address.py
+  s_1494656ad43aad::t_f26a97c4a419ba 302-306,317
+  s_1494656ad43aad::t_752b561d411f75 79-92,101-105
+  s_1494656ad43aad::t_3d8b91dc5fcf49 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bac0b99a29db27ef260174750f2fad4e5264aa80",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
