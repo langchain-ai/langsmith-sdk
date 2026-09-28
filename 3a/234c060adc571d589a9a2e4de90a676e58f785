@@ -1,0 +1,29 @@
+python/tests/integration_tests/agent_addressing/test_multipart_ingest.py
+  s_1494656ad43aad::t_8c7a76d4733829 22,42
+python/tests/integration_tests/agent_addressing/conftest.py
+  s_1494656ad43aad::t_24b2fa33414760 52-57,206,266-269
+python/tests/integration_tests/agent_addressing/test_create_update_run.py
+  s_1494656ad43aad::t_24b2fa33414760 63
+  s_1494656ad43aad::t_8c7a76d4733829 18
+python/tests/integration_tests/agent_addressing/test_traceable.py
+  s_1494656ad43aad::t_8c7a76d4733829 16,30,106-108
+python/tests/integration_tests/agent_addressing/test_create_feedback.py
+  s_1494656ad43aad::t_8c7a76d4733829 18,20,22,89-91
+  s_1494656ad43aad::t_24b2fa33414760 55,68,80,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3a234c060adc571d589a9a2e4de90a676e58f785",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
