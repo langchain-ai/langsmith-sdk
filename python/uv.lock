@@ -12,7 +12,7 @@ resolution-markers = [
 
 [options]
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
-exclude-newer-span = "P1D"
+exclude-newer-span = "P7D"
 
 [manifest]
 overrides = [{ name = "json-repair", specifier = ">=0.60.1" }]
