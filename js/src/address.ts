@@ -1,5 +1,5 @@
 /**
- * (experimental) An address that runs are sent to instead of a project.
+ * (beta) An address that runs are sent to instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  */
 
@@ -55,14 +55,17 @@ export class Address {
     Object.freeze(this);
   }
 
+  /** @internal */
   static wireKeys(): string[] {
     return Object.values(FIELDS);
   }
 
+  /** @internal */
   static envNames(): string[] {
     return Address.wireKeys().map((key) => `LANGSMITH_${key.toUpperCase()}`);
   }
 
+  /** @internal */
   toWire(): Record<string, string> {
     return {
       [FIELDS.agentId]: this.agentId,
@@ -70,7 +73,7 @@ export class Address {
     };
   }
 
-  /** `undefined` if no field is set; throws if only some are. */
+  /** @internal `undefined` if no field is set; throws if only some are. */
   static fromWire(values: Record<string, unknown>): Address | undefined {
     const fields = Object.fromEntries(
       Object.entries(FIELDS).map(([name, key]) => [
@@ -90,7 +93,10 @@ export class Address {
     return new Address(fields as AddressFields);
   }
 
-  /** @throws {EnvAddressError} If only some `LANGSMITH_AGENT_*` vars are set. */
+  /**
+   * @internal
+   * @throws {EnvAddressError} If only some `LANGSMITH_AGENT_*` vars are set.
+   */
   static fromEnv(): Address | undefined {
     const values = Object.fromEntries(
       Address.wireKeys().map((key, i) => [
@@ -109,7 +115,7 @@ export class Address {
     }
   }
 
-  /** Replica id derivation seed. */
+  /** @internal Replica id derivation seed. */
   seed(): string {
     return ["agent", ...Object.values(this.toWire())].join("/");
   }
@@ -131,7 +137,7 @@ export class Address {
   }
 }
 
-/** (experimental) Build an address to send runs to. */
+/** (beta) Build an address to send runs to. */
 export function address(fields: AddressFields): Address {
   return new Address(fields);
 }

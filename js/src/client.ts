@@ -542,7 +542,7 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
-  /** (experimental) Send the run to this address instead of a project. */
+  /** (beta) Send the run to this address instead of a project. */
   address?: Address;
   /** Set by `RunTree.postRun` for a project run. */
   session_name?: string;
@@ -616,7 +616,7 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
     | {
         /** The run to provide feedback on. */
         runId: string;
-        /** (experimental) The address the run was sent to, e.g. `runTree.address`. */
+        /** (beta) The address the run was sent to, e.g. `runTree.address`. */
         address: Address;
         sessionId?: never;
         projectId?: never;

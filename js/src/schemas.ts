@@ -219,7 +219,7 @@ export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
   session_name?: string;
-  /** (experimental) Sent as `agent_id` / `agent_environment`. */
+  /** (beta) Sent as `agent_id` / `agent_environment`. */
   address?: Address;
 }
 
@@ -240,7 +240,7 @@ export interface RunUpdate {
   events?: KVMap[];
   session_id?: string;
   session_name?: string;
-  /** (experimental) Sent as `agent_id` / `agent_environment`. */
+  /** (beta) Sent as `agent_id` / `agent_environment`. */
   address?: Address;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;

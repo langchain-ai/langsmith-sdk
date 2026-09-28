@@ -90,7 +90,7 @@ export interface RunTreeConfig {
   run_type?: string;
   id?: string;
   project_name?: string;
-  /** (experimental) Send the run to this address instead of a project. */
+  /** (beta) Send the run to this address instead of a project. */
   address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
@@ -170,7 +170,7 @@ export type WriteReplica = {
   apiKey?: string;
   workspaceId?: string;
   projectName?: string;
-  /** (experimental) Send the replica to this address instead of a project. */
+  /** (beta) Send the replica to this address instead of a project. */
   address?: Address;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
@@ -347,7 +347,7 @@ export class RunTree implements BaseRun {
   run_type: string;
   /** Unset for a run sent to an `address`. */
   project_name?: string;
-  /** (experimental) Set instead of `project_name` for an addressed run. */
+  /** (beta) Set instead of `project_name` for an addressed run. */
   address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
