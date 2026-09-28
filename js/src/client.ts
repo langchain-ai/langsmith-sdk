@@ -2552,7 +2552,7 @@ export class Client implements LangSmithTracingClientInterface {
       "Content-Type": "application/json",
     };
     const address = checkAddress(run.address);
-    rejectConflicting(run.project_name, address);
+    rejectConflicting(run.project_name ?? run.session_name, address);
     const session_name = run.project_name;
     delete run.project_name;
     if (!session_name && run.session_name == null && !address) {

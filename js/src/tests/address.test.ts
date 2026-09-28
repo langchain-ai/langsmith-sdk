@@ -223,6 +223,19 @@ describe("Client", () => {
     expect(await postedRuns(callSpy, client)).toHaveLength(0);
   });
 
+  test("createRun rejects a session_name beside an address", async () => {
+    const { client } = mockClient();
+    await expect(
+      client.createRun({
+        name: "r",
+        inputs: {},
+        run_type: "chain",
+        session_name: "p",
+        address: SUPPORT,
+      }),
+    ).rejects.toThrow(/not both/);
+  });
+
   test("a rendered payload is not re-addressed from the env", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
