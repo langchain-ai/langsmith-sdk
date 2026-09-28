@@ -11,16 +11,8 @@ def classify(ticket: str) -> str:
     return "billing"
 
 
-# Same thing, from the handle.
-@support.traceable(run_type="llm")
-def draft_reply(ticket: str) -> str:
-    """Draft a reply to a ticket."""
-    return "Thanks for reaching out."
-
-
 classify("refund please")  # -> customer-support / production
-draft_reply("refund please")  # -> customer-support / production
 
 # An enclosing tracing_context still wins, as it does for project_name.
-with support.with_agent_environment("staging").tracing_context():
+with ls.tracing_context(address=support.with_agent_environment("staging")):
     classify("refund please")  # -> customer-support / staging

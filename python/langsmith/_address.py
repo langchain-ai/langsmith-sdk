@@ -1,9 +1,9 @@
 """A handle that names where runs are sent.
 
-!!! warning "Experimental"
-    Addressing runs to an address is in beta and enabled per workspace. A
-    workspace without it rejects the runs, so tracing is lost rather than
-    falling back to a project. This API may change without notice.
+!!! warning "Beta"
+    Addressing runs to an address is enabled per workspace. A workspace
+    without it rejects the runs, so tracing is lost rather than falling back
+    to a project. This API may change without notice.
 
 The handle is propagated whole -- through context variables, run trees,
 replicas and distributed-tracing headers -- and only unpacked into wire fields
@@ -20,11 +20,11 @@ Example:
     )
 
 
-    @support.traceable
+    @ls.traceable(address=support)
     def handle(order): ...
 
 
-    with support.with_agent_environment("staging").tracing_context():
+    with ls.tracing_context(address=support.with_agent_environment("staging")):
         handle(order)
     ```
 """
@@ -33,15 +33,9 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import Any, Optional
 
 from langsmith import utils
-
-if TYPE_CHECKING:
-    # Imported lazily below: the tracing modules import this one.
-    from langsmith import run_helpers
-    from langsmith.run_trees import WriteReplica
 
 _MAX_ID_LENGTH = 255
 
@@ -62,9 +56,9 @@ def _wire(name: str, *, required: bool) -> dict[str, Any]:
     return {"wire": name, "required": required}
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class Address:
-    """(experimental) A destination that runs can be addressed to.
+    """(beta) A destination that runs can be addressed to.
 
     Build one with `langsmith.address`. Required fields must be set at
     construction; which values exist is left to the server.
@@ -98,11 +92,11 @@ class Address:
     # -- Generic over the fields: the only code that knows what an address holds.
 
     @classmethod
-    def wire_keys(cls) -> tuple[str, ...]:
+    def _wire_keys(cls) -> tuple[str, ...]:
         """Return the payload keys an address renders to."""
         return tuple(f.metadata["wire"] for f in dataclasses.fields(cls))
 
-    def to_wire(self) -> dict[str, str]:
+    def _to_wire(self) -> dict[str, str]:
         """Render as run / feedback payload fields, omitting unset ones."""
         return {
             f.metadata["wire"]: value
@@ -111,7 +105,7 @@ class Address:
         }
 
     @classmethod
-    def from_wire(cls, values: Mapping[str, Any]) -> Optional[Address]:
+    def _from_wire(cls, values: Mapping[str, Any]) -> Optional[Address]:
         """Build from payload-keyed values, or `None` if none are set.
 
         Raises:
@@ -134,14 +128,14 @@ class Address:
         return cls(**fields)  # type: ignore[arg-type]
 
     @classmethod
-    def from_env(cls) -> Optional[Address]:
+    def _from_env(cls) -> Optional[Address]:
         """Read the address named by `LANGSMITH_AGENT_*` env vars, if any.
 
         Raises:
             EnvAddressError: If only some of the required ones are set.
         """
         try:
-            return cls.from_wire(
+            return cls._from_wire(
                 {
                     f.metadata["wire"]: _env_value(f.name)
                     for f in dataclasses.fields(cls)
@@ -151,7 +145,9 @@ class Address:
             raise
         except utils.LangSmithUserError as e:
             present = ", ".join(
-                f"{name}={value!r}" for name, value in cls.env_values().items() if value
+                f"{name}={value!r}"
+                for name, value in cls._env_values().items()
+                if value
             )
             raise EnvAddressError(
                 f"The LANGSMITH_AGENT_* env vars name an incomplete address "
@@ -159,68 +155,17 @@ class Address:
             ) from e
 
     @classmethod
-    def env_values(cls) -> dict[str, Optional[str]]:
+    def _env_values(cls) -> dict[str, Optional[str]]:
         """Return each `LANGSMITH_AGENT_*` env var an address reads, with its value."""
         return {_env_name(f.name): _env_value(f.name) for f in dataclasses.fields(cls)}
 
-    def seed(self) -> str:
+    def _seed(self) -> str:
         """Identify this destination for deterministic replica run ids."""
-        return "/".join(["agent", *self.to_wire().values()])
-
-    # -- Sugar.
+        return "/".join(["agent", *self._to_wire().values()])
 
     def with_agent_environment(self, agent_environment: str) -> Address:
         """Return a handle to the same agent in another environment."""
         return dataclasses.replace(self, agent_environment=agent_environment)
-
-    def _with_address(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        named = [k for k in ("address", "project_name") if k in kwargs]
-        if named:
-            raise utils.LangSmithUserError(
-                f"An Address already addresses the run; drop {named}, or use "
-                "another one (e.g. `address.with_agent_environment(...)`) to change it."
-            )
-        return {**kwargs, "address": self}
-
-    def traceable(self, func: Optional[Callable] = None, /, **kwargs: Any) -> Any:
-        """`langsmith.traceable`, addressed to this address.
-
-        Usable bare (`@support.traceable`) or with arguments
-        (`@support.traceable(run_type="llm")`). Binds at decorator time, so an
-        enclosing `tracing_context` still wins, as with `project_name`.
-        """
-        from langsmith import run_helpers
-
-        kwargs = self._with_address(kwargs)
-        if func is None:
-            return run_helpers.traceable(**kwargs)
-        return run_helpers.traceable(**kwargs)(func)
-
-    def trace(
-        self, name: str, run_type: Any = "chain", **kwargs: Any
-    ) -> run_helpers.trace:
-        """`langsmith.trace`, addressed to this address."""
-        from langsmith import run_helpers
-
-        return run_helpers.trace(name, run_type, **self._with_address(kwargs))
-
-    def tracing_context(self, **kwargs: Any) -> AbstractContextManager[None]:
-        """`langsmith.tracing_context`, addressed to this address.
-
-        Sets the context variables, so it beats an `@traceable` binding inside
-        it. Like any address, it can't move a child of a run already in flight.
-        """
-        from langsmith import run_helpers
-
-        return run_helpers.tracing_context(**self._with_address(kwargs))
-
-    def replica(self, **kwargs: Any) -> WriteReplica:
-        """Build a `WriteReplica` that sends runs to this address.
-
-        Only needed to set other replica fields; the handle itself can be
-        passed in `replicas`.
-        """
-        return self._with_address(kwargs)  # type: ignore[return-value]
 
 
 def _env_name(field_name: str) -> str:
@@ -234,7 +179,7 @@ def _env_value(field_name: str) -> Optional[str]:
 def address(
     *, agent_id: str, agent_environment: str, agent_region: Optional[str] = None
 ) -> Address:
-    """(experimental) Build an address to send runs to.
+    """(beta) Build an address to send runs to.
 
     Args:
         agent_id: The agent's ID. The server creates it on first use.
@@ -245,4 +190,8 @@ def address(
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    return Address(agent_id, agent_environment, agent_region)
+    return Address(
+        agent_id=agent_id,
+        agent_environment=agent_environment,
+        agent_region=agent_region,
+    )

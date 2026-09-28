@@ -14,9 +14,10 @@ def answer(question: str) -> str:
 with ls.tracing_context(
     replicas=[
         support,  # a bare Address is a replica
-        support.with_agent_environment("staging").replica(
-            updates={"metadata": {"mirrored": True}}
-        ),
+        {
+            "address": support.with_agent_environment("staging"),
+            "updates": {"metadata": {"mirrored": True}},
+        },
         {"project_name": "audit-log"},  # projects still work
     ]
 ):

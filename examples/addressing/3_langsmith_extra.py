@@ -10,7 +10,7 @@ support = ls.address(agent_id="customer-support", agent_environment="production"
 staging = support.with_agent_environment("staging")
 
 
-@support.traceable
+@ls.traceable(address=support)
 def answer(question: str) -> str:
     """Echo the question."""
     return f"echo: {question}"

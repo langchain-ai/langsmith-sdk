@@ -12,10 +12,10 @@ def answer(question: str) -> str:
     return f"echo: {question}"
 
 
-@support.traceable
+@ls.traceable(address=support)
 def root() -> None:
     """Start a trace, then try to move a child elsewhere."""
-    with support.with_agent_environment("staging").tracing_context():
+    with ls.tracing_context(address=support.with_agent_environment("staging")):
         answer("child")  # still customer-support / production
 
 

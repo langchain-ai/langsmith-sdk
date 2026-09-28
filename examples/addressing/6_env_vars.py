@@ -20,5 +20,4 @@ def answer(question: str) -> str:
     return f"echo: {question}"
 
 
-print("from env:", ls.Address.from_env())  # noqa: T201
 answer("hello")  # -> the env address, when nothing above names one
