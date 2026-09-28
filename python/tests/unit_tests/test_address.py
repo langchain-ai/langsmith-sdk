@@ -71,39 +71,42 @@ def _root() -> tuple:
 
 class TestAddress:
     @pytest.mark.parametrize(
-        "kwargs",
+        ("kwargs", "error"),
         [
-            {"agent_id": "", "agent_environment": "prod"},
-            {"agent_id": "x", "agent_environment": ""},
-            {"agent_id": "x" * 256, "agent_environment": "prod"},
+            ({"agent_id": "", "agent_environment": "prod"}, "agent_id must be"),
+            ({"agent_id": "x", "agent_environment": ""}, "agent_environment must be"),
+            ({"agent_id": "x" * 256, "agent_environment": "prod"}, "at most 255"),
         ],
+        ids=["empty_agent_id", "empty_agent_environment", "agent_id_too_long"],
     )
-    def test_invalid_values_fail_at_construction(self, kwargs: dict) -> None:
-        with pytest.raises(ls_utils.LangSmithUserError):
+    def test_invalid_values_fail_at_construction(
+        self, kwargs: dict, error: str
+    ) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match=error):
             ls.address(**kwargs)
 
     def test_renders_to_the_wire_fields(self) -> None:
-        assert SUPPORT.to_wire() == {
+        assert SUPPORT._to_wire() == {
             "agent_id": "support",
             "agent_environment": "production",
         }
-        assert ls.Address.from_wire(SUPPORT.to_wire()) == SUPPORT
+        assert ls.Address._from_wire(SUPPORT._to_wire()) == SUPPORT
 
     def test_half_an_address_is_rejected(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="agent_environment"):
-            ls.Address.from_wire({"agent_id": "support"})
+            ls.Address._from_wire({"agent_id": "support"})
 
     def test_reads_the_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert ls.Address.from_env() is None
+        assert ls.Address._from_env() is None
         _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
-        assert ls.Address.from_env() == ls.address(agent_id="a", agent_environment="e")
+        assert ls.Address._from_env() == ls.address(agent_id="a", agent_environment="e")
 
     def test_half_an_address_in_the_env_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _set_env(monkeypatch, LANGSMITH_AGENT_ID="a")
         with pytest.raises(EnvAddressError, match="LANGSMITH_AGENT_ID='a'"):
-            ls.Address.from_env()
+            ls.Address._from_env()
 
     def test_a_non_address_is_rejected(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="langsmith.Address"):
@@ -127,12 +130,12 @@ class TestPrecedence:
     def test_tracing_context_project_beats_a_decorator_address(
         self, client: Client
     ) -> None:
-        f = SUPPORT.traceable(_root.__wrapped__)
+        f = traceable(address=SUPPORT)(_root.__wrapped__)
         with ls.tracing_context(enabled=True, client=client, project_name="ctx"):
             assert f() == ("ctx", None)
 
     def test_langsmith_extra_beats_the_decorator(self, client: Client) -> None:
-        f = SUPPORT.traceable(_root.__wrapped__)
+        f = traceable(address=SUPPORT)(_root.__wrapped__)
         with ls.tracing_context(enabled=True, client=client):
             assert f(langsmith_extra={"address": STAGING}) == (None, STAGING)
             assert f(langsmith_extra={"project_name": "p"}) == ("p", None)
@@ -287,7 +290,7 @@ class TestPropagation:
         def child() -> tuple:
             return _destination(get_current_run_tree())
 
-        @SUPPORT.traceable
+        @traceable(address=SUPPORT)
         def root() -> tuple:
             with ls.tracing_context(address=STAGING):
                 return child()
@@ -315,6 +318,20 @@ class TestPropagation:
         with ls.tracing_context(enabled=True, client=client):
             got = _root(langsmith_extra={"parent": headers, "project_name": "mine"})
         assert got == (None, SUPPORT)
+
+    @pytest.mark.parametrize(
+        "named",
+        [{"project_name": "mine"}, {"address": SUPPORT}],
+        ids=["project", "address"],
+    )
+    def test_trace_names_a_header_parent_without_a_destination(
+        self, client: Client, named: dict
+    ) -> None:
+        headers = {"langsmith-trace": RunTree(name="up").dotted_order}
+        with ls.tracing_context(enabled=True, client=client):
+            with trace("child", parent=headers, client=client, **named) as run:
+                got = _destination(run)
+        assert got == (named.get("project_name"), named.get("address"))
 
     def test_a_header_naming_both_is_rejected(self) -> None:
         project = RunTree(name="up", project_name="upstream").to_headers()
@@ -392,6 +409,17 @@ class TestWire:
         dumped = feedback.model_dump(exclude_none=True)
         assert dumped["agent_id"] == "support"
         assert "address" not in dumped
+
+    @pytest.mark.parametrize(
+        "project",
+        [{"project_id": "p"}, {"session_id": "s"}],
+        ids=lambda k: next(iter(k)),
+    )
+    def test_feedback_rejects_a_project_beside_an_address(
+        self, client: Client, project: dict
+    ) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            client.create_feedback(key="k", address=SUPPORT, **project)
 
     def test_feedback_rejects_a_non_address(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError):

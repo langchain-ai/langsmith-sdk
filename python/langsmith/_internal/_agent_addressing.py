@@ -1,5 +1,9 @@
 """Resolving whether a run is addressed by project or by address.
 
+An `Address` (see `langsmith._address`) names an agent and environment to send
+runs to instead of a project; project addressing stays supported until then.
+Design: https://www.notion.so/3e5808527b17810b9e6cf1ebdd189924
+
 The address travels as a whole `Address` everywhere -- context variables, run
 trees, replicas, headers -- and is unpacked into wire fields only here, in
 `apply_to_payload` and `FeedbackCreate.model_dump`.
@@ -85,7 +89,7 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[Address]]:
         if address is not None:
             return None, address
     env_project = utils.get_tracer_project(return_default_value=False) or None
-    env_address = Address.from_env()
+    env_address = Address._from_env()
     if env_project and env_address is not None:
         raise EnvAddressError(
             str(_both_at_one_level(env_project, env_address, "in the environment"))
@@ -138,11 +142,11 @@ def warn_on_env() -> None:
 
     Emitted at client construction rather than per run, so it is seen once.
     """
-    present = [name for name, value in Address.env_values().items() if value]
+    present = [name for name, value in Address._env_values().items() if value]
     if not present:
         return
     try:
-        address = Address.from_env()
+        address = Address._from_env()
     except EnvAddressError:
         warnings.warn(
             f"{', '.join(present)} is set, but not every LANGSMITH_AGENT_* "
@@ -221,11 +225,11 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
     if address is None and not (update or named_project):
-        address = Address.from_env()
+        address = Address._from_env()
     if address is None:
         return
     warn_is_beta()
-    payload.update(address.to_wire())
+    payload.update(address._to_wire())
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)

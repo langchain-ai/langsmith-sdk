@@ -119,7 +119,7 @@ class _ReplicaGroup(NamedTuple):
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
     # Routing identifiers, like `project_name`: a distributed child has to know
     # where its parent's replica sent runs. Credentials stay out by omission.
-    {"project_name", "primary", "updates", *Address.wire_keys()}
+    {"project_name", "primary", "updates", *Address._wire_keys()}
 )
 
 # Untrusted header-supplied replica `updates` is merged into the run, so restrict it
@@ -294,7 +294,7 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (experimental) An `Address` from `langsmith.address`, to send
+        address: (beta) An `Address` from `langsmith.address`, to send
             traces to instead of a project. Mutually exclusive with
             `project_name`.
 
@@ -461,7 +461,7 @@ class RunTree(ls_schemas.RunBase):
         default=None,
         exclude=True,
         description=(
-            "Experimental. The address to ingest this run into, instead of a "
+            "Beta. The address to ingest this run into, instead of a "
             "project. Unpacked into wire fields only when the run is sent."
         ),
     )
@@ -892,7 +892,7 @@ class RunTree(ls_schemas.RunBase):
         seed = (
             project_name
             if project_name is not None
-            else (address.seed() if address is not None else "agent//")
+            else (address._seed() if address is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -1457,7 +1457,7 @@ class _Baggage:
                             # dropped here rather than raising downstream.
                             replica_wire = {
                                 k: cast(dict, filtered_replica).pop(k)
-                                for k in Address.wire_keys()
+                                for k in Address._wire_keys()
                                 if k in filtered_replica
                             }
                             if filtered_replica.get("project_name"):
@@ -1514,7 +1514,7 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         if self.address is not None:
-            wire = self.address.to_wire()
+            wire = self.address._to_wire()
             items.append(f"{LANGSMITH_ADDRESS}={urllib.parse.quote(_dumps_json(wire))}")
         return ",".join(items)
 
@@ -1522,8 +1522,8 @@ class _Baggage:
 def _address_from_header(wire: Mapping[str, Any]) -> Optional[Address]:
     """Build an address from untrusted header input, or `None` if it is unusable."""
     try:
-        return Address.from_wire(
-            {k: v for k, v in wire.items() if k in Address.wire_keys()}
+        return Address._from_wire(
+            {k: v for k, v in wire.items() if k in Address._wire_keys()}
         )
     except (utils.LangSmithUserError, TypeError) as e:
         logger.warning("Ignoring an unusable address in a `baggage` header: %s", e)

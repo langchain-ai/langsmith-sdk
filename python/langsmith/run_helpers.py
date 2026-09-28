@@ -193,7 +193,7 @@ def tracing_context(
 
     Args:
         project_name: The name of the project to log the run to.
-        address: (experimental) An `Address` from `langsmith.address`, to log the
+        address: (beta) An `Address` from `langsmith.address`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         tags: The tags to add to the run.
@@ -330,7 +330,7 @@ class LangSmithExtra(TypedDict, total=False):
     project_name: Optional[str]
     """Optional name of the project."""
     address: Optional[Address]
-    """(experimental) An `Address` to log the run to, instead of a project."""
+    """(beta) An `Address` to log the run to, instead of a project."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
     tags: Optional[list[str]]
@@ -448,7 +448,7 @@ def traceable(
         project_name: The name of the project to log the run to.
 
             Defaults to `None`, which will use the default project.
-        address: (experimental) An `Address` from `langsmith.address`, to log the
+        address: (beta) An `Address` from `langsmith.address`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         process_inputs: Custom serialization / processing function for inputs.
@@ -1056,7 +1056,7 @@ class trace:
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
         inputs: Initial input data for the run.
         project_name: Project name to associate the run with.
-        address: (experimental) An `Address` from `langsmith.address`, to log the
+        address: (beta) An `Address` from `langsmith.address`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         parent: Parent run.
@@ -1192,6 +1192,7 @@ class trace:
                     "run_tree": self.run_tree,
                     "client": client_,
                     "project_name": self.project_name,
+                    "address": self.address,
                 }
             )
             # A child copies its parent's address, so only a root resolves one.
