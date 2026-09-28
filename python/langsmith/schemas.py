@@ -565,7 +565,7 @@ class RunLikeDict(TypedDict, total=False):
     session_id: Optional[UUID]
     session_name: Optional[str]
     address: Optional[Address]
-    """(experimental) An address to send the run to, instead of a project."""
+    """(beta) An address to send the run to, instead of a project."""
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
@@ -701,7 +701,7 @@ class FeedbackCreate(FeedbackBase):
         # `Address` can't be imported here at runtime (see the import above),
         # so the field is declared loosely and checked by `_check_address`.
         address: Optional[Any] = Field(default=None, exclude=True)
-    """(experimental) An address, rendered into its wire fields on dump."""
+    """(beta) An address, rendered into its wire fields on dump."""
 
     @field_validator("address")
     @classmethod
@@ -714,7 +714,7 @@ class FeedbackCreate(FeedbackBase):
         """Dump, with `address` unpacked into its wire fields."""
         dumped = super().model_dump(**kwargs)
         if self.address is not None:
-            dumped.update(self.address.to_wire())
+            dumped.update(self.address._to_wire())
         return dumped
 
 

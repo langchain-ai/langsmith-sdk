@@ -1237,6 +1237,9 @@ class AsyncClient:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
         address = _agent_addressing.check_address(address)
+        _agent_addressing.reject_conflicting(
+            project=project_id, session_id=session_id, address=address
+        )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")

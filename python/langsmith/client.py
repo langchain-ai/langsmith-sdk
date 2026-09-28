@@ -2584,7 +2584,7 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            address (Optional[Address]): (experimental) An `Address` from
+            address (Optional[Address]): (beta) An `Address` from
                 `langsmith.address`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
@@ -8432,6 +8432,9 @@ class Client:
             ```
         """
         address = _agent_addressing.check_address(address)
+        _agent_addressing.reject_conflicting(
+            project=project_id, session_id=session_id, address=address
+        )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
