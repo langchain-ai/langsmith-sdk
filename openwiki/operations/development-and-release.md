@@ -1,14 +1,16 @@
 ---
 type: contributor operations guide
 title: Development, Generated Code, Builds, and Releases
-description: Contributor workflows for validating, building, and releasing the Python and TypeScript SDKs, including generated-code ownership, version synchronization, CI selection, and publication controls.
+description: Contributor workflows for safely validating, building, staging, and independently releasing the Python and TypeScript SDKs, including generated-code ownership and CI controls.
 tags: [development, build, release, ci, python, typescript, openapi]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-28T08:35:15.620Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
+    resource: repo://.github/workflows/openwiki-update.yml
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
   - id: openwiki-source-625291c113f5f63dc5c85aa2
@@ -41,7 +43,7 @@ sources:
     resource: repo://python/Makefile
   - id: openwiki-source-e8ccc4222c6775a30580b26e
     resource: repo://python/pyproject.toml
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-28T08:35:15.620Z" }
 ---
 
 # Development, Generated Code, Builds, and Releases
@@ -55,6 +57,8 @@ The trees `python/langsmith/_openapi_client/` and `js/src/_openapi_client/` are 
 Generated API changes arrive through the external `stlc_sync_python_and_js_sdks` workflow in `langchain-ai/langchainplus`. Put handwritten adaptation or compatibility behavior outside the generated trees. If the generated contract itself must change, use the upstream generation and synchronization process referenced by `CONTRIBUTING.md`, rather than patching generated output here.
 
 There are other generated **build outputs**, but they have a different lifecycle. TypeScript's root entrypoint shims and `dist/` contents are recreated by the build scripts and are not the source of truth. The entrypoint registry in `js/scripts/create-entrypoints.js` is the extension point for adding a public package subpath; it regenerates `package.json` exports and file inclusion, TypeDoc entrypoints, root `.js`/`.cjs`/declaration shims, and the corresponding `.gitignore` section.
+
+Generated OpenWiki documentation has a third ownership model. The scheduled or manually dispatched `OpenWiki Update` workflow checks out full history, runs `openwiki code --update --print`, removes transient run state, and stages only `openwiki/`, `AGENTS.md`, and `CLAUDE.md` into the `openwiki/update` pull request. If generation partially succeeds, completed pages are still preserved in the PR before the workflow propagates the failure. Treat source and tests as authoritative and do not hand-edit generated OpenWiki pages unless the task explicitly assigns one.
 
 ## Local contributor loop
 
@@ -117,6 +121,12 @@ NODE_OPTIONS=--experimental-vm-modules npx jest src/tests/context.test.ts
 A successful `pnpm run build` is also a type and package-surface check. CI separately installs with `--frozen-lockfile`, runs formatting and lint checks, builds, runs Jest and Vitest across supported Node/OS combinations, and exercises the installed package through ESM, CJS, Cloudflare, Vite, Webpack, esbuild, and Metro environments. These export tests matter whenever an entrypoint, module format, declaration, package export, or dependency boundary changes.
 
 The repository-level pre-commit configuration can autoformat, autofix lint, and run type checks for changed Python and TypeScript files. It is a convenience, not a substitute for the complete language-specific commands above.
+
+## Staging-repository mirroring
+
+A merge to `main` that touches `python/` or `js/` enters a separate migration path as well as this repository's CI and release paths. External cron workflows in `langsmith-python-staging` and `langsmith-javascript-staging` mirror those merges hourly, one pull request at a time, rewriting paths for the destination repository. Those staging repositories are the future SDK homes, so contributors should open new work there when practical.
+
+Mirroring is intentionally incomplete: `pyproject.toml`, `package.json`, and lockfile changes are excluded and require a manual port. Do not assume a successful merge here moved dependency, package metadata, or lockfile updates into staging; review and port those files separately.
 
 ## How the TypeScript package build works
 

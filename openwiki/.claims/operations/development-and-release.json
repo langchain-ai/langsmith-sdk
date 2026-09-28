@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:d2a2b7f7c6cdda93b134f1fca98b7cb0c698c5620bf26c4199d13119b57e6f76",
+  "pageVersion": "sha256:1eac9566b245e46ea44e9100c7c79278d47a6ab28991ad3cd940814641089f09",
   "claims": [
     {
       "id": "claim_ff77b7a21ed74621968a075b949c39bb",
@@ -198,7 +198,7 @@
         },
         {
           "resource": "repo://python/.bumpversion.cfg#L1-L12",
-          "version": "repo-lines-v1:sha256:500a6194a880ca9170c4de2343bf519acacfbdc8547a711d0b77db429eaabcc0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNzUwMTc1NTg3MTY1OTMxN2ZhMzRkOTI4NTgyOGZlYzM3ZmU5NWQyODM5MjhkMGJlN2JkMzdlNjk2OWEyNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiODIyMjk5YTA5NTkyZjk2N2U0YzkyMTMxMDUxMmYzMmVjOTYwZGUyMTNmZDc1N2FlNWEyNjk1NGFlNGNmNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:2bdcc2ddc305c890caaf83153ba961c5b0ab0f662c31aa78e7fc96bfa4e50377:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNzUwMTc1NTg3MTY1OTMxN2ZhMzRkOTI4NTgyOGZlYzM3ZmU5NWQyODM5MjhkMGJlN2JkMzdlNjk2OWEyNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiODIyMjk5YTA5NTkyZjk2N2U0YzkyMTMxMDUxMmYzMmVjOTYwZGUyMTNmZDc1N2FlNWEyNjk1NGFlNGNmNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -245,10 +245,44 @@
           "version": "repo-lines-v1:sha256:11c6293258955dfe642f4eaef14bba6980c6f2218b42a3fe7f03db34f0af70b8:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGE2ODk3Y2E3ZTA3M2NlYTVmNTgwNThhNDlmMGViOGY4NDlkMGRlNGIzMDcwNzQxZTJiNzdhZGVmNWRkZDc1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUyODBlZDAwZTk4YzM5ZWQ5OGJjZWNlNDMxMzYwZjBhMjBhZjRjODA4MzBlNjM3MGVlYjQ1YjliYjc4ZmQzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2VhNjY2NTQxNzYyMDY3Mzg0NjFhMjczNGFkNTk0ZjMzZWNlZGY2NjMwNWQ5MTA5N2RjMDUwMTZkMWRhODBhNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         }
       ]
+    },
+    {
+      "id": "claim_e8342c3b694a4bb08323b7db91f4eb95",
+      "statement": "Generated OpenWiki documentation is refreshed by a scheduled or manually dispatched workflow that checks out full history, runs the updater, removes transient state, and stages only `openwiki/`, `AGENTS.md`, and `CLAUDE.md` into an update PR; completed changes are preserved in that PR even when generation later reports failure.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L3-L36",
+          "version": "repo-lines-v1:sha256:22a1f11958501f7b21cf033f606dc8fd1365ababad4793d432b4115dd60e0ef0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NmRjNDgxNDlmNWE4M2QxZWQ2ZGJiMzliYmM3ZTJiOTAyYWEzZDM0ZDZiZDVhZTRiMjkxYjY4ZGYwY2E3OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MWM2MGQ4MzU5N2M3NmNjYTY5NmFhYzc0ZGZiN2FjNWRjMzM2MmZlNjUxZjhjYWI1YTMwNDk5NjMwMTdkNDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1YjFmMjRlNjE4MDVlZTFhOWJjNzgwNDdlMWU0YjNkODYxNTdkNmUzN2Q4YWMwYmNiZWJkNWU2NWU1ZWYxYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg5YmMwYzhjYmY0NjI4YjljMDY2NDMwNjFiMWJkMTMxZDNjN2JhMjI1NzgzZmYzYmVmZjI4ZDllYmU0NzA3YzgifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/openwiki-update.yml#L51-L105",
+          "version": "repo-lines-v1:sha256:35614f8f546dfc3e1610ecb22dbe167c8976da01a65b46b4da2be5907778d4df:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3OWM4ODBmNjJkNDIyNTM4YmNhODRjYjU1ZWNlOGZlMTBlOTY1OGIwNjExMTVjM2ZhYmNkYzdiM2JlY2Y0NDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NzE4ZjA2N2I1ZTVjMWYwOTkxYTZlNzQ3MjZmZTJhMjNkMjY0MzQ1ZTA4ZTRlYWQwNGZhZjczYzI3ZWQ0NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxOTEzNzMyNTgyYzNlNjAzNTkwNzg2Yzg2ODM2OTUxZmYzNWU5YjJkMGY4ZDMxMDY3ZDRmNGM4NzQzZGIyYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dddd9c299d4d40a7909ba7d54fabc3e7",
+      "statement": "Merges to `main` that touch `python/` or `js/` are mirrored hourly, one PR at a time, into the respective staging repository with rewritten paths, and contributors are encouraged to start new work in those future SDK homes when practical.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L15-L17",
+          "version": "repo-lines-v1:sha256:e4ccb78b60bd8d979948abe7282182d4fb603fdacbae1f746eb18f2871011884:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGZkMjIwNWM2NjhiOTcxZDQxODM5OTljNGU2MjE5YTQ0ZDU2NWY4MmQ1NjgwMjNlOWQ4NjJhYWVmMTEwZDMxNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZThiNzdiNTkxMzBhM2QyODZkODJlNzBkYzBiMTc2OWI5ZTc1YmFmYmIzMDg2NzJjOTIyNjJiYWNhZjEwMjRmNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWNkY2FkOWNkZjMyOWUxZGU2YTU2NzZlN2ViNzkzNjYzNDMyZmRlZjJiNjRiYmRkZTA5YzU5Y2EwOWViMTAxNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGQ2YmI4YWRiNTExODQ4YjFhZTk4OGNmMWE1MjdmZTk2NjZkODQzYTg2YTFjOTQwMzU2NTA1NjA1OTYyNjU2NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_974e058af89e44fc98ba2cc8cdc6c139",
+      "statement": "Staging mirroring excludes `pyproject.toml`, `package.json`, and lockfile changes, so those updates require a manual port to the destination repository.",
+      "evidence": [
+        {
+          "resource": "repo://CONTRIBUTING.md#L15-L17",
+          "version": "repo-lines-v1:sha256:e4ccb78b60bd8d979948abe7282182d4fb603fdacbae1f746eb18f2871011884:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGZkMjIwNWM2NjhiOTcxZDQxODM5OTljNGU2MjE5YTQ0ZDU2NWY4MmQ1NjgwMjNlOWQ4NjJhYWVmMTEwZDMxNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZThiNzdiNTkxMzBhM2QyODZkODJlNzBkYzBiMTc2OWI5ZTc1YmFmYmIzMDg2NzJjOTIyNjJiYWNhZjEwMjRmNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWNkY2FkOWNkZjMyOWUxZGU2YTU2NzZlN2ViNzkzNjYzNDMyZmRlZjJiNjRiYmRkZTA5YzU5Y2EwOWViMTAxNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGQ2YmI4YWRiNTExODQ4YjFhZTk4OGNmMWE1MjdmZTk2NjZkODQzYTg2YTFjOTQwMzU2NTA1NjA1OTYyNjU2NSJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-15T08:28:54.852Z"
+    "at": "2026-09-28T08:35:15.620Z"
   }
 }

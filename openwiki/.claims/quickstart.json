@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:ae1d447e60b57903a515e98604b9eda38fd08b4926641b9a6abdf1d4027797bb",
+  "pageVersion": "sha256:489651c19b8863e77985ec3270eb2f1e8f9f911ed7331a257d6bf0e4ad313126",
   "claims": [
     {
       "id": "claim_eece04b17cf7463a9ea62f275d7c94ac",
@@ -181,10 +181,82 @@
           "version": "repo-lines-v1:sha256:12faf6964926c418173a02aa592331633899a7149f2939289c58b69c6d8c93ab:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjJmOTM4MWRkNzkxODUyMTA4ODg1ZTA5M2VmNDFjYTE5NTk5MjJlZTc4NTZhNDEyYjFhZmJkNTZkZGNjNDQyMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjBmOWU2ZDNiNzg0ZjlkODhhODU3YWNlODA1NTFhZDczMzhjNzBiMWJkMDE5NzZmMGM4YzdiMGQwODk0MTVmYyJ9"
         }
       ]
+    },
+    {
+      "id": "claim_56142b61b24643099c0bf324a929185f",
+      "statement": "Python and TypeScript expose different tracing-mode contracts: Python supports `langsmith`, `otel`, and `hybrid`, while TypeScript supports `langsmith` and `otel`; in both SDKs an explicit client setting takes precedence over `LANGSMITH_TRACING_MODE` and legacy OpenTelemetry environment flags.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/utils/env.ts#L257-L297",
+          "version": "repo-lines-v1:sha256:d2826bb56793e4ed2c8a0e66a13fcd1e1bcb3b16b7a5b88efad2b96dd2c9b9b2:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ZWVmNjYxYWJjNTRjMzY2YzBlYzMzYWE4MTM3MjU3MzhjMDI1ZWZjZTAzNDNlNDZhN2NjY2Q3NzRlYjFjZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZDZlNGM3NGE5MzE3NjZmNThmM2NkYzdjMzcwMGNmYjVmY2FhMTJmZDE5MzA3YzBkM2FkZjI2ZGY3YzIxOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5NGZjMGMxNzNkMWVjM2ZjNTAxZDdkZmE5Mjg1NTAxYzUyN2NmYjQ3MTI1ODNkYTNjYzM2MTgwNTY2YjRiZTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L140-L145",
+          "version": "repo-lines-v1:sha256:2174636b2d8fcb20d28aa5fe01637dbbc1f5d38accb0364689675aa33f411b03:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ4MTE2MzhhMGQ2YTdjODYxYjkyYWQ4NzMxMGRhN2Q1YTM4YzhlZjQwZGNjMjlmZDVlNWY5ZjVlYTcwNmU0ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTk0NmUyYjY4ZjQxNmJlODAxMmQ0NDI1ZjU2NThmZjY4YTczYjY3ZGI3Y2VhMGZjYjZiNjVjNzUxZDA5MTgxMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGFiNjFkMzkzYmRlZjZkYTJhZGI4NTlhMTJmZTg5NjZmYjc3YjdhMDlmMDU0NzI3ZTc3ZmEzN2EyYTM5ODhkYyJ9"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L240-L251",
+          "version": "repo-lines-v1:sha256:5e4e308496522b6edfd15087f32c338d77d36d6c449cab8e8799ba56e8098e81:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOTFhOGY3NTBiNjQ3MjBiYjQ3YmJlZjFmYTliNTFmMzc5OTMyZTEyZTczODQxODQ3ZDQ2MDA1YTczNWVkNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMWFjNjIzNTU4MDdkY2JkYWE3OGQzZDBmYzBhMzFhZDIzODk2ZDFiZjI2MjY0ZDRmM2JiYzY0NTAwMTM3OTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyMjA4ZGFiN2Q2NDZkMjhjOWExZGEwNGMyZGM0ZWFmNjhhOTdlYTFmODNmNzA0ZWYzNzI2YjJhMjA0NmU2OTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyZDYzNzFlMzRhZjgyOGI0MWVhMzU1ZjBlYWY3MjY5MzM3NzExZjY4ZTQ3ZDJjYzNkY2FjNjEyMzQwOGEyMDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a5461f97f06b44d1a7e57b8279e40f18",
+      "statement": "Python's beta agent addressing sends runs to an `agent_id`/`agent_environment` destination instead of a project, rejects conflicting project-and-agent destinations, and does not fall back to a project when a workspace rejects agent-addressed runs.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/client.py#L2581-L2593",
+          "version": "repo-lines-v1:sha256:3acbf6353924c8fa3a3c131246678ba6ba9a769b3191e916d60ecb6708803189:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ZjI0OWZjODUwN2Q4MTIxODkxNDJiYjNkNTNmMmUwYzA5Mjk1ZWJlNTYzMDhlMWU1NWVmNWZlYTRiYTkzMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZWFlZGU0ZWI5ZGYzNjA1NDk0MjcxZjA1MjUxN2FlNDVkYzdiZWEyMWEwNjFmMGJlYzMzMTBiNDg0MWM5ZDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiZWE5MjZkZWQxOTQzMTU1ZTUzNjJkZWM2ZTYyN2MxOTM2ZmM4Yjg4NTE4N2ViNTE3MzlhZTgyYWM0MDg0N2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyZWRjNzIyZjFhMTI0Nzg5YThiMWExYmQ5NjA5NDUzODlmOGMyZmU0OTUxZGU5MzIyODAzYWIwZWJkZTU0NzEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/run_helpers.py#L174-L205",
+          "version": "repo-lines-v1:sha256:73e9cd98995bfd795cdc1f0f00d809e75e44562680c871514872a50c5c362bb6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNzI5ZWU3MjczMDVjMTI1NjAzOWZkNWRlYjc4Zjc3ZTE5N2FiNGE0ODA2MTVmMWYwNmI3YjM3ZTVhNTQ1OWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YTkxZTNiYzJjYWI1MzUyMjU2YTAxODM0MmQyZTM5M2E0MTA2OTBlNzY0M2MxOTdkODQ1NTc3YWFmYzhiYjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MjIzMTA2ZmQ4NzQyYjcwZWEyMzNmOWRjMzU5ZjRiMDJiYmIwNjliNzI4M2VlZjc2MjQ5OTUxNmJkN2I5YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwMmRmMDE1ZjBjODk5N2ZlYjc2NDg3MTQ2MDI4ZTZjNzI5N2Q1YmI5Zjk2ZmI2NDAyZGVlYThmMzZlZGIwMDQifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/run_helpers.py#L228-L243",
+          "version": "repo-lines-v1:sha256:174099272dca21a8228e865e3c2849032ae335fef2e7cccb806df5e586f7105d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3NGVmMDhlZTc5MzQxODQyNjFiODJkNDgyOGRjY2NlNGNiNTJjYzBmNWQxZDVmMTFlOGUxYWUyYjQ1Njk4YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhMTNjYTBkYjk3MzNiODVjZjQ0YjJkMWY1YmRiNGY3Nzg1NTY1YzQ2MTc4YWI5ZDJlMjI1ODYyZTkzZDJhNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkZjlmNzUwMGY0MzIzYTc0MTMxZjY2MWNhMzc1NmM0MDIwZGFjZWM3MThiMGM0NjJiNWNiMGRkMzZhZjhjM2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9de770559f38488386f17e5ac060db77",
+      "statement": "Sandbox command transport behavior differs by SDK: Python selects WebSocket execution by default or feature-gated one-way SSE with no PTY/live-input/signal control, while TypeScript requires WebSocket for streaming or non-blocking execution and uses blocking HTTP only for the simple waiting path when `ws` is unavailable.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/sandbox/sandbox.ts#L163-L171",
+          "version": "repo-lines-v1:sha256:5715c19efe3b2bda70ea99c79dc1651c91a2c6506e0f58d219998d68763d925c:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGYyYTJmOTk2ZjA4ZTY4MGJkMjkyMTM1YTZmYTQ5NzhiZGEyNmU2MDJkODRmMzNjYjFkNTk0Nzc1ZDQzMDRiNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI4ZmYxOGQ2OTAwYzk2OWRlMjNiN2I4ZTc0Y2I3MGYzNGQ0M2YxYWI5YmU1ODZkMGQwNGRiZjFkNmEwMWZlMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzE4NjA3Njc2NjAwYThiOTk5M2Y5MTA5NjdkMjJhMTJiMjc5YWU2ZDA5ZDkzYjQ1NDdmN2EwODExODI4ODhjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDMyYzRkZDY1NGRkZmYxZjk1MmZkZDBmMzMxOWZiMWVkNzlhYzVjYzBlZDcxYzg5ODYyZjRiYjQ0ZWU5NDk5NyJ9"
+        },
+        {
+          "resource": "repo://js/src/sandbox/sandbox.ts#L223-L261",
+          "version": "repo-lines-v1:sha256:bfcc719bc8ff15824a850e319c409398278659dc614ec40a40426a6e9aab9268:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ZTFkMDljODI1ZTAzZmM1MDIzOGRhM2RlNGM0MzMzYTJkNGQzNWNmNTg3NDI4MDBjZmUzNThmMzFlYzkwOTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0MDQ1Y2U4N2ZmMjI4NGU4YTI4ZjIwNzZmY2NjYjljODVkYjQwNDBkNjg4N2EyOGMwOGMzNTE4MzBkNjNhNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1MmZkNGNlNGJkNzIwYmYwM2IxMjc1YTZmNGNjNzU5M2Q4OWZjMDMxNWEzNzdmNzIwNzZlNDQ4N2YxNTUzOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhOTI5M2ZkODA1NGI2ZTQ3MjQ4MzczZjM5ZjRkZDc3ODAwMTA1ZWI3NTgzNDg2ODcyNTQyODVjZDEyODJiNzgifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/sandbox/_sandbox.py#L389-L421",
+          "version": "repo-lines-v1:sha256:6fc4c6192132821dcfef6c1e1821f0441fd3c1aee352887b2e63016af0f0e0c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMDg5Njg5ZTdlOTgwMWRjOTNhYjUwMDI1MDRiMzAwYTIxZDRiNzJjMjg2YTI2NzM3Mjg2NzBmYTZmOTcxOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFmOTIxMWVmNGJlMjUxNTczMzVlYzczZTU3Y2EzMDkzZDk5MzY2YjQ5YTJkY2NmZDc1ZDNlN2U2M2MwZjZjMWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmNDhjMDgyZTlkZTUxMTczOGY4ZWE2OTA2NDQyZTliYzhmZDRlMjcwMjU1ODdjOTZjYTBmZTI1Yzg0MzM0OGMifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/sandbox/_sse_execute.py#L61-L102",
+          "version": "repo-lines-v1:sha256:975d798d88c0d02c4db9ead687e2e64a0b6ee2cdce1842cb8a01bc1b036d470a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyODliN2E1MzRkNzY1OGQ5ZjE5MDRmMzVlYmY5NGE3NTAyMzljNzc0YmNjZGI5MWYwMDRmODBkOGYyZDdjZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhOTRjMTM4ZDAxMGI3OTEyNTMzODBiYjNjOGQ0OTAxNzMzNDVjYWU5Y2MyN2M1MTFiY2Y4MTU1NGM0YTYwZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwNjA3MjY1Nzc0ZDM0M2ViNThmMzA4ZjlkZTEzZDNjMjY3YzQ0YmFjNTI4MmM3NTIwYjRhZTdkNjdiZjI5YjgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_20c8f54e8eff4ff59308fdfb38b8d7a2",
+      "statement": "The Python SDK is built with Hatchling, requires Python 3.10 or newer, and registers `langsmith_plugin` as a pytest plugin entry point.",
+      "evidence": [
+        {
+          "resource": "repo://python/pyproject.toml#L1-L14",
+          "version": "repo-lines-v1:sha256:fd3acae7bb904b4682726fabb4369198af17992bd430acb496de2c2095560a71:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0NTY5OTQ2YWM5YmJlN2NiMmNkZWMzZjhiZWNmMzQzNzUwYzU4YjliMzIxZWMyMTk1YmZiYWFiMmFhOGM0YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwODRmZTVlMjNhNzk4MDRmNzFjMzFlMjRmMWQwNzhiNGU1YTIwMjY2NWQ1OGJlNGU4MjdkODIyYTUyN2M4NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxMjVmNmU4ZmJmZDJlMmE0NTI4ZWYyNjUzYTk2Y2NjNGEzMDkwMWVkNjkxNzVjNzc0MzEzMGJjMDNjMWFkOGMifQ"
+        },
+        {
+          "resource": "repo://python/pyproject.toml#L206-L207",
+          "version": "repo-lines-v1:sha256:62d91f39b5b607cff524d9fdf490bbc4173f89d446885377580a1347f89317b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjc3MGZjNGQ2NGYxMzVkMWYxMTAyZDgzM2I0NmMzMDE2ZjZmZjEzZDM1YzY0NDNiZjUzNGU5YjFmNjA1ZDIyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOThkZDM3ODdjMDlmZmFlNjE4ZjlmMTQ1NzZjZjExZjhhNTZlMTM3MGE2MzI5OGVjZDYzMjQ1NzhiNzYzYzA4NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDNkMTcxZGU3NTQzMWEwMjFhMGQ5NGZhNzZmYWJmMGQ3MTM5Yzg5OGMxYTBiNDRiNDNjYTYwOTAzZmExYjg0NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzZhMzUyMzdiZWNkOGVjNGFiMDRiMDFiYzlkZGU4YWMyMGI4NzdhYTFkNjhkMmE5NWNkZTUzMjZlNGQ1NzU5NSJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-16T06:53:56.756Z"
+    "at": "2026-09-28T08:35:15.620Z"
   }
 }
