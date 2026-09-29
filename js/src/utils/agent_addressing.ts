@@ -1,4 +1,12 @@
-import { Address, EnvAddressError } from "../address.js";
+import {
+  type Address,
+  EnvAddressError,
+  addressFromEnv,
+  envNames,
+  normalizeAddress,
+  toWire,
+  wireKeys,
+} from "../address.js";
 import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
@@ -8,11 +16,9 @@ import { warnOnce } from "./warn.js";
 /** One precedence level: the `[project, address]` it names. */
 export type Tier = [string | undefined, Address | undefined];
 
-export function checkAddress(address: unknown): Address | undefined {
-  if (address == null || address instanceof Address) {
-    return address ?? undefined;
-  }
-  throw new Error("`address` must be built with `address()`.");
+/** Validate an address at an entry point; the SDK carries the frozen copy. */
+export function checkAddress(address: unknown): Readonly<Address> | undefined {
+  return address == null ? undefined : normalizeAddress(address);
 }
 
 export function rejectConflicting(project: unknown, address: unknown): void {
@@ -49,7 +55,7 @@ function getEnvProject(): string | undefined {
  */
 export function resolveFromEnv(): Tier {
   const project = getEnvProject();
-  const address = Address.fromEnv();
+  const address = addressFromEnv();
   if (project && address) {
     throw new EnvAddressError(
       "LANGSMITH_AGENT_* and a project are both set in the environment.",
@@ -64,7 +70,7 @@ export function logUntraced(error: EnvAddressError): void {
 
 /** Warn once, at client construction, if the env can't address runs. */
 export function warnOnEnv(): void {
-  if (!Address.envNames().some((name) => getEnvironmentVariable(name))) {
+  if (!envNames().some((name) => getEnvironmentVariable(name))) {
     return;
   }
   try {
@@ -93,9 +99,9 @@ export function applyToPayload(
   delete payload.address;
   const namedProject =
     payload.session_id != null || payload.session_name != null;
-  const rendered = Address.wireKeys().some((key) => payload[key] != null);
+  const rendered = wireKeys().some((key) => payload[key] != null);
   if (!address && !update && !namedProject && !rendered) {
-    address = Address.fromEnv();
+    address = addressFromEnv();
   }
   if (!address) {
     return;
@@ -104,7 +110,7 @@ export function applyToPayload(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  Object.assign(payload, address.toWire());
+  Object.assign(payload, toWire(address));
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;

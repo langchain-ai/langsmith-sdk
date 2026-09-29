@@ -39,7 +39,11 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { __version__ } from "./index.js";
-import { firstNamed, rejectConflicting } from "./utils/agent_addressing.js";
+import {
+  checkAddress,
+  firstNamed,
+  rejectConflicting,
+} from "./utils/agent_addressing.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
@@ -760,6 +764,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     ...runTreeConfig
   } = config ?? {};
 
+  runTreeConfig.address = checkAddress(runTreeConfig.address);
   rejectConflicting(runTreeConfig.project_name, runTreeConfig.address);
 
   const processInputsFn = processInputs ?? ((x) => x);

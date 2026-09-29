@@ -87,7 +87,7 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type Address, EnvAddressError } from "./address.js";
+import { type Address, EnvAddressError, toWire } from "./address.js";
 import {
   applyToPayload,
   checkAddress,
@@ -5625,7 +5625,7 @@ export class Client implements LangSmithTracingClientInterface {
       return feedback as Feedback;
     }
     const body = JSON.stringify(
-      address ? { ...feedback, ...address.toWire() } : feedback,
+      address ? { ...feedback, ...toWire(address) } : feedback,
     );
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {

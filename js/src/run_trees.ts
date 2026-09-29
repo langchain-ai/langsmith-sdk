@@ -34,7 +34,15 @@ import {
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/agent_addressing.js";
-import { Address, EnvAddressError } from "./address.js";
+import {
+  type Address,
+  EnvAddressError,
+  fromWire,
+  sameAddress,
+  seed as addressSeed,
+  toWire,
+  wireKeys,
+} from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -185,14 +193,14 @@ export type WriteReplica = {
    */
   client?: Client;
 };
-type Replica = ProjectReplica | WriteReplica | Address;
+type Replica = ProjectReplica | WriteReplica;
 
 const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "projectName",
   "primary",
   "updates",
   "reroot",
-  ...Address.wireKeys(),
+  ...wireKeys(),
 ]);
 
 // URL-encoded JSON of the address's wire fields.
@@ -204,7 +212,7 @@ function takeHeaderAddress(values: Record<string, unknown>): {
   address?: Address;
 } {
   const wire: Record<string, unknown> = {};
-  for (const key of Address.wireKeys()) {
+  for (const key of wireKeys()) {
     if (key in values) {
       wire[key] = values[key];
       delete values[key];
@@ -213,7 +221,7 @@ function takeHeaderAddress(values: Record<string, unknown>): {
   try {
     return {
       named: Object.keys(wire).length > 0,
-      address: Address.fromWire(wire),
+      address: fromWire(wire),
     };
   } catch {
     // Values are untrusted, so not logged.
@@ -325,7 +333,7 @@ class Baggage {
     if (this.address) {
       items.push(
         `${LANGSMITH_ADDRESS}=${encodeURIComponent(
-          JSON.stringify(this.address.toWire()),
+          JSON.stringify(toWire(this.address)),
         )}`,
       );
     }
@@ -777,7 +785,7 @@ export class RunTree implements BaseRun {
       primary === undefined &&
       !this.replicas?.some((r) => r.primary === true) &&
       projectName === this.project_name &&
-      (address === this.address || !!address?.equals(this.address))
+      sameAddress(address, this.address)
     ) {
       return {
         ...baseRun,
@@ -785,7 +793,8 @@ export class RunTree implements BaseRun {
         address,
       };
     }
-    const seed = projectName ?? address?.seed() ?? "agent//";
+    const seed =
+      projectName ?? (address ? addressSeed(address) : undefined) ?? "agent//";
 
     // Apply reroot logic before ID remapping
     if (reroot) {
@@ -1423,11 +1432,8 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
             updates: replica[1],
           };
         }
-        if (replica instanceof Address) {
-          return { address: replica };
-        }
-        checkAddress(replica.address);
-        return replica;
+        const address = checkAddress(replica.address);
+        return address ? { ...replica, address } : replica;
       })
     : _getWriteReplicasFromEnv();
   if (ensured.filter((replica) => replica.primary === true).length > 1) {

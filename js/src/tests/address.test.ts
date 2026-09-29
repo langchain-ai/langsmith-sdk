@@ -8,7 +8,12 @@ import {
   jest,
   test,
 } from "@jest/globals";
-import { Address, address, EnvAddressError } from "../address.js";
+import {
+  type Address,
+  EnvAddressError,
+  fromWire,
+  normalizeAddress,
+} from "../address.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import {
@@ -19,10 +24,10 @@ import {
 import { _resetWarnedMessages } from "../utils/warn.js";
 import { mockClient } from "./utils/mock_client.js";
 
-const SUPPORT = address({
+const SUPPORT: Address = {
   agentId: "customer-support",
   agentEnvironment: "production",
-});
+};
 const SUPPORT_WIRE = {
   agent_id: "customer-support",
   agent_environment: "production",
@@ -75,18 +80,30 @@ function headersWith(baggage: string) {
 
 describe("Address", () => {
   test("validates its fields", () => {
-    expect(() => address({ agentId: "", agentEnvironment: "e" })).toThrow();
+    const check = (value: unknown) => () => normalizeAddress(value);
+    expect(check({ agentId: "", agentEnvironment: "e" })).toThrow();
+    expect(check({ agentId: "a" })).toThrow(/agentEnvironment/);
+    expect(check("support")).toThrow(/must be an object/);
+    expect(check({ ...SUPPORT, agentRegion: "eu" })).toThrow(/agentRegion/);
     for (const agentId of ["a".repeat(64), "Support", "1a", "a-", "a_b"]) {
-      expect(() => address({ agentId, agentEnvironment: "e" })).toThrow(
+      expect(check({ agentId, agentEnvironment: "e" })).toThrow(
         /1 to 63 lowercase/,
       );
     }
     for (const agentId of ["a", "a".repeat(63), "support-v2"]) {
-      expect(address({ agentId, agentEnvironment: "e" }).agentId).toBe(agentId);
+      expect(normalizeAddress({ agentId, agentEnvironment: "e" }).agentId).toBe(
+        agentId,
+      );
     }
-    expect(() => Address.fromWire({ agent_id: "a" })).toThrow(
-      /agent_environment/,
-    );
+    expect(() => fromWire({ agent_id: "a" })).toThrow(/agent_environment/);
+  });
+
+  test("the SDK keeps a frozen copy", () => {
+    const mine = { ...SUPPORT };
+    const run = new RunTree({ name: "r", address: mine });
+    mine.agentEnvironment = "staging";
+    expect(run.address).toEqual(SUPPORT);
+    expect(Object.isFrozen(run.address)).toBe(true);
   });
 });
 
@@ -104,9 +121,9 @@ describe("precedence", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
-    expect(resolveFromEnv()[1]?.toWire()).toEqual({
-      agent_id: "a",
-      agent_environment: "e",
+    expect(resolveFromEnv()[1]).toEqual({
+      agentId: "a",
+      agentEnvironment: "e",
     });
     process.env.LANGSMITH_PROJECT = "p";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
@@ -123,7 +140,7 @@ describe("RunTree", () => {
   test("a child joins its parent's address", () => {
     const parent = new RunTree({ name: "p", address: SUPPORT });
     const child = parent.createChild({ name: "c", project_name: "other" });
-    expect(child.address).toBe(SUPPORT);
+    expect(child.address).toEqual(SUPPORT);
     expect(child.project_name).toBeUndefined();
   });
 
@@ -148,20 +165,20 @@ describe("RunTree", () => {
       name: "r",
       address: SUPPORT,
       client,
-      replicas: [address({ ...SUPPORT })],
+      replicas: [{ address: { ...SUPPORT } }],
     });
     await run.postRun();
     const [body] = await postedRuns(callSpy, client);
     expect(body.id).toBe(run.id);
   });
 
-  test("an Address replica gets its own ids", async () => {
+  test("an addressed replica gets its own ids", async () => {
     const { client, callSpy } = mockClient();
     await new RunTree({
       name: "r",
       project_name: "p",
       client,
-      replicas: [{ projectName: "p" }, SUPPORT],
+      replicas: [{ projectName: "p" }, { address: SUPPORT }],
     }).postRun();
     const [toProject, toAddress] = await postedRuns(callSpy, client);
     expect(toProject.session_name).toBe("p");
@@ -176,7 +193,7 @@ describe("baggage", () => {
     const child = RunTree.fromHeaders(parent.toHeaders(), {
       project_name: "caller",
     })!;
-    expect(child.address?.toWire()).toEqual(SUPPORT_WIRE);
+    expect(child.address).toEqual(SUPPORT);
     expect(child.project_name).toBeUndefined();
   });
 
@@ -207,15 +224,20 @@ describe("baggage", () => {
         )}`,
       ),
     )!;
-    expect(child.replicas).toEqual([{ address: expect.any(Address) }]);
+    expect(child.replicas).toEqual([{ address: SUPPORT }]);
   });
 });
 
 describe("traceable", () => {
-  test("a decorator naming both throws at wrap time", () => {
+  test("a bad decorator address throws at wrap time", () => {
     expect(() =>
       traceable(async () => "ok", { address: SUPPORT, project_name: "p" }),
     ).toThrow(/not both/);
+    expect(() =>
+      traceable(async () => "ok", {
+        address: { agentId: "Bad", agentEnvironment: "e" },
+      }),
+    ).toThrow(/1 to 63 lowercase/);
   });
 
   test("a runtime project outranks a decorator address", async () => {
