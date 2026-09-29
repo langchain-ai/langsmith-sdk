@@ -49,14 +49,10 @@ from google.adk.plugins.base_plugin import BasePlugin
 from langsmith import RunTree
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._package_version import get_package_version
-from langsmith._internal.voice._helpers import (
-    build_assistant_message,
-    build_user_message,
-)
 from langsmith._internal.voice.helpers import (
+    dump_event,
     observe_safely,
     scrub,
-    serialize_event_for_trace,
 )
 from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
@@ -225,7 +221,7 @@ class _AdkLiveTracer:
         # user_message span (raw event kept in metadata).
         fu = view.final_user_transcript
         if fu:
-            self._trace.append_transcript_message(build_user_message(fu))
+            self._trace.add_message("user", fu)
             self._trace.set_title(fu)
             with self._trace.event_span(
                 event,
@@ -255,7 +251,7 @@ class _AdkLiveTracer:
         um = _usage_metadata(event)
         fa = view.final_agent_transcript
         if fa:
-            self._trace.append_transcript_message(build_assistant_message(fa))
+            self._trace.add_message("assistant", fa)
             if um is not None:
                 # Usage already on this event — record immediately.
                 self._emit_agent_turn(event, fa, um)
@@ -304,7 +300,7 @@ class _AdkLiveTracer:
             outputs={"role": "assistant", "content": text},
             usage_metadata=usage,
             metadata={
-                "raw_event": scrub(serialize_event_for_trace(event)),
+                "raw_event": scrub(dump_event(event)),
                 "ls_provider": "google",
                 "ls_model_name": self._model,
             },
@@ -333,7 +329,7 @@ class _AdkLiveTracer:
             inputs={"args": getattr(call, "args", None)},
             metadata={
                 "function_call_id": getattr(call, "id", None),
-                "raw_event": scrub(serialize_event_for_trace(event)),
+                "raw_event": scrub(dump_event(event)),
             },
         )
         self._open_tools.setdefault(self._tool_key(call), []).append(run)
@@ -358,7 +354,7 @@ class _AdkLiveTracer:
             self._trace.close_span(
                 run,
                 outputs=outputs,
-                metadata={"raw_event": serialize_event_for_trace(event)},
+                metadata={"raw_event": dump_event(event)},
             )
             return
         with self._trace.event_span(

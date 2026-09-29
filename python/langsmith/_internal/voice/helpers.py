@@ -1,7 +1,6 @@
 """Shared helpers for the voice integration adapters.
 
-* ``serialize_event_for_trace`` — best-effort conversion of an event object to a
-  plain dict
+* ``dump_event`` — best-effort conversion of an event object to a plain dict
   (Pydantic ``model_dump`` → ``dict`` → ``repr`` fallback).
 * ``scrub`` — replace raw audio ``bytes`` with a ``<N bytes>`` placeholder and
   truncate long strings, recursing through dicts and sequences, so a span never
@@ -17,7 +16,7 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["observe_safely", "scrub", "serialize_event_for_trace"]
+__all__ = ["dump_event", "scrub", "observe_safely"]
 
 # Longest string kept on a span before truncating. Transcripts are short; this
 # only ever trims an unexpectedly large blob.
@@ -59,8 +58,8 @@ def scrub(obj: Any) -> Any:
     return obj
 
 
-def serialize_event_for_trace(event: Any) -> dict[str, Any]:
-    """Best-effort conversion of a provider event to trace-serializable data."""
+def dump_event(event: Any) -> dict[str, Any]:
+    """Best-effort conversion of an event object to a plain dict."""
     if hasattr(event, "model_dump"):
         try:
             return event.model_dump()

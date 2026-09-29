@@ -349,7 +349,7 @@ async def test_proxy_supports_typed_deepgram_sdk_messages(monkeypatch):
     assert not any(isinstance(run.inputs, bytes) for _, run in created)
 
 
-async def test_raw_dict_latency_report_is_traced_and_returned_unchanged(monkeypatch):
+async def test_raw_dict_latency_report_is_ignored_and_returned_unchanged(monkeypatch):
     created = _spy_children(monkeypatch)
     latency_report = {"type": "LatencyReport", "total_latency": 0.42}
     frames = [
@@ -365,13 +365,10 @@ async def test_raw_dict_latency_report_is_traced_and_returned_unchanged(monkeypa
     async with wrap_deepgram_voice(raw) as connection:
         async for frame in connection:
             seen.append(frame)
-        trace = connection._session
 
     assert seen == frames
     assert seen[-1] is latency_report
-    latency = next(run for name, run in created if name == "LatencyReport")
-    assert latency.parent_run_id == trace.run.id
-    assert latency.outputs == latency_report
+    assert not any(name == "LatencyReport" for name, _ in created)
 
 
 async def test_dynamic_model_updates_refresh_root_metadata():
@@ -527,26 +524,17 @@ async def test_events_roll_up_into_turn_without_synthetic_model_spans(monkeypatc
         "messages": [{"role": "assistant", "content": "Hi there"}]
     }
 
-    latency = next(run for name, run in created if name == "LatencyReport")
-    assert latency.parent_run_id == trace.run.id
-    assert latency.outputs == {
-        "type": "LatencyReport",
-        "stt_latency": 0.12,
-        "ttt_token_latency": 0.34,
-        "ttt_text_latency": 0.36,
-        "ttt_tool_latency": 0.41,
-        "ttt_thinking_latency": 0.29,
-        "tts_latency": 0.18,
-        "total_latency": 0.64,
-        "unknown_latency": "not captured",
-    }
-
     names = [name for name, _ in created]
     assert not {"user_message", "model", "agent_audio"}.intersection(names)
-    assert not {"Welcome", "SettingsApplied", "UserStartedSpeaking"}.intersection(names)
+    assert not {
+        "Welcome",
+        "LatencyReport",
+        "SettingsApplied",
+        "UserStartedSpeaking",
+    }.intersection(names)
 
 
-async def test_latency_report_is_root_event_while_turn_is_open(monkeypatch):
+async def test_latency_report_is_ignored_while_turn_is_open(monkeypatch):
     created = _spy_children(monkeypatch)
     frames = [
         _frame("UserStartedSpeaking"),
@@ -563,13 +551,10 @@ async def test_latency_report_is_root_event_while_turn_is_open(monkeypatch):
     async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
         async for _ in connection:
             pass
-        trace = connection._session
 
     turns = [run for name, run in created if name == "turn"]
     assert len(turns) == 2
-    latency = next(run for name, run in created if name == "LatencyReport")
-    assert latency.parent_run_id == trace.run.id
-    assert latency.outputs == {"type": "LatencyReport", "total_latency": 0.42}
+    assert not any(name == "LatencyReport" for name, _ in created)
 
 
 async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
@@ -615,9 +600,7 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
     assert audio_done.parent_run_id == trace.run.id
     audio_done_metadata = (audio_done.extra or {}).get("metadata") or {}
     assert audio_done_metadata["interrupted_completion"] is True
-    latency = next(run for name, run in created if name == "LatencyReport")
-    assert latency.parent_run_id == trace.run.id
-    assert latency.outputs == {"type": "LatencyReport", "total_latency": 0.64}
+    assert not any(name == "LatencyReport" for name, _ in created)
 
 
 async def test_history_is_summarized_on_root_without_a_span(monkeypatch):
@@ -736,9 +719,7 @@ async def test_tool_response_closes_tool_span(monkeypatch):
     assert len(turns) == 1
     assert turns[0].inputs == {"messages": [expected_messages[0]]}
     assert turns[0].outputs == {"messages": expected_messages[1:]}
-    latency = next(run for name, run in created if name == "LatencyReport")
-    assert latency.parent_run_id == trace.run.id
-    assert latency.outputs == {"type": "LatencyReport", "ttt_tool_latency": 0.1}
+    assert not any(name == "LatencyReport" for name, _ in created)
     assert len([run for name, run in created if name == "AgentThinking"]) == 1
 
 

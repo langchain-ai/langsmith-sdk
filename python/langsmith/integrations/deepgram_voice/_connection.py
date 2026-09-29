@@ -16,12 +16,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langsmith._internal._package_version import get_package_version
-from langsmith._internal.voice._helpers import (
-    build_assistant_message,
-    build_assistant_tool_calls_message,
-    build_tool_message,
-    build_user_message,
-)
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
@@ -42,8 +36,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SAMPLE_RATE = 24_000
 
-# Housekeeping events that carry nothing worth a span.
-_SILENT_EVENTS = frozenset({"KeepAlive", "SettingsApplied"})
+# Housekeeping events that carry nothing worth a span. Deepgram may emit many
+# incremental latency reports for a single turn, and it does not identify which
+# turn they belong to, so tracing them adds noise without reliable attribution.
+_SILENT_EVENTS = frozenset({"KeepAlive", "LatencyReport", "SettingsApplied"})
 
 
 def _normalize_deepgram_frame(frame: Any) -> dict[str, Any] | None:
@@ -141,10 +137,6 @@ class _DeepgramVoiceTracer:
             self._close_tool(message, now=now)
         elif message_type == "FunctionCallCancelled":
             self._cancel_tools(message)
-        elif message_type == "LatencyReport":
-            # Deepgram does not identify which turn a latency report belongs to.
-            # Preserve it as a root-level timeline event instead of guessing.
-            self._record_event(message, now, parent=self._session.run)
         elif message_type == "AgentAudioDone":
             if self._interrupted_completions_pending:
                 self._interrupted_completions_pending -= 1
@@ -188,11 +180,11 @@ class _DeepgramVoiceTracer:
         if role == "user":
             if not self._session.has_open_turn:
                 self._start_turn()
-            self._session.append_transcript_message(build_user_message(content))
+            self._session.add_message(role, content)
             self._session.set_title(content)
             self._record_event(message, now, inputs={"role": role, "content": content})
         else:
-            self._session.append_transcript_message(build_assistant_message(content))
+            self._session.add_message(role, content)
             self._record_event(message, now, outputs={"role": role, "content": content})
 
     def _observe_tool_request(self, message: dict[str, Any]) -> None:
@@ -216,9 +208,7 @@ class _DeepgramVoiceTracer:
                     },
                 ),
             )
-        self._session.append_transcript_message(
-            build_assistant_tool_calls_message(calls)
-        )
+        self._session.add_tool_calls(calls)
 
     def _close_tool(self, message: dict[str, Any], *, now: float) -> None:
         match = self._matching_tool(message)
@@ -235,12 +225,10 @@ class _DeepgramVoiceTracer:
             )
             return
         call_id, name, run = match
-        self._session.append_transcript_message(
-            build_tool_message(
-                message.get("content"),
-                tool_call_id=call_id,
-                name=name,
-            )
+        self._session.add_tool_result(
+            tool_call_id=call_id,
+            name=name,
+            content=message.get("content"),
         )
         self._session.close_span(
             run,
