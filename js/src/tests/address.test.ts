@@ -266,13 +266,14 @@ describe("Client", () => {
   test("createRun rejects a session_name beside an address", async () => {
     const { client } = mockClient();
     await expect(
+      // A built run body, as `RunTree.postRun` passes it.
       client.createRun({
         name: "r",
         inputs: {},
         run_type: "chain",
         session_name: "p",
         address: SUPPORT,
-      }),
+      } as Parameters<typeof client.createRun>[0]),
     ).rejects.toThrow(/not both/);
   });
 

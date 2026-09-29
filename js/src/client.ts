@@ -544,8 +544,6 @@ interface CreateRunParams {
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
   address?: Address;
-  /** Set by `RunTree.postRun` for a project run. */
-  session_name?: string;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -2552,10 +2550,12 @@ export class Client implements LangSmithTracingClientInterface {
       "Content-Type": "application/json",
     };
     const address = checkAddress(run.address);
-    rejectConflicting(run.project_name ?? run.session_name, address);
+    // `RunTree.postRun` passes a built run body, carrying the wire `session_name`.
+    const bodySessionName = (run as RunCreate).session_name;
+    rejectConflicting(run.project_name ?? bodySessionName, address);
     const session_name = run.project_name;
     delete run.project_name;
-    if (!session_name && run.session_name == null && !address) {
+    if (!session_name && bodySessionName == null && !address) {
       try {
         run.address = resolveFromEnv()[1];
       } catch (e) {
