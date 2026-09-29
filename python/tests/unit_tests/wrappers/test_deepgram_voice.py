@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from contextlib import contextmanager
 from unittest import mock
 
 import pytest
@@ -76,12 +77,24 @@ class FakeSdkMessage:
         return self.value
 
 
+class FakePydanticV1Message:
+    """Deepgram supports Pydantic v1, whose models expose ``dict`` only."""
+
+    def __init__(self, **value):
+        self.value = value
+
+    def dict(self, *, exclude_none):
+        assert exclude_none is True
+        return self.value
+
+
 class FakeSdkConnection:
     def __init__(self, frames):
         self.frames = list(frames)
         self.sent_settings = []
         self.sent_function_responses = []
         self.sent_media = []
+        self.sent_updates = []
         self._iterator = None
 
     def __aiter__(self):
@@ -107,6 +120,31 @@ class FakeSdkConnection:
 
     async def send_media(self, frame):
         self.sent_media.append(frame)
+
+    async def send_update_listen(self, message):
+        self.sent_updates.append(message)
+
+    async def send_update_think(self, message):
+        self.sent_updates.append(message)
+
+    async def send_update_speak(self, message):
+        self.sent_updates.append(message)
+
+
+class FakeListenerConnection:
+    """Official-SDK-shaped callback connection used by ``start_listening``."""
+
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.callbacks = {}
+
+    def on(self, event, callback):
+        self.callbacks.setdefault(event, []).append(callback)
+
+    async def start_listening(self):
+        for frame in self.frames:
+            for callback in self.callbacks.get("message", []):
+                callback(frame)
 
 
 def _frame(message_type, **fields):
@@ -144,6 +182,30 @@ def test_import_does_not_load_websocket_packages():
     assert result.returncode == 0, result.stderr
 
 
+def test_public_wrapper_emits_beta_warning():
+    from langsmith._internal._beta_decorator import (
+        LangSmithBetaWarning,
+        _warn_once,
+    )
+
+    _warn_once.cache_clear()
+    with pytest.warns(LangSmithBetaWarning, match="wrap_deepgram_voice"):
+        wrap_deepgram_voice(FakeConnection([]))
+
+
+def test_pydantic_v1_messages_are_normalized():
+    message = FakePydanticV1Message(type="Welcome", request_id="request-1")
+    assert voice_mod._json_message(message) == {
+        "type": "Welcome",
+        "request_id": "request-1",
+    }
+
+
+@pytest.mark.parametrize("frame", ["not-json", "[]", '{"missing":"type"}'])
+def test_malformed_messages_are_ignored(frame):
+    assert voice_mod._json_message(frame) is None
+
+
 async def test_proxy_is_transparent_and_tracing_fails_open(monkeypatch):
     frames = [_frame("Welcome", request_id="request-1"), b"\x00\x01"]
     raw = FakeConnection(frames)
@@ -160,6 +222,39 @@ async def test_proxy_is_transparent_and_tracing_fails_open(monkeypatch):
             seen.append(frame)
     assert seen == frames
     assert raw.sent == [_frame("Settings", agent={})]
+
+
+async def test_official_sdk_start_listening_path_is_traced():
+    raw = FakeListenerConnection(
+        [
+            FakePydanticV1Message(type="Welcome", request_id="request-listener"),
+            FakePydanticV1Message(
+                type="ConversationText", role="user", content="listener question"
+            ),
+        ]
+    )
+    seen = []
+
+    async with wrap_deepgram_voice(raw) as connection:
+        connection.on("message", seen.append)
+        await connection.start_listening()
+        trace = connection._session
+
+    assert seen == raw.frames
+    assert trace.messages == [{"role": "user", "content": "listener question"}]
+    metadata = (trace.run.extra or {}).get("metadata") or {}
+    assert metadata["deepgram_request_id"] == "request-listener"
+
+
+async def test_direct_anext_lazily_initializes_iterator():
+    raw = FakeConnection([_frame("Welcome", request_id="request-direct-next")])
+
+    async with wrap_deepgram_voice(raw) as connection:
+        assert await connection.__anext__() == raw.frames[0]
+        trace = connection._session
+
+    metadata = (trace.run.extra or {}).get("metadata") or {}
+    assert metadata["deepgram_request_id"] == "request-direct-next"
 
 
 async def test_proxy_supports_typed_deepgram_sdk_messages(monkeypatch):
@@ -252,6 +347,56 @@ async def test_proxy_supports_typed_deepgram_sdk_messages(monkeypatch):
     ]
     assert len([run for name, run in created if name == "lookup_weather"]) == 1
     assert not any(isinstance(run.inputs, bytes) for _, run in created)
+
+
+async def test_dynamic_model_updates_refresh_root_metadata():
+    raw = FakeSdkConnection([])
+    updates = [
+        FakeSdkMessage(
+            type="UpdateListen",
+            listen={"provider": {"type": "deepgram", "model": "nova-4"}},
+        ),
+        FakeSdkMessage(
+            type="UpdateThink",
+            think={"provider": {"type": "anthropic", "model": "claude-next"}},
+        ),
+        FakeSdkMessage(
+            type="UpdateSpeak",
+            speak={"provider": {"type": "deepgram", "model": "aura-next"}},
+        ),
+    ]
+
+    async with wrap_deepgram_voice(raw) as connection:
+        await connection.send_update_listen(updates[0])
+        await connection.send_update_think(updates[1])
+        await connection.send_update_speak(updates[2])
+        trace = connection._session
+
+    assert raw.sent_updates == updates
+    metadata = (trace.run.extra or {}).get("metadata") or {}
+    assert metadata["deepgram_listen_model"] == "nova-4"
+    assert metadata["deepgram_think_provider"] == "anthropic"
+    assert metadata["deepgram_think_model"] == "claude-next"
+    assert metadata["deepgram_speak_model"] == "aura-next"
+
+
+async def test_root_context_and_integration_version(monkeypatch):
+    contexts = []
+
+    @contextmanager
+    def capture_context(**kwargs):
+        contexts.append(kwargs)
+        yield
+
+    monkeypatch.setattr(voice_mod, "tracing_context", capture_context)
+    monkeypatch.setattr(voice_mod, "get_package_version", lambda _: "7.2.0")
+
+    async with wrap_deepgram_voice(FakeConnection([])) as connection:
+        trace = connection._session
+
+    assert contexts[0]["parent"] is trace.run
+    metadata = (trace.run.extra or {}).get("metadata") or {}
+    assert metadata["ls_integration_version"] == "7.2.0"
 
 
 async def test_events_roll_up_into_turn_without_synthetic_model_spans(monkeypatch):
@@ -378,6 +523,7 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
     ) as connection:
         async for _ in connection:
             pass
+        trace = connection._session
 
     assert not any(name == "agent_audio" for name, _ in created)
     assert len([run for name, run in created if name == "AgentAudioDone"]) == 1
@@ -396,6 +542,10 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
         "messages": [{"role": "user", "content": "second question"}]
     }
     assert turns[1].outputs == {}
+    audio_done = next(run for name, run in created if name == "AgentAudioDone")
+    assert audio_done.parent_run_id == trace.run.id
+    audio_done_metadata = (audio_done.extra or {}).get("metadata") or {}
+    assert audio_done_metadata["interrupted_completion"] is True
 
 
 async def test_history_is_summarized_on_root_without_a_span(monkeypatch):
@@ -512,6 +662,87 @@ async def test_tool_response_closes_tool_span(monkeypatch):
     turn_metadata = (turns[0].extra or {}).get("metadata") or {}
     assert turn_metadata["deepgram_ttt_tool_latency_ms"] == 100
     assert len([run for name, run in created if name == "AgentThinking"]) == 1
+
+
+async def test_idless_server_tool_response_matches_unique_name(monkeypatch):
+    created = _spy_children(monkeypatch)
+    frames = [
+        _frame(
+            "FunctionCallRequest",
+            functions=[
+                {
+                    "id": "call-server",
+                    "name": "lookup_weather",
+                    "arguments": '{"city":"Paris"}',
+                    "client_side": False,
+                }
+            ],
+        ),
+        _frame(
+            "FunctionCallResponse",
+            name="lookup_weather",
+            content='{"temperature": 21}',
+        ),
+    ]
+
+    async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
+        async for _ in connection:
+            pass
+        trace = connection._session
+
+    tool = next(run for name, run in created if name == "lookup_weather")
+    assert tool.outputs == {"content": '{"temperature": 21}'}
+    assert tool.error is None
+    assert trace.messages[-1] == {
+        "role": "tool",
+        "tool_call_id": "call-server",
+        "name": "lookup_weather",
+        "content": '{"temperature": 21}',
+    }
+
+
+async def test_ambiguous_idless_tool_response_is_not_misattributed(monkeypatch):
+    created = _spy_children(monkeypatch)
+    frames = [
+        _frame(
+            "FunctionCallRequest",
+            functions=[
+                {
+                    "id": "call-1",
+                    "name": "lookup_weather",
+                    "arguments": '{"city":"Paris"}',
+                    "client_side": False,
+                },
+                {
+                    "id": "call-2",
+                    "name": "lookup_weather",
+                    "arguments": '{"city":"London"}',
+                    "client_side": False,
+                },
+            ],
+        ),
+        _frame(
+            "FunctionCallResponse",
+            name="lookup_weather",
+            content='{"temperature": 21}',
+        ),
+    ]
+
+    async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
+        async for _ in connection:
+            pass
+        trace = connection._session
+
+    open_tools = [run for name, run in created if name == "lookup_weather"]
+    assert len(open_tools) == 2
+    assert all(
+        run.error == "function did not complete before the session ended"
+        for run in open_tools
+    )
+    unmatched = next(run for name, run in created if name == "FunctionCallResponse")
+    unmatched_metadata = (unmatched.extra or {}).get("metadata") or {}
+    assert unmatched_metadata["unmatched_tool_response"] is True
+    assert not any(message.get("role") == "tool" for message in trace.messages)
 
 
 async def test_tool_cancellation_marks_span_error(monkeypatch):
