@@ -1,0 +1,24 @@
+OTLP_ENDPOINT_FIX.md
+  s_e2deb97d8490e7::t_3cee1781309ac8 1-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "217352d3449458cb9dfcb7109e163a6322da878a",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_e2deb97d8490e7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d5e5561c-4c91-4ac1-a7df-4c8aed843e08",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

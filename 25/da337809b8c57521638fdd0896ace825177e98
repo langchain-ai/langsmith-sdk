@@ -1,0 +1,33 @@
+js/src/client.ts
+  s_1494656ad43aad::t_dbd06cba298126 90,5622
+js/src/traceable.ts
+  s_1494656ad43aad::t_fd6c3f8f23f229 42-46,767
+js/src/utils/agent_addressing.ts
+  s_1494656ad43aad::t_dbd06cba298126 2-9,19-21,58,73,102,104,113
+  s_1494656ad43aad::t_a940619a7d43bb 1
+js/src/tests/address.test.ts
+  s_1494656ad43aad::t_dffcdbab8164bf 11-16,27,30,83-87,89,94-96,98-106,124-126,143,168,175,181,196,227,232,236-240
+js/src/address.ts
+  s_1494656ad43aad::t_f154a3ab475c78 5-9,38-43,47-56,59-65,67-68,70-73,75-78,80-86,88-92,97-102,104-105,107-108,110-124,127,129-131,134-139
+  s_1494656ad43aad::t_dffcdbab8164bf 44-46,93-96
+js/src/index.ts
+  s_1494656ad43aad::t_dbd06cba298126 19
+js/src/run_trees.ts
+  s_1494656ad43aad::t_dbd06cba298126 37-45,196,203,215,224,336,787,795-796,1434-1435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "25da337809b8c57521638fdd0896ace825177e98",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
