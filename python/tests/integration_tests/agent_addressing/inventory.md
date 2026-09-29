@@ -133,7 +133,7 @@ Out of scope for multipart, listed because the gap is the same shape.
 | Attribute | Effect |
 |---|---|
 | `langsmith.trace.session_name` / `langsmith.trace.session_id` | Written from the run's `session_name` / `session_id`; the receiver routes the span by them. |
-| `langsmith.trace.agent_id` / `langsmith.trace.agent_environment` | TO-BE-FIXED: no such attribute, so an agent-addressed run exported through OTel carries no addressing at all -- the same silent fallback the `TEMPORARY` test pins for `POST /runs`. |
+| `langsmith.trace.agent_id` / `langsmith.trace.agent_environment` | TO-BE-FIXED: no such attribute, so an agent-addressed run exported through OTel carries no addressing at all -- so the span falls back to the default project. |
 
 The `LANGSMITH_SESSION_ID` / `LANGSMITH_SESSION_NAME` constants in
 `_internal/otel/_otel_exporter.py` hold these attribute keys. They are not

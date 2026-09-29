@@ -185,40 +185,18 @@ def test_a_new_project_is_adopted_as_an_agent(ls: Harness) -> None:
     assert [env["environment"] for env in adopted["environments"]] == ["PRODUCTION"]
 
 
-def test_a_run_off_the_multipart_path_falls_back_to_the_default_project(
-    ls: Harness,
-) -> None:
-    """TEMPORARY: pins today's behavior so that fixing it is noticed.
-
-    Delete this test once the non-multipart ingestion endpoints read the agent
-    pair. It asserts the *wrong* outcome on purpose, and turns red the moment
-    the right one starts happening.
-
-    `create_run` and `update_run` only reach `POST /runs/multipart` when the
-    run carries both `trace_id` and `dotted_order`. Without them they fall back
-    to `POST /runs` and `PATCH /runs/{run_id}`, which do not read the agent
-    pair at all, so an agent-addressed run silently lands in `default`: the SDK
-    has already suppressed the defaulted project, and nothing on the way
-    reports that the addressing it sent was ignored.
-
-    That makes it worse than a missing feature. The traces do not fail, they
-    arrive somewhere the caller never named, which is exactly what the design
-    doc refuses to let the `session_name` path do. The same hole exists on
-    `POST /runs/batch` via `batch_ingest_runs`, and on `AsyncClient`, which
-    have their own files in the plan.
-    """
+def test_a_run_on_post_runs_lands_in_the_agent(ls: Harness) -> None:
+    """`create_run` without `trace_id` / `dotted_order` goes to `POST /runs`."""
     ls.configure(
         Case(
-            "off_the_multipart_path",
+            "post_runs",
             env={
                 "LANGSMITH_AGENT_ID": AGENT,
                 "LANGSMITH_AGENT_ENVIRONMENT": "staging",
             },
-            lands_in=InProject("default"),
+            lands_in=InAgent("STAGING"),
         )
     )
-    # Deliberately no `trace_id` and no `dotted_order`, which is what sends
-    # this run down the non-multipart path.
     run_id = uuid.uuid4()
 
     ls.client.create_run(
@@ -230,6 +208,20 @@ def test_a_run_off_the_multipart_path_falls_back_to_the_default_project(
     )
     ls.client.flush()
 
-    # `InProject` also asserts no agent was created under the key, which is the
-    # other half of the loss: the agent the caller named never comes into being.
-    ls.assert_landed(run_id, InProject("default"), patched=False)
+    ls.assert_landed(run_id, InAgent("STAGING"), patched=False)
+
+
+def test_a_run_on_post_runs_batch_lands_in_the_agent(ls: Harness) -> None:
+    """`batch_ingest_runs` goes to `POST /runs/batch`."""
+    run = {
+        **ls.root_run(),
+        "name": "agent-addressing",
+        "run_type": "chain",
+        "inputs": {},
+        "start_time": ls.start_time,
+        "address": ls_address(agent_id=ls.agent_key, agent_environment="staging"),
+    }
+
+    ls.client.batch_ingest_runs(create=[run])
+
+    ls.assert_landed(run["id"], InAgent("STAGING"), patched=False)

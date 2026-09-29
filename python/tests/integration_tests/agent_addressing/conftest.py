@@ -243,10 +243,9 @@ class Harness:
     def root_run(self) -> dict[str, Any]:
         """A root run's identity fields.
 
-        Both are required, not cosmetic: without `trace_id` and `dotted_order`,
-        `create_run` and `update_run` use `POST /runs` and `PATCH /runs/{id}`
-        instead of multipart, and those ignore the agent pair, so the run lands
-        in `default` with nothing reported.
+        Both are required: without `trace_id` and `dotted_order`, `create_run`
+        and `update_run` use `POST /runs` and `PATCH /runs/{id}` instead of
+        multipart. `POST /runs` has its own test.
         """
         run_id = uuid.uuid4()
         return {

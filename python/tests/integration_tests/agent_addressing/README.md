@@ -3,8 +3,8 @@
 End-to-end tests for addressing a run by agent instead of by project, against a
 real LangSmith backend.
 
-The wire shape is flat `agent_id` / `agent_environment`, and only
-`POST /runs/multipart` reads it.
+The wire shape is flat `agent_id` / `agent_environment`, read by
+`POST /runs/multipart`, `POST /runs` and `POST /runs/batch`.
 
 ## Principles
 
@@ -31,8 +31,8 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
   Deleting an agent only archives it until langchainplus#38785 ships, so its
   projects stay behind until then. No flag to flip once that lands.
 - **Why does every run set `trace_id` and `dotted_order`?** Without both,
-  `create_run` uses `POST /runs` instead of multipart. That endpoint ignores
-  the agent fields, so the run lands in `default` with no error.
+  `create_run` uses `POST /runs` instead of multipart. That endpoint reads the
+  agent fields too, and has its own test, but most cases target multipart.
 - **Why compare `session_id` instead of reading the run out of the expected
   project?** `read_run` ignores `project_id` on ClickHouse-backed deployments,
   so scoping the read proves nothing.
@@ -52,8 +52,6 @@ cd python && env LANGSMITH_ENDPOINT=<endpoint> LANGSMITH_API_KEY=<key> LANGSMITH
 - **Fix `create_feedback`**: the agent pair is accepted on paths that cannot
   carry it (no `trace_id`, `AsyncClient`) and dropped in silence. Two
   `TEMPORARY` tests pin today's behavior.
-- **Delete the `TEMPORARY` test** in `test_create_update_run.py` once the
-  non-multipart endpoints read the agent pair.
 - **Use SDK methods for the agent API** once they exist, replacing
   `Harness.agents_url` and its hand-built `/api/v1` prefix. These routes are
   `x-internal`, so they may never be public; the suite then needs another way
