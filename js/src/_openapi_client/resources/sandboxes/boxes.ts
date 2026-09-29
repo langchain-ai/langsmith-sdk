@@ -112,18 +112,20 @@ export class Boxes extends APIResource {
    * the file path, the response content type and disposition, and the sandbox flags,
    * so a link cannot be repointed at another file or served under a weaker policy.
    * The file is always served with a Content-Security-Policy: a sandbox directive,
-   * plus a default-src holding every fetch to the sandbox's own download host and a
-   * set of pre-approved third-party origins. csp_sandbox_flags may loosen the
-   * sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
-   * allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
-   * allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
-   * served file never shares an origin with anything. csp_source_bundles selects the
-   * third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
-   * when the field is omitted, and 'none' holds the file to the sandbox alone.
-   * Because every file of one sandbox is served from the same host, a page can load
-   * sibling files it has links for, but only by their own link URLs. Links never
-   * expire unless expires_in_seconds is set. The link is served from the sandbox
-   * service domain, not the API host.
+   * plus a default-src holding every fetch to the file's own download host and a set
+   * of pre-approved third-party origins. csp_sandbox_flags may loosen the sandbox
+   * with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+   * allow-pointer-lock, allow-popups, allow-presentation, allow-same-origin,
+   * allow-scripts, or allow-top-navigation-by-user-activation. Every file is served
+   * from its own host, derived from the sandbox and the path, so allow-same-origin
+   * gives a page localStorage and IndexedDB that no other file can read, and
+   * re-minting a link for the same file keeps them. csp_sandbox set to false drops
+   * the sandbox directive altogether, and csp_sandbox_flags must then be omitted.
+   * csp_source_bundles selects the third-party origins: cdnjs, google-fonts,
+   * jsdelivr, and unpkg are all allowed when the field is omitted, 'none' holds the
+   * file to its own host, and 'any' sends no default-src at all. Links never expire
+   * unless expires_in_seconds is set. The link is served from the sandbox service
+   * domain, not the API host.
    */
   generateDownloadURL(
     name: string,
@@ -1201,6 +1203,11 @@ export interface BoxGenerateDownloadURLParams {
   content_type?: string;
 
   /**
+   * CSPSandbox false serves the file with no CSP sandbox directive; omit to keep it.
+   */
+  csp_sandbox?: boolean;
+
+  /**
    * CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
    * most restrictive policy.
    */
@@ -1214,13 +1221,14 @@ export interface BoxGenerateDownloadURLParams {
     | 'allow-presentation'
     | 'allow-scripts'
     | 'allow-top-navigation-by-user-activation'
+    | 'allow-same-origin'
   >;
 
   /**
    * CSPSourceBundles allow the served file to fetch from named third-party origins;
    * omit to send no fetch directive.
    */
-  csp_source_bundles?: Array<'cdnjs' | 'google-fonts' | 'jsdelivr' | 'unpkg' | 'none'>;
+  csp_source_bundles?: Array<'cdnjs' | 'google-fonts' | 'jsdelivr' | 'unpkg' | 'none' | 'any'>;
 
   /**
    * ExpiresInSeconds is optional; a link with no expiry never expires.

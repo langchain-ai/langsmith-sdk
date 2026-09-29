@@ -15,6 +15,11 @@ class BoxGenerateDownloadURLParams(TypedDict, total=False):
 
     content_type: str
 
+    csp_sandbox: bool
+    """
+    CSPSandbox false serves the file with no CSP sandbox directive; omit to keep it.
+    """
+
     csp_sandbox_flags: List[
         Literal[
             "allow-downloads",
@@ -26,6 +31,7 @@ class BoxGenerateDownloadURLParams(TypedDict, total=False):
             "allow-presentation",
             "allow-scripts",
             "allow-top-navigation-by-user-activation",
+            "allow-same-origin",
         ]
     ]
     """
@@ -33,7 +39,7 @@ class BoxGenerateDownloadURLParams(TypedDict, total=False):
     most restrictive policy.
     """
 
-    csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none"]]
+    csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none", "any"]]
     """
     CSPSourceBundles allow the served file to fetch from named third-party origins;
     omit to send no fetch directive.

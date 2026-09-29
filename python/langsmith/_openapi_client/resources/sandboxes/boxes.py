@@ -535,6 +535,7 @@ class BoxesResource(SyncAPIResource):
         path: str,
         content_disposition: str | Omit = omit,
         content_type: str | Omit = omit,
+        csp_sandbox: bool | Omit = omit,
         csp_sandbox_flags: List[
             Literal[
                 "allow-downloads",
@@ -546,10 +547,11 @@ class BoxesResource(SyncAPIResource):
                 "allow-presentation",
                 "allow-scripts",
                 "allow-top-navigation-by-user-activation",
+                "allow-same-origin",
             ]
         ]
         | Omit = omit,
-        csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none"]] | Omit = omit,
+        csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none", "any"]] | Omit = omit,
         expires_in_seconds: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -565,20 +567,24 @@ class BoxesResource(SyncAPIResource):
         the file path, the response content type and disposition, and the sandbox flags,
         so a link cannot be repointed at another file or served under a weaker policy.
         The file is always served with a Content-Security-Policy: a sandbox directive,
-        plus a default-src holding every fetch to the sandbox's own download host and a
-        set of pre-approved third-party origins. csp_sandbox_flags may loosen the
-        sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
-        allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
-        allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
-        served file never shares an origin with anything. csp_source_bundles selects the
-        third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
-        when the field is omitted, and 'none' holds the file to the sandbox alone.
-        Because every file of one sandbox is served from the same host, a page can load
-        sibling files it has links for, but only by their own link URLs. Links never
-        expire unless expires_in_seconds is set. The link is served from the sandbox
-        service domain, not the API host.
+        plus a default-src holding every fetch to the file's own download host and a set
+        of pre-approved third-party origins. csp_sandbox_flags may loosen the sandbox
+        with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+        allow-pointer-lock, allow-popups, allow-presentation, allow-same-origin,
+        allow-scripts, or allow-top-navigation-by-user-activation. Every file is served
+        from its own host, derived from the sandbox and the path, so allow-same-origin
+        gives a page localStorage and IndexedDB that no other file can read, and
+        re-minting a link for the same file keeps them. csp_sandbox set to false drops
+        the sandbox directive altogether, and csp_sandbox_flags must then be omitted.
+        csp_source_bundles selects the third-party origins: cdnjs, google-fonts,
+        jsdelivr, and unpkg are all allowed when the field is omitted, 'none' holds the
+        file to its own host, and 'any' sends no default-src at all. Links never expire
+        unless expires_in_seconds is set. The link is served from the sandbox service
+        domain, not the API host.
 
         Args:
+          csp_sandbox: CSPSandbox false serves the file with no CSP sandbox directive; omit to keep it.
+
           csp_sandbox_flags: CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
               most restrictive policy.
 
@@ -604,6 +610,7 @@ class BoxesResource(SyncAPIResource):
                     "path": path,
                     "content_disposition": content_disposition,
                     "content_type": content_type,
+                    "csp_sandbox": csp_sandbox,
                     "csp_sandbox_flags": csp_sandbox_flags,
                     "csp_source_bundles": csp_source_bundles,
                     "expires_in_seconds": expires_in_seconds,
@@ -1330,6 +1337,7 @@ class AsyncBoxesResource(AsyncAPIResource):
         path: str,
         content_disposition: str | Omit = omit,
         content_type: str | Omit = omit,
+        csp_sandbox: bool | Omit = omit,
         csp_sandbox_flags: List[
             Literal[
                 "allow-downloads",
@@ -1341,10 +1349,11 @@ class AsyncBoxesResource(AsyncAPIResource):
                 "allow-presentation",
                 "allow-scripts",
                 "allow-top-navigation-by-user-activation",
+                "allow-same-origin",
             ]
         ]
         | Omit = omit,
-        csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none"]] | Omit = omit,
+        csp_source_bundles: List[Literal["cdnjs", "google-fonts", "jsdelivr", "unpkg", "none", "any"]] | Omit = omit,
         expires_in_seconds: int | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -1360,20 +1369,24 @@ class AsyncBoxesResource(AsyncAPIResource):
         the file path, the response content type and disposition, and the sandbox flags,
         so a link cannot be repointed at another file or served under a weaker policy.
         The file is always served with a Content-Security-Policy: a sandbox directive,
-        plus a default-src holding every fetch to the sandbox's own download host and a
-        set of pre-approved third-party origins. csp_sandbox_flags may loosen the
-        sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
-        allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or
-        allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a
-        served file never shares an origin with anything. csp_source_bundles selects the
-        third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed
-        when the field is omitted, and 'none' holds the file to the sandbox alone.
-        Because every file of one sandbox is served from the same host, a page can load
-        sibling files it has links for, but only by their own link URLs. Links never
-        expire unless expires_in_seconds is set. The link is served from the sandbox
-        service domain, not the API host.
+        plus a default-src holding every fetch to the file's own download host and a set
+        of pre-approved third-party origins. csp_sandbox_flags may loosen the sandbox
+        with allow-downloads, allow-forms, allow-modals, allow-orientation-lock,
+        allow-pointer-lock, allow-popups, allow-presentation, allow-same-origin,
+        allow-scripts, or allow-top-navigation-by-user-activation. Every file is served
+        from its own host, derived from the sandbox and the path, so allow-same-origin
+        gives a page localStorage and IndexedDB that no other file can read, and
+        re-minting a link for the same file keeps them. csp_sandbox set to false drops
+        the sandbox directive altogether, and csp_sandbox_flags must then be omitted.
+        csp_source_bundles selects the third-party origins: cdnjs, google-fonts,
+        jsdelivr, and unpkg are all allowed when the field is omitted, 'none' holds the
+        file to its own host, and 'any' sends no default-src at all. Links never expire
+        unless expires_in_seconds is set. The link is served from the sandbox service
+        domain, not the API host.
 
         Args:
+          csp_sandbox: CSPSandbox false serves the file with no CSP sandbox directive; omit to keep it.
+
           csp_sandbox_flags: CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the
               most restrictive policy.
 
@@ -1399,6 +1412,7 @@ class AsyncBoxesResource(AsyncAPIResource):
                     "path": path,
                     "content_disposition": content_disposition,
                     "content_type": content_type,
+                    "csp_sandbox": csp_sandbox,
                     "csp_sandbox_flags": csp_sandbox_flags,
                     "csp_source_bundles": csp_source_bundles,
                     "expires_in_seconds": expires_in_seconds,
