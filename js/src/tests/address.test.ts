@@ -286,6 +286,23 @@ describe("Client", () => {
     expect(payload).toEqual(SUPPORT_WIRE);
   });
 
+  test("batchIngestRuns sends the address to POST /runs/batch", async () => {
+    const { client, callSpy } = mockClient();
+    const run = new RunTree({ name: "r", address: SUPPORT, client });
+    await client.batchIngestRuns({ runCreates: [run.toJSON()] });
+    const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
+      String(url).endsWith("/runs/batch"),
+    );
+    const { post } = JSON.parse(
+      typeof init.body === "string"
+        ? init.body
+        : new TextDecoder().decode(init.body),
+    );
+    expect(post).toHaveLength(1);
+    expect(post[0]).toMatchObject(SUPPORT_WIRE);
+    expect(post[0]).not.toHaveProperty("session_name");
+  });
+
   test("createFeedback sends the address", async () => {
     const { client, callSpy } = mockClient();
     await client.createFeedback({
