@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
+    from langsmith._address import Address, address
     from langsmith._expect import expect
     from langsmith._openapi_client._exceptions import (
         APIConnectionError,
@@ -119,6 +120,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation import aevaluate_existing
 
         return aevaluate_existing
+    elif name == "address":
+        from langsmith._address import address
+
+        return address
+    elif name == "Address":
+        from langsmith._address import Address
+
+        return Address
     elif name == "tracing_context":
         from langsmith.run_helpers import tracing_context
 
@@ -249,6 +258,8 @@ __all__ = [
     "aevaluate",
     "tracing_context",
     "get_tracing_context",
+    "address",
+    "Address",
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
