@@ -30,15 +30,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from langsmith._internal._package_version import get_package_version
-from langsmith._internal.voice._helpers import (
-    build_assistant_message,
-    build_user_message,
-)
-from langsmith._internal.voice.helpers import (
-    observe_safely,
-    scrub,
-    serialize_event_for_trace,
-)
+from langsmith._internal.voice.helpers import dump_event, observe_safely, scrub
 from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
     EventSession,
@@ -185,9 +177,7 @@ class _GeminiLiveTracer:
             self._flush_user(message, now)
             agent_text = self._take_agent_text()
             if agent_text:
-                self._session.append_transcript_message(
-                    build_assistant_message(agent_text)
-                )
+                self._session.add_message("assistant", agent_text)
             with self._session.event_span(
                 message,
                 now,
@@ -252,7 +242,7 @@ class _GeminiLiveTracer:
             inputs={"args": call.args},
             metadata={
                 "function_call_id": call.id,
-                "raw_event": scrub(serialize_event_for_trace(message)),
+                "raw_event": scrub(dump_event(message)),
             },
         )
         self._open_tools.setdefault(self._tool_key(call), []).append(run)
@@ -282,7 +272,7 @@ class _GeminiLiveTracer:
             self._session.close_span(
                 run,
                 outputs=outputs,
-                metadata={"raw_response": serialize_event_for_trace(response)},
+                metadata={"raw_response": dump_event(response)},
             )
             return
         with self._session.event_span(
@@ -319,7 +309,7 @@ class _GeminiLiveTracer:
         self._user_text = ""
         if not text:
             return
-        self._session.append_transcript_message(build_user_message(text))
+        self._session.add_message("user", text)
         self._session.set_title(text)
         with self._session.event_span(
             message,
@@ -339,13 +329,13 @@ class _GeminiLiveTracer:
         text = self._take_agent_text()
         if not text:
             return
-        self._session.append_transcript_message(build_assistant_message(text))
+        self._session.add_message("assistant", text)
         self._session.record_llm(
             name="output_transcription",
             outputs={"role": "assistant", "content": text},
             usage_metadata=self._turn_usage,
             metadata={
-                "raw_event": scrub(serialize_event_for_trace(self._last_message)),
+                "raw_event": scrub(dump_event(self._last_message)),
                 "ls_provider": "google",
                 "ls_model_name": self._model,
             },

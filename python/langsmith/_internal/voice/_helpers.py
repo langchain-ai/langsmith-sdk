@@ -1,30 +1,30 @@
-"""Canonical message helpers shared by the voice integrations."""
+"""Integration-agnostic helpers shared by the voice span processors."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any, Optional
 
 
 def build_user_message(content: str) -> dict[str, Any]:
-    """Build a canonical LangSmith ``user`` chat message."""
+    """Build a ``user`` chat message for the ``gen_ai.*`` message keys."""
     return {"role": "user", "content": content}
 
 
 def build_assistant_message(content: str) -> dict[str, Any]:
-    """Build a canonical LangSmith ``assistant`` chat message."""
+    """Build an ``assistant`` chat message for the ``gen_ai.*`` message keys."""
     return {"role": "assistant", "content": content}
 
 
 def build_tool_message(
-    content: Any,
+    content: str,
     *,
     tool_call_id: Optional[str] = None,
     name: Optional[str] = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Build a ``tool`` result message, with its call id / name when present."""
-    message: dict[str, Any] = {"role": "tool", "content": content}
+    message: dict[str, object] = {"role": "tool", "content": content}
     if tool_call_id:
         message["tool_call_id"] = str(tool_call_id)
     if name:
@@ -32,7 +32,7 @@ def build_tool_message(
     return message
 
 
-def build_tool_call(call_id: str, name: str, arguments: Any) -> dict[str, Any]:
+def build_tool_call(call_id: str, name: str, arguments: str) -> dict[str, object]:
     """Build one OpenAI-shaped function tool call."""
     return {
         "id": call_id,
@@ -42,23 +42,13 @@ def build_tool_call(call_id: str, name: str, arguments: Any) -> dict[str, Any]:
 
 
 def build_assistant_tool_call_message(
-    call_id: str, name: str, arguments: Any
-) -> dict[str, Any]:
+    call_id: str, name: str, arguments: str
+) -> dict[str, object]:
     """Build an assistant message containing one tool call."""
-    return build_assistant_tool_calls_message([(call_id, name, arguments)])
-
-
-def build_assistant_tool_calls_message(
-    calls: Sequence[tuple[str, str, Any]],
-) -> dict[str, Any]:
-    """Build an assistant message containing one or more function tool calls."""
     return {
         "role": "assistant",
         "content": "",
-        "tool_calls": [
-            build_tool_call(call_id, name, arguments)
-            for call_id, name, arguments in calls
-        ],
+        "tool_calls": [build_tool_call(call_id, name, arguments)],
     }
 
 

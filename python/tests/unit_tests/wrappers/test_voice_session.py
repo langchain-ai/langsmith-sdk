@@ -14,12 +14,6 @@ import pytest
 
 from langsmith import Client
 from langsmith._internal.voice import session as session_mod
-from langsmith._internal.voice._helpers import (
-    build_assistant_message,
-    build_assistant_tool_calls_message,
-    build_tool_message,
-    build_user_message,
-)
 from langsmith._internal.voice.session import EventSession, start_session
 
 LS_TEST_CLIENT_INFO = {
@@ -159,12 +153,10 @@ class TestIntegrationMetadata:
 
 
 class TestTranscriptAndTitle:
-    def test_append_transcript_message_strips_and_drops_empty(self):
+    def test_add_message_strips_and_drops_empty(self):
         s = _session()
-        s.append_transcript_message(build_user_message("  hello  "))
-        s.append_transcript_message(
-            build_assistant_message("   ")
-        )  # whitespace only → dropped
+        s.add_message("user", "  hello  ")
+        s.add_message("assistant", "   ")  # whitespace only → dropped
         assert s.messages == [{"role": "user", "content": "hello"}]
 
     def test_set_title_first_nonempty_wins(self):
@@ -177,8 +169,8 @@ class TestTranscriptAndTitle:
 
     def test_finalize_rolls_transcript_onto_root(self):
         s = _session()
-        s.append_transcript_message(build_user_message("hi"))
-        s.append_transcript_message(build_assistant_message("hello"))
+        s.add_message("user", "hi")
+        s.add_message("assistant", "hello")
         s.finalize()
         assert s.run.outputs == {
             "messages": [
@@ -189,24 +181,20 @@ class TestTranscriptAndTitle:
 
     def test_tool_calls_and_results_roll_up_with_allowlisted_fields(self):
         s = _session()
-        s.append_transcript_message(build_user_message("weather?"))
-        s.append_transcript_message(
-            build_assistant_tool_calls_message(
-                [
-                    (
-                        "call-1",
-                        "lookup_weather",
-                        {"city": "Paris", "note": "x" * 3000},
-                    )
-                ]
-            )
+        s.add_message("user", "weather?")
+        s.add_tool_calls(
+            [
+                (
+                    "call-1",
+                    "lookup_weather",
+                    {"city": "Paris", "note": "x" * 3000},
+                )
+            ]
         )
-        s.append_transcript_message(
-            build_tool_message(
-                {"temperature": 21},
-                tool_call_id="call-1",
-                name="lookup_weather",
-            )
+        s.add_tool_result(
+            tool_call_id="call-1",
+            name="lookup_weather",
+            content={"temperature": 21},
         )
         s.finalize()
 
@@ -235,7 +223,7 @@ class TestTurns:
 
         with mock.patch.object(session_mod.RunTree, "patch", spy_patch):
             s.start_turn()
-            s.append_transcript_message(build_user_message("weather?"))
+            s.add_message("user", "weather?")
             s.end_turn()
 
         assert patched == [
@@ -245,8 +233,8 @@ class TestTurns:
     def test_turn_groups_messages_and_carries_metadata(self):
         s = _session()
         s.start_turn()
-        s.append_transcript_message(build_user_message("weather?"))
-        s.append_transcript_message(build_assistant_message("sunny"))
+        s.add_message("user", "weather?")
+        s.add_message("assistant", "sunny")
         s.add_turn_metadata(was_interrupted=True, latency_to_first_audio_ms=120)
         # Read the open turn span before finalize closes it.
         turn = s._current_turn
@@ -269,10 +257,8 @@ class TestTurns:
 class TestRecordLlm:
     def test_default_inputs_drop_trailing_assistant(self):
         s = _session()
-        s.append_transcript_message(build_user_message("hi"))
-        s.append_transcript_message(
-            build_assistant_message("the answer")
-        )  # the response being recorded
+        s.add_message("user", "hi")
+        s.add_message("assistant", "the answer")  # the response being recorded
         captured: list = []
         real_create = session_mod.RunTree.create_child
 
@@ -323,7 +309,7 @@ class TestRecordLlm:
 class TestFinalizeFailOpen:
     def test_wav_build_failure_does_not_break_finalize(self, monkeypatch):
         s = _session()
-        s.append_transcript_message(build_user_message("hi"))
+        s.add_message("user", "hi")
         monkeypatch.setattr(
             session_mod,
             "build_stereo_session_wav",

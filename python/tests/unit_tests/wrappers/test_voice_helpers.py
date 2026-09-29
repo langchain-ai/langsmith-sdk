@@ -52,14 +52,12 @@ class TestVoiceHelpers:
             "b": ["<1 bytes>"],
         }
 
-    def test_serialize_event_for_trace_variants(self):
+    def test_dump_event_variants(self):
         model = MagicMock()
         model.model_dump.return_value = {"k": "v"}
-        assert helpers.serialize_event_for_trace(model) == {"k": "v"}
-        assert helpers.serialize_event_for_trace({"already": "dict"}) == {
-            "already": "dict"
-        }
-        assert "repr" in helpers.serialize_event_for_trace(object())
+        assert helpers.dump_event(model) == {"k": "v"}
+        assert helpers.dump_event({"already": "dict"}) == {"already": "dict"}
+        assert "repr" in helpers.dump_event(object())
 
     def test_get_package_version_installed(self):
         # langsmith itself is always importable in the test env.
