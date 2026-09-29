@@ -275,6 +275,7 @@ class EventSession:
         outputs: dict[str, Any] | None = None,
         usage_metadata: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        parent: RunTree | None = None,
     ) -> Iterator[RunTree]:
         """Open a child span for one received event; close it on body exit.
 
@@ -289,6 +290,10 @@ class EventSession:
         conversation-shaped I/O instead; the full wire payload is then preserved
         under ``metadata.raw_event``. Curated values pass through ``scrub`` too,
         so no un-scrubbed event data ever reaches a span.
+
+        ``parent`` overrides the normal current-turn/root selection. Adapters use
+        it for late protocol events that belong at the session root rather than
+        under a newer turn.
         """
         self.event_count += 1
         payload = scrub(dump_event(event))
@@ -309,8 +314,8 @@ class EventSession:
         else:
             run_inputs = payload if inbound else {}
 
-        parent = self._current_turn or self.run
-        run = parent.create_child(
+        span_parent = parent or self._current_turn or self.run
+        run = span_parent.create_child(
             name=name,
             run_type=run_type,
             inputs=run_inputs,
