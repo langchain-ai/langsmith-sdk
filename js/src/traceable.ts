@@ -1005,11 +1005,33 @@ export function traceable<Func extends (...args: any[]) => any>(
           async start(controller) {
             // eslint-disable-next-line no-constant-condition
             while (true) {
-              const result = await (snapshot
-                ? snapshot(() =>
-                    otel_context.with(capturedOtelContext, () => reader.read()),
-                  )
-                : otel_context.with(capturedOtelContext, () => reader.read()));
+              let result: ReadableStreamReadResult<unknown>;
+              try {
+                result = await (snapshot
+                  ? snapshot(() =>
+                      otel_context.with(capturedOtelContext, () =>
+                        reader.read(),
+                      ),
+                    )
+                  : otel_context.with(capturedOtelContext, () =>
+                      reader.read(),
+                    ));
+              } catch (e) {
+                // The source stream errored: end the run with the error and the
+                // chunks received so far instead of leaving it pending.
+                finished = true;
+                await currentRunTree?.end(undefined, String(e));
+                await handleRunOutputs({
+                  runTree: currentRunTree,
+                  rawOutputs: await handleChunks(chunks),
+                  processOutputsFn,
+                  on_end,
+                  postRunPromise,
+                  deferredInputs,
+                  skipChildPromiseDelay: true,
+                });
+                throw e;
+              }
               if (result.done) {
                 finished = true;
                 await handleRunOutputs({
