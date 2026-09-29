@@ -113,6 +113,7 @@ class _DeepgramVoiceTracer:
         self._session = session
         self._is_agent_speaking = is_agent_speaking
         self._open_tools: dict[str, tuple[str, RunTree]] = {}
+        self._history_message_count = 0
         # The turn most recently closed by ``AgentAudioDone``; its
         # ``LatencyReport`` arrives afterwards.
         self._completed_turn: RunTree | None = None
@@ -144,9 +145,10 @@ class _DeepgramVoiceTracer:
         if message_type == "Welcome":
             add_metadata(self._session.run, deepgram_request_id=message["request_id"])
         elif message_type == "History":
+            self._history_message_count += 1
             add_metadata(
                 self._session.run,
-                deepgram_history_message_count=len(message["history"]),
+                deepgram_history_message_count=self._history_message_count,
             )
         elif message_type == "UserStartedSpeaking":
             self._start_turn()
@@ -191,6 +193,10 @@ class _DeepgramVoiceTracer:
             self._record_event(message, now)
 
     def _start_turn(self) -> None:
+        # Latency reports are not correlated to a turn. Once a new turn starts,
+        # reports received before its ``AgentAudioDone`` belong to that open turn,
+        # not to the previously completed one.
+        self._completed_turn = None
         interrupted = (
             self._session.has_open_turn
             and self._is_agent_speaking is not None

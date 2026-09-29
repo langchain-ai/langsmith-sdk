@@ -349,6 +349,30 @@ async def test_proxy_supports_typed_deepgram_sdk_messages(monkeypatch):
     assert not any(isinstance(run.inputs, bytes) for _, run in created)
 
 
+async def test_raw_dict_latency_report_is_traced_and_returned_unchanged(monkeypatch):
+    created = _spy_children(monkeypatch)
+    latency_report = {"type": "LatencyReport", "total_latency": 0.42}
+    frames = [
+        FakeSdkMessage(type="UserStartedSpeaking"),
+        FakeSdkMessage(type="ConversationText", role="user", content="Hello"),
+        FakeSdkMessage(type="ConversationText", role="assistant", content="Hi"),
+        FakeSdkMessage(type="AgentAudioDone"),
+        latency_report,
+    ]
+    raw = FakeSdkConnection(frames)
+    seen = []
+
+    async with wrap_deepgram_voice(raw) as connection:
+        async for frame in connection:
+            seen.append(frame)
+
+    assert seen == frames
+    assert seen[-1] is latency_report
+    turn = next(run for name, run in created if name == "turn")
+    metadata = (turn.extra or {}).get("metadata") or {}
+    assert metadata["deepgram_total_latency_ms"] == 420
+
+
 async def test_dynamic_model_updates_refresh_root_metadata():
     raw = FakeSdkConnection([])
     updates = [
@@ -504,6 +528,32 @@ async def test_events_roll_up_into_turn_without_synthetic_model_spans(monkeypatc
     assert "unknown_latency" not in turn_metadata
 
 
+async def test_open_turn_latency_does_not_patch_previous_turn(monkeypatch):
+    created = _spy_children(monkeypatch)
+    frames = [
+        _frame("UserStartedSpeaking"),
+        _frame("ConversationText", role="user", content="first question"),
+        _frame("ConversationText", role="assistant", content="first answer"),
+        _frame("AgentAudioDone"),
+        _frame("UserStartedSpeaking"),
+        _frame("ConversationText", role="user", content="second question"),
+        _frame("LatencyReport", total_latency=0.42),
+        _frame("ConversationText", role="assistant", content="second answer"),
+        _frame("AgentAudioDone"),
+    ]
+
+    async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
+        async for _ in connection:
+            pass
+
+    turns = [run for name, run in created if name == "turn"]
+    assert len(turns) == 2
+    first_metadata = (turns[0].extra or {}).get("metadata") or {}
+    second_metadata = (turns[1].extra or {}).get("metadata") or {}
+    assert "deepgram_total_latency_ms" not in first_metadata
+    assert second_metadata["deepgram_total_latency_ms"] == 420
+
+
 async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
     created = _spy_children(monkeypatch)
     first_chunk = b"\x01\x02" * 120
@@ -516,6 +566,7 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
         _frame("UserStartedSpeaking"),
         late_chunk,
         _frame("AgentAudioDone"),
+        _frame("LatencyReport", total_latency=0.64),
         _frame("ConversationText", role="user", content="second question"),
     ]
     async with wrap_deepgram_voice(
@@ -538,10 +589,13 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
     }
     first_turn_metadata = (turns[0].extra or {}).get("metadata") or {}
     assert first_turn_metadata["was_interrupted"] is True
+    assert first_turn_metadata["deepgram_total_latency_ms"] == 640
     assert turns[1].inputs == {
         "messages": [{"role": "user", "content": "second question"}]
     }
     assert turns[1].outputs == {}
+    second_turn_metadata = (turns[1].extra or {}).get("metadata") or {}
+    assert "deepgram_total_latency_ms" not in second_turn_metadata
     audio_done = next(run for name, run in created if name == "AgentAudioDone")
     assert audio_done.parent_run_id == trace.run.id
     audio_done_metadata = (audio_done.extra or {}).get("metadata") or {}
@@ -551,13 +605,17 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
 async def test_history_is_summarized_on_root_without_a_span(monkeypatch):
     created = _spy_children(monkeypatch)
     frames = [
-        _frame(
-            "History",
-            history=[
-                {"role": "user", "content": "private prior input"},
-                {"role": "assistant", "content": "private prior output"},
+        FakeSdkMessage(type="History", role="user", content="private prior input"),
+        FakeSdkMessage(
+            type="History",
+            function_calls=[
+                {
+                    "id": "private-call",
+                    "name": "private-tool",
+                    "arguments": '{"secret":"private prior input"}',
+                }
             ],
-        )
+        ),
     ]
     async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
         async for _ in connection:
@@ -568,6 +626,7 @@ async def test_history_is_summarized_on_root_without_a_span(monkeypatch):
     assert metadata["deepgram_history_message_count"] == 2
     assert not any(name == "History" for name, _ in created)
     assert "private prior input" not in repr(metadata)
+    assert "private-tool" not in repr(metadata)
 
 
 async def test_tool_response_closes_tool_span(monkeypatch):
