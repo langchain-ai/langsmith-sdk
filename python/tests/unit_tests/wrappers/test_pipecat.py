@@ -683,7 +683,8 @@ class TestBaseProcessorHelpers:
 class TestVoiceAudioUtils:
     """``pcm_to_wav`` — the only ``voice/audio.py`` helper Pipecat uses.
 
-    The Track-B helpers (``scrub``/``dump_event``/``build_stereo_session_wav``)
+    The Track-B helpers
+    (``scrub``/``serialize_event_for_trace``/``build_stereo_session_wav``)
     live with ``session.py`` in the OpenAI Realtime PR and are tested there.
     """
 

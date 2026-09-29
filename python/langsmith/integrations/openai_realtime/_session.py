@@ -40,6 +40,10 @@ import uuid
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langsmith._internal._package_version import get_package_version
+from langsmith._internal.voice._helpers import (
+    build_assistant_message,
+    build_user_message,
+)
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
@@ -481,7 +485,12 @@ class _AgentsRealtimeTracer:
             return  # text not in yet (may arrive late, e.g. a barge-in) — pending
         self._emitted.add(iid)
         self._notify(role, text)
-        self._trace.add_message(role, text)
+        message = (
+            build_user_message(text)
+            if role == "user"
+            else build_assistant_message(text)
+        )
+        self._trace.append_transcript_message(message)
         if role == "user":
             with self._trace.event_span(
                 {"item_id": iid, "role": "user", "content": text},

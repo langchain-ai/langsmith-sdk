@@ -36,7 +36,7 @@ from langsmith._internal.voice.audio import (
     build_stereo_session_wav,
     session_wav_exceeds_duration_cap,
 )
-from langsmith._internal.voice.helpers import dump_event, scrub
+from langsmith._internal.voice.helpers import scrub, serialize_event_for_trace
 
 if TYPE_CHECKING:
     from langsmith import Client
@@ -122,11 +122,11 @@ class EventSession:
         turn.post()
         self._current_turn = turn
 
-    def _close_turn(self) -> RunTree | None:
+    def _close_turn(self) -> None:
         """End the currently open turn span, if any, with its transcript."""
         turn = self._current_turn
         if turn is None:
-            return None
+            return
         msgs = self.messages[self._turn_msg_start :]
         inputs = [msg for msg in msgs if msg["role"] == "user"]
         outputs = [msg for msg in msgs if msg["role"] != "user"]
@@ -136,58 +136,38 @@ class EventSession:
         # by default, so re-send them explicitly.
         turn.patch(exclude_inputs=False)
         self._current_turn = None
-        return turn
 
-    def end_turn(self) -> RunTree | None:
-        """Close the current turn; returns it so late metadata can still land."""
-        return self._close_turn()
+    def end_turn(self) -> None:
+        """Close the current turn, if any, with its transcript."""
+        self._close_turn()
 
     @property
     def has_open_turn(self) -> bool:
         """Whether a conversation turn is currently collecting events."""
         return self._current_turn is not None
 
-    def add_message(self, role: str, content: str) -> None:
-        """Append one transcript line to the conversation rollup.
+    def append_transcript_message(self, message: dict[str, Any]) -> None:
+        """Append one canonical chat message to the conversation transcript.
 
-        Empty/whitespace content is ignored (failed transcriptions, silent
-        turns). Content is truncated like any other span payload (see ``scrub``)
-        so an unexpectedly large blob never bloats the root span.
+        Provider adapters construct the standard user/assistant/tool shape; this
+        method owns the common validation, whitespace handling, and payload
+        bounds. Empty text-only messages are ignored, while an assistant message
+        with tool calls is retained even when its text content is empty.
         """
-        content = (content or "").strip()
-        if content:
-            self.messages.append({"role": role, "content": scrub(content)})
-
-    def add_tool_calls(self, calls: Sequence[tuple[str, str, Any]]) -> None:
-        """Append one allowlisted assistant tool-call message.
-
-        ``calls`` contains ``(id, name, arguments)`` tuples curated by the
-        provider adapter. Only the standard tool-call fields are retained;
-        arguments are scrubbed and bounded like all other trace payloads.
-        """
-        tool_calls = [
-            {
-                "id": scrub(call_id),
-                "type": "function",
-                "function": {"name": scrub(name), "arguments": scrub(arguments)},
-            }
-            for call_id, name, arguments in calls
-        ]
-        if tool_calls:
-            self.messages.append(
-                {"role": "assistant", "content": "", "tool_calls": tool_calls}
-            )
-
-    def add_tool_result(self, *, tool_call_id: str, name: str, content: Any) -> None:
-        """Append one allowlisted tool result to the conversation transcript."""
-        self.messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": scrub(tool_call_id),
-                "name": scrub(name),
-                "content": scrub(content),
-            }
-        )
+        role = message.get("role")
+        if role not in {"system", "developer", "user", "assistant", "tool"}:
+            return
+        normalized = scrub(dict(message))
+        content = normalized.get("content")
+        if isinstance(content, str):
+            normalized["content"] = content.strip()
+            if (
+                role in {"user", "assistant"}
+                and not normalized["content"]
+                and not normalized.get("tool_calls")
+            ):
+                return
+        self.messages.append(normalized)
 
     def record_user(self, t: float, data: bytes) -> None:
         """Record a timestamped chunk of user (mic) PCM16 for the stereo WAV.
@@ -296,7 +276,7 @@ class EventSession:
         under a newer turn.
         """
         self.event_count += 1
-        payload = scrub(dump_event(event))
+        payload = scrub(serialize_event_for_trace(event))
         # "Curated" = the caller supplied readable I/O or a non-default kind, so
         # the raw wire payload is demoted to metadata rather than the headline.
         curated = inputs is not None or outputs is not None or run_type != "chain"

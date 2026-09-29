@@ -32,6 +32,10 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal._usage import _create_usage_metadata
+from langsmith._internal.voice._helpers import (
+    build_assistant_message,
+    build_user_message,
+)
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
@@ -240,8 +244,8 @@ class _RealtimeTracer:
             return
         if etype == "response.output_audio_transcript.done":
             # Already the model span's content; fold into the rollup, don't span.
-            self._session.add_message(
-                "assistant", getattr(event, "transcript", "") or ""
+            self._session.append_transcript_message(
+                build_assistant_message(getattr(event, "transcript", "") or "")
             )
             return
 
@@ -289,7 +293,7 @@ class _RealtimeTracer:
         elif etype == "conversation.item.input_audio_transcription.completed":
             text = (getattr(event, "transcript", "") or "").strip()
             if text:
-                self._session.add_message("user", text)
+                self._session.append_transcript_message(build_user_message(text))
                 self._session.set_title(text)
             else:
                 self._await_audio_since = None

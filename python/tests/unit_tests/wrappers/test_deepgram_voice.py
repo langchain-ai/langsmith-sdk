@@ -195,7 +195,7 @@ def test_public_wrapper_emits_beta_warning():
 
 def test_pydantic_v1_messages_are_normalized():
     message = FakePydanticV1Message(type="Welcome", request_id="request-1")
-    assert voice_mod._json_message(message) == {
+    assert voice_mod._normalize_deepgram_frame(message) == {
         "type": "Welcome",
         "request_id": "request-1",
     }
@@ -203,7 +203,7 @@ def test_pydantic_v1_messages_are_normalized():
 
 @pytest.mark.parametrize("frame", ["not-json", "[]", '{"missing":"type"}'])
 def test_malformed_messages_are_ignored(frame):
-    assert voice_mod._json_message(frame) is None
+    assert voice_mod._normalize_deepgram_frame(frame) is None
 
 
 async def test_proxy_is_transparent_and_tracing_fails_open(monkeypatch):
@@ -365,12 +365,13 @@ async def test_raw_dict_latency_report_is_traced_and_returned_unchanged(monkeypa
     async with wrap_deepgram_voice(raw) as connection:
         async for frame in connection:
             seen.append(frame)
+        trace = connection._session
 
     assert seen == frames
     assert seen[-1] is latency_report
-    turn = next(run for name, run in created if name == "turn")
-    metadata = (turn.extra or {}).get("metadata") or {}
-    assert metadata["deepgram_total_latency_ms"] == 420
+    latency = next(run for name, run in created if name == "LatencyReport")
+    assert latency.parent_run_id == trace.run.id
+    assert latency.outputs == latency_report
 
 
 async def test_dynamic_model_updates_refresh_root_metadata():
@@ -402,6 +403,23 @@ async def test_dynamic_model_updates_refresh_root_metadata():
     assert metadata["deepgram_think_provider"] == "anthropic"
     assert metadata["deepgram_think_model"] == "claude-next"
     assert metadata["deepgram_speak_model"] == "aura-next"
+
+
+async def test_provider_update_events_are_recorded(monkeypatch):
+    created = _spy_children(monkeypatch)
+    frames = [
+        FakeSdkMessage(type="PromptUpdated"),
+        FakeSdkMessage(type="SpeakUpdated"),
+        FakeSdkMessage(type="ThinkUpdated"),
+    ]
+
+    async with wrap_deepgram_voice(FakeSdkConnection(frames)) as connection:
+        async for _ in connection:
+            pass
+
+    for event_type in ("PromptUpdated", "SpeakUpdated", "ThinkUpdated"):
+        event = next(run for name, run in created if name == event_type)
+        assert event.outputs == {"type": event_type}
 
 
 async def test_root_context_and_integration_version(monkeypatch):
@@ -504,31 +522,31 @@ async def test_events_roll_up_into_turn_without_synthetic_model_spans(monkeypatc
 
     turns = [run for name, run in created if name == "turn"]
     assert len(turns) == 1
-    turn_metadata = (turns[0].extra or {}).get("metadata") or {}
-    assert turn_metadata["deepgram_stt_latency_ms"] == 120
-    assert turn_metadata["deepgram_ttt_token_latency_ms"] == 340
-    assert turn_metadata["deepgram_ttt_text_latency_ms"] == 360
-    assert turn_metadata["deepgram_ttt_tool_latency_ms"] == 410
-    assert turn_metadata["deepgram_ttt_thinking_latency_ms"] == 290
-    assert turn_metadata["deepgram_tts_latency_ms"] == 180
-    assert turn_metadata["deepgram_total_latency_ms"] == 640
     assert turns[0].inputs == {"messages": [{"role": "user", "content": "Hello"}]}
     assert turns[0].outputs == {
         "messages": [{"role": "assistant", "content": "Hi there"}]
     }
 
+    latency = next(run for name, run in created if name == "LatencyReport")
+    assert latency.parent_run_id == trace.run.id
+    assert latency.outputs == {
+        "type": "LatencyReport",
+        "stt_latency": 0.12,
+        "ttt_token_latency": 0.34,
+        "ttt_text_latency": 0.36,
+        "ttt_tool_latency": 0.41,
+        "ttt_thinking_latency": 0.29,
+        "tts_latency": 0.18,
+        "total_latency": 0.64,
+        "unknown_latency": "not captured",
+    }
+
     names = [name for name, _ in created]
     assert not {"user_message", "model", "agent_audio"}.intersection(names)
-    assert not {
-        "Welcome",
-        "SettingsApplied",
-        "UserStartedSpeaking",
-        "LatencyReport",
-    }.intersection(names)
-    assert "unknown_latency" not in turn_metadata
+    assert not {"Welcome", "SettingsApplied", "UserStartedSpeaking"}.intersection(names)
 
 
-async def test_open_turn_latency_does_not_patch_previous_turn(monkeypatch):
+async def test_latency_report_is_root_event_while_turn_is_open(monkeypatch):
     created = _spy_children(monkeypatch)
     frames = [
         _frame("UserStartedSpeaking"),
@@ -545,13 +563,13 @@ async def test_open_turn_latency_does_not_patch_previous_turn(monkeypatch):
     async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
         async for _ in connection:
             pass
+        trace = connection._session
 
     turns = [run for name, run in created if name == "turn"]
     assert len(turns) == 2
-    first_metadata = (turns[0].extra or {}).get("metadata") or {}
-    second_metadata = (turns[1].extra or {}).get("metadata") or {}
-    assert "deepgram_total_latency_ms" not in first_metadata
-    assert second_metadata["deepgram_total_latency_ms"] == 420
+    latency = next(run for name, run in created if name == "LatencyReport")
+    assert latency.parent_run_id == trace.run.id
+    assert latency.outputs == {"type": "LatencyReport", "total_latency": 0.42}
 
 
 async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
@@ -589,17 +607,17 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
     }
     first_turn_metadata = (turns[0].extra or {}).get("metadata") or {}
     assert first_turn_metadata["was_interrupted"] is True
-    assert first_turn_metadata["deepgram_total_latency_ms"] == 640
     assert turns[1].inputs == {
         "messages": [{"role": "user", "content": "second question"}]
     }
     assert turns[1].outputs == {}
-    second_turn_metadata = (turns[1].extra or {}).get("metadata") or {}
-    assert "deepgram_total_latency_ms" not in second_turn_metadata
     audio_done = next(run for name, run in created if name == "AgentAudioDone")
     assert audio_done.parent_run_id == trace.run.id
     audio_done_metadata = (audio_done.extra or {}).get("metadata") or {}
     assert audio_done_metadata["interrupted_completion"] is True
+    latency = next(run for name, run in created if name == "LatencyReport")
+    assert latency.parent_run_id == trace.run.id
+    assert latency.outputs == {"type": "LatencyReport", "total_latency": 0.64}
 
 
 async def test_history_is_summarized_on_root_without_a_span(monkeypatch):
@@ -718,8 +736,9 @@ async def test_tool_response_closes_tool_span(monkeypatch):
     assert len(turns) == 1
     assert turns[0].inputs == {"messages": [expected_messages[0]]}
     assert turns[0].outputs == {"messages": expected_messages[1:]}
-    turn_metadata = (turns[0].extra or {}).get("metadata") or {}
-    assert turn_metadata["deepgram_ttt_tool_latency_ms"] == 100
+    latency = next(run for name, run in created if name == "LatencyReport")
+    assert latency.parent_run_id == trace.run.id
+    assert latency.outputs == {"type": "LatencyReport", "ttt_tool_latency": 0.1}
     assert len([run for name, run in created if name == "AgentThinking"]) == 1
 
 
