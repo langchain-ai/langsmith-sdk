@@ -1260,15 +1260,10 @@ def _addressed_to_project(context: dict, project_name: str) -> dict:
     An evaluation is project-addressed end to end -- the target runs to the
     experiment, the evaluator runs to `evaluators`, the feedback to the run's
     project -- so an agent configured around it leaks into none of them. The
-    three addressing keys move together: overriding the project alone would
-    leave a snapshot naming two destinations.
+    addressing keys move together: overriding the project alone would leave a
+    snapshot naming two destinations.
     """
-    return {
-        **context,
-        "project_name": project_name,
-        "agent_id": None,
-        "agent_environment": None,
-    }
+    return {**context, "project_name": project_name, "address": None}
 
 
 class _ExperimentManagerMixin:

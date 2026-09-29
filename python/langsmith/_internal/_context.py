@@ -5,17 +5,17 @@ import weakref
 from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 if TYPE_CHECKING:
+    from langsmith._address import Address
     from langsmith.client import Client
     from langsmith.run_trees import RunTree
 else:
     Client = Any  # type: ignore[assignment]
     RunTree = Any  # type: ignore[assignment]
+    Address = Any  # type: ignore[assignment]
 
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
-_AGENT_ID = contextvars.ContextVar[Optional[str]]("_AGENT_ID", default=None)
-_AGENT_ENVIRONMENT = contextvars.ContextVar[Optional[str]](
-    "_AGENT_ENVIRONMENT", default=None
-)
+# The whole `Address`, never unpacked: a new dimension needs no new variable.
+_ADDRESS = contextvars.ContextVar[Optional["Address"]]("_ADDRESS", default=None)
 _TAGS = contextvars.ContextVar[Optional[list[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[dict[str, Any]]]("_METADATA", default=None)
 
@@ -44,8 +44,7 @@ def get_current_run_tree() -> Optional["RunTree"]:
 
 # Not thread-local, so you can set this process-wide (before asyncio.run, etc.)
 _GLOBAL_PROJECT_NAME: Optional[str] = None
-_GLOBAL_AGENT_ID: Optional[str] = None
-_GLOBAL_AGENT_ENVIRONMENT: Optional[str] = None
+_GLOBAL_ADDRESS: Optional["Address"] = None
 _GLOBAL_TAGS: Optional[list[str]] = None
 _GLOBAL_METADATA: Optional[dict[str, Any]] = None
 _GLOBAL_TRACING_ENABLED: Optional[Union[bool, Literal["local"]]] = None
