@@ -16,6 +16,12 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langsmith._internal._package_version import get_package_version
+from langsmith._internal.voice._helpers import (
+    build_assistant_message,
+    build_assistant_tool_calls_message,
+    build_tool_message,
+    build_user_message,
+)
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import (
     DEFAULT_MAX_AUDIO_SECONDS,
@@ -36,24 +42,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SAMPLE_RATE = 24_000
 
-# ``LatencyReport`` fields (seconds) -> turn metadata keys (milliseconds).
-_TURN_LATENCY_FIELDS = {
-    "stt_latency": "deepgram_stt_latency_ms",
-    "ttt_token_latency": "deepgram_ttt_token_latency_ms",
-    "ttt_text_latency": "deepgram_ttt_text_latency_ms",
-    "ttt_tool_latency": "deepgram_ttt_tool_latency_ms",
-    "ttt_thinking_latency": "deepgram_ttt_thinking_latency_ms",
-    "tts_latency": "deepgram_tts_latency_ms",
-    "total_latency": "deepgram_total_latency_ms",
-}
-
 # Housekeeping events that carry nothing worth a span.
-_SILENT_EVENTS = frozenset(
-    {"KeepAlive", "PromptUpdated", "SpeakUpdated", "SettingsApplied"}
-)
+_SILENT_EVENTS = frozenset({"KeepAlive", "SettingsApplied"})
 
 
-def _json_message(frame: Any) -> dict[str, Any] | None:
+def _normalize_deepgram_frame(frame: Any) -> dict[str, Any] | None:
     """Normalize a raw JSON text frame or typed Deepgram SDK message.
 
     Binary audio frames yield ``None``. The SDK's Pydantic messages are
@@ -92,15 +85,6 @@ def _tool_arguments(value: Any) -> Any:
         return value
 
 
-def _latency_metadata(message: dict[str, Any]) -> dict[str, float]:
-    """Convert the allowlisted ``LatencyReport`` fields to milliseconds."""
-    return {
-        key: round(message[field] * 1000, 3)
-        for field, key in _TURN_LATENCY_FIELDS.items()
-        if field in message
-    }
-
-
 class _DeepgramVoiceTracer:
     """Translate Deepgram wire messages into an ``EventSession`` trace."""
 
@@ -114,16 +98,13 @@ class _DeepgramVoiceTracer:
         self._is_agent_speaking = is_agent_speaking
         self._open_tools: dict[str, tuple[str, RunTree]] = {}
         self._history_message_count = 0
-        # The turn most recently closed by ``AgentAudioDone``; its
-        # ``LatencyReport`` arrives afterwards.
-        self._completed_turn: RunTree | None = None
         # After a barge-in, the talked-over response still sends its own
         # ``AgentAudioDone``, which must not close the new turn.
-        self._interrupted_turns_pending: list[RunTree] = []
+        self._interrupted_completions_pending = 0
 
     def observe_sent(self, frame: Any) -> None:
         """Observe outbound settings updates or a ``FunctionCallResponse``."""
-        message = _json_message(frame)
+        message = _normalize_deepgram_frame(frame)
         if message is None:
             return
         message_type = message["type"]
@@ -134,7 +115,7 @@ class _DeepgramVoiceTracer:
 
     def observe(self, frame: Any) -> None:
         """Observe one inbound text or binary WebSocket frame."""
-        message = _json_message(frame)
+        message = _normalize_deepgram_frame(frame)
         if message is None:
             return
         message_type = message["type"]
@@ -161,26 +142,21 @@ class _DeepgramVoiceTracer:
         elif message_type == "FunctionCallCancelled":
             self._cancel_tools(message)
         elif message_type == "LatencyReport":
-            latency = _latency_metadata(message)
-            if self._completed_turn is not None:
-                add_metadata(self._completed_turn, **latency)
-                self._completed_turn.patch()
-                self._completed_turn = None
-            elif self._session.has_open_turn:
-                self._session.add_turn_metadata(**latency)
+            # Deepgram does not identify which turn a latency report belongs to.
+            # Preserve it as a root-level timeline event instead of guessing.
+            self._record_event(message, now, parent=self._session.run)
         elif message_type == "AgentAudioDone":
-            if self._interrupted_turns_pending:
-                interrupted_turn = self._interrupted_turns_pending.pop(0)
+            if self._interrupted_completions_pending:
+                self._interrupted_completions_pending -= 1
                 self._record_event(
                     message,
                     now,
                     parent=self._session.run,
                     metadata={"interrupted_completion": True},
                 )
-                self._completed_turn = interrupted_turn
             else:
                 self._record_event(message, now)
-                self._completed_turn = self._session.end_turn()
+                self._session.end_turn()
         elif message_type in ("Error", "Warning"):
             with self._session.event_span(
                 message, now, name=message_type, inbound=False
@@ -193,10 +169,6 @@ class _DeepgramVoiceTracer:
             self._record_event(message, now)
 
     def _start_turn(self) -> None:
-        # Latency reports are not correlated to a turn. Once a new turn starts,
-        # reports received before its ``AgentAudioDone`` belong to that open turn,
-        # not to the previously completed one.
-        self._completed_turn = None
         interrupted = (
             self._session.has_open_turn
             and self._is_agent_speaking is not None
@@ -204,9 +176,8 @@ class _DeepgramVoiceTracer:
         )
         if interrupted:
             self._session.add_turn_metadata(was_interrupted=True)
-            interrupted_turn = self._session.end_turn()
-            if interrupted_turn is not None:
-                self._interrupted_turns_pending.append(interrupted_turn)
+            self._session.end_turn()
+            self._interrupted_completions_pending += 1
         self._session.start_turn()
 
     def _observe_conversation_text(self, message: dict[str, Any], now: float) -> None:
@@ -217,11 +188,11 @@ class _DeepgramVoiceTracer:
         if role == "user":
             if not self._session.has_open_turn:
                 self._start_turn()
-            self._session.add_message(role, content)
+            self._session.append_transcript_message(build_user_message(content))
             self._session.set_title(content)
             self._record_event(message, now, inputs={"role": role, "content": content})
         else:
-            self._session.add_message(role, content)
+            self._session.append_transcript_message(build_assistant_message(content))
             self._record_event(message, now, outputs={"role": role, "content": content})
 
     def _observe_tool_request(self, message: dict[str, Any]) -> None:
@@ -245,7 +216,9 @@ class _DeepgramVoiceTracer:
                     },
                 ),
             )
-        self._session.add_tool_calls(calls)
+        self._session.append_transcript_message(
+            build_assistant_tool_calls_message(calls)
+        )
 
     def _close_tool(self, message: dict[str, Any], *, now: float) -> None:
         match = self._matching_tool(message)
@@ -262,10 +235,12 @@ class _DeepgramVoiceTracer:
             )
             return
         call_id, name, run = match
-        self._session.add_tool_result(
-            tool_call_id=call_id,
-            name=name,
-            content=message.get("content"),
+        self._session.append_transcript_message(
+            build_tool_message(
+                message.get("content"),
+                tool_call_id=call_id,
+                name=name,
+            )
         )
         self._session.close_span(
             run,

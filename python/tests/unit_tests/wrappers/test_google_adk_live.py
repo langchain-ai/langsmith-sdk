@@ -399,9 +399,11 @@ class TestLifecycle:
                 event=_event(input_transcription=_txn("hello A", finished=True)),
             )
         )
-        sess_a.add_message.assert_called_once_with("user", "hello A")
+        sess_a.append_transcript_message.assert_called_once_with(
+            {"role": "user", "content": "hello A"}
+        )
         sess_a.set_title.assert_called_once_with("hello A")
-        sess_b.add_message.assert_not_called()
+        sess_b.append_transcript_message.assert_not_called()
 
         # Finalizing A leaves B untouched and still active.
         _run(plugin.after_run_callback(invocation_context=ctx_a))
@@ -462,7 +464,7 @@ class TestObserve:
         self._emit(plugin, ctx, _event(parts=[_part(audio=b"\x01\x02")]))
         session.event_span.assert_not_called()
         session.open_span.assert_not_called()
-        session.add_message.assert_not_called()
+        session.append_transcript_message.assert_not_called()
 
     def test_final_user_transcript_rolls_up_and_spans(self, make_plugin):
         plugin, ctx, session = self._start(make_plugin)
@@ -471,7 +473,9 @@ class TestObserve:
         )
         # No turn grouping — the utterance is a flat, point-in-time span.
         session.start_turn.assert_not_called()
-        session.add_message.assert_called_once_with("user", "weather?")
+        session.append_transcript_message.assert_called_once_with(
+            {"role": "user", "content": "weather?"}
+        )
         session.set_title.assert_called_once_with("weather?")
         session.event_span.assert_called_once()
         assert session.event_span.call_args.kwargs["name"] == "input_transcription"
@@ -481,7 +485,7 @@ class TestObserve:
         # transcript is finalized.
         plugin, ctx, session = self._start(make_plugin)
         self._emit(plugin, ctx, _event(input_transcription=_txn("weath")))
-        session.add_message.assert_not_called()
+        session.append_transcript_message.assert_not_called()
         session.event_span.assert_not_called()
 
     def test_transcript_then_usage_records_one_priced_llm_run(self, make_plugin):
@@ -495,7 +499,9 @@ class TestObserve:
             plugin, ctx, _event(output_transcription=_txn("sunny", finished=True))
         )
         # Held, not yet recorded — waiting for its usage.
-        session.add_message.assert_called_once_with("assistant", "sunny")
+        session.append_transcript_message.assert_called_once_with(
+            {"role": "assistant", "content": "sunny"}
+        )
         session.set_title.assert_not_called()  # title only set from user speech
         session.event_span.assert_not_called()  # llm run, not a chain event span
         session.start_turn.assert_not_called()
