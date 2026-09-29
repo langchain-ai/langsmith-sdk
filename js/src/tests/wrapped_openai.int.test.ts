@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
+import { jest } from "@jest/globals";
 import { AzureOpenAI, OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { mockClient } from "./utils/mock_client.js";
@@ -438,10 +439,60 @@ test("chat completions with tool calling", async () => {
   callSpy.mockClear();
 });
 
+// OpenAI shut down every legacy `/v1/completions` model on 2026-09-28, so this
+// test runs against a stubbed transport instead of a live model.
+function completionsFetch() {
+  const completion = {
+    id: "cmpl-test",
+    object: "text_completion",
+    created: 1700000000,
+    model: "gpt-3.5-turbo-instruct",
+    choices: [
+      {
+        text: " Hi I'm ChatGPT",
+        index: 0,
+        logprobs: null,
+        finish_reason: "stop",
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  };
+  const chunks = [" Hi", " I'm", " ChatGPT"].map((text, i) => ({
+    ...completion,
+    choices: [
+      {
+        text,
+        index: 0,
+        logprobs: null,
+        finish_reason: i === 2 ? "stop" : null,
+      },
+    ],
+    usage: undefined,
+  }));
+  const sse =
+    chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") +
+    "data: [DONE]\n\n";
+  return jest.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const body = parseRequestBody(init?.body);
+    return body.stream
+      ? new Response(sse, {
+          headers: { "content-type": "text/event-stream" },
+        })
+      : Response.json(completion);
+  });
+}
+
 test("completions", async () => {
   const { client, callSpy } = mockClient();
-  const originalClient = new OpenAI();
-  const patchedClient = wrapOpenAI(new OpenAI(), {
+  const openaiFetch = completionsFetch();
+  const openaiParams = {
+    apiKey: "MOCK",
+    baseURL: "https://openai.example.test/v1",
+    fetch: openaiFetch,
+    maxRetries: 0,
+  };
+  const originalClient = new OpenAI(openaiParams);
+  const patchedClient = wrapOpenAI(new OpenAI(openaiParams), {
     client,
     tracingEnabled: true,
   });
@@ -464,6 +515,7 @@ test("completions", async () => {
   });
 
   expect(patched.choices).toEqual(original.choices);
+  expect(patched.choices[0].text).toBe(" Hi I'm ChatGPT");
 
   // stream
   const originalStream = await originalClient.completions.create({
@@ -481,6 +533,7 @@ test("completions", async () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidPrompt;
   }
+  expect(originalChoices).toHaveLength(3);
 
   const patchedStream = await patchedClient.completions.create({
     prompt,
@@ -529,11 +582,23 @@ test("completions", async () => {
   }
 
   expect(patchedChoices2).toEqual(originalChoices);
-  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
-  for (const call of callSpy.mock.calls) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+  expect(openaiFetch).toHaveBeenCalledTimes(5);
+  for (const [url, init] of openaiFetch.mock.calls) {
+    expect(url).toBe("https://openai.example.test/v1/completions");
+    expect(init).toMatchObject({ method: "POST" });
   }
+
+  await client.awaitPendingTraceBatches();
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(tree.nodes).toEqual(["OpenAI:0", "OpenAI:1", "OpenAI:2"]);
+  expect(tree.data["OpenAI:0"]).toMatchObject({
+    run_type: "llm",
+    inputs: { prompt, model: "gpt-3.5-turbo-instruct" },
+    outputs: { choices: original.choices },
+  });
+  expect(tree.data["OpenAI:2"]).toMatchObject({
+    extra: { metadata: { thing1: "thing2" } },
+  });
 });
 
 test.skip("with initialization time config", async () => {
