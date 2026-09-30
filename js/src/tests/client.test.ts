@@ -23,6 +23,68 @@ import { _resetWarnedMessages } from "../utils/warn.js";
 import { isSampledById } from "../utils/sampling.js";
 
 describe("Client", () => {
+  describe.each(["readExample", "listExamples"] as const)(
+    "%s attachment URLs",
+    (method) => {
+      test.each([
+        [
+          "/api/v1/public/download?jwt=test-token",
+          "https://smith.example.test/api/v1/public/download?jwt=test-token",
+        ],
+        [
+          "/langsmith/api/v1/public/download?jwt=test-token",
+          "https://smith.example.test/langsmith/api/v1/public/download?jwt=test-token",
+        ],
+        [
+          "https://storage.example.test/file?signature=a%2Fb&expires=123",
+          "https://storage.example.test/file?signature=a%2Fb&expires=123",
+        ],
+      ])("resolves %s", async (presignedUrl, expectedUrl) => {
+        const exampleId = "550e8400-e29b-41d4-a716-446655440000";
+        const datasetId = "550e8400-e29b-41d4-a716-446655440001";
+        const rawExample = {
+          id: exampleId,
+          dataset_id: datasetId,
+          inputs: {},
+          attachment_urls: {
+            "attachment.file": {
+              presigned_url: presignedUrl,
+              mime_type: "text/plain",
+            },
+          },
+        };
+        const mockFetch = jest
+          .fn<typeof fetch>()
+          .mockResolvedValue(
+            Response.json(method === "readExample" ? rawExample : [rawExample]),
+          );
+        const client = new Client({
+          apiUrl: "https://smith.example.test/api/v1",
+          apiKey: "test-api-key",
+          fetchImplementation: mockFetch,
+        });
+        const example =
+          method === "readExample"
+            ? await client.readExample(exampleId)
+            : (
+                await client
+                  .listExamples({
+                    datasetId,
+                    includeAttachments: true,
+                    limit: 1,
+                  })
+                  [Symbol.asyncIterator]()
+                  .next()
+              ).value;
+
+        expect(example.attachments?.file).toEqual({
+          presigned_url: expectedUrl,
+          mime_type: "text/plain",
+        });
+      });
+    },
+  );
+
   describe("resource tags on create", () => {
     const tagValueIds = [
       "550e8400-e29b-41d4-a716-446655440000",
