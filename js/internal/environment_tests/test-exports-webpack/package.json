@@ -15,7 +15,7 @@
   },
   "pnpm": {
     "overrides": {
-      "fast-uri": "3.1.6"
+      "fast-uri": "3.1.8"
     }
   }
 }
