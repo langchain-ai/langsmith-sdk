@@ -252,7 +252,7 @@ def combine_serialized_queue_operations(
     for op in ops:
         if isinstance(op, SerializedRunOperation) and op.operation == "post":
             if op.id in create_ops_by_id:
-                _warn_if_destinations_differ(create_ops_by_id[op.id], op)
+                _warn_if_destinations_differ(op, create_ops_by_id[op.id])
             create_ops_by_id[op.id] = op
     passthrough_ops: list[
         Union[SerializedRunOperation, SerializedFeedbackOperation]
