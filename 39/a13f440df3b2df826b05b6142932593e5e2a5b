@@ -1,0 +1,19 @@
+python/langsmith/env/_runtime_env.py
+  s_1494656ad43aad::t_7ccfe46ec498e7 193-194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "39a13f440df3b2df826b05b6142932593e5e2a5b",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
