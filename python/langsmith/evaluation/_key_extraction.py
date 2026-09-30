@@ -133,6 +133,12 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                 keys.extend(eval_result_key)
                 keys.extend(eval_results_keys)
 
+        # An evaluator that returns the same key from more than one branch
+        # (a common early-return-on-empty-input shape) would otherwise report
+        # that key once per branch. Deduplicate while preserving source order
+        # so each key maps to exactly one feedback row.
+        keys = list(dict.fromkeys(keys))
+
         # If no keys found, return the function name
         return keys if keys else [function_def.name]
 
