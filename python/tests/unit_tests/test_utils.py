@@ -23,6 +23,30 @@ from langsmith._internal import _agent_addressing
 from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 
+@pytest.mark.parametrize("status_code", [400, 429, 500])
+def test_raise_for_status_with_text_preserves_response(status_code: int) -> None:
+    response = requests.Response()
+    response.status_code = status_code
+    response.url = "https://api.smith.langchain.com/settings"
+    response.headers["Retry-After"] = "7"
+    response._content = b'{"detail": "request failed"}'
+    response.request = requests.Request("GET", response.url).prepare()
+
+    with pytest.raises(requests.HTTPError) as original:
+        response.raise_for_status()
+    with pytest.raises(requests.HTTPError) as raised:
+        ls_utils.raise_for_status_with_text(response)
+
+    error = raised.value
+    assert error.response is response
+    assert error.response.status_code == status_code
+    assert error.response.headers["Retry-After"] == "7"
+    assert error.request is response.request
+    assert error.args == (str(original.value), response.text)
+    assert isinstance(error.__cause__, requests.HTTPError)
+    assert error.__cause__.response is response
+
+
 class LangSmithProjectNameTest(unittest.TestCase):
     class GetTracerProjectTestCase:
         def __init__(
@@ -712,25 +736,3 @@ def test_an_empty_project_variable_falls_back_to_default(
 
     assert ls_utils.get_tracer_project() == ""
     assert _agent_addressing.resolve()[0] == "default"
-
-
-def test_raise_for_status_with_text_keeps_the_requests_response():
-    # A positional argument lands in `.args`, not `.response`, so the status code and
-    # headers of the failed request were unreachable from the raised error even
-    # though the exception it was raised from still carried them.
-    response = requests.Response()
-    response.status_code = 429
-    response.reason = "Too Many Requests"
-    response.headers["Retry-After"] = "7"
-    response._content = b"rate limited"
-    response.url = "https://example.test/api"
-
-    with pytest.raises(requests.HTTPError) as exc_info:
-        ls_utils.raise_for_status_with_text(response)
-
-    error = exc_info.value
-    assert error.response is response
-    assert error.response.status_code == 429
-    assert error.response.headers["Retry-After"] == "7"
-    # `.args` is unchanged, so callers reading the text positionally still work.
-    assert error.args[1] == "rate limited"

@@ -180,15 +180,14 @@ def raise_for_status_with_text(
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
-        # Pass the response by keyword: a positional argument lands in `.args`, not
-        # `.response`, which leaves the status code and headers -- Retry-After among
-        # them -- unreachable from the raised error even though the cause carries them.
-        raise requests.HTTPError(str(e), response.text, response=response) from e  # type: ignore[call-arg]
+        raise requests.HTTPError(
+            str(e), response.text, response=cast(requests.Response, response)
+        ) from e
     except httpx.HTTPStatusError as e:
         raise httpx.HTTPStatusError(
             f"{str(e)}: {response.text}",
             request=response.request,  # type: ignore[arg-type]
-            response=response,  # type: ignore[arg-type]
+            response=cast(httpx.Response, response),
         ) from e
 
 
