@@ -42,7 +42,7 @@ describe("WebSocket upgrade rejection", () => {
     request.destroy.mockClear();
   });
 
-  it.each([500, 502, 503, 504])(
+  it.each([429, 500, 502, 503, 504])(
     "treats HTTP %i as retryable",
     async (statusCode) => {
       await expect(rejectedUpgrade(statusCode)).rejects.toBeInstanceOf(
@@ -53,7 +53,7 @@ describe("WebSocket upgrade rejection", () => {
     },
   );
 
-  it.each([400, 401, 403, 404, 429, 505])(
+  it.each([400, 401, 403, 404, 505])(
     "keeps HTTP %i permanent",
     async (statusCode) => {
       const error = await rejectedUpgrade(statusCode).catch(

@@ -38,7 +38,9 @@ export const WS_CONNECT_BUDGET = envTimeout(
   "SANDBOX_WS_TIMEOUT_CONNECT_BUDGET",
   120,
 );
-const RETRYABLE_HANDSHAKE_STATUS_CODES = new Set([500, 502, 503, 504]);
+// 429 matches the HTTP client: a rate-limited upgrade happens before the
+// command starts, so the connect loop can reissue the same command id.
+const RETRYABLE_HANDSHAKE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
 function nowSeconds(): number {
   return performance.now() / 1000;

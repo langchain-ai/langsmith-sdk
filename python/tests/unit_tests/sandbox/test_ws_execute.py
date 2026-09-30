@@ -1044,7 +1044,7 @@ class TestRaiseForInvalidHandshake:
         with pytest.raises(SandboxRetryableConnectionError, match="error_id=err-503"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
-    @pytest.mark.parametrize("status", [500, 502, 504])
+    @pytest.mark.parametrize("status", [429, 500, 502, 504])
     def test_transient_5xx_is_retryable_and_preserves_error_id(self, status):
         from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
