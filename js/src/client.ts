@@ -87,6 +87,15 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
+import { type Address, EnvAddressError, toWire } from "./address.js";
+import {
+  applyToPayload,
+  checkAddress,
+  logUntraced,
+  rejectConflicting,
+  resolveFromEnv,
+  warnOnEnv,
+} from "./utils/agent_addressing.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
@@ -533,6 +542,8 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  /** (beta) Send the run to this address instead of a project. */
+  address?: Address;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -598,12 +609,22 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
         /** The session (project) ID of the run. */
         sessionId: string;
         projectId?: never;
+        address?: never;
+      }
+    | {
+        /** The run to provide feedback on. */
+        runId: string;
+        /** (beta) The address the run was sent to, e.g. `runTree.address`. */
+        address: Address;
+        sessionId?: never;
+        projectId?: never;
       }
     | {
         runId?: null;
         /** The project (or experiment) to provide feedback on. */
         projectId: string;
         sessionId?: never;
+        address?: never;
       }
   );
 
@@ -1494,6 +1515,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
+    warnOnEnv();
 
     // Initialize prompt cache
     // Handle backwards compatibility for deprecated `cache` parameter
@@ -1914,14 +1936,18 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async prepareRunCreateOrUpdateInputs(
     run: RunUpdate,
+    options: { update: true },
   ): Promise<RunUpdate>;
   private async prepareRunCreateOrUpdateInputs(
     run: RunCreate,
+    options?: { update?: false },
   ): Promise<RunCreate>;
   private async prepareRunCreateOrUpdateInputs(
     run: RunCreate | RunUpdate,
+    options?: { update?: boolean },
   ): Promise<RunCreate | RunUpdate> {
     const runParams = { ...run };
+    applyToPayload(runParams, { update: options?.update ?? false });
     if (runParams.inputs !== undefined) {
       runParams.inputs = await this.processInputs(runParams.inputs);
     }
@@ -2523,8 +2549,23 @@ export class Client implements LangSmithTracingClientInterface {
       ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
+    const address = checkAddress(run.address);
+    // `RunTree.postRun` passes a built run body, carrying the wire `session_name`.
+    const bodySessionName = (run as RunCreate).session_name;
+    rejectConflicting(run.project_name ?? bodySessionName, address);
     const session_name = run.project_name;
     delete run.project_name;
+    if (!session_name && bodySessionName == null && !address) {
+      try {
+        run.address = resolveFromEnv()[1];
+      } catch (e) {
+        if (!(e instanceof EnvAddressError)) {
+          throw e;
+        }
+        logUntraced(e);
+        return;
+      }
+    }
 
     const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
@@ -2601,7 +2642,7 @@ export class Client implements LangSmithTracingClientInterface {
     );
     let preparedUpdateParams = await Promise.all(
       runUpdates?.map((update) =>
-        this.prepareRunCreateOrUpdateInputs(update),
+        this.prepareRunCreateOrUpdateInputs(update, { update: true }),
       ) ?? [],
     );
 
@@ -2738,7 +2779,7 @@ export class Client implements LangSmithTracingClientInterface {
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
       preparedUpdateParams.push(
-        await this.prepareRunCreateOrUpdateInputs(update),
+        await this.prepareRunCreateOrUpdateInputs(update, { update: true }),
       );
     }
 
@@ -3112,6 +3153,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.events) {
       run.events = this._filterNewTokenEvents(run.events);
     }
+    // On `run` too: the direct path below serializes it.
+    applyToPayload(run, { update: true });
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
@@ -3240,6 +3283,9 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
+      if (!run.session_id && (run as { address?: Address }).address) {
+        throw new Error("Addressed runs have no URL until read back.");
+      }
       let sessionId: string;
       if (run.session_id) {
         sessionId = run.session_id;
@@ -5521,16 +5567,24 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId,
       startTime,
       extendTraceRetention,
+      address: rawAddress,
+    }: CreateFeedbackOptions & {
+      runId?: string | null;
+      sessionId?: string;
+      projectId?: string;
+      address?: Address;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
+    const address = checkAddress(rawAddress);
+    rejectConflicting(sessionId ?? projectId, address);
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
     }
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
-    if (runId && sessionId === undefined) {
+    if (runId && sessionId === undefined && !address) {
       await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
@@ -5570,7 +5624,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (samplingId != null && !this._shouldSample(samplingId)) {
       return feedback as Feedback;
     }
-    const body = JSON.stringify(feedback);
+    const body = JSON.stringify(
+      address ? { ...feedback, ...toWire(address) } : feedback,
+    );
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
       const res = await this._fetch(url, {

@@ -39,6 +39,11 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { __version__ } from "./index.js";
+import {
+  checkAddress,
+  firstNamed,
+  rejectConflicting,
+} from "./utils/agent_addressing.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
@@ -759,6 +764,9 @@ export function traceable<Func extends (...args: any[]) => any>(
     ...runTreeConfig
   } = config ?? {};
 
+  runTreeConfig.address = checkAddress(runTreeConfig.address);
+  rejectConflicting(runTreeConfig.project_name, runTreeConfig.address);
+
   const processInputsFn = processInputs ?? ((x) => x);
   const processOutputsFn = processOutputs ?? ((x) => x);
   const extractAttachmentsFn =
@@ -768,8 +776,8 @@ export function traceable<Func extends (...args: any[]) => any>(
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ) => {
     let ensuredConfig: RunTreeConfig;
+    let runtimeConfig: Partial<RunTreeConfig> | undefined;
     try {
-      let runtimeConfig: Partial<RunTreeConfig> | undefined;
       if (argsConfigPath) {
         const [index, path] = argsConfigPath;
         if (index === args.length - 1 && !path) {
@@ -816,7 +824,13 @@ export function traceable<Func extends (...args: any[]) => any>(
         name: wrappedFunc.name || "<lambda>",
         ...runTreeConfig,
       };
+      runtimeConfig = undefined;
     }
+    // Runtime config outranks decorator config, whichever mode each names.
+    [ensuredConfig.project_name, ensuredConfig.address] = firstNamed(
+      [runtimeConfig?.project_name, runtimeConfig?.address],
+      [runTreeConfig.project_name, runTreeConfig.address],
+    );
 
     let runEndedPromiseResolver: () => void;
     const runEndedPromise = new Promise<void>((resolve) => {
