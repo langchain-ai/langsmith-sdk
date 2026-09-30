@@ -9,6 +9,7 @@ from io import BufferedReader
 from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
+from langsmith._address import Address
 from langsmith._internal import _orjson
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
@@ -218,14 +219,41 @@ def serialize_run_dict(
     )
 
 
+_DESTINATION_KEYS = ("session_name", "session_id", *Address._wire_keys())
+
+
+def _warn_if_destinations_differ(
+    kept: SerializedRunOperation, dropped: SerializedRunOperation
+) -> None:
+    """Warn when two posts share a run id but go to different destinations."""
+    kept_dest, dropped_dest = _destination(kept), _destination(dropped)
+    if kept_dest == dropped_dest:
+        return
+    logger.warning(
+        "LangSmith run %s was queued for two destinations with the same id (%r and "
+        "%r); only the last is sent. This usually means two write replicas both "
+        "keep the original run ids, for example a replica marked `primary` plus "
+        "one for the run's own project.",
+        dropped.id,
+        dropped_dest,
+        kept_dest,
+    )
+
+
+def _destination(op: SerializedRunOperation) -> dict:
+    body = _orjson.loads(op._none)
+    return {k: body[k] for k in _DESTINATION_KEYS if body.get(k) is not None}
+
+
 def combine_serialized_queue_operations(
     ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
 ) -> list[Union[SerializedRunOperation, SerializedFeedbackOperation]]:
-    create_ops_by_id = {
-        op.id: op
-        for op in ops
-        if isinstance(op, SerializedRunOperation) and op.operation == "post"
-    }
+    create_ops_by_id: dict[uuid.UUID, SerializedRunOperation] = {}
+    for op in ops:
+        if isinstance(op, SerializedRunOperation) and op.operation == "post":
+            if op.id in create_ops_by_id:
+                _warn_if_destinations_differ(create_ops_by_id[op.id], op)
+            create_ops_by_id[op.id] = op
     passthrough_ops: list[
         Union[SerializedRunOperation, SerializedFeedbackOperation]
     ] = []

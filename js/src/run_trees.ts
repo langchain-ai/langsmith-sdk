@@ -657,8 +657,12 @@ export class RunTree implements BaseRun {
     } = params;
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
-    // Preserve legacy behavior when `primary` is omitted.
-    if (primary === undefined && projectName === this.project_name) {
+    // Preserve legacy behavior when `primary` is omitted, unless another replica is primary.
+    if (
+      primary === undefined &&
+      !this.replicas?.some((r) => r.primary === true) &&
+      projectName === this.project_name
+    ) {
       return {
         ...baseRun,
         session_name: projectName,

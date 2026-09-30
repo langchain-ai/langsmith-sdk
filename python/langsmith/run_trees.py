@@ -973,14 +973,18 @@ class RunTree(ls_schemas.RunBase):
         payloads make up a single group, even when authentication differs.
         """
         groups: list[_ReplicaGroup] = []
+        # Only the primary keeps the original ids; False makes the rest remap.
+        has_primary = any(r.get("primary") for r in self.replicas or ())
         for replica in self.replicas or ():
             project_name, address = self._replica_addressing(replica)
+            primary = replica.get("primary")
             # Identity key - if those match across replicas, then payload can be reused.
             key = _PayloadKey(
                 client=replica.get("client") or self.client,
                 project_name=project_name,
                 updates=replica.get("updates"),
-                primary=replica.get("primary"),
+                # ID remapping decision distinguishes between primary `False` vs `None`
+                primary=bool(primary) if has_primary else primary,
                 address=address,
             )
             # Join the first group that matches, or start a new group
