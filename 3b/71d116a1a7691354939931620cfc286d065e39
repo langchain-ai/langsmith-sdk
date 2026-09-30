@@ -1,0 +1,21 @@
+js/package.json
+  s_663c7e55b8481d::t_dc8ca1ebfe2d84 3
+js/src/index.ts
+  s_663c7e55b8481d::t_66d18da6ae04a0 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3b71d116a1a7691354939931620cfc286d065e39",
+  "prompts": {},
+  "sessions": {
+    "s_663c7e55b8481d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "386910f2-16d6-4695-8920-8551d81a5cf2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}
