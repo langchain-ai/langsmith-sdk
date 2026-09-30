@@ -5089,7 +5089,7 @@ export class Client implements LangSmithTracingClientInterface {
       example.attachments = Object.entries(attachment_urls).reduce(
         (acc, [key, value]) => {
           acc[key.slice("attachment.".length)] = {
-            presigned_url: value.presigned_url,
+            presigned_url: new URL(value.presigned_url, this.apiUrl).href,
             mime_type: value.mime_type,
           };
           return acc;
@@ -5187,7 +5187,7 @@ export class Client implements LangSmithTracingClientInterface {
           example.attachments = Object.entries(attachment_urls).reduce(
             (acc, [key, value]) => {
               acc[key.slice("attachment.".length)] = {
-                presigned_url: value.presigned_url,
+                presigned_url: new URL(value.presigned_url, this.apiUrl).href,
                 mime_type: value.mime_type || undefined,
               };
               return acc;
