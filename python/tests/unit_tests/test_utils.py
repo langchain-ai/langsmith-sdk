@@ -14,12 +14,37 @@ from unittest.mock import MagicMock, patch
 import attr
 import dataclasses_json
 import pytest
+import requests
 from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
 from langsmith._internal import _agent_addressing
 from langsmith.run_helpers import get_current_run_tree, tracing_context
+
+
+@pytest.mark.parametrize("status_code", [400, 429, 500])
+def test_raise_for_status_with_text_preserves_response(status_code: int) -> None:
+    response = requests.Response()
+    response.status_code = status_code
+    response.url = "https://api.smith.langchain.com/settings"
+    response.headers["Retry-After"] = "7"
+    response._content = b'{"detail": "request failed"}'
+    response.request = requests.Request("GET", response.url).prepare()
+
+    with pytest.raises(requests.HTTPError) as original:
+        response.raise_for_status()
+    with pytest.raises(requests.HTTPError) as raised:
+        ls_utils.raise_for_status_with_text(response)
+
+    error = raised.value
+    assert error.response is response
+    assert error.response.status_code == status_code
+    assert error.response.headers["Retry-After"] == "7"
+    assert error.request is response.request
+    assert error.args == (str(original.value), response.text)
+    assert isinstance(error.__cause__, requests.HTTPError)
+    assert error.__cause__.response is response
 
 
 class LangSmithProjectNameTest(unittest.TestCase):
