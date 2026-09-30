@@ -1,0 +1,19 @@
+js/src/tests/wrapped_openai.test.ts
+  s_1dad088492ac24::t_e740aae8170c66 91-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7bdb277fe0fa7fa684278a6b2ac4c3215b1417ad",
+  "prompts": {},
+  "sessions": {
+    "s_1dad088492ac24": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc31616f-5d0d-4806-ba81-5cf1b944f627",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
