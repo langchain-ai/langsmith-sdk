@@ -48,6 +48,8 @@ class InfoListResponse(BaseModel):
 
     customer_info: Optional[CustomerInfo] = None
 
+    engine_github_web_base_url: Optional[str] = None
+
     git_sha: Optional[str] = None
 
     instance_flags: Optional[Dict[str, object]] = None

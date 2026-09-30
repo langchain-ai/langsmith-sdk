@@ -27,6 +27,8 @@ export interface InfoListResponse {
 
   customer_info?: InfoListResponse.CustomerInfo;
 
+  engine_github_web_base_url?: string;
+
   git_sha?: string;
 
   instance_flags?: { [key: string]: unknown };
