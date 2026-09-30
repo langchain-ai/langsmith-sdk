@@ -1,0 +1,21 @@
+js/src/address.ts
+  s_1494656ad43aad::t_58f13837d162f1 12-23,59,118
+js/src/tests/address.test.ts
+  s_1494656ad43aad::t_58f13837d162f1 79-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0860ce3d54b9047761b600605fc3e9789f0f70c4",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
