@@ -906,6 +906,27 @@ describe("batch ingest with one run id in two projects", () => {
     expect(String(collisions[0][0])).toContain("document-summarization");
   });
 
+  test.each(["batchIngestRuns", "multipartIngestRuns"] as const)(
+    "%s warns for creates-only batches and still sends both",
+    async (method) => {
+      const { client, callSpy } = mockClient();
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+      await client[method]({
+        runCreates: [create("production"), create("document-summarization")],
+      });
+
+      expect(
+        warn.mock.calls.filter(([m]) =>
+          String(m).includes("two projects with the same id"),
+        ),
+      ).toHaveLength(1);
+      const [, init] = callSpy.mock.calls.at(-1);
+      const body = await new Response(init.body).text();
+      expect(body).toContain("production");
+      expect(body).toContain("document-summarization");
+    },
+  );
+
   test("does not warn for duplicate creates to one project", async () => {
     const { client } = mockClient();
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
