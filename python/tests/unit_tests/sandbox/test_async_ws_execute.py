@@ -1175,3 +1175,30 @@ class TestAsyncHandshakeFailureWrapping:
             with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
                 async for _ in msg_stream:
                     pass
+
+    @pytest.mark.asyncio
+    async def test_abrupt_execute_close_is_retryable(self):
+        from websockets.exceptions import ConnectionClosedError, InvalidHandshake
+
+        from langsmith.sandbox._exceptions import SandboxRetryableConnectionError
+
+        ws = MagicMock()
+        ws.send = AsyncMock()
+        ws.__aiter__.side_effect = ConnectionClosedError(None, None)
+        connect = MagicMock()
+        connect.return_value.__aenter__ = AsyncMock(return_value=ws)
+        connect.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "langsmith.sandbox._ws_execute._ensure_websockets_async",
+            return_value=(connect, ConnectionClosedError, InvalidHandshake),
+        ):
+            msg_stream, _ = await run_ws_stream_async(
+                "https://sb.example.com", "key", "echo hi"
+            )
+            with pytest.raises(
+                SandboxRetryableConnectionError,
+                match="no close frame received or sent",
+            ):
+                async for _ in msg_stream:
+                    pass
