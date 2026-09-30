@@ -3,6 +3,7 @@ import uuid
 
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
+    _DESTINATION_FIELDS,
     SerializedFeedbackOperation,
     SerializedRunOperation,
     combine_serialized_queue_operations,
@@ -227,3 +228,9 @@ def test_combine_does_not_warn_for_duplicate_posts_to_one_destination(
         combine_serialized_queue_operations(ops)
 
     assert not [r for r in caplog.records if "same id" in r.getMessage()]
+
+
+def test_destination_fields_cover_address() -> None:
+    from langsmith._address import Address
+
+    assert set(Address._wire_keys()) <= set(_DESTINATION_FIELDS)

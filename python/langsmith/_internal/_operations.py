@@ -9,7 +9,6 @@ from io import BufferedReader
 from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
-from langsmith._address import Address
 from langsmith._internal import _orjson
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
@@ -219,7 +218,8 @@ def serialize_run_dict(
     )
 
 
-_DESTINATION_KEYS = ("session_name", "session_id", *Address._wire_keys())
+# Allow-list of routing fields the collision warning may log; never credentials.
+_DESTINATION_FIELDS = ("session_name", "session_id", "agent_id", "agent_environment")
 
 
 def _warn_if_destinations_differ(
@@ -242,7 +242,7 @@ def _warn_if_destinations_differ(
 
 def _destination(op: SerializedRunOperation) -> dict:
     body = _orjson.loads(op._none)
-    return {k: body[k] for k in _DESTINATION_KEYS if body.get(k) is not None}
+    return {f: body[f] for f in _DESTINATION_FIELDS if body.get(f) is not None}
 
 
 def combine_serialized_queue_operations(
