@@ -88,3 +88,161 @@ test.each([200, 404])(
     );
   },
 );
+
+// OpenAI shut down its legacy `/v1/completions` models on 2026-09-28; this
+// covers wrapping `completions.create` for OpenAI-compatible providers.
+function completionsFetch() {
+  const completion = {
+    id: "cmpl-test",
+    object: "text_completion",
+    created: 1700000000,
+    model: "gpt-3.5-turbo-instruct",
+    choices: [
+      {
+        text: " Hi I'm ChatGPT",
+        index: 0,
+        logprobs: null,
+        finish_reason: "stop",
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  };
+  const chunks = [" Hi", " I'm", " ChatGPT"].map((text, i) => ({
+    ...completion,
+    choices: [
+      {
+        text,
+        index: 0,
+        logprobs: null,
+        finish_reason: i === 2 ? "stop" : null,
+      },
+    ],
+    usage: undefined,
+  }));
+  const sse =
+    chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") +
+    "data: [DONE]\n\n";
+  return jest.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const body = JSON.parse(init?.body as string);
+    return body.stream
+      ? new Response(sse, {
+          headers: { "content-type": "text/event-stream" },
+        })
+      : Response.json(completion);
+  });
+}
+
+test("completions", async () => {
+  const { client, callSpy } = mockClient();
+  const openaiFetch = completionsFetch();
+  const openaiParams = {
+    apiKey: "MOCK",
+    baseURL: "https://openai.example.test/v1",
+    fetch: openaiFetch,
+    maxRetries: 0,
+  };
+  const originalClient = new OpenAI(openaiParams);
+  const patchedClient = wrapOpenAI(new OpenAI(openaiParams), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const prompt = `Say 'Hi I'm ChatGPT' then stop.`;
+
+  // invoke
+  const original = await originalClient.completions.create({
+    prompt,
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo-instruct",
+  });
+
+  const patched = await patchedClient.completions.create({
+    prompt,
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo-instruct",
+  });
+
+  expect(patched.choices).toEqual(original.choices);
+  expect(patched.choices[0].text).toBe(" Hi I'm ChatGPT");
+
+  // stream
+  const originalStream = await originalClient.completions.create({
+    prompt,
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo-instruct",
+    stream: true,
+  });
+
+  const originalChoices: unknown[] = [];
+  for await (const chunk of originalStream) {
+    originalChoices.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _test = chunk.invalidPrompt;
+  }
+  expect(originalChoices).toHaveLength(3);
+
+  const patchedStream = await patchedClient.completions.create({
+    prompt,
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo-instruct",
+    stream: true,
+  });
+
+  const patchedChoices: unknown[] = [];
+  for await (const chunk of patchedStream) {
+    patchedChoices.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _test = chunk.invalidPrompt;
+  }
+
+  expect(patchedChoices).toEqual(originalChoices);
+
+  const patchedStream2 = await patchedClient.completions.create(
+    {
+      prompt,
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo-instruct",
+      stream: true,
+    },
+    {
+      langsmithExtra: {
+        metadata: {
+          thing1: "thing2",
+        },
+      },
+    },
+  );
+
+  const patchedChoices2: unknown[] = [];
+  for await (const chunk of patchedStream2) {
+    patchedChoices2.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    const _test = chunk.invalidPrompt;
+  }
+
+  expect(patchedChoices2).toEqual(originalChoices);
+  expect(openaiFetch).toHaveBeenCalledTimes(5);
+  for (const [url, init] of openaiFetch.mock.calls) {
+    expect(url).toBe("https://openai.example.test/v1/completions");
+    expect(init).toMatchObject({ method: "POST" });
+  }
+
+  await client.awaitPendingTraceBatches();
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(tree.nodes).toEqual(["OpenAI:0", "OpenAI:1", "OpenAI:2"]);
+  expect(tree.data["OpenAI:0"]).toMatchObject({
+    run_type: "llm",
+    inputs: { prompt, model: "gpt-3.5-turbo-instruct" },
+    outputs: { choices: original.choices },
+  });
+  expect(tree.data["OpenAI:2"]).toMatchObject({
+    extra: { metadata: { thing1: "thing2" } },
+  });
+});
