@@ -209,9 +209,6 @@ class _AsyncWSStreamControl:
 # =============================================================================
 
 
-# 429 is a rate limit, same as the HTTP transport: the command never started,
-# so reissuing the same command id is safe. A cron wave of sandbox creates
-# trips this and otherwise fails the run on the first handshake.
 _TRANSIENT_HANDSHAKE_STATUSES = frozenset({429, 500, 502, 503, 504})
 _MAX_HANDSHAKE_ERROR_BYTES = 16 * 1024
 
