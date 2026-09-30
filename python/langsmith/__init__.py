@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
+    from langsmith._address import Address, address
     from langsmith._expect import expect
     from langsmith._openapi_client._exceptions import (
         APIConnectionError,
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
         tracing_context,
     )
     from langsmith.run_trees import RunTree, configure
+    from langsmith.secret import LangSmithSecret
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
     from langsmith.uuid import (
@@ -49,7 +51,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.12.1"
+__version__ = "0.14.2"
 version = __version__  # for backwards compatibility
 
 # Metadata key to hide a traced run from LangSmith's Messages View.
@@ -118,6 +120,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation import aevaluate_existing
 
         return aevaluate_existing
+    elif name == "address":
+        from langsmith._address import address
+
+        return address
+    elif name == "Address":
+        from langsmith._address import Address
+
+        return Address
     elif name == "tracing_context":
         from langsmith.run_helpers import tracing_context
 
@@ -186,6 +196,11 @@ def __getattr__(name: str) -> Any:
 
         return configure_global_async_prompt_cache
 
+    elif name == "LangSmithSecret":
+        from langsmith.secret import LangSmithSecret
+
+        return LangSmithSecret
+
     elif name == "set_runtime_overrides":
         from langsmith._runtime_overrides import set_runtime_overrides
 
@@ -243,6 +258,8 @@ __all__ = [
     "aevaluate",
     "tracing_context",
     "get_tracing_context",
+    "address",
+    "Address",
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
@@ -250,6 +267,7 @@ __all__ = [
     "uuid7",
     "uuid7_from_datetime",
     "set_runtime_overrides",
+    "LangSmithSecret",
     "LS_MESSAGE_VIEW_EXCLUDE",
     "LangsmithError",
     "APIError",

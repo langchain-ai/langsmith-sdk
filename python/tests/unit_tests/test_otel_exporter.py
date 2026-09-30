@@ -1,12 +1,23 @@
 """Unit tests for OTEL exporter and span processor."""
 
+import json
 import os
 import threading
 import time
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from langsmith._internal.otel._otel_exporter import OTELExporter
+import pytest
+
+from langsmith import Client
+from langsmith._internal.otel._otel_exporter import (
+    GEN_AI_RESPONSE_FINISH_REASONS,
+    GEN_AI_TOOL_CALL_ID,
+    GEN_AI_TOOL_DEFINITIONS,
+    GEN_AI_TOOL_NAME,
+    OTELExporter,
+)
 from langsmith.integrations.otel import (
     otel_safe_attribute_value,
     set_langsmith_metadata_attribute,
@@ -201,6 +212,205 @@ def _make_mock_otel_imports():
         MockTracerProvider,
         MockBatchSpanProcessor,
     )
+
+
+def _make_exporter() -> OTELExporter:
+    with patch(
+        "langsmith._internal.otel._otel_exporter._import_otel_exporter",
+        return_value=(MagicMock(),) * 8,
+    ):
+        return OTELExporter()
+
+
+def _attributes_for_outputs(outputs: dict) -> dict:
+    span = MagicMock()
+    op = SimpleNamespace(
+        id=uuid.uuid4(),
+        inputs=None,
+        outputs=json.dumps(outputs).encode(),
+    )
+    _make_exporter()._set_io_attributes(span, op)
+    return {call.args[0]: call.args[1] for call in span.set_attribute.call_args_list}
+
+
+def test_finish_reasons_preserve_all_openai_choices_as_a_list():
+    attrs = _attributes_for_outputs(
+        {
+            "choices": [
+                {"finish_reason": "stop"},
+                {"finish_reason": "length"},
+            ]
+        }
+    )
+
+    assert attrs[GEN_AI_RESPONSE_FINISH_REASONS] == ["stop", "length"]
+
+
+def test_finish_reasons_support_anthropic_and_gemini_shapes():
+    assert _attributes_for_outputs({"stop_reason": "tool_use"})[
+        GEN_AI_RESPONSE_FINISH_REASONS
+    ] == ["tool_use"]
+    assert _attributes_for_outputs({"finish_reason": "STOP"})[
+        GEN_AI_RESPONSE_FINISH_REASONS
+    ] == ["STOP"]
+
+
+def test_choices_finish_reasons_take_precedence_over_top_level_reason():
+    attrs = _attributes_for_outputs(
+        {
+            "choices": [{"finish_reason": "stop"}],
+            "stop_reason": "tool_use",
+            "finish_reason": "STOP",
+        }
+    )
+
+    assert attrs[GEN_AI_RESPONSE_FINISH_REASONS] == ["stop"]
+
+
+def test_missing_finish_reason_is_omitted_and_commas_are_not_split():
+    assert GEN_AI_RESPONSE_FINISH_REASONS not in _attributes_for_outputs(
+        {"content": "hello"}
+    )
+    assert _attributes_for_outputs({"stop_reason": "provider,custom"})[
+        GEN_AI_RESPONSE_FINISH_REASONS
+    ] == ["provider,custom"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"tool_call_id": "toolu_123", "metadata": {}},
+        {"metadata": {"tool_call_id": "toolu_123"}},
+    ],
+    ids=["langchain", "metadata"],
+)
+def test_tool_attributes_use_run_name_and_tool_call_id(extra):
+    span = MagicMock()
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=None, outputs=None, operation="post")
+    _make_exporter()._set_span_attributes(
+        span,
+        {"run_type": "tool", "name": "Bash", "extra": extra},
+        op,
+    )
+
+    calls = {call.args[0]: call.args[1] for call in span.set_attribute.call_args_list}
+    assert calls[GEN_AI_TOOL_NAME] == "Bash"
+    assert calls[GEN_AI_TOOL_CALL_ID] == "toolu_123"
+
+
+def test_tool_attributes_are_optional_and_tool_only():
+    span = MagicMock()
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=None, outputs=None, operation="post")
+    _make_exporter()._set_span_attributes(
+        span,
+        {"run_type": "tool", "name": "Bash", "extra": {"metadata": {}}},
+        op,
+    )
+    _make_exporter()._set_span_attributes(
+        span,
+        {
+            "run_type": "llm",
+            "name": "model",
+            "extra": {"metadata": {"tool_call_id": "toolu_123"}},
+        },
+        op,
+    )
+
+    keys = [call.args[0] for call in span.set_attribute.call_args_list]
+    assert GEN_AI_TOOL_NAME in keys
+    assert GEN_AI_TOOL_CALL_ID not in keys
+
+
+def _attributes_for_run(run_info: dict) -> dict:
+    span = MagicMock()
+    op = SimpleNamespace(id=uuid.uuid4(), inputs=None, outputs=None, operation="post")
+    _make_exporter()._set_span_attributes(span, run_info, op)
+    return {call.args[0]: call.args[1] for call in span.set_attribute.call_args_list}
+
+
+def test_tool_definitions_pass_through_provider_shapes():
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the weather",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+        {"name": "search", "description": "Search", "input_schema": {}},
+        {"type": "tool_search"},
+    ]
+    attrs = _attributes_for_run(
+        {"run_type": "llm", "extra": {"invocation_params": {"tools": tools}}}
+    )
+
+    assert json.loads(attrs[GEN_AI_TOOL_DEFINITIONS]) == tools
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{}, {"invocation_params": {}}, {"invocation_params": {"tools": []}}],
+)
+def test_tool_definitions_are_omitted_without_tools(extra):
+    attrs = _attributes_for_run({"run_type": "llm", "extra": extra})
+
+    assert GEN_AI_TOOL_DEFINITIONS not in attrs
+
+
+def test_langchain_tool_attributes_reach_otel_spans():
+    from langchain_core.language_models.fake_chat_models import (
+        GenericFakeChatModel,
+    )
+    from langchain_core.messages import AIMessage
+    from langchain_core.tools import tool
+    from langchain_core.tracers.langchain import LangChainTracer
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    @tool
+    def get_weather(city: str) -> str:
+        """Get the weather for a city."""
+        return "sunny"
+
+    provider = TracerProvider()
+    sink = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(sink))
+    client = Client(
+        api_key="test",
+        api_url="http://localhost:1984",
+        tracing_mode="otel",
+        otel_tracer_provider=provider,
+    )
+    tracer = LangChainTracer(client=client)
+    tool_definition = convert_to_openai_tool(get_weather)
+    try:
+        model = GenericFakeChatModel(messages=iter([AIMessage("ok")]))
+        model.bind(tools=[tool_definition]).invoke("hi", config={"callbacks": [tracer]})
+        get_weather.invoke(
+            {
+                "type": "tool_call",
+                "id": "call_123",
+                "name": "get_weather",
+                "args": {"city": "Paris"},
+            },
+            config={"callbacks": [tracer]},
+        )
+        tracer.wait_for_futures()
+        client.flush()
+
+        spans = {
+            span.attributes["langsmith.span.kind"]: span.attributes
+            for span in sink.get_finished_spans()
+        }
+        assert json.loads(spans["llm"][GEN_AI_TOOL_DEFINITIONS]) == [tool_definition]
+        assert spans["tool"][GEN_AI_TOOL_CALL_ID] == "call_123"
+    finally:
+        provider.shutdown()
 
 
 @patch("langsmith._internal.otel._otel_client._import_otel_client")

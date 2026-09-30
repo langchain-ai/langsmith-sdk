@@ -864,6 +864,57 @@ async with await client.sandbox(snapshot_id=snapshot_id) as sb:
     url = await svc.get_service_url()
 ```
 
+## Verifying Requests from LangSmith
+
+Install the extra: `pip install "langsmith[sandbox-auth]"`. `SandboxTokenVerifier`
+checks EdDSA signatures against LangSmith's JWKS (derived from
+`LANGSMITH_ENDPOINT`, cached). The JWKS must be served over HTTPS (localhost is
+exempt); for a plain-HTTP self-hosted deployment on a trusted network, pass
+`allow_insecure_jwks=True`.
+
+### Service URL Users
+
+Apps served from a service URL with LangSmith login receive the caller's
+identity in `X-Langsmith-User-Id` / `X-Langsmith-User-Email`. The sandbox
+runtime strips these from inbound requests and sets them itself, so code that
+knows it is running in a sandbox can trust them as-is. This holds only for
+requests that arrive through the service URL: TCP tunnels and other processes in
+the sandbox calling the port over localhost reach the app with whatever headers
+they choose. Otherwise, verify the signed `X-Langsmith-User-Token` header, which
+carries the same identity:
+
+```python
+from langsmith.sandbox import USER_TOKEN_HEADER, SandboxTokenVerifier
+
+verifier = SandboxTokenVerifier()
+
+user = verifier.verify_user_token(
+    request.headers[USER_TOKEN_HEADER],
+    audience=request.headers["Host"],  # the service URL host
+)
+print(user.subject, user.email)
+```
+
+### Proxy Callbacks
+
+Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
+header. Pass the raw body. Optionally pass `aud` to check the signature was
+minted for this endpoint: either the callback URL exactly as configured, or a
+predicate called with the signature's audience:
+
+```python
+from langsmith.sandbox import CALLBACK_SIGNATURE_HEADER
+
+callback = await verifier.averify_callback(
+    body=await request.body(),
+    signature=request.headers[CALLBACK_SIGNATURE_HEADER],
+    aud="https://example.com/sandbox-callback",
+)
+print(callback.identity.sandbox_id, callback.host)
+```
+
+Both raise `SandboxTokenVerificationError` on failure.
+
 ## Snapshots
 
 Snapshots are the starting point for every sandbox. They're built from Docker
@@ -889,9 +940,9 @@ with client.sandbox(snapshot_id=snapshot.id) as sb:
     result = sb.run("python --version")
     print(result.stdout)
 
-# Or resolve by snapshot name. This is optional; omitting both snapshot_id and
-# snapshot_name uses the default runtime.
-with client.sandbox(snapshot_name="my-python-env") as sb:
+# Or resolve by reference: a bare name means `name:latest`. This is optional;
+# omitting the snapshot entirely uses the default runtime.
+with client.sandbox(snapshot="my-python-env") as sb:
     result = sb.run("python --version")
     print(result.stdout)
 ```
@@ -921,6 +972,32 @@ with client.sandbox(snapshot_id=snapshot.id) as sb:
     assert sb.read("/opt/config.yaml") == b"model: gpt-5\n"
 ```
 
+### Snapshot Names and Tags
+
+Snapshots follow Docker's model: the content is immutable and addressed by `id`,
+while `name:tag` is a **mutable pointer** to it. The default tag is `latest`, one
+name can carry several tags, and re-publishing a tag moves it to the new snapshot
+— the old one stays reachable by id. There is no separate retag operation: a tag
+is assigned by the call that creates the snapshot it points at.
+
+```python
+# Publish a new build under an existing name
+snapshot = client.capture_snapshot(sb.name, "my-python-env", tag="v2")
+assert "v2" in snapshot.tags
+
+# Boot from a tag. `snapshot` accepts an id, `name:tag`, or a bare name.
+with client.sandbox(snapshot="my-python-env:v2") as box:
+    box.run("python --version")
+
+# See every tag published under a name, and what each resolves to
+for tag in client.list_snapshot_tags("my-python-env"):
+    print(tag.tag, tag.snapshot_id)
+```
+
+The first identity to publish under a name owns it; publishing under someone
+else's name needs the `snapshots:update` permission and otherwise fails with
+`403`.
+
 > **Note:** `capture_snapshot` preserves only the **persistent filesystem**.
 > Installed packages (under `/usr/local`, `/root`, `/opt`, the home
 > directory, etc.) and files you wrote to those paths are kept. Running
@@ -942,8 +1019,9 @@ snapshots = client.list_snapshots(
     offset=0,
 )
 
-# Get a snapshot by ID
+# Get a snapshot by ID, by `name:tag`, or by a bare name (which means `name:latest`)
 snapshot = client.get_snapshot("550e8400-...")
+snapshot = client.get_snapshot("my-python-env:v2")
 
 # Delete a snapshot
 client.delete_snapshot("550e8400-...")
@@ -1193,8 +1271,8 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(snapshot_id=None, *, snapshot_name=None, mount_config=None, proxy_config=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
-| `create_sandbox(snapshot_id=None, *, snapshot_name=None, mount_config=None, proxy_config=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot_id` or `snapshot_name` only to boot from a reusable snapshot. |
+| `sandbox(snapshot_id=None, *, snapshot=None, mount_config=None, proxy_config=None, ...)` | Create a sandbox with the default runtime (auto-deleted on context exit). Pass `snapshot` (an id, `name:tag`, or a bare name) only to boot from a reusable snapshot. |
+| `create_sandbox(snapshot_id=None, *, snapshot=None, mount_config=None, proxy_config=None, wait_for_ready=True, ...)` | Create a sandbox with the default runtime (requires explicit delete). Pass `snapshot` (an id, `name:tag`, or a bare name) only to boot from a reusable snapshot. |
 | `get_sandbox(name)` | Get an existing sandbox by name |
 | `get_sandbox_status(name)` | Get lightweight provisioning status (`ResourceStatus`) |
 | `wait_for_sandbox(name, *, timeout=120, poll_interval=1.0)` | Poll until sandbox is ready or failed |
@@ -1204,9 +1282,10 @@ except SandboxClientError as e:
 | `delete_sandbox(name)` | Delete a sandbox |
 | `start_sandbox(name, *, timeout=120)` | Start a stopped sandbox, poll until ready |
 | `stop_sandbox(name)` | Stop a running sandbox (preserves sandbox files) |
-| `create_snapshot(name, docker_image, fs_capacity_bytes, *, timeout=60)` | Build a snapshot from a Docker image |
-| `capture_snapshot(sandbox_name, name, *, timeout=60)` | Capture a snapshot from a running sandbox |
-| `get_snapshot(snapshot_id)` | Get a snapshot by ID |
+| `create_snapshot(name, docker_image, fs_capacity_bytes, *, tag=None, timeout=60)` | Build a snapshot from a Docker image, published as `name:tag` (default `latest`) |
+| `capture_snapshot(sandbox_name, name, *, tag=None, timeout=60)` | Capture a snapshot from a running sandbox, published as `name:tag` (default `latest`) |
+| `get_snapshot(snapshot_id)` | Get a snapshot by ID, `name:tag`, or a bare name (means `name:latest`) |
+| `list_snapshot_tags(name)` | List every tag published under a snapshot name, with the snapshot each resolves to |
 | `list_snapshots(*, name_contains=None, limit=None, offset=None)` | List a page of snapshots (server paginates, default limit 50, max 500; `name_contains` is a case-insensitive substring match) |
 | `delete_snapshot(snapshot_id)` | Delete a snapshot |
 | `wait_for_snapshot(snapshot_id, *, timeout=300)` | Poll until snapshot is ready or failed |

@@ -266,6 +266,22 @@ class TestCommandHandle:
         assert result.stdout == "output"
         assert result.exit_code == 0
 
+    def test_result_finishes_stream_generator(self):
+        """The stream's cleanup runs before result returns, not at GC."""
+        closed = False
+
+        def stream() -> Iterator[dict]:
+            nonlocal closed
+            try:
+                yield _started_msg()
+                yield _exit_msg(0)
+            finally:
+                closed = True
+
+        handle = CommandHandle(stream(), None, self._make_sandbox_mock())
+        assert handle.result.exit_code == 0
+        assert closed
+
     def test_no_started_message(self):
         stream = _make_stream([_stdout_msg("data")])
         sandbox = self._make_sandbox_mock()
@@ -652,6 +668,8 @@ class TestCommandHandle:
             "cmd-123",
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
+            stdin_closed=handle._stdin_closed,
+            pty=handle._pty,
         )
 
     def test_reconnect_with_explicit_command_id(self):
@@ -750,6 +768,53 @@ class TestSandboxRunWs:
         assert result.exit_code == 0
 
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_retries_rate_limited_handshake_after_retry_after(self, mock_run_ws):
+        """A pre-execution 429 waits for the server hint and reuses the command ID."""
+        rate_limited = SandboxRetryableConnectionError("HTTP 429", retry_after=10.0)
+
+        def rejected_stream():
+            raise rate_limited
+            yield
+
+        mock_run_ws.side_effect = [
+            (rejected_stream(), _WSStreamControl()),
+            (_make_stream([_started_msg(), _exit_msg(0)]), _WSStreamControl()),
+        ]
+        sandbox = self._make_sandbox()
+
+        with patch("time.sleep") as mock_sleep:
+            result = sandbox.run("echo hello")
+
+        assert result.exit_code == 0
+        mock_sleep.assert_called_once_with(10.0)
+        first_id = mock_run_ws.call_args_list[0].kwargs["command_id"]
+        second_id = mock_run_ws.call_args_list[1].kwargs["command_id"]
+        assert first_id == second_id
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
+    def test_run_jitters_retry_without_retry_after(self, mock_run_ws):
+        """Retries without a server hint do not synchronize on a fixed delay."""
+
+        def rejected_stream():
+            raise SandboxRetryableConnectionError("HTTP 429")
+            yield
+
+        mock_run_ws.side_effect = [
+            (rejected_stream(), _WSStreamControl()),
+            (_make_stream([_started_msg(), _exit_msg(0)]), _WSStreamControl()),
+        ]
+        sandbox = self._make_sandbox()
+
+        with (
+            patch("random.uniform", return_value=0.45),
+            patch("time.sleep") as mock_sleep,
+        ):
+            result = sandbox.run("echo hello")
+
+        assert result.exit_code == 0
+        mock_sleep.assert_called_once_with(0.45)
+
+    @patch("langsmith.sandbox._ws_execute.run_ws_stream")
     def test_run_wait_false(self, mock_run_ws):
         """wait=False returns CommandHandle."""
         mock_run_ws.return_value = (
@@ -831,6 +896,7 @@ class TestSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 
@@ -855,20 +921,18 @@ class TestSandboxRunWs:
         with pytest.raises(ValueError, match="Cannot combine"):
             sandbox.run("cmd", wait=False, on_stdout=lambda s: None)
 
-    def test_run_fallback_to_http_when_ws_unavailable(self, monkeypatch):
-        """run() falls back to HTTP only when the websockets library is
-        unavailable."""
+    def test_missing_websockets_names_both_ways_forward(self, monkeypatch):
+        """Without the library and without the SSE feature, run() has no
+        transport: it says so rather than silently degrading."""
+        monkeypatch.delenv("LANGSMITH_EXPERIMENTAL_FEATURES", raising=False)
         monkeypatch.setattr("langsmith.sandbox._sandbox.WEBSOCKETS_AVAILABLE", False)
         sandbox = self._make_sandbox()
 
-        with patch.object(sandbox, "_run_http") as mock_http:
-            mock_http.return_value = ExecutionResult(
-                stdout="http output", stderr="", exit_code=0
-            )
-            result = sandbox.run("echo hello")
+        with pytest.raises(ImportError) as excinfo:
+            sandbox.run("echo hello")
 
-        assert result.stdout == "http output"
-        mock_http.assert_called_once()
+        assert "langsmith[sandbox]" in str(excinfo.value)
+        assert "LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec" in str(excinfo.value)
 
     @pytest.mark.parametrize(
         "exc",
@@ -878,16 +942,13 @@ class TestSandboxRunWs:
         ],
     )
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
-    def test_run_ws_error_propagates_without_http_fallback(self, mock_run_ws, exc):
-        """Any WS failure other than a missing library propagates; run() must
-        not silently fall back to the capacity-capped blocking HTTP endpoint."""
+    def test_run_ws_error_propagates(self, mock_run_ws, exc):
+        """Any WS failure other than a missing library propagates."""
         mock_run_ws.side_effect = exc
         sandbox = self._make_sandbox()
 
-        with patch.object(sandbox, "_run_http") as mock_http:
-            with pytest.raises(type(exc)):
-                sandbox.run("echo hello")
-        mock_http.assert_not_called()
+        with pytest.raises(type(exc)):
+            sandbox.run("echo hello")
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -897,8 +958,8 @@ class TestSandboxRunWs:
         ],
     )
     @patch("langsmith.sandbox._ws_execute.run_ws_stream")
-    def test_run_no_fallback_on_streaming(self, mock_run_ws, kwargs):
-        """wait=False or callbacks prevents HTTP fallback."""
+    def test_run_streaming_errors_propagate(self, mock_run_ws, kwargs):
+        """wait=False or callbacks surfaces the WS failure."""
         mock_run_ws.side_effect = SandboxConnectionError("WS failed")
         sandbox = self._make_sandbox()
 
@@ -1023,6 +1084,37 @@ class TestRaiseForInvalidHandshake:
 
         with pytest.raises(SandboxConnectionError, match="HTTP 403"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+    def test_429_is_retryable_and_preserves_retry_after(self):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "10"}
+        mock_response.body = b""
+        exc = Exception("server rejected WebSocket connection: HTTP 429")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxRetryableConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+        assert exc_info.value.retry_after == 10.0
+
+    @pytest.mark.parametrize("retry_after", ["nan", "inf", "-inf"])
+    def test_429_ignores_non_finite_retry_after(self, retry_after):
+        from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": retry_after}
+        mock_response.body = b""
+        exc = Exception("server rejected WebSocket connection: HTTP 429")
+        exc.response = mock_response
+
+        with pytest.raises(SandboxRetryableConnectionError) as exc_info:
+            _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
+
+        assert exc_info.value.retry_after is None
 
     def test_503_is_retryable(self):
         from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake

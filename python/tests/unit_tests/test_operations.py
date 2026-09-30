@@ -3,6 +3,7 @@ import uuid
 
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
+    _DESTINATION_FIELDS,
     SerializedFeedbackOperation,
     SerializedRunOperation,
     combine_serialized_queue_operations,
@@ -183,3 +184,53 @@ def test_serialized_run_operation_missing_file(tmp_path, caplog) -> None:
     assert f"attachment.{op.id}.ok" in part_names
     assert f"attachment.{op.id}.missing" not in part_names
     assert not opened
+
+
+def _post(run_id: str, **body) -> SerializedRunOperation:
+    return SerializedRunOperation(
+        operation="post",
+        id=run_id,
+        trace_id=run_id,
+        _none=_orjson.dumps(body),
+        inputs=None,
+        outputs=None,
+        events=None,
+        attachments=None,
+    )
+
+
+def test_combine_warns_when_one_run_id_goes_to_two_destinations(
+    caplog,
+) -> None:
+    ops = [
+        _post("id1", session_name="production"),
+        _post("id1", session_name="document-summarization"),
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith._internal._operations"):
+        combined = combine_serialized_queue_operations(ops)
+
+    # Behaviour is unchanged: the last post wins.
+    assert combined == [ops[1]]
+    warnings = [r for r in caplog.records if "same id" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "production" in warnings[0].getMessage()
+    assert "document-summarization" in warnings[0].getMessage()
+
+
+def test_combine_does_not_warn_for_duplicate_posts_to_one_destination(
+    caplog,
+) -> None:
+    ops = [
+        _post("id1", session_name="production", name="a"),
+        _post("id1", session_name="production", name="b"),
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith._internal._operations"):
+        combine_serialized_queue_operations(ops)
+
+    assert not [r for r in caplog.records if "same id" in r.getMessage()]
+
+
+def test_destination_fields_cover_address() -> None:
+    from langsmith._address import Address
+
+    assert set(Address._wire_keys()) <= set(_DESTINATION_FIELDS)

@@ -7,24 +7,65 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union, overload
 
 from langsmith._openapi_client._httpx import httpx
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    _access_delegation_from_dict,
+)
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
     ResourceNotFoundError,
     SandboxRetryableConnectionError,
 )
-from langsmith.sandbox._helpers import handle_sandbox_http_error
+from langsmith.sandbox._helpers import (
+    build_range_header as _build_range_header,
+)
+from langsmith.sandbox._helpers import (
+    file_chunk_from_response as _file_chunk_from_response,
+)
+from langsmith.sandbox._helpers import (
+    file_stat_from_response as _file_stat_from_response,
+)
+from langsmith.sandbox._helpers import (
+    handle_sandbox_http_error,
+)
+from langsmith.sandbox._helpers import (
+    raise_file_http_error as _raise_file_http_error,
+)
+from langsmith.sandbox._helpers import (
+    resolve_close_input as _resolve_close_input,
+)
+from langsmith.sandbox._helpers import (
+    resolve_command_run_config as _resolve_command_run_config,
+)
 from langsmith.sandbox._models import (
     CommandHandle,
     DownloadContentDisposition,
     DownloadURL,
     ExecutionResult,
+    FileChunk,
+    FileStat,
+    GlobResult,
+    GrepResult,
+    RunConfig,
     ServiceURL,
     Snapshot,
+    _run_config_from_dict,
     _StreamEndedBeforeStarted,
+)
+from langsmith.sandbox._sse_execute import (
+    MISSING_TRANSPORT_MSG,
+    require_sse_supports,
+    resume_sse_stream,
+    run_sse_stream,
+    sse_transport_selected,
+)
+from langsmith.sandbox._sse_execute import (
+    start_payload as _sse_start_payload,
 )
 from langsmith.sandbox._tunnel import Tunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
+    _retry_delay,
     connect_deadline,
     open_timeout_for,
 )
@@ -73,6 +114,11 @@ class Sandbox:
         vcpus: Number of vCPUs allocated.
         mem_bytes: Memory allocation in bytes.
         fs_capacity_bytes: Root filesystem capacity in bytes.
+        run_config: User, working directory and environment the sandbox's
+            commands run with. None on sandboxes created before the server
+            recorded it.
+        access_delegation: LangSmith access granted to code inside the sandbox,
+            or None when it has none.
 
     Example:
         with client.sandbox(snapshot_id="<snapshot-uuid>") as sandbox:
@@ -95,6 +141,8 @@ class Sandbox:
     vcpus: Optional[int] = None
     mem_bytes: Optional[int] = None
     fs_capacity_bytes: Optional[int] = None
+    run_config: Optional[RunConfig] = None
+    access_delegation: Optional[AccessDelegation] = None
 
     # Internal fields (not from API)
     _client: SandboxClient = field(repr=False, default=None)  # type: ignore
@@ -132,6 +180,10 @@ class Sandbox:
             vcpus=data.get("vcpus"),
             mem_bytes=data.get("mem_bytes"),
             fs_capacity_bytes=data.get("fs_capacity_bytes"),
+            run_config=_run_config_from_dict(data.get("run_config")),
+            access_delegation=_access_delegation_from_dict(
+                data.get("access_delegation")
+            ),
             _client=client,
             _auto_delete=auto_delete,
         )
@@ -168,6 +220,8 @@ class Sandbox:
             vcpus=self.vcpus,
             mem_bytes=self.mem_bytes,
             fs_capacity_bytes=self.fs_capacity_bytes,
+            run_config=self.run_config,
+            access_delegation=self.access_delegation,
             _client=client if client is not None else self._client.to_async(),
             _auto_delete=False,
         )
@@ -219,6 +273,8 @@ class Sandbox:
         timeout: int = ...,
         env: Optional[dict[str, str]] = ...,
         cwd: Optional[str] = ...,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = ...,
+        close_input: Optional[bool] = ...,
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
@@ -238,6 +294,8 @@ class Sandbox:
         timeout: int = ...,
         env: Optional[dict[str, str]] = ...,
         cwd: Optional[str] = ...,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = ...,
+        close_input: Optional[bool] = ...,
         shell: str = ...,
         on_stdout: Optional[Callable[[str], Any]] = ...,
         on_stderr: Optional[Callable[[str], Any]] = ...,
@@ -256,6 +314,8 @@ class Sandbox:
         timeout: int = 60,
         env: Optional[dict[str, str]] = None,
         cwd: Optional[str] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
+        close_input: Optional[bool] = None,
         shell: str = "/bin/bash",
         on_stdout: Optional[Callable[[str], Any]] = None,
         on_stderr: Optional[Callable[[str], Any]] = None,
@@ -271,8 +331,21 @@ class Sandbox:
         Args:
             command: Shell command to execute.
             timeout: Command timeout in seconds.
-            env: Environment variables to set for the command.
-            cwd: Working directory for command execution. If None, uses sandbox default.
+            env: Environment variables to set for the command. Deprecated in
+                favour of ``run_config.env_vars``; the two cannot be combined.
+            cwd: Working directory for command execution. If None, uses sandbox
+                default. Deprecated in favour of ``run_config.work_dir``; the
+                two cannot be combined.
+            run_config: User, working directory and environment for this one
+                command, layered over the sandbox's own. Accepts a
+                :class:`RunConfig` or a plain dict.
+            close_input: Half-close the command's stdin so a command that
+                reads it sees EOF rather than blocking until the timeout.
+                Defaults to True for a non-PTY command, which means
+                ``send_input()`` on the returned handle raises unless this is
+                set to False. Ignored under ``pty=True``, where input and
+                output share one terminal file descriptor -- send an EOT byte
+                (``0x04``) as input instead.
             shell: Shell to use for command execution. Defaults to "/bin/bash".
             on_stdout: Callback invoked with each stdout chunk as it arrives.
                 Blocks until the command completes and returns ExecutionResult.
@@ -318,52 +391,32 @@ class Sandbox:
                 "Cannot combine wait=False with on_stdout/on_stderr callbacks. "
                 "Use wait=False and iterate the CommandHandle, or use callbacks."
             )
+        resolved_run_config = _resolve_command_run_config(run_config, env=env, cwd=cwd)
+        close_stdin = _resolve_close_input(close_input, pty=pty)
 
         self._require_dataplane_url()
 
-        # When not waiting or callbacks are requested, WS is required
-        use_ws = not wait or on_stdout or on_stderr
-        if use_ws:
-            return self._run_ws(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                shell=shell,
-                wait=wait,
-                on_stdout=on_stdout,
-                on_stderr=on_stderr,
-                idle_timeout=idle_timeout,
-                kill_on_disconnect=kill_on_disconnect,
-                ttl_seconds=ttl_seconds,
-                pty=pty,
-                headers=headers,
-            )
-
-        # Default (wait=True, no callbacks): use WebSocket when the client
-        # library is available, otherwise the blocking HTTP endpoint.
-        if WEBSOCKETS_AVAILABLE:
-            return self._run_ws(
-                command,
-                timeout=timeout,
-                env=env,
-                cwd=cwd,
-                shell=shell,
-                wait=True,
-                on_stdout=None,
-                on_stderr=None,
-                idle_timeout=idle_timeout,
-                kill_on_disconnect=kill_on_disconnect,
-                ttl_seconds=ttl_seconds,
-                pty=pty,
-                headers=headers,
-            )
-        return self._run_http(
+        if sse_transport_selected():
+            runner = self._run_sse
+        elif WEBSOCKETS_AVAILABLE:
+            runner = self._run_ws
+        else:
+            raise ImportError(MISSING_TRANSPORT_MSG)
+        return runner(
             command,
             timeout=timeout,
             env=env,
             cwd=cwd,
+            run_config=resolved_run_config,
+            close_stdin=close_stdin,
             shell=shell,
+            wait=wait,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+            idle_timeout=idle_timeout,
+            kill_on_disconnect=kill_on_disconnect,
+            ttl_seconds=ttl_seconds,
+            pty=pty,
             headers=headers,
         )
 
@@ -374,6 +427,8 @@ class Sandbox:
         timeout: int,
         env: Optional[dict[str, str]],
         cwd: Optional[str],
+        run_config: Optional[dict[str, Any]],
+        close_stdin: bool,
         shell: str,
         wait: bool,
         on_stdout: Optional[Callable[[str], Any]],
@@ -410,6 +465,10 @@ class Sandbox:
             "ttl_seconds": ttl_seconds,
             "pty": pty,
         }
+        if run_config is not None:
+            ws_kwargs["run_config"] = run_config
+        if close_stdin:
+            ws_kwargs["close_stdin"] = True
         merged = self._client._ws_default_headers(headers)
         if merged:
             ws_kwargs["headers"] = merged
@@ -431,12 +490,14 @@ class Sandbox:
                     self,
                     on_stdout=on_stdout,
                     on_stderr=on_stderr,
+                    stdin_closed=close_stdin,
+                    pty=pty,
                 )
                 break
             except (
                 _StreamEndedBeforeStarted,
                 SandboxRetryableConnectionError,
-            ):
+            ) as exc:
                 # Idempotent re-issue (same command_id): neither an early close
                 # nor a failed connect can have started a second command.
                 attempt += 1
@@ -446,6 +507,8 @@ class Sandbox:
                     CommandHandle._BACKOFF_BASE * (2 ** (attempt - 1)),
                     CommandHandle._BACKOFF_MAX,
                 )
+                if isinstance(exc, SandboxRetryableConnectionError):
+                    backoff = _retry_delay(exc, backoff)
                 if deadline is not None:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -458,46 +521,64 @@ class Sandbox:
 
         return handle.result  # blocks until command completes
 
-    def _run_http(
+    def _run_sse(
         self,
         command: str,
         *,
         timeout: int,
         env: Optional[dict[str, str]],
         cwd: Optional[str],
+        run_config: Optional[dict[str, Any]],
+        close_stdin: bool,
         shell: str,
-        headers: RequestHeaders,
-    ) -> ExecutionResult:
-        """Execute via HTTP POST /execute (existing implementation)."""
-        dataplane_url = self._require_dataplane_url()
-        url = f"{dataplane_url}/execute"
-        payload: dict[str, Any] = {
-            "command": command,
-            "timeout": timeout,
-            "shell": shell,
-        }
-        if env is not None:
-            payload["env"] = env
-        if cwd is not None:
-            payload["cwd"] = cwd
+        wait: bool,
+        on_stdout: Optional[Callable[[str], Any]],
+        on_stderr: Optional[Callable[[str], Any]],
+        idle_timeout: int = 300,
+        kill_on_disconnect: bool = False,
+        ttl_seconds: int = 600,
+        pty: bool = False,
+        headers: RequestHeaders = None,
+    ) -> Union[ExecutionResult, CommandHandle]:
+        """Execute via the SSE endpoints /execute/stream/{start,resume}."""
+        from langsmith.uuid import uuid7
 
-        try:
-            response = self._client._http.post(
-                url,
-                json=payload,
-                timeout=timeout + 10,
-                headers=self._client._request_headers(headers),
-            )
-            response.raise_for_status()
-            data = response.json()
-            return ExecutionResult(
-                stdout=data.get("stdout", ""),
-                stderr=data.get("stderr", ""),
-                exit_code=data.get("exit_code", -1),
-            )
-        except httpx.HTTPStatusError as e:
-            handle_sandbox_http_error(e)
-            raise  # pragma: no cover
+        require_sse_supports(
+            pty=pty, close_stdin=close_stdin, kill_on_disconnect=kill_on_disconnect
+        )
+        dataplane_url = self._require_dataplane_url()
+
+        # A client-supplied command_id makes start idempotent: the daemon does
+        # get-or-create keyed on it, so a request that failed before "started"
+        # is re-sent rather than spawning a second command.
+        payload = _sse_start_payload(
+            command,
+            command_id=uuid7().hex,
+            timeout=timeout,
+            shell=shell,
+            idle_timeout=idle_timeout,
+            ttl_seconds=ttl_seconds,
+            env=env,
+            cwd=cwd,
+            run_config=run_config,
+        )
+        msg_stream, control = run_sse_stream(
+            self._client._http,
+            dataplane_url,
+            payload,
+            headers=self._client._request_headers(headers),
+        )
+        handle = CommandHandle(
+            msg_stream,
+            control,
+            self,
+            on_stdout=on_stdout,
+            on_stderr=on_stderr,
+            stdin_closed=True,
+        )
+        if not wait:
+            return handle
+        return handle.result
 
     def reconnect(
         self,
@@ -505,6 +586,8 @@ class Sandbox:
         *,
         stdout_offset: int = 0,
         stderr_offset: int = 0,
+        stdin_closed: bool = False,
+        pty: bool = False,
         headers: RequestHeaders = None,
     ) -> CommandHandle:
         """Reconnect to a running or recently-finished command.
@@ -527,7 +610,25 @@ class Sandbox:
         from langsmith.sandbox._ws_execute import reconnect_ws_stream
 
         dataplane_url = self._require_dataplane_url()
-        api_key = self._client._api_key
+
+        if sse_transport_selected():
+            msg_stream, control = resume_sse_stream(
+                self._client._http,
+                dataplane_url,
+                command_id,
+                stdout_offset=stdout_offset,
+                stderr_offset=stderr_offset,
+                headers=self._client._request_headers(headers),
+            )
+            return CommandHandle(
+                msg_stream,
+                control,
+                self,
+                command_id=command_id,
+                stdout_offset=stdout_offset,
+                stderr_offset=stderr_offset,
+                stdin_closed=True,
+            )
 
         reconnect_kwargs: dict[str, Any] = {
             "stdout_offset": stdout_offset,
@@ -537,20 +638,22 @@ class Sandbox:
         if merged:
             reconnect_kwargs["headers"] = merged
 
-        msg_stream, control = reconnect_ws_stream(
+        ws_stream, ws_control = reconnect_ws_stream(
             dataplane_url,
-            api_key,
+            self._client._api_key,
             command_id,
             **reconnect_kwargs,
         )
 
         return CommandHandle(
-            msg_stream,
-            control,
+            ws_stream,
+            ws_control,
             self,
             command_id=command_id,
             stdout_offset=stdout_offset,
             stderr_offset=stderr_offset,
+            stdin_closed=stdin_closed,
+            pty=pty,
         )
 
     def write(
@@ -638,6 +741,211 @@ class Sandbox:
             handle_sandbox_http_error(e)
             # This line should never be reached but satisfies type checker
             raise  # pragma: no cover
+
+    def stat(
+        self, path: str, *, timeout: int = 60, headers: RequestHeaders = None
+    ) -> FileStat:
+        """Report a file's size and validators without transferring it.
+
+        Args:
+            path: File path to stat.
+            timeout: Request timeout in seconds.
+            headers: Extra request headers.
+
+        Returns:
+            FileStat with the size and the ``ETag`` to pass to
+            :meth:`read_range`.
+
+        Raises:
+            ResourceNotFoundError: If the file doesn't exist.
+        """
+        dataplane_url = self._require_dataplane_url()
+        try:
+            response = self._client._http.request(
+                "HEAD",
+                f"{dataplane_url}/download",
+                params={"path": path},
+                timeout=timeout,
+                headers=self._client._request_headers(headers),
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            _raise_file_http_error(e, path=path, sandbox_name=self.name)
+            raise  # pragma: no cover
+        return _file_stat_from_response(response)
+
+    def read_range(
+        self,
+        path: str,
+        *,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        suffix_bytes: Optional[int] = None,
+        if_range: Optional[str] = None,
+        if_none_match: Optional[str] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> FileChunk:
+        """Read part of a file, for chunked reads and resumed downloads.
+
+        Args:
+            path: File path to read.
+            start: First byte to return. With ``end``, an inclusive range.
+            end: Last byte to return, inclusive. Clamped to EOF rather than
+                rejected.
+            suffix_bytes: Return the last N bytes. Mutually exclusive with
+                ``start``/``end``.
+            if_range: An ``ETag`` from an earlier chunk. The range is honored
+                only while the file still matches it; a rewrite answers 200
+                with the whole file, reported as ``partial=False`` so a
+                resuming caller restarts instead of splicing two versions.
+            if_none_match: An ``ETag`` the caller already holds. An unchanged
+                file answers with ``unchanged=True`` and no bytes.
+            timeout: Request timeout in seconds.
+            headers: Extra request headers.
+
+        Returns:
+            FileChunk with the bytes and where they sit in the file.
+
+        Raises:
+            ValueError: If no range is given, or suffix_bytes is combined
+                with start/end.
+            SandboxOperationError: If the range starts past the end of the
+                file (416).
+            ResourceNotFoundError: If the file doesn't exist.
+        """
+        range_header = _build_range_header(
+            start=start, end=end, suffix_bytes=suffix_bytes
+        )
+        request_headers = dict(self._client._request_headers(headers) or {})
+        request_headers["Range"] = range_header
+        if if_range:
+            request_headers["If-Range"] = if_range
+        if if_none_match:
+            request_headers["If-None-Match"] = if_none_match
+
+        dataplane_url = self._require_dataplane_url()
+        try:
+            response = self._client._http.get(
+                f"{dataplane_url}/download",
+                params={"path": path},
+                timeout=timeout,
+                headers=request_headers,
+            )
+            if response.status_code != 304:
+                response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            _raise_file_http_error(e, path=path, sandbox_name=self.name)
+            raise  # pragma: no cover
+        return _file_chunk_from_response(response)
+
+    def glob(
+        self,
+        pattern: str,
+        path: str,
+        *,
+        limit: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> GlobResult:
+        """Find files and directories matching a pattern.
+
+        Args:
+            pattern: Match against each entry's path relative to ``path``.
+                Supports ``**`` for any number of segments plus ``*``, ``?``
+                and ``[...]`` within one segment.
+            path: Absolute path of the directory to search under.
+            limit: Maximum matches to return.
+            timeout: Request timeout in seconds.
+            headers: Extra request headers.
+
+        Returns:
+            GlobResult; check ``truncated`` before treating it as complete.
+        """
+        payload: dict[str, Any] = {"pattern": pattern, "path": path}
+        if limit is not None:
+            payload["limit"] = limit
+        data = self._file_search("glob", payload, timeout=timeout, headers=headers)
+        return GlobResult.from_dict(data)
+
+    def ls(
+        self,
+        path: str,
+        *,
+        limit: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> GlobResult:
+        """List a directory's immediate entries, without recursing.
+
+        A convenience over :meth:`glob` with the pattern ``*``.
+
+        Args:
+            path: Absolute path of the directory to list.
+            limit: Maximum entries to return.
+            timeout: Request timeout in seconds.
+            headers: Extra request headers.
+
+        Returns:
+            GlobResult holding the directory's files and subdirectories.
+        """
+        return self.glob("*", path, limit=limit, timeout=timeout, headers=headers)
+
+    def grep(
+        self,
+        pattern: str,
+        path: str,
+        *,
+        glob: Optional[str] = None,
+        limit: Optional[int] = None,
+        timeout: int = 60,
+        headers: RequestHeaders = None,
+    ) -> GrepResult:
+        """Search file contents for a literal string.
+
+        Args:
+            pattern: Literal text to search for. Not a regular expression.
+            path: Absolute path of the directory to search under.
+            glob: Restrict which files are searched. A bare ``*.py`` matches
+                by basename at any depth; a pattern containing ``/`` or
+                ``**`` matches the path relative to ``path``.
+            limit: Maximum matches to return.
+            timeout: Request timeout in seconds.
+            headers: Extra request headers.
+
+        Returns:
+            GrepResult; check ``truncated`` before treating it as complete.
+        """
+        payload: dict[str, Any] = {"pattern": pattern, "path": path}
+        if glob is not None:
+            payload["glob"] = glob
+        if limit is not None:
+            payload["limit"] = limit
+        data = self._file_search("grep", payload, timeout=timeout, headers=headers)
+        return GrepResult.from_dict(data)
+
+    def _file_search(
+        self,
+        operation: str,
+        payload: dict[str, Any],
+        *,
+        timeout: int,
+        headers: RequestHeaders,
+    ) -> dict[str, Any]:
+        """POST one of the read-only filesystem search endpoints."""
+        dataplane_url = self._require_dataplane_url()
+        try:
+            response = self._client._http.post(
+                f"{dataplane_url}/{operation}",
+                json=payload,
+                timeout=timeout,
+                headers=self._client._request_headers(headers),
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            _raise_file_http_error(e, path=payload["path"], sandbox_name=self.name)
+            raise  # pragma: no cover
+        return response.json()
 
     def tunnel(
         self,
@@ -837,6 +1145,7 @@ class Sandbox:
         self,
         name: str,
         *,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -844,6 +1153,9 @@ class Sandbox:
 
         Args:
             name: Snapshot name.
+            run_config: Override applied over the configuration this sandbox
+                is running with: ``user`` and ``work_dir`` replace,
+                ``env_vars`` merge.
             timeout: Timeout in seconds when waiting for ready.
             headers: Optional per-request header overrides.
 
@@ -859,6 +1171,7 @@ class Sandbox:
         return self._client.capture_snapshot(
             self.name,
             name,
+            run_config=run_config,
             timeout=timeout,
             headers=headers,
         )

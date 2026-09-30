@@ -10,6 +10,7 @@ from langsmith.sandbox import (
     ResourceStatus,
     ServiceURL,
     Snapshot,
+    SnapshotTag,
 )
 
 
@@ -83,6 +84,44 @@ _SAMPLE_SERVICE_URL_DATA = {
     "token": "jwt-token-value",
     "expires_at": "2026-04-01T12:10:00Z",
 }
+
+
+class TestSnapshotTags:
+    """Tags are the mutable pointers published under a snapshot's name."""
+
+    def test_from_dict_reads_tags(self):
+        snapshot = Snapshot.from_dict(
+            {
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 1,
+                "tags": ["latest", "v2"],
+            }
+        )
+        assert snapshot.tags == ["latest", "v2"]
+
+    def test_a_missing_tags_key_means_dangling(self):
+        """The server omits the key entirely rather than sending an empty list."""
+        snapshot = Snapshot.from_dict(
+            {
+                "id": "snap-1",
+                "name": "my-env",
+                "status": "ready",
+                "fs_capacity_bytes": 1,
+            }
+        )
+        assert snapshot.tags == []
+
+    def test_snapshot_tag_reads_its_target(self):
+        tag = SnapshotTag.from_dict({"tag": "latest", "snapshot_id": "snap-2"})
+        assert (tag.tag, tag.snapshot_id) == ("latest", "snap-2")
+
+    def test_tags_are_appended_last_so_positional_callers_are_unchanged(self):
+        """Inserting it earlier would silently shift every positional arg after it."""
+        snapshot = Snapshot("snap-1", "my-env", "ready", 4096, "python:3.12-slim")
+        assert snapshot.docker_image == "python:3.12-slim"
+        assert snapshot.tags == []
 
 
 class TestServiceURL:

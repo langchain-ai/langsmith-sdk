@@ -15,6 +15,7 @@ from requests_toolbelt import MultipartEncoder
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._multipart import RewindableMultipartBody
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
@@ -60,6 +61,8 @@ def _get_multipart_data(mock_calls):
             raw = data
         elif isinstance(data, MultipartEncoder):
             raw = data.to_string()
+        elif isinstance(data, RewindableMultipartBody):
+            raw = data.to_bytes()
         else:
             # Unknown format
             continue
@@ -846,3 +849,54 @@ def test_patch_exclude_inputs_flag_is_cached(monkeypatch, _reset_exclude_inputs_
     _reset_exclude_inputs_cache()
     run_tree.patch()
     assert client.update_run.call_args.kwargs["inputs"] == {"a": 1}
+
+
+@pytest.fixture
+def _reset_agent_addressing_cache():
+    """Reset the memoized agent addressing env lookups."""
+
+    def _clear():
+        ls_utils.get_env_var.cache_clear()
+        ls_utils.get_tracer_project.cache_clear()
+
+    _clear()
+    yield _clear
+    _clear()
+
+
+def _agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    """Set up a clean LangSmith env with only `values` present."""
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+
+class TestBaggageAgentAddressing:
+    """Agent addressing survives a distributed hop, like the project does."""
+
+    def test_replica_credentials_are_still_stripped(self) -> None:
+        replicas_json = json.dumps(
+            [
+                {
+                    # Both members, or the replica is dropped before the
+                    # credential check below can run.
+                    "agent_id": "replica-agent",
+                    "agent_environment": "staging",
+                    "api_key": "secret",
+                    "api_url": "http://x",
+                }
+            ]
+        )
+        baggage = f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas_json)}"
+        parsed = run_trees._Baggage.from_header(baggage)
+        assert parsed.replicas is not None
+        replica = parsed.replicas[0]
+        assert "api_key" not in replica
+        assert "api_url" not in replica

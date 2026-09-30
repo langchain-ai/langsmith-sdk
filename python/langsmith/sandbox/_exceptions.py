@@ -49,9 +49,15 @@ class SandboxRetryableConnectionError(SandboxConnectionError):
 
     ``run()`` retries this error with the same command ID, so the server can
     deduplicate an attempt whose outcome is unknown.
+
+    Attributes:
+        retry_after: Optional server-provided delay in seconds before retrying.
     """
 
-    pass
+    def __init__(self, message: str, *, retry_after: Optional[float] = None):
+        """Initialize the error."""
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class SandboxConnectTimeoutError(SandboxRetryableConnectionError):

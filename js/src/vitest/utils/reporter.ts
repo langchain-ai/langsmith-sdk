@@ -24,28 +24,18 @@ export const printVitestReporterTable = async (files: any, ctx: any) => {
 // Plucked from Vitest 4.x internal types
 export interface VitestTestModule {
   children: {
-    allTests: () => {
+    allTests: () => Iterable<{
       name: string;
       result: () => { state: "pending" | "passed" | "failed" | "skipped" };
-      diagnostic: () => { duration: number };
-    }[];
+      diagnostic: () => { duration: number } | undefined;
+    }>;
   };
-  state: () => "skipped" | "passed" | "failed";
+  state: () => "pending" | "queued" | "skipped" | "passed" | "failed";
   relativeModuleId: string;
 }
 
 export const printVitestTestModulesReporterTable = async (
-  testModules: {
-    children: {
-      allTests: () => {
-        name: string;
-        result: () => { state: "pending" | "passed" | "failed" | "skipped" };
-        diagnostic: () => { duration: number };
-      }[];
-    };
-    state: () => "skipped" | "passed" | "failed";
-    relativeModuleId: string;
-  }[],
+  testModules: readonly VitestTestModule[],
 ) => {
   for (const testModule of testModules) {
     const tests = [...testModule.children.allTests()].map((test) => {
@@ -56,10 +46,11 @@ export const printVitestTestModulesReporterTable = async (
       };
     });
 
+    const state = testModule.state();
     await printReporterTable(
       testModule.relativeModuleId,
       tests,
-      testModule.state(),
+      state === "pending" || state === "queued" ? "skipped" : state,
     );
   }
 };

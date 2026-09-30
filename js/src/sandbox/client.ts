@@ -2,6 +2,12 @@
  * Main SandboxClient class for interacting with the sandbox server API.
  */
 
+import { validateAccessDelegation } from "./access_delegation.js";
+import {
+  ServiceLoginUrl,
+  ServiceUrl,
+  type ServiceAccess,
+} from "./service_url.js";
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -36,6 +42,7 @@ import {
 import {
   handleClientHttpError,
   handleSandboxCreationError,
+  throwIfNotReady,
   validateTtl,
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
@@ -486,6 +493,79 @@ export class SandboxClient {
     return `${this._baseUrl}/boxes/${encodeURIComponent(name)}${suffix}`;
   }
 
+  /**
+   * Generate an authenticated URL for an HTTP service running in a sandbox.
+   *
+   * Without `access`, mints a short-lived token and returns a {@link ServiceUrl}
+   * that refreshes it as it nears expiry. With `access` set to `"restricted"`
+   * or `"workspace"` the URL is gated by LangSmith login instead and a
+   * {@link ServiceLoginUrl} is returned: no token, no expiry, browser only.
+   *
+   * A login grant is durable, so token mode is refused with 409 while one is
+   * in place, and `expiresInSeconds` does not apply to the login modes.
+   */
+  async serviceUrl(
+    name: string,
+    options: {
+      port: number;
+      expiresInSeconds?: number;
+      access?: ServiceAccess;
+      signal?: AbortSignal;
+    },
+  ): Promise<ServiceUrl | ServiceLoginUrl> {
+    const { port, expiresInSeconds, access, signal } = options;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new LangSmithValidationError(
+        `port must be between 1 and 65535 (got ${port})`,
+        "port",
+      );
+    }
+    if (
+      access !== undefined &&
+      access !== "restricted" &&
+      access !== "workspace"
+    ) {
+      throw new LangSmithValidationError(
+        `access must be "restricted" or "workspace" (got ${String(access)})`,
+        "access",
+      );
+    }
+    const loginMode = access !== undefined;
+    if (expiresInSeconds !== undefined && loginMode) {
+      throw new LangSmithValidationError(
+        `expiresInSeconds does not apply to access "${access}": a LangSmith ` +
+          "login URL carries no token and does not expire",
+        "expiresInSeconds",
+      );
+    }
+
+    const url = this._boxUrl(name, "service-url");
+    const payload: Record<string, unknown> = { port };
+    if (!loginMode && expiresInSeconds !== undefined) {
+      payload.expires_in_seconds = expiresInSeconds;
+    }
+    if (access !== undefined) {
+      payload.access = access;
+    }
+
+    const response = await this._postJson(url, payload, { signal });
+    const data = await response.json();
+    if (loginMode) {
+      return new ServiceLoginUrl(data);
+    }
+    // Refresh with the token parameters only. Carrying options.signal over
+    // would tie every later refresh to the first request's lifetime, so a
+    // caller-supplied timeout signal would leave the URL unable to refresh.
+    return new ServiceUrl(
+      data,
+      () =>
+        this.serviceUrl(name, {
+          port,
+          expiresInSeconds,
+        }) as Promise<ServiceUrl>,
+    );
+  }
+
   private async _postJson(
     url: string,
     body: Record<string, unknown>,
@@ -563,6 +643,8 @@ export class SandboxClient {
       fsCapacityBytes,
       mountConfig,
       proxyConfig,
+      runConfig,
+      accessDelegation,
     } = resolvedOptions;
 
     if (snapshotId && snapshotName) {
@@ -612,6 +694,12 @@ export class SandboxClient {
     }
     if (proxyConfig !== undefined) {
       payload.proxy_config = proxyConfig;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
+    }
+    if (accessDelegation !== undefined) {
+      payload.access_delegation = validateAccessDelegation(accessDelegation);
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
@@ -695,8 +783,8 @@ export class SandboxClient {
    */
   async updateSandbox(name: string, newName: string): Promise<Sandbox>;
   /**
-   * Update a sandbox's name and/or retention settings (idle stop and
-   * delete-after-stop).
+   * Update a sandbox's name, retention settings (idle stop and
+   * delete-after-stop), and/or proxy config.
    *
    * @param name - Current sandbox name.
    * @param options - Fields to update. Omit a field to leave it unchanged.
@@ -704,6 +792,8 @@ export class SandboxClient {
    * @throws LangSmithResourceNotFoundError if sandbox not found.
    * @throws LangSmithResourceNameConflictError if newName is already in use.
    * @throws LangSmithValidationError if retention values are invalid.
+   * @throws LangSmithSandboxNotReadyError if proxyConfig was given and the
+   * sandbox is not `ready`.
    */
   async updateSandbox(
     name: string,
@@ -718,14 +808,22 @@ export class SandboxClient {
         ? { newName: newNameOrOptions }
         : newNameOrOptions;
 
-    const { newName, idleTtlSeconds, deleteAfterStopSeconds } = options;
+    const {
+      newName,
+      idleTtlSeconds,
+      deleteAfterStopSeconds,
+      proxyConfig,
+      runConfig,
+    } = options;
     validateTtl(idleTtlSeconds, "idleTtlSeconds");
     validateTtl(deleteAfterStopSeconds, "deleteAfterStopSeconds");
 
     if (
       newName === undefined &&
       idleTtlSeconds === undefined &&
-      deleteAfterStopSeconds === undefined
+      deleteAfterStopSeconds === undefined &&
+      proxyConfig === undefined &&
+      runConfig === undefined
     ) {
       return this.getSandbox(name);
     }
@@ -740,6 +838,12 @@ export class SandboxClient {
     }
     if (deleteAfterStopSeconds !== undefined) {
       payload.delete_after_stop_seconds = deleteAfterStopSeconds;
+    }
+    if (proxyConfig !== undefined) {
+      payload.proxy_config = proxyConfig;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._fetch(url, {
@@ -762,6 +866,9 @@ export class SandboxClient {
             : "Sandbox update conflict (name may already be in use)",
           "sandbox",
         );
+      }
+      if (proxyConfig !== undefined) {
+        await throwIfNotReady(response, name);
       }
       await handleClientHttpError(response);
     }
@@ -987,7 +1094,7 @@ export class SandboxClient {
     fsCapacityBytes: number,
     options: CreateSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const { registryId, timeout = 60, signal } = options;
+    const { registryId, runConfig, timeout = 60, signal } = options;
     const url = `${this._baseUrl}/snapshots`;
 
     const payload: Record<string, unknown> = {
@@ -997,6 +1104,9 @@ export class SandboxClient {
     };
     if (registryId !== undefined) {
       payload.registry_id = registryId;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._postJson(url, payload, { signal });
@@ -1130,7 +1240,13 @@ export class SandboxClient {
     name: string,
     options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
-    const { dockerImage, fsCapacityBytes, timeout = 60, signal } = options;
+    const {
+      dockerImage,
+      fsCapacityBytes,
+      runConfig,
+      timeout = 60,
+      signal,
+    } = options;
     const url = this._boxUrl(sandboxName, "snapshot");
 
     const payload: Record<string, unknown> = { name };
@@ -1139,6 +1255,9 @@ export class SandboxClient {
     }
     if (fsCapacityBytes !== undefined) {
       payload.fs_capacity_bytes = fsCapacityBytes;
+    }
+    if (runConfig !== undefined) {
+      payload.run_config = runConfig;
     }
 
     const response = await this._postJson(url, payload, { signal });

@@ -28,6 +28,10 @@ Example:
             print(result.stdout)
 """
 
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    AccessDelegationMode,
+)
 from langsmith.sandbox._async_client import AsyncSandboxClient
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import SandboxClient
@@ -63,13 +67,24 @@ from langsmith.sandbox._models import (
     DownloadContentDisposition,
     DownloadURL,
     ExecutionResult,
+    FileChunk,
+    FileInfo,
+    FileStat,
+    GlobResult,
+    GrepMatch,
+    GrepResult,
     OutputChunk,
     ResourceStatus,
+    RunConfig,
+    ServiceAccess,
+    ServiceLoginURL,
     ServiceURL,
     Snapshot,
+    SnapshotTag,
 )
 from langsmith.sandbox._mounts import (
     AWSMountAuthConfig,
+    AWSMountRoleAuthConfig,
     ContextHubMountConfig,
     ContextHubMountSpec,
     GCPMountAuthConfig,
@@ -103,6 +118,17 @@ from langsmith.sandbox._proxy_config import (
 )
 from langsmith.sandbox._sandbox import Sandbox
 from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
+from langsmith.sandbox._verify import (
+    CALLBACK_SIGNATURE_HEADER,
+    USER_TOKEN_HEADER,
+    AudienceMatcher,
+    SandboxCallback,
+    SandboxCallbackIdentity,
+    SandboxCallbackRequest,
+    SandboxTokenVerificationError,
+    SandboxTokenVerifier,
+    SandboxUser,
+)
 
 __all__ = [
     # Main classes
@@ -110,10 +136,31 @@ __all__ = [
     "AsyncSandboxClient",
     "Sandbox",
     "AsyncSandbox",
+    # Token and callback verification
+    "SandboxTokenVerifier",
+    "SandboxTokenVerificationError",
+    "AudienceMatcher",
+    "SandboxUser",
+    "SandboxCallback",
+    "SandboxCallbackIdentity",
+    "SandboxCallbackRequest",
+    "USER_TOKEN_HEADER",
+    "CALLBACK_SIGNATURE_HEADER",
     # Models
     "ResourceStatus",
     "ExecutionResult",
+    "RunConfig",
     "Snapshot",
+    "SnapshotTag",
+    # Filesystem models
+    "FileChunk",
+    "FileInfo",
+    "FileStat",
+    "GlobResult",
+    "GrepMatch",
+    "GrepResult",
+    "ServiceAccess",
+    "ServiceLoginURL",
     "ServiceURL",
     "DownloadURL",
     "DownloadContentDisposition",
@@ -122,6 +169,8 @@ __all__ = [
     "CommandHandle",
     "AsyncCommandHandle",
     "OutputChunk",
+    "AccessDelegation",
+    "AccessDelegationMode",
     "SandboxProxyConfig",
     "SandboxProxyRule",
     "SandboxProxySecret",
@@ -130,6 +179,7 @@ __all__ = [
     "SandboxMountAuthConfig",
     "SandboxMountConfig",
     "AWSMountAuthConfig",
+    "AWSMountRoleAuthConfig",
     "ContextHubMountConfig",
     "ContextHubMountSpec",
     "GCPMountAuthConfig",

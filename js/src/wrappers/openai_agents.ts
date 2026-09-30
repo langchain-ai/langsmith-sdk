@@ -491,6 +491,38 @@ function createResponsesUsageMetadata(
 }
 
 /**
+ * Return an ls_agent_type for the span, or undefined to leave it alone.
+ *
+ * If the run already has middleware/subagent/compaction, keep it. Otherwise
+ * guardrails become middleware and agents under any tool become subagents.
+ *
+ * Openai-agents structural counterpart to resolveVercelLsAgentType.
+ */
+function _resolveOpenAIAgentsLsAgentType(
+  spanData: SpanData,
+  parentRun: RunTree,
+  existingTag: unknown,
+): "middleware" | "subagent" | undefined {
+  if (
+    typeof existingTag === "string" &&
+    NON_ROOT_LS_AGENT_TYPES.has(existingTag)
+  ) {
+    return undefined;
+  }
+  if (spanData.type === "guardrail") return "middleware";
+  // Walk the full parent chain, not just the direct parent: asTool inserts
+  // a chain run between the tool and the inner agent span.
+  if (spanData.type === "agent") {
+    let cursor: RunTree | undefined = parentRun;
+    while (cursor !== undefined) {
+      if (cursor.run_type === "tool") return "subagent";
+      cursor = cursor.parent_run;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Tracing processor for the [OpenAI Agents SDK](https://openai.github.io/openai-agents-js/).
  *
  * Traces all intermediate steps of your OpenAI Agent to LangSmith.
@@ -534,6 +566,7 @@ function createResponsesUsageMetadata(
  * console.log(result.finalOutput);
  * ```
  */
+
 export class OpenAIAgentsTracingProcessor implements TracingProcessor {
   private client: Client;
   private _metadata?: Record<string, unknown>;
@@ -545,7 +578,6 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
   private _lastResponseOutputs: Record<string, Record<string, unknown>> = {};
 
   private _runs: Map<string, RunTree> = new Map();
-  private _spanDataTypes: Map<string, string> = new Map();
   private _unpostedTraces: Set<string> = new Set();
   private _unpostedSpans: Set<string> = new Set();
   // Previous AsyncLocalStorage store for each trace/span, so nested
@@ -767,29 +799,20 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
       return;
     }
 
-    // Add ls_agent_type metadata for agent spans that are children of
-    // function spans (i.e., agents used as tools).
-    // Handoff agents are not considered subagents.
-    if (spanData.type === "agent") {
-      const parentSpanType = parentId
-        ? this._spanDataTypes.get(parentId)
-        : undefined;
-      if (parentSpanType === "function") {
-        if (!childRun.extra) {
-          childRun.extra = {};
-        }
-        if (!childRun.extra.metadata) {
-          childRun.extra.metadata = {};
-        }
-        const meta = childRun.extra.metadata as Record<string, unknown>;
-        if (!NON_ROOT_LS_AGENT_TYPES.has(meta.ls_agent_type as string)) {
-          meta.ls_agent_type = "subagent";
-        }
-      }
+    // Handoffs replace the caller rather than run as a tool, so a handoff
+    // agent has no tool ancestor and correctly stays untagged here.
+    if (!childRun.extra) childRun.extra = {};
+    if (!childRun.extra.metadata) childRun.extra.metadata = {};
+    const meta = childRun.extra.metadata as Record<string, unknown>;
+    const structuralTag = _resolveOpenAIAgentsLsAgentType(
+      spanData,
+      parentRun,
+      meta.ls_agent_type,
+    );
+    if (structuralTag !== undefined) {
+      meta.ls_agent_type = structuralTag;
     }
 
-    // Track span data type for parent lookups
-    this._spanDataTypes.set(span.spanId, spanData.type);
     this._runs.set(span.spanId, childRun);
 
     // Enter AsyncLocalStorage context synchronously so nested traceable()
@@ -829,8 +852,6 @@ export class OpenAIAgentsTracingProcessor implements TracingProcessor {
     }
 
     const run = this._runs.get(span.spanId);
-    this._spanDataTypes.delete(span.spanId);
-
     if (!run) {
       return;
     }
