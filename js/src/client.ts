@@ -679,6 +679,29 @@ export interface ListThreadsItem extends Thread {
   runs: Run[];
 }
 
+/** Index creates by id (last wins); warns when one id goes to two projects. */
+function indexRunCreatesById(creates: RunCreate[]): Record<string, RunCreate> {
+  const byId: Record<string, RunCreate> = {};
+  for (const run of creates) {
+    if (!run.id) {
+      continue;
+    }
+    const previous = byId[run.id];
+    if (previous !== undefined && previous.session_name !== run.session_name) {
+      console.warn(
+        `LangSmith run ${run.id} was queued for two projects with the same id ` +
+          `(${JSON.stringify(previous.session_name)} and ` +
+          `${JSON.stringify(run.session_name)}); only one of the projects will ` +
+          "keep the run. This usually means two write replicas both keep the " +
+          "original run ids, for example a replica marked `primary` plus one " +
+          "for the run's own project.",
+      );
+    }
+    byId[run.id] = run;
+  }
+  return byId;
+}
+
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
   cachedEnvVars?: Record<string, string>,
@@ -2582,17 +2605,9 @@ export class Client implements LangSmithTracingClientInterface {
       ) ?? [],
     );
 
+    // Index even without updates: the collision warning must see creates-only batches.
+    const createById = indexRunCreatesById(preparedCreateParams);
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
-      const createById = preparedCreateParams.reduce(
-        (params: Record<string, RunCreate>, run) => {
-          if (!run.id) {
-            return params;
-          }
-          params[run.id] = run;
-          return params;
-        },
-        {},
-      );
       const standaloneUpdates = [];
       for (const updateParam of preparedUpdateParams) {
         if (updateParam.id !== undefined && createById[updateParam.id]) {
@@ -2749,17 +2764,8 @@ export class Client implements LangSmithTracingClientInterface {
       );
     }
     // combine post and patch dicts where possible
+    const createById = indexRunCreatesById(preparedCreateParams);
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
-      const createById = preparedCreateParams.reduce(
-        (params: Record<string, RunCreate>, run) => {
-          if (!run.id) {
-            return params;
-          }
-          params[run.id] = run;
-          return params;
-        },
-        {},
-      );
       const standaloneUpdates = [];
       for (const updateParam of preparedUpdateParams) {
         if (updateParam.id !== undefined && createById[updateParam.id]) {
