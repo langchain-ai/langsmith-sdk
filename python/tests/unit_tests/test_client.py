@@ -8267,10 +8267,12 @@ def test_agent_addressed_run_sends_no_project(
     patch_body = _wait_for_part(session, "patch")
 
     for kind, body in (("post", post_body), ("patch", patch_body)):
-        assert (body.get("agent_id"), body.get("agent_environment")) == (
-            "my-agent",
-            "staging",
-        ), kind
+        assert body.get("address") == {
+            "kind": "AGENT",
+            "id": "my-agent",
+            "environment": "STAGING",
+        }, kind
+        assert "agent_id" not in body, kind
         assert "session_name" not in body, kind
         assert "session_id" not in body, kind
 
@@ -8288,8 +8290,7 @@ def test_project_addressed_run_is_unchanged(
 
     body = _wait_for_part(session, "post")
     assert body.get("session_name") == "default"
-    assert "agent_id" not in body
-    assert "agent_environment" not in body
+    assert "address" not in body
 
 
 class TestAConfiguredProjectTravelsWithTheAgent:
@@ -8317,8 +8318,7 @@ class TestAConfiguredProjectTravelsWithTheAgent:
 
         body = _wait_for_part(session, "post")
         assert body.get("session_name") == "explicit"
-        assert "agent_id" not in body
-        assert "agent_environment" not in body
+        assert "address" not in body
 
     def test_the_client_warns_once_at_construction(
         self, monkeypatch: pytest.MonkeyPatch
@@ -8419,10 +8419,9 @@ class TestPatchInheritsThePostsTarget:
         patch: dict = {"session_name": None, "session_id": None}
         _agent_addressing.apply_to_payload(patch, update=True)
         assert post == {"session_name": "myproj"}
-        # No agent fields added. The null session keys are left exactly as
+        # No address added. The null session keys are left exactly as
         # `update_run` built them, which is what `main` sends today.
-        assert "agent_id" not in patch
-        assert "agent_environment" not in patch
+        assert "address" not in patch
         assert patch == {"session_name": None, "session_id": None}
 
 
@@ -8549,8 +8548,7 @@ class TestFeedbackAgentAddressing:
             }
         )
         body = json.loads(serialized.feedback)
-        assert "agent_id" not in body
-        assert "agent_environment" not in body
+        assert "address" not in body
 
     def test_agent_addressing_reaches_the_feedback_part(self) -> None:
         serialized = _operations.serialize_feedback_dict(

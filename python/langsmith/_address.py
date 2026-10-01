@@ -6,10 +6,11 @@
     to a project. This API may change without notice.
 
 The handle is propagated whole -- through context variables, run trees,
-replicas and distributed-tracing headers -- and only unpacked into wire fields
-where a run or feedback is serialized. Every dimension is a dataclass field
-whose `wire` metadata names its payload key; the env var, header and payload
-handling below are derived from the fields, so a new dimension is a new field.
+replicas and distributed-tracing headers -- and only rendered into the
+`address` payload object where a run or feedback is serialized. Every dimension
+is a dataclass field whose `wire` metadata names its header key; the env var,
+header and payload handling below are derived from the fields, so a new
+dimension is a new field.
 
 Example:
     ```python
@@ -91,8 +92,22 @@ class Address:
         """Return the payload keys an address renders to."""
         return tuple(f.metadata["wire"] for f in dataclasses.fields(cls))
 
+    def _to_payload(self) -> dict[str, Any]:
+        """Render as the `address` object of a run / feedback payload.
+
+        `kind` and `environment` are uppercase and case-sensitive on the wire,
+        whatever the caller passed.
+        """
+        return {
+            "address": {
+                "kind": "AGENT",
+                "id": self.agent_id,
+                "environment": self.agent_environment.upper(),
+            }
+        }
+
     def _to_wire(self) -> dict[str, str]:
-        """Render as run / feedback payload fields, omitting unset ones."""
+        """Render as header / replica fields, omitting unset ones."""
         return {
             f.metadata["wire"]: value
             for f in dataclasses.fields(self)

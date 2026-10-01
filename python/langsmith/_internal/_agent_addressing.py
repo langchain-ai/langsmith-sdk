@@ -22,8 +22,8 @@ project or an address, whichever it names; naming both at one level raises:
 5. the env vars (`LANGSMITH_PROJECT`, `LANGSMITH_AGENT_*`)
 
 The address travels as a whole `Address` everywhere -- context variables, run
-trees, replicas, headers -- and is unpacked into wire fields only here, in
-`apply_to_payload` and `FeedbackCreate.model_dump`.
+trees, replicas, headers -- and is rendered into the `address` payload object
+only here, in `apply_to_payload` and `FeedbackCreate.model_dump`.
 """
 
 from __future__ import annotations
@@ -225,6 +225,10 @@ def reject_conflicting(
         )
 
 
+def _is_rendered(value: Any) -> bool:
+    return isinstance(value, dict) and "kind" in value
+
+
 def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     """Render a run payload's address into its wire fields.
 
@@ -236,6 +240,9 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     address from the post that established it, and one naming nothing is
     resolved by run id.
     """
+    if _is_rendered(payload.get("address")):
+        # A retried batch re-sends the caller's own dicts, already rendered.
+        return
     address = check_address(payload.pop("address", None))
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
@@ -245,7 +252,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     if address is None:
         return
     warn_is_beta()
-    payload.update(address._to_wire())
+    payload.update(address._to_payload())
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)

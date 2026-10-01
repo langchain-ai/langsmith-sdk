@@ -427,12 +427,16 @@ class TestReplicas:
 
 
 class TestWire:
-    def test_a_run_payload_carries_the_wire_fields(self) -> None:
+    def test_a_run_payload_carries_the_address_object(self) -> None:
         payload = RunTree(name="r", address=SUPPORT)._get_dicts_safe()
         _agent_addressing.apply_to_payload(payload)
-        assert payload["agent_id"] == "support"
-        assert payload["agent_environment"] == "production"
-        assert "address" not in payload
+        assert payload["address"] == {
+            "kind": "AGENT",
+            "id": "support",
+            "environment": "PRODUCTION",
+        }
+        assert "agent_id" not in payload
+        assert "agent_environment" not in payload
         assert "session_name" not in payload
 
     @pytest.mark.parametrize("update", [False, True])
@@ -442,10 +446,25 @@ class TestWire:
         """`batch_ingest_runs` / `multipart_ingest` dump pydantic runs."""
         run = RunTree(name="r", address=SUPPORT)
         payload = client._run_transform(run, update=update)
-        assert (payload["agent_id"], payload["agent_environment"]) == (
-            "support",
-            "production",
-        )
+        assert payload["address"] == {
+            "kind": "AGENT",
+            "id": "support",
+            "environment": "PRODUCTION",
+        }
+
+    def test_a_rendered_payload_is_not_rendered_again(self) -> None:
+        """A retried batch re-sends the caller's dicts, already rendered."""
+        payload = {"id": "x", "address": SUPPORT}
+        _agent_addressing.apply_to_payload(payload)
+        rendered = dict(payload)
+        _agent_addressing.apply_to_payload(payload)
+        assert payload == rendered
+
+    def test_retrying_the_same_batch_keeps_the_address(self, client: Client) -> None:
+        run = {"name": "r", "address": SUPPORT, "run_type": "chain"}
+        first = client._run_transform(run, copy=False)["address"]
+        second = client._run_transform(run, copy=False)["address"]
+        assert first == second == SUPPORT._to_payload()["address"]
 
     def test_a_project_payload_is_untouched(self) -> None:
         payload = {"name": "r", "session_name": "p"}
@@ -458,9 +477,9 @@ class TestWire:
         _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
         payload: dict = {"id": "x"}
         _agent_addressing.apply_to_payload(payload, update=True)
-        assert "agent_id" not in payload
+        assert "address" not in payload
 
-    def test_feedback_carries_the_wire_fields(self) -> None:
+    def test_feedback_carries_the_address_object(self) -> None:
         feedback = FeedbackCreate(
             key="k",
             feedback_source={"type": "api"},  # type: ignore[arg-type]
@@ -470,8 +489,12 @@ class TestWire:
             address=SUPPORT,
         )
         dumped = feedback.model_dump(exclude_none=True)
-        assert dumped["agent_id"] == "support"
-        assert "address" not in dumped
+        assert dumped["address"] == {
+            "kind": "AGENT",
+            "id": "support",
+            "environment": "PRODUCTION",
+        }
+        assert "agent_id" not in dumped
 
     @pytest.mark.parametrize(
         "project",

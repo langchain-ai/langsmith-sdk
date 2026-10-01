@@ -28,6 +28,9 @@ const SUPPORT: Address = {
   agentId: "customer-support",
   agentEnvironment: "production",
 };
+const SUPPORT_PAYLOAD = {
+  address: { kind: "AGENT", id: "customer-support", environment: "PRODUCTION" },
+};
 const SUPPORT_WIRE = {
   agent_id: "customer-support",
   agent_environment: "production",
@@ -151,11 +154,11 @@ describe("RunTree", () => {
     ).toBe(false);
   });
 
-  test("posts wire fields without a project", async () => {
+  test("posts the address object without a project", async () => {
     const { client, callSpy } = mockClient();
     await new RunTree({ name: "r", address: SUPPORT, client }).postRun();
     const [body] = await postedRuns(callSpy, client);
-    expect(body).toMatchObject(SUPPORT_WIRE);
+    expect(body).toMatchObject(SUPPORT_PAYLOAD);
     expect(body).not.toHaveProperty("session_name");
   });
 
@@ -182,7 +185,7 @@ describe("RunTree", () => {
     }).postRun();
     const [toProject, toAddress] = await postedRuns(callSpy, client);
     expect(toProject.session_name).toBe("p");
-    expect(toAddress).toMatchObject(SUPPORT_WIRE);
+    expect(toAddress).toMatchObject(SUPPORT_PAYLOAD);
     expect(toAddress.id).not.toBe(toProject.id);
   });
 });
@@ -251,7 +254,7 @@ describe("traceable", () => {
     await (fn as any)("x", { project_name: "runtime" });
     const [body] = await postedRuns(callSpy, client);
     expect(body.session_name).toBe("runtime");
-    expect(body).not.toHaveProperty("agent_id");
+    expect(body).not.toHaveProperty("address");
   });
 });
 
@@ -283,7 +286,7 @@ describe("Client", () => {
     const payload: any = { address: SUPPORT };
     applyToPayload(payload);
     applyToPayload(payload);
-    expect(payload).toEqual(SUPPORT_WIRE);
+    expect(payload).toEqual(SUPPORT_PAYLOAD);
   });
 
   test("batchIngestRuns sends the address to POST /runs/batch", async () => {
@@ -299,7 +302,7 @@ describe("Client", () => {
         : new TextDecoder().decode(init.body),
     );
     expect(post).toHaveLength(1);
-    expect(post[0]).toMatchObject(SUPPORT_WIRE);
+    expect(post[0]).toMatchObject(SUPPORT_PAYLOAD);
     expect(post[0]).not.toHaveProperty("session_name");
   });
 
@@ -313,11 +316,11 @@ describe("Client", () => {
     const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
       String(url).endsWith("/feedback"),
     );
-    expect(JSON.parse(init.body)).toMatchObject(SUPPORT_WIRE);
+    expect(JSON.parse(init.body)).toMatchObject(SUPPORT_PAYLOAD);
   });
 });
 
-test("a direct updateRun sends the address as wire fields", async () => {
+test("a direct updateRun sends the address object", async () => {
   const { client, callSpy } = mockClient();
   await client.updateRun("00000000-0000-0000-0000-000000000001", {
     address: SUPPORT,
@@ -330,6 +333,6 @@ test("a direct updateRun sends the address as wire fields", async () => {
       ? init.body
       : new TextDecoder().decode(init.body),
   );
-  expect(body).toMatchObject(SUPPORT_WIRE);
-  expect(body).not.toHaveProperty("address");
+  expect(body).toMatchObject(SUPPORT_PAYLOAD);
+  expect(body).not.toHaveProperty("agent_id");
 });
