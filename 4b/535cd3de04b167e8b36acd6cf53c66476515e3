@@ -1,0 +1,16 @@
+python/langsmith/_internal/otel/_otel_client.py
+  h_b47ec433af8c62 56-58,79,81-84
+python/tests/unit_tests/test_otel_exporter.py
+  h_b47ec433af8c62 459,483,508,513-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4b535cd3de04b167e8b36acd6cf53c66476515e3",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}
