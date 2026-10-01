@@ -65,21 +65,6 @@ def _import_otel_exporter():
 logger = logging.getLogger(__name__)
 
 
-def _json_attribute_value(value: Any) -> str:
-    """Return a serialized JSON payload as the ``str`` attribute it is.
-
-    ``SerializedRunOperation.inputs`` / ``.outputs`` are ``bytes``, because
-    ``orjson.dumps`` returns ``bytes``. ``gen_ai.prompt`` and
-    ``gen_ai.completion`` carry a JSON payload, not binary data: through
-    opentelemetry-sdk 1.44 the SDK decoded ``bytes`` attribute values on our
-    behalf, and from 1.45.0 on it forwards them untouched, so OTLP consumers
-    receive a ``bytes_value`` and render a hex dump instead of the JSON.
-    """
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)
-
-
 # OpenTelemetry GenAI semconv attribute names
 GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
 GEN_AI_SYSTEM = "gen_ai.system"
@@ -773,7 +758,7 @@ class OTELExporter:
                             GEN_AI_REQUEST_EXTRA_BODY, inputs["extra_body"]
                         )
 
-                span.set_attribute(GENAI_PROMPT, _json_attribute_value(op.inputs))
+                span.set_attribute(GENAI_PROMPT, op.inputs.decode("utf-8"))
 
             except Exception:
                 logger.debug(
@@ -855,7 +840,7 @@ class OTELExporter:
                                 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS, output_token_details
                             )
 
-                span.set_attribute(GENAI_COMPLETION, _json_attribute_value(op.outputs))
+                span.set_attribute(GENAI_COMPLETION, op.outputs.decode("utf-8"))
 
             except Exception:
                 logger.debug(

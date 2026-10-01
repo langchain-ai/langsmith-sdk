@@ -511,22 +511,15 @@ def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
 
 
 def test_io_attributes_are_str_not_bytes():
-    """``gen_ai.prompt`` / ``gen_ai.completion`` must be ``str``, not bytes.
-
-    ``SerializedRunOperation.inputs`` / ``.outputs`` are ``bytes``. Through
-    opentelemetry-sdk 1.44 the SDK decoded them for us; from 1.45.0 on it
-    forwards them untouched, so OTLP consumers see a ``bytes_value`` and
-    render a hex dump. Pin the contract on our side of ``set_attribute``,
-    which holds regardless of the installed OTel SDK version.
-    """
+    """Export input/output JSON strings regardless of OTel version."""
     with patch(
         "langsmith._internal.otel._otel_exporter._import_otel_exporter"
     ) as mock_import:
         mock_import.return_value = (MagicMock(),) * 8
         exporter = OTELExporter(span_ttl_seconds=1)
 
-    inputs = {"messages": [{"role": "user", "content": "hello world"}]}
-    outputs = {"generations": [[{"text": "ok"}]]}
+    inputs = {"messages": [{"role": "user", "content": "こんにちは 🌍"}]}
+    outputs = {"generations": [[{"text": "café ✅"}]]}
     span = MagicMock()
     op = SimpleNamespace(
         id=uuid.uuid4(),
