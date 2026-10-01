@@ -71,6 +71,12 @@ export interface Issue {
 
   fix_dispatched_at?: string;
 
+  /**
+   * Non-nil once the issue is handed off to a coding agent; Engine skips its own fix
+   * run while it is set.
+   */
+  fix_handoff_bot_user_id?: string | null;
+
   fix_pr_number?: number;
 
   /**

@@ -282,6 +282,12 @@ class Issue(BaseModel):
 
     fix_dispatched_at: Optional[str] = None
 
+    fix_handoff_bot_user_id: Optional[str] = None
+    """
+    Non-nil once the issue is handed off to a coding agent; Engine skips its own fix
+    run while it is set.
+    """
+
     fix_pr_number: Optional[int] = None
 
     fix_prompt: Optional[str] = None
