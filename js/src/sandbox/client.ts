@@ -46,7 +46,8 @@ import {
   validateTtl,
 } from "./helpers.js";
 import { validateMountConfigProxyConfig } from "./mounts.js";
-import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
+import { v4 as uuidv4, validate as isUuid } from "../utils/uuid/src/index.js";
+import { addSandboxMetadata } from "./tracing.js";
 
 /**
  * Sleep that can be interrupted by an AbortSignal.
@@ -375,6 +376,7 @@ export class SandboxClient {
   private _fetchImpl: typeof fetch;
   private _caller: AsyncCaller;
   private _registriesClient?: OpenAPILangsmith;
+  private _sandboxIds = new Map<string, string>();
 
   constructor(config: SandboxClientConfig = {}) {
     this._baseUrl = (config.apiEndpoint ?? getDefaultApiEndpoint()).replace(
@@ -481,6 +483,27 @@ export class SandboxClient {
     return { ...this._defaultHeaders };
   }
 
+  private _traceSandbox(name: string): string | undefined {
+    const id = this._sandboxIds.get(name) ?? (isUuid(name) ? name : undefined);
+    addSandboxMetadata(id);
+    return id;
+  }
+
+  private _sandboxFromData(data: SandboxData): Sandbox {
+    if (data.id) this._sandboxIds.set(data.name, data.id);
+    addSandboxMetadata(data.id);
+    return new Sandbox(data, this);
+  }
+
+  private _forgetSandbox(name: string): void {
+    const id = this._sandboxIds.get(name) ?? name;
+    for (const [cachedName, cachedId] of this._sandboxIds) {
+      if (cachedName === name || cachedId === id) {
+        this._sandboxIds.delete(cachedName);
+      }
+    }
+  }
+
   /**
    * JSON POST helper. Sends JSON body, checks response status,
    * and returns the Response for further processing.
@@ -489,6 +512,7 @@ export class SandboxClient {
    * @internal
    */
   private _boxUrl(name: string, ...segments: string[]): string {
+    this._traceSandbox(name);
     const suffix = segments.length ? `/${segments.join("/")}` : "";
     return `${this._baseUrl}/boxes/${encodeURIComponent(name)}${suffix}`;
   }
@@ -563,6 +587,7 @@ export class SandboxClient {
           port,
           expiresInSeconds,
         }) as Promise<ServiceUrl>,
+      this._traceSandbox(name),
     );
   }
 
@@ -716,7 +741,7 @@ export class SandboxClient {
     }
 
     const data = (await response.json()) as SandboxData;
-    return new Sandbox(data, this);
+    return this._sandboxFromData(data);
   }
 
   /**
@@ -747,7 +772,7 @@ export class SandboxClient {
     }
 
     const data = (await response.json()) as SandboxData;
-    return new Sandbox(data, this);
+    return this._sandboxFromData(data);
   }
 
   /**
@@ -874,7 +899,8 @@ export class SandboxClient {
     }
 
     const data = (await response.json()) as SandboxData;
-    return new Sandbox(data, this);
+    this._forgetSandbox(name);
+    return this._sandboxFromData(data);
   }
 
   /**
@@ -897,6 +923,7 @@ export class SandboxClient {
       }
       await handleClientHttpError(response);
     }
+    this._forgetSandbox(name);
   }
 
   /**
