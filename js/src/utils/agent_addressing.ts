@@ -4,8 +4,7 @@ import {
   addressFromEnv,
   envNames,
   normalizeAddress,
-  toWire,
-  wireKeys,
+  toPayload,
 } from "../address.js";
 import {
   getEnvironmentVariable,
@@ -15,6 +14,14 @@ import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
 export type Tier = [string | undefined, Address | undefined];
+
+function isRendered(value: unknown): boolean {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    "kind" in (value as Record<string, unknown>)
+  );
+}
 
 /** Validate an address at an entry point; the SDK carries the frozen copy. */
 export function checkAddress(address: unknown): Readonly<Address> | undefined {
@@ -95,11 +102,14 @@ export function applyToPayload(
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  let address = checkAddress(payload.address);
-  delete payload.address;
+  // Already rendered into its wire object by an earlier call.
+  const rendered = isRendered(payload.address);
+  let address = rendered ? undefined : checkAddress(payload.address);
+  if (!rendered) {
+    delete payload.address;
+  }
   const namedProject =
     payload.session_id != null || payload.session_name != null;
-  const rendered = wireKeys().some((key) => payload[key] != null);
   if (!address && !update && !namedProject && !rendered) {
     address = addressFromEnv();
   }
@@ -110,7 +120,7 @@ export function applyToPayload(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  Object.assign(payload, toWire(address));
+  Object.assign(payload, toPayload(address));
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;

@@ -77,7 +77,23 @@ export function envNames(): string[] {
   return wireKeys().map((key) => `LANGSMITH_${key.toUpperCase()}`);
 }
 
-/** @internal */
+/**
+ * @internal The `address` object of a run / feedback payload. `kind` and
+ * `environment` are uppercase and case-sensitive on the wire.
+ */
+export function toPayload(address: Address): {
+  address: { kind: "AGENT"; id: string; environment: string };
+} {
+  return {
+    address: {
+      kind: "AGENT",
+      id: address.agentId,
+      environment: address.agentEnvironment.toUpperCase(),
+    },
+  };
+}
+
+/** @internal Header / replica fields. */
 export function toWire(address: Address): Record<string, string> {
   return {
     [FIELDS.agentId]: address.agentId,

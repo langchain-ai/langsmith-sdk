@@ -22,8 +22,8 @@ project or an address, whichever it names; naming both at one level raises:
 5. the env vars (`LANGSMITH_PROJECT`, `LANGSMITH_AGENT_*`)
 
 The address travels as a whole `Address` everywhere -- context variables, run
-trees, replicas, headers -- and is unpacked into wire fields only here, in
-`apply_to_payload` and `FeedbackCreate.model_dump`.
+trees, replicas, headers -- and is rendered into the `address` payload object
+only here, in `apply_to_payload` and `FeedbackCreate.model_dump`.
 """
 
 from __future__ import annotations
@@ -226,7 +226,7 @@ def reject_conflicting(
 
 
 def apply_to_payload(payload: dict, *, update: bool = False) -> None:
-    """Render a run payload's address into its wire fields.
+    """Render a run payload's address into its `address` object.
 
     The one place a run's `address` is unpacked. A project already on the
     payload addresses the run, so the environment is not consulted. With no
@@ -245,7 +245,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     if address is None:
         return
     warn_is_beta()
-    payload.update(address._to_wire())
+    payload.update(address._to_payload())
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)
