@@ -55,7 +55,8 @@ def get_otlp_tracer_provider() -> "TracerProvider":
     These defaults can be overridden by setting the environment variables before
     calling this function. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes precedence as
     a full traces URL; OTEL_EXPORTER_OTLP_ENDPOINT is a base URL to which
-    /v1/traces is appended. Resolved values are passed to the exporter constructor
+    /v1/traces is appended unless it already ends in /traces for compatibility.
+    Resolved values are passed to the exporter constructor
     rather than written to os.environ.
 
     Returns:
@@ -81,7 +82,11 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         base_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
         if not base_endpoint:
             base_endpoint = f"{ls_utils.get_api_url(None)}/otel"
-        endpoint = f"{base_endpoint.rstrip('/')}/v1/traces"
+        endpoint = (
+            base_endpoint
+            if base_endpoint.endswith("/traces")
+            else f"{base_endpoint.rstrip('/')}/v1/traces"
+        )
 
     # Configure headers with API key and project if available.
     # Build a dict because OTLPSpanExporter expects a mapping, not a string.

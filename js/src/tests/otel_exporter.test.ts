@@ -26,6 +26,21 @@ test.each([
     expectedPath: "/otel/v1/traces",
   },
   {
+    name: "legacy full traces URL",
+    basePath: "/otel/v1/traces",
+    expectedPath: "/otel/v1/traces",
+  },
+  {
+    name: "legacy custom traces URL",
+    basePath: "/custom/traces",
+    expectedPath: "/custom/traces",
+  },
+  {
+    name: "base endpoint without traces path segment",
+    basePath: "/not-traces",
+    expectedPath: "/not-traces/v1/traces",
+  },
+  {
     name: "trace-specific endpoint",
     tracesPath: "/custom/traces",
     expectedPath: "/custom/traces",

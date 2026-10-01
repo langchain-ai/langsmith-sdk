@@ -77,7 +77,8 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
  * This exporter automatically configures itself with LangSmith endpoints and API keys,
  * based on your LANGSMITH_API_KEY and LANGSMITH_PROJECT environment variables.
  * OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is a full traces URL and takes precedence over
- * OTEL_EXPORTER_OTLP_ENDPOINT, a base URL to which /v1/traces is appended.
+ * OTEL_EXPORTER_OTLP_ENDPOINT, a base URL to which /v1/traces is appended unless
+ * it already ends in /traces for compatibility.
  * Also respects OTEL_EXPORTER_OTLP_HEADERS if set.
  *
  * @param config - Optional configuration object that accepts all OTLPTraceExporter parameters.
@@ -103,7 +104,9 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       `${defaultBaseUrl}/otel`;
     const defaultUrl =
       getEnvironmentVariable("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") ||
-      `${baseEndpoint.replace(/\/$/, "")}/v1/traces`;
+      (baseEndpoint.endsWith("/traces")
+        ? baseEndpoint
+        : `${baseEndpoint.replace(/\/$/, "")}/v1/traces`);
     // Configure headers with API key and project if available
     let headers = config?.headers;
     if (headers === undefined) {

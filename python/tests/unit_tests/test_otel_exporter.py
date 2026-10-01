@@ -523,6 +523,18 @@ def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
             "https://collector:4318/otel/v1/traces",
         ),
         (
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "https://collector/otel/v1/traces"},
+            "https://collector/otel/v1/traces",
+        ),
+        (
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "https://collector/custom/traces"},
+            "https://collector/custom/traces",
+        ),
+        (
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "https://collector/not-traces"},
+            "https://collector/not-traces/v1/traces",
+        ),
+        (
             {"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "https://collector/custom/traces"},
             "https://collector/custom/traces",
         ),
