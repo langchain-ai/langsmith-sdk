@@ -452,6 +452,20 @@ class TestWire:
             "environment": "PRODUCTION",
         }
 
+    def test_a_rendered_payload_is_not_rendered_again(self) -> None:
+        """A retried batch re-sends the caller's dicts, already rendered."""
+        payload = {"id": "x", "address": SUPPORT}
+        _agent_addressing.apply_to_payload(payload)
+        rendered = dict(payload)
+        _agent_addressing.apply_to_payload(payload)
+        assert payload == rendered
+
+    def test_retrying_the_same_batch_keeps_the_address(self, client: Client) -> None:
+        run = {"name": "r", "address": SUPPORT, "run_type": "chain"}
+        first = client._run_transform(run, copy=False)["address"]
+        second = client._run_transform(run, copy=False)["address"]
+        assert first == second == SUPPORT._to_payload()["address"]
+
     def test_a_project_payload_is_untouched(self) -> None:
         payload = {"name": "r", "session_name": "p"}
         _agent_addressing.apply_to_payload(payload)

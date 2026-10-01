@@ -225,6 +225,10 @@ def reject_conflicting(
         )
 
 
+def _is_rendered(value: Any) -> bool:
+    return isinstance(value, dict) and "kind" in value
+
+
 def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     """Render a run payload's address into its wire fields.
 
@@ -236,6 +240,9 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     address from the post that established it, and one naming nothing is
     resolved by run id.
     """
+    if _is_rendered(payload.get("address")):
+        # A retried batch re-sends the caller's own dicts, already rendered.
+        return
     address = check_address(payload.pop("address", None))
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
