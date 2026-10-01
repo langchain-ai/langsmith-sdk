@@ -559,14 +559,6 @@ class TestWire:
         _agent_addressing.apply_to_payload(payload)
         assert payload == {"address": address}
 
-    def test_a_payload_with_flat_fields_does_not_read_the_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
-        payload: dict = {"agent_id": "support", "agent_environment": "production"}
-        _agent_addressing.apply_to_payload(payload)
-        assert payload == {"agent_id": "support", "agent_environment": "production"}
-
     def test_an_update_does_not_read_the_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

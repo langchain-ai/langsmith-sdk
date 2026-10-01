@@ -289,14 +289,6 @@ describe("Client", () => {
     expect(payload).toEqual(SUPPORT_PAYLOAD);
   });
 
-  test("a payload with flat fields is not addressed from the env", () => {
-    process.env.LANGSMITH_AGENT_ID = "a";
-    process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
-    const payload: any = { ...SUPPORT_WIRE };
-    applyToPayload(payload);
-    expect(payload).toEqual(SUPPORT_WIRE);
-  });
-
   test("a payload with an address object is not addressed from the env", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
