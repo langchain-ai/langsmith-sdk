@@ -1171,4 +1171,6 @@ export declare namespace Langsmith {
     type SandboxListUsageCostsResponsesItemsCursorGetPagination as SandboxListUsageCostsResponsesItemsCursorGetPagination,
     type SandboxListUsageCostsParams as SandboxListUsageCostsParams,
   };
+
+  export type AgentAddress = API.AgentAddress;
 }
