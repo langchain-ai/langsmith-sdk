@@ -1,0 +1,26 @@
+js/src/utils/agent_addressing.ts
+  s_39e01e14c0a780::t_8a0cc9b5d32ac8 8,114-116
+python/tests/unit_tests/test_address.py
+  s_39e01e14c0a780::t_a050b670f6b5be 460,466-469,553-562
+js/src/tests/address.test.ts
+  s_39e01e14c0a780::t_8a0cc9b5d32ac8 292-307,325-362,377-392
+  s_39e01e14c0a780::t_f23edb826415b3 393-394
+python/langsmith/_internal/_agent_addressing.py
+  s_39e01e14c0a780::t_a050b670f6b5be 241-243,252-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "51257dcd6104dda25a3b25dddf9fad9d4e1b5745",
+  "prompts": {},
+  "sessions": {
+    "s_39e01e14c0a780": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0705f29e-2f01-42d8-b878-4b8c03f8ed03",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
