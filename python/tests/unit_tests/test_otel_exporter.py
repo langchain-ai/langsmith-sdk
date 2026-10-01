@@ -540,7 +540,7 @@ def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
         ),
         (
             {
-                "OTEL_EXPORTER_OTLP_ENDPOINT": "https://ignored:4318",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "https://ignored:4318/traces",
                 "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "https://collector/otel/v1/traces",
             },
             "https://collector/otel/v1/traces",
@@ -550,8 +550,12 @@ def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
 def test_get_otlp_tracer_provider_resolves_real_exporter_endpoint(
     monkeypatch, endpoint_env, expected_endpoint
 ):
-    from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+    from langsmith._internal.otel._otel_client import (
+        _warn_legacy_traces_endpoint,
+        get_otlp_tracer_provider,
+    )
 
+    _warn_legacy_traces_endpoint.cache_clear()
     for name in ("OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://dev.api.smith.langchain.com")
@@ -560,15 +564,28 @@ def test_get_otlp_tracer_provider_resolves_real_exporter_endpoint(
         monkeypatch.setenv(name, value)
     env_before = dict(os.environ)
 
-    with patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as processor:
-        provider = get_otlp_tracer_provider()
-        exporter = processor.call_args.args[0]
-        try:
-            assert exporter._endpoint == expected_endpoint
-            assert dict(os.environ) == env_before
-        finally:
-            exporter.shutdown()
-            provider.shutdown()
+    with (
+        patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as processor,
+        patch("langsmith._internal.otel._otel_client.warnings.warn") as warn,
+    ):
+        for _ in range(2):
+            provider = get_otlp_tracer_provider()
+            exporter = processor.call_args.args[0]
+            try:
+                assert exporter._endpoint == expected_endpoint
+                assert dict(os.environ) == env_before
+            finally:
+                exporter.shutdown()
+                provider.shutdown()
+        legacy_endpoint = endpoint_env.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        should_warn = legacy_endpoint.endswith("/traces") and not endpoint_env.get(
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+        )
+        assert warn.call_count == int(should_warn)
+        if should_warn:
+            assert "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" in warn.call_args.args[0]
+            assert "preserved unchanged" in warn.call_args.args[0]
+    _warn_legacy_traces_endpoint.cache_clear()
 
 
 def test_io_attributes_are_str_not_bytes():

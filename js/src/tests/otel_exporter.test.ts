@@ -3,8 +3,11 @@ import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { LangSmithOTLPTraceExporter } from "../experimental/otel/exporter.js";
+import { _resetWarnedMessages } from "../utils/warn.js";
 
 beforeEach(() => {
+  _resetWarnedMessages();
+  jest.spyOn(console, "warn").mockImplementation(() => {});
   jest.replaceProperty(process, "env", { ...process.env });
   delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
   delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
@@ -47,13 +50,13 @@ test.each([
   },
   {
     name: "trace-specific endpoint overrides base",
-    basePath: "/ignored",
+    basePath: "/ignored/traces",
     tracesPath: "/otel/v1/traces",
     expectedPath: "/otel/v1/traces",
   },
   {
     name: "explicit URL overrides environment",
-    basePath: "/ignored",
+    basePath: "/ignored/traces",
     tracesPath: "/also-ignored",
     configPath: "/explicit/traces",
     expectedPath: "/explicit/traces",
@@ -91,6 +94,25 @@ test.each([
     expect(requestMethod).toBe("POST");
     expect(requestPath).toBe(options.expectedPath);
     expect(process.env).toEqual(envBefore);
+    const shouldWarn =
+      options.configPath === undefined &&
+      options.tracesPath === undefined &&
+      options.basePath?.endsWith("/traces");
+    const secondExporter = new LangSmithOTLPTraceExporter(
+      options.configPath === undefined
+        ? undefined
+        : { url: `${baseUrl}${options.configPath}` },
+    );
+    await secondExporter.shutdown();
+    expect(console.warn).toHaveBeenCalledTimes(shouldWarn ? 1 : 0);
+    if (shouldWarn) {
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+      );
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining("preserved unchanged"),
+      );
+    }
   } finally {
     await exporter.shutdown();
     await new Promise<void>((resolve, reject) => {

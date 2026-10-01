@@ -1,5 +1,6 @@
 """Client configuration for OpenTelemetry integration with LangSmith."""
 
+import functools
 import os
 import warnings
 from typing import TYPE_CHECKING
@@ -42,6 +43,19 @@ def _import_otel_client():
         return None
 
 
+@functools.lru_cache(maxsize=1)
+def _warn_legacy_traces_endpoint() -> None:
+    warnings.warn(
+        "LangSmith now treats OTEL_EXPORTER_OTLP_ENDPOINT as a base URL and "
+        "appends /v1/traces. Your value ends in /traces, so it is being "
+        "preserved unchanged for compatibility. Move this full URL to "
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to use standard OpenTelemetry "
+        "configuration.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 def get_otlp_tracer_provider() -> "TracerProvider":
     """Get the OTLP tracer provider for LangSmith.
 
@@ -82,11 +96,11 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         base_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
         if not base_endpoint:
             base_endpoint = f"{ls_utils.get_api_url(None)}/otel"
-        endpoint = (
-            base_endpoint
-            if base_endpoint.endswith("/traces")
-            else f"{base_endpoint.rstrip('/')}/v1/traces"
-        )
+        if base_endpoint.endswith("/traces"):
+            endpoint = base_endpoint
+            _warn_legacy_traces_endpoint()
+        else:
+            endpoint = f"{base_endpoint.rstrip('/')}/v1/traces"
 
     # Configure headers with API key and project if available.
     # Build a dict because OTLPSpanExporter expects a mapping, not a string.
