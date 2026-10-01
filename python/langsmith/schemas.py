@@ -701,7 +701,6 @@ class FeedbackCreate(FeedbackBase):
         # `Address` can't be imported here at runtime (see the import above),
         # so the field is declared loosely and checked by `_check_address`.
         address: Optional[Any] = Field(default=None, exclude=True)
-    """(beta) An address, rendered into an `address` object on dump."""
 
     @field_validator("address")
     @classmethod
@@ -711,7 +710,7 @@ class FeedbackCreate(FeedbackBase):
         return check_address(value)
 
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        """Dump, with `address` rendered into its wire object."""
+        """Dump the feedback, including its address."""
         dumped = super().model_dump(**kwargs)
         if self.address is not None:
             dumped.update(self.address._to_payload())

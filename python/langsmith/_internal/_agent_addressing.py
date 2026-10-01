@@ -226,7 +226,7 @@ def reject_conflicting(
 
 
 def apply_to_payload(payload: dict, *, update: bool = False) -> None:
-    """Render a run payload's address into its `address` object.
+    """Render a run payload's address into its wire fields.
 
     The one place a run's `address` is unpacked. A project already on the
     payload addresses the run, so the environment is not consulted. With no
