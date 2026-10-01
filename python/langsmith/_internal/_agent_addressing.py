@@ -238,8 +238,9 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
 
     On an update the environment is not consulted: a patch inherits its
     address from the post that established it, and one naming nothing is
-    resolved by run id. Nor is it for a payload that already carries the wire
-    fields, such as a run body passed to `batch_ingest_runs`.
+    resolved by run id. Nor is it for a payload that already carries an `address`
+    object or the flat `agent_id` / `agent_environment` fields, such as a run
+    body passed to `batch_ingest_runs`.
     """
     if _is_rendered(payload.get("address")):
         # A retried batch re-sends the caller's own dicts, already rendered.
@@ -248,8 +249,8 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
-    rendered = any(payload.get(key) is not None for key in Address._wire_keys())
-    if address is None and not (update or named_project or rendered):
+    flat = any(payload.get(key) is not None for key in Address._wire_keys())
+    if address is None and not (update or named_project or flat):
         address = Address._from_env()
     if address is None:
         return

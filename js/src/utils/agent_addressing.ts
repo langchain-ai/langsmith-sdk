@@ -5,6 +5,7 @@ import {
   envNames,
   normalizeAddress,
   toPayload,
+  wireKeys,
 } from "../address.js";
 import {
   getEnvironmentVariable,
@@ -110,7 +111,9 @@ export function applyToPayload(
   }
   const namedProject =
     payload.session_id != null || payload.session_name != null;
-  if (!address && !update && !namedProject && !rendered) {
+  // The legacy flat fields, which the backend still accepts alone.
+  const flat = wireKeys().some((key) => payload[key] != null);
+  if (!address && !update && !namedProject && !rendered && !flat) {
     address = addressFromEnv();
   }
   if (!address) {

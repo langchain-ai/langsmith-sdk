@@ -289,6 +289,22 @@ describe("Client", () => {
     expect(payload).toEqual(SUPPORT_PAYLOAD);
   });
 
+  test("a payload with flat fields is not addressed from the env", () => {
+    process.env.LANGSMITH_AGENT_ID = "a";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
+    const payload: any = { ...SUPPORT_WIRE };
+    applyToPayload(payload);
+    expect(payload).toEqual(SUPPORT_WIRE);
+  });
+
+  test("a payload with an address object is not addressed from the env", () => {
+    process.env.LANGSMITH_AGENT_ID = "a";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
+    const payload: any = { ...SUPPORT_PAYLOAD };
+    applyToPayload(payload);
+    expect(payload).toEqual(SUPPORT_PAYLOAD);
+  });
+
   test("batchIngestRuns sends the address to POST /runs/batch", async () => {
     const { client, callSpy } = mockClient();
     const run = new RunTree({ name: "r", address: SUPPORT, client });
@@ -306,6 +322,44 @@ describe("Client", () => {
     expect(post[0]).not.toHaveProperty("session_name");
   });
 
+  test("createRun sends the address to POST /runs", async () => {
+    const { client, callSpy } = mockClient();
+    await client.createRun({
+      name: "r",
+      inputs: {},
+      run_type: "chain",
+      address: SUPPORT,
+    });
+    const [body] = await postedRuns(callSpy, client);
+    expect(body).toMatchObject(SUPPORT_PAYLOAD);
+    expect(body).not.toHaveProperty("session_name");
+  });
+
+  test("createRun addresses a run from the env", async () => {
+    process.env.LANGSMITH_AGENT_ID = "customer-support";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+    const { client, callSpy } = mockClient();
+    await client.createRun({ name: "r", inputs: {}, run_type: "chain" });
+    const [body] = await postedRuns(callSpy, client);
+    expect(body).toMatchObject(SUPPORT_PAYLOAD);
+  });
+
+  test("batchIngestRuns sends the address on a patch", async () => {
+    const { client, callSpy } = mockClient();
+    const run = new RunTree({ name: "r", address: SUPPORT, client });
+    await client.batchIngestRuns({ runUpdates: [run.toJSON()] });
+    const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
+      String(url).endsWith("/runs/batch"),
+    );
+    const { patch } = JSON.parse(
+      typeof init.body === "string"
+        ? init.body
+        : new TextDecoder().decode(init.body),
+    );
+    expect(patch).toHaveLength(1);
+    expect(patch[0]).toMatchObject(SUPPORT_PAYLOAD);
+  });
+
   test("createFeedback sends the address", async () => {
     const { client, callSpy } = mockClient();
     await client.createFeedback({
@@ -318,6 +372,24 @@ describe("Client", () => {
     );
     expect(JSON.parse(init.body)).toMatchObject(SUPPORT_PAYLOAD);
   });
+});
+
+test("an updateRun does not read the env", async () => {
+  process.env.LANGSMITH_AGENT_ID = "a";
+  process.env.LANGSMITH_AGENT_ENVIRONMENT = "e";
+  const { client, callSpy } = mockClient();
+  await client.updateRun("00000000-0000-0000-0000-000000000001", {
+    name: "r",
+  });
+  const [, init] = callSpy.mock.calls.find(
+    ([, init]: [string, any]) => init?.method === "PATCH",
+  );
+  const body = JSON.parse(
+    typeof init.body === "string"
+      ? init.body
+      : new TextDecoder().decode(init.body),
+  );
+  expect(body).not.toHaveProperty("address");
 });
 
 test("a direct updateRun sends the address object", async () => {

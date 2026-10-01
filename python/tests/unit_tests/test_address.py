@@ -457,13 +457,16 @@ def _posted(session: mock.MagicMock, path: str) -> list[dict]:
 
 
 def _addressing(run: dict) -> tuple:
-    return (run.get("agent_id"), run.get("agent_environment"), run.get("session_name"))
+    return (run.get("address"), run.get("session_name"))
 
 
 class TestEndpoints:
     """`POST /runs` and `POST /runs/batch` carry the address, like multipart."""
 
-    ADDRESSED = ("support", "production", None)
+    ADDRESSED = (
+        {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"},
+        None,
+    )
 
     def test_post_runs(self) -> None:
         session = mock.MagicMock()
@@ -547,7 +550,16 @@ class TestWire:
         _agent_addressing.apply_to_payload(payload)
         assert payload == {"name": "r", "session_name": "p"}
 
-    def test_a_payload_with_wire_fields_does_not_read_the_env(
+    def test_a_payload_with_an_address_object_does_not_read_the_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
+        address = {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"}
+        payload: dict = {"address": dict(address)}
+        _agent_addressing.apply_to_payload(payload)
+        assert payload == {"address": address}
+
+    def test_a_payload_with_flat_fields_does_not_read_the_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
