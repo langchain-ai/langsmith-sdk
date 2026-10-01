@@ -64,6 +64,7 @@ def _import_otel_exporter():
 
 logger = logging.getLogger(__name__)
 
+
 # OpenTelemetry GenAI semconv attribute names
 GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
 GEN_AI_SYSTEM = "gen_ai.system"
@@ -757,7 +758,7 @@ class OTELExporter:
                             GEN_AI_REQUEST_EXTRA_BODY, inputs["extra_body"]
                         )
 
-                span.set_attribute(GENAI_PROMPT, op.inputs)
+                span.set_attribute(GENAI_PROMPT, op.inputs.decode("utf-8"))
 
             except Exception:
                 logger.debug(
@@ -839,7 +840,7 @@ class OTELExporter:
                                 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS, output_token_details
                             )
 
-                span.set_attribute(GENAI_COMPLETION, op.outputs)
+                span.set_attribute(GENAI_COMPLETION, op.outputs.decode("utf-8"))
 
             except Exception:
                 logger.debug(

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from langsmith import Client
+from langsmith._internal import _orjson
 from langsmith._internal.otel._otel_exporter import (
     GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_TOOL_CALL_ID,
@@ -507,3 +508,29 @@ def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
         endpoint="https://api.smith.langchain.com/otel",
         headers={"x-api-key": "lsv2_pt_test123"},
     )
+
+
+def test_io_attributes_are_str_not_bytes():
+    """Export input/output JSON strings regardless of OTel version."""
+    with patch(
+        "langsmith._internal.otel._otel_exporter._import_otel_exporter"
+    ) as mock_import:
+        mock_import.return_value = (MagicMock(),) * 8
+        exporter = OTELExporter(span_ttl_seconds=1)
+
+    inputs = {"messages": [{"role": "user", "content": "こんにちは 🌍"}]}
+    outputs = {"generations": [[{"text": "café ✅"}]]}
+    span = MagicMock()
+    op = SimpleNamespace(
+        id=uuid.uuid4(),
+        inputs=_orjson.dumps(inputs),
+        outputs=_orjson.dumps(outputs),
+    )
+
+    exporter._set_io_attributes(span, op)
+
+    attrs = {call.args[0]: call.args[1] for call in span.set_attribute.call_args_list}
+    assert isinstance(attrs["gen_ai.prompt"], str)
+    assert isinstance(attrs["gen_ai.completion"], str)
+    assert json.loads(attrs["gen_ai.prompt"]) == inputs
+    assert json.loads(attrs["gen_ai.completion"]) == outputs
