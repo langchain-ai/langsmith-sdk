@@ -231,6 +231,7 @@ def test_combine_does_not_warn_for_duplicate_posts_to_one_destination(
 
 
 def test_destination_fields_cover_address() -> None:
-    from langsmith._address import Address
+    import langsmith as ls
 
-    assert set(Address._wire_keys()) <= set(_DESTINATION_FIELDS)
+    address = ls.address(agent_id="a", agent_environment="e")
+    assert set(address._to_payload()) <= set(_DESTINATION_FIELDS)
