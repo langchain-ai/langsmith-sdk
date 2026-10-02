@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import warnings
 from typing import Any, Optional
@@ -10,9 +11,11 @@ from unittest import mock
 import pytest
 
 import langsmith as ls
+from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._address import EnvAddressError
 from langsmith._internal import _agent_addressing, _context
+from langsmith.async_client import AsyncClient
 from langsmith.client import Client
 from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree
@@ -426,6 +429,82 @@ class TestReplicas:
 # -- On the wire ----------------------------------------------------------------------
 
 
+def _non_multipart_client(session: mock.MagicMock) -> Client:
+    """A client whose tracing queue flushes to `POST /runs/batch`."""
+    return Client(
+        session=session,
+        api_key="test",
+        api_url="http://x",
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=False,
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+
+def _posted(session: mock.MagicMock, path: str) -> list[dict]:
+    return [
+        json.loads(c.kwargs["data"])
+        for c in session.request.call_args_list
+        if c.args[0] == "POST" and c.args[1].endswith(path)
+    ]
+
+
+def _addressing(run: dict) -> tuple:
+    return (run.get("address"), run.get("session_name"))
+
+
+class TestEndpoints:
+    """`POST /runs` and `POST /runs/batch` carry the address, like multipart."""
+
+    ADDRESSED = (
+        {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"},
+        None,
+    )
+
+    def test_post_runs(self) -> None:
+        session = mock.MagicMock()
+        client = _non_multipart_client(session)
+        # No trace_id / dotted_order, so this bypasses the queue.
+        client.create_run("r", {}, "chain", address=SUPPORT)
+        assert [_addressing(r) for r in _posted(session, "/runs")] == [self.ADDRESSED]
+
+    def test_post_runs_batch_from_the_queue(self) -> None:
+        session = mock.MagicMock()
+        client = _non_multipart_client(session)
+        with ls.tracing_context(enabled=True, client=client, address=SUPPORT):
+            traceable(lambda: None)()
+        client.flush()
+        batches = _posted(session, "/runs/batch")
+        runs = [run for batch in batches for run in batch.get("post", [])]
+        assert [_addressing(r) for r in runs] == [self.ADDRESSED]
+
+    def test_batch_ingest_runs(self) -> None:
+        session = mock.MagicMock()
+        client = _non_multipart_client(session)
+        run = RunTree(name="r", address=SUPPORT)
+        client.batch_ingest_runs(create=[run], update=[run])
+        (batch,) = _posted(session, "/runs/batch")
+        assert [_addressing(r) for r in batch.get("post", [])] == [self.ADDRESSED]
+        assert "patch" not in batch or all(
+            _addressing(r) == self.ADDRESSED for r in batch["patch"]
+        )
+
+    async def test_async_client_post_runs(self) -> None:
+        client = AsyncClient(api_key="test", api_url="http://x")
+        with mock.patch.object(AsyncClient, "_arequest_with_retries") as request:
+            await client.create_run("r", {}, "chain", address=SUPPORT)
+        ((method, path), kwargs) = request.call_args
+        assert (method, path) == ("POST", "/runs")
+        assert _addressing(json.loads(kwargs["content"])) == self.ADDRESSED
+
+
 class TestWire:
     def test_a_run_payload_carries_the_address_object(self) -> None:
         payload = RunTree(name="r", address=SUPPORT)._get_dicts_safe()
@@ -470,6 +549,15 @@ class TestWire:
         payload = {"name": "r", "session_name": "p"}
         _agent_addressing.apply_to_payload(payload)
         assert payload == {"name": "r", "session_name": "p"}
+
+    def test_a_payload_with_an_address_object_does_not_read_the_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_env(monkeypatch, LANGSMITH_AGENT_ID="a", LANGSMITH_AGENT_ENVIRONMENT="e")
+        address = {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"}
+        payload: dict = {"address": dict(address)}
+        _agent_addressing.apply_to_payload(payload)
+        assert payload == {"address": address}
 
     def test_an_update_does_not_read_the_env(
         self, monkeypatch: pytest.MonkeyPatch

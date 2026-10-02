@@ -238,7 +238,8 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
 
     On an update the environment is not consulted: a patch inherits its
     address from the post that established it, and one naming nothing is
-    resolved by run id.
+    resolved by run id. Nor is it for a payload that already carries an `address`
+    object, such as a run body passed to `batch_ingest_runs`.
     """
     if _is_rendered(payload.get("address")):
         # A retried batch re-sends the caller's own dicts, already rendered.
