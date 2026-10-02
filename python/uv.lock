@@ -1844,7 +1844,7 @@ requires-dist = [
     { name = "strands-agents", marker = "extra == 'strands-agents'", specifier = ">=0.1.0" },
     { name = "strands-agents-tools", marker = "extra == 'strands-agents'", specifier = ">=0.2.0" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
-    { name = "uuid-utils", specifier = ">=0.12.0,<2.0" },
+    { name = "uuid-utils", specifier = ">=1.0.0,<2.0" },
     { name = "vcrpy", marker = "extra == 'pytest'", specifier = ">=7.0.0" },
     { name = "vcrpy", marker = "extra == 'vcr'", specifier = ">=7.0.0" },
     { name = "websockets", specifier = ">=15.0" },

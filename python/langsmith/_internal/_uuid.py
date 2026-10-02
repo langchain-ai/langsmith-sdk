@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import uuid
 import warnings
-from typing import Final
 
 import xxhash
 from uuid_utils.compat import uuid7 as _uuid_utils_uuid7
-
-_NANOS_PER_SECOND: Final = 1_000_000_000
-
-
-def _to_timestamp_and_nanos(nanoseconds: int) -> tuple[int, int]:
-    """Split a nanosecond timestamp into seconds and remaining nanoseconds."""
-    seconds, nanos = divmod(nanoseconds, _NANOS_PER_SECOND)
-    return seconds, nanos
 
 
 def uuid7(nanoseconds: int | None = None) -> uuid.UUID:
@@ -42,8 +33,7 @@ def uuid7(nanoseconds: int | None = None) -> uuid.UUID:
     # For now, just delegate to the uuid_utils implementation
     if nanoseconds is None:
         return _uuid_utils_uuid7()
-    seconds, nanos = _to_timestamp_and_nanos(nanoseconds)
-    return _uuid_utils_uuid7(timestamp=seconds, nanos=nanos)
+    return _uuid_utils_uuid7(nanoseconds=nanoseconds)
 
 
 def is_uuid_v7(uuid_obj: uuid.UUID) -> bool:

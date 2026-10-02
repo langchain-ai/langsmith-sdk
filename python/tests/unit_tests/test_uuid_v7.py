@@ -21,6 +21,14 @@ def _uuid_v7_ms(uuid_obj) -> int:
     return int(s[:12], 16)
 
 
+@pytest.mark.parametrize("nanoseconds", [0, 999_999_999, 1_000_000_000, 1_234_567_890])
+def test_uuid7_explicit_nanoseconds(nanoseconds: int) -> None:
+    result = uuid7(nanoseconds)
+
+    assert result.version == 7
+    assert _uuid_v7_ms(result) == nanoseconds // 1_000_000
+
+
 def test_traceable_uses_uuidv7_and_start_time_matches_run_id() -> None:
     captured: dict[str, Any] = {}
 
