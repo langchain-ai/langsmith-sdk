@@ -585,6 +585,7 @@ def test_get_otlp_tracer_provider_resolves_real_exporter_endpoint(
         if should_warn:
             assert "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" in warn.call_args.args[0]
             assert "preserved unchanged" in warn.call_args.args[0]
+            assert "removed in the v1 release" in warn.call_args.args[0]
     _warn_legacy_traces_endpoint.cache_clear()
 
 

@@ -112,6 +112,9 @@ test.each([
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining("preserved unchanged"),
       );
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining("removed in the v1 release"),
+      );
     }
   } finally {
     await exporter.shutdown();

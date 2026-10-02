@@ -116,7 +116,8 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       warnOnce(
         "LangSmith now treats OTEL_EXPORTER_OTLP_ENDPOINT as a base URL and " +
           "appends /v1/traces. Your value ends in /traces, so it is being " +
-          "preserved unchanged for compatibility. Move this full URL to " +
+          "preserved unchanged for compatibility. This fallback will be " +
+          "removed in the v1 release of the SDK. Move this full URL to " +
           "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to use standard OpenTelemetry " +
           "configuration.",
       );
