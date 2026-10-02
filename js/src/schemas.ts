@@ -1,5 +1,3 @@
-import type { Address } from "./address.js";
-
 export interface TracerSession {
   // The ID of the tenant, or organization
   tenant_id: string;
@@ -219,7 +217,7 @@ export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
   session_name?: string;
-  address?: Address;
+  address?: string;
 }
 
 export interface RunUpdate {
@@ -239,7 +237,7 @@ export interface RunUpdate {
   events?: KVMap[];
   session_id?: string;
   session_name?: string;
-  address?: Address;
+  address?: string;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 

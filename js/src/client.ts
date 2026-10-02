@@ -87,7 +87,7 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type Address, EnvAddressError, toPayload } from "./address.js";
+import { EnvAddressError } from "./address.js";
 import {
   applyToPayload,
   checkAddress,
@@ -543,7 +543,7 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: string;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -615,7 +615,7 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
         /** The run to provide feedback on. */
         runId: string;
         /** (beta) The address the run was sent to, e.g. `runTree.address`. */
-        address: Address;
+        address: string;
         sessionId?: never;
         projectId?: never;
       }
@@ -3283,7 +3283,7 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      if (!run.session_id && (run as { address?: Address }).address) {
+      if (!run.session_id && (run as { address?: string }).address) {
         throw new Error("Addressed runs have no URL until read back.");
       }
       let sessionId: string;
@@ -5572,7 +5572,7 @@ export class Client implements LangSmithTracingClientInterface {
       runId?: string | null;
       sessionId?: string;
       projectId?: string;
-      address?: Address;
+      address?: string;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
@@ -5624,9 +5624,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (samplingId != null && !this._shouldSample(samplingId)) {
       return feedback as Feedback;
     }
-    const body = JSON.stringify(
-      address ? { ...feedback, ...toPayload(address) } : feedback,
-    );
+    const body = JSON.stringify(address ? { ...feedback, address } : feedback);
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
       const res = await this._fetch(url, {

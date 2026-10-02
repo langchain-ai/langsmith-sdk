@@ -1,31 +1,32 @@
 /**
- * (beta) An address that runs are sent to instead of a project.
+ * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
+ *
+ * An address is a plain string, `agents/{id}/environments/{environment}`.
+ * The constructors here validate one and return it as an `Address`; anywhere
+ * an address is accepted, any `string` is validated the same way. The
+ * environment is always rendered lowercase.
+ *
+ * @example
+ * ```ts
+ * import { address, traceable } from "langsmith";
+ *
+ * const support = address.agent("customer-support", "production");
+ * const handle = traceable(fn, { address: support });
+ * // or any string: { address: "agents/customer-support/environments/staging" }
+ * ```
  */
-export interface Address {
-  /** 1 to 63 lowercase ASCII letters, digits or hyphens; starts with a letter. */
-  agentId: string;
-  agentEnvironment: string;
-}
+import { getEnvironmentVariable } from "./utils/env.js";
 
-// Wire key per field; env var is `LANGSMITH_<WIRE KEY>`.
-const FIELDS = {
-  agentId: "agent_id",
-  agentEnvironment: "agent_environment",
-} as const;
+/** (beta) A validated address string. */
+export type Address = string & { readonly __brand: "Address" };
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
 const AGENT_ID_PATTERN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
+const ENVIRONMENTS = ["local", "development", "staging", "production"];
+const ADDRESS_PATTERN = /^agents\/([^/]*)\/environments\/([^/]*)$/;
 
-// Not `utils/env`: it imports the package index, which imports this module.
-function getEnv(name: string): string | undefined {
-  try {
-    // eslint-disable-next-line no-process-env
-    return typeof process !== "undefined" ? process.env?.[name] : undefined;
-  } catch {
-    return undefined;
-  }
-}
+const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
 
 /** The `LANGSMITH_AGENT_*` / project env vars name half an address, or both. */
 export class EnvAddressError extends Error {
@@ -36,121 +37,83 @@ export class EnvAddressError extends Error {
 }
 
 /**
- * @internal Validate `value` and return a frozen copy of its fields.
- * @throws If it isn't an object with exactly the address fields, or a value is invalid.
+ * (beta) Build the address of an agent's environment.
+ * @param agentId 1 to 63 lowercase ASCII letters, digits or hyphens, starting
+ *   with a letter and ending with a letter or digit.
+ * @param agentEnvironment One of `local`, `development`, `staging` or
+ *   `production`, in any case.
+ * @throws If a value is invalid.
  */
-export function normalizeAddress(value: unknown): Readonly<Address> {
-  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+export function agent(agentId: string, agentEnvironment: string): Address {
+  if (typeof agentId !== "string" || !AGENT_ID_PATTERN.test(agentId)) {
     throw new Error(
-      "`address` must be an object: { agentId, agentEnvironment }.",
-    );
-  }
-  const fields = value as Record<string, unknown>;
-  const unknown = Object.keys(fields).filter((key) => !(key in FIELDS));
-  if (unknown.length > 0) {
-    throw new Error(`Unknown address fields: ${unknown.join(", ")}.`);
-  }
-  for (const name of Object.keys(FIELDS)) {
-    const field: unknown = fields[name];
-    if (typeof field !== "string" || field === "") {
-      throw new Error(`Address ${name} must be a non-empty string.`);
-    }
-  }
-  const { agentId, agentEnvironment } = fields as unknown as Address;
-  if (!AGENT_ID_PATTERN.test(agentId)) {
-    throw new Error(
-      "Address agentId must be 1 to 63 lowercase ASCII letters, digits, or " +
+      "Address agent id must be 1 to 63 lowercase ASCII letters, digits, or " +
         "hyphens, start with a letter, and end with a letter or digit, got " +
         `${JSON.stringify(agentId)}. Use an id such as "support-agent".`,
     );
   }
-  return Object.freeze({ agentId, agentEnvironment });
-}
-
-/** @internal */
-export function wireKeys(): string[] {
-  return Object.values(FIELDS);
-}
-
-/** @internal */
-export function envNames(): string[] {
-  return wireKeys().map((key) => `LANGSMITH_${key.toUpperCase()}`);
+  const environment =
+    typeof agentEnvironment === "string"
+      ? agentEnvironment.toLowerCase()
+      : undefined;
+  if (environment === undefined || !ENVIRONMENTS.includes(environment)) {
+    throw new Error(
+      `Address environment must be one of ${ENVIRONMENTS.join(", ")}, got ` +
+        `${JSON.stringify(agentEnvironment)}.`,
+    );
+  }
+  return `agents/${agentId}/environments/${environment}` as Address;
 }
 
 /**
- * @internal The `address` object of a run / feedback payload. `kind` and
- * `environment` are uppercase and case-sensitive on the wire.
+ * (beta) Validate an address string, lowercasing its environment.
+ * Only agent addresses, `agents/{id}/environments/{environment}`, exist.
+ * @throws If `value` is not a valid agent address.
  */
-export function toPayload(address: Address): {
-  address: { kind: "AGENT"; id: string; environment: string };
-} {
-  return {
-    address: {
-      kind: "AGENT",
-      id: address.agentId,
-      environment: address.agentEnvironment.toUpperCase(),
-    },
-  };
+export function parse(value: string): Address {
+  const match =
+    typeof value === "string" ? ADDRESS_PATTERN.exec(value) : undefined;
+  if (!match) {
+    throw new Error(
+      "An address must be a string like " +
+        `"agents/{id}/environments/{environment}", got ${JSON.stringify(value)}.`,
+    );
+  }
+  return agent(match[1], match[2]);
 }
 
-/** @internal Header / replica fields. */
-export function toWire(address: Address): Record<string, string> {
-  return {
-    [FIELDS.agentId]: address.agentId,
-    [FIELDS.agentEnvironment]: address.agentEnvironment,
-  };
-}
-
-/** @internal `undefined` if no field is set; throws if only some are. */
-export function fromWire(
-  values: Record<string, unknown>,
-): Readonly<Address> | undefined {
-  const fields = Object.fromEntries(
-    Object.entries(FIELDS).map(([name, key]) => [
-      name,
-      values[key] ?? undefined,
-    ]),
-  );
-  const missing = Object.entries(FIELDS)
-    .filter(([name]) => fields[name] === undefined)
-    .map(([, key]) => key);
-  if (missing.length === Object.keys(FIELDS).length) {
+/**
+ * (beta) Read the address named by `LANGSMITH_AGENT_ID` and
+ * `LANGSMITH_AGENT_ENVIRONMENT`; `undefined` if neither is set.
+ * @throws {EnvAddressError} If only one is set, or a value is invalid.
+ */
+export function fromEnv(): Address | undefined {
+  const values = ENV_NAMES.map((name) => getEnvironmentVariable(name));
+  if (!values.some(Boolean)) {
     return undefined;
   }
-  if (missing.length > 0) {
-    throw new Error(`An address needs ${missing.join(" and ")} as well.`);
-  }
-  return normalizeAddress(fields);
-}
-
-/**
- * @internal
- * @throws {EnvAddressError} If only some `LANGSMITH_AGENT_*` vars are set, or one is invalid.
- */
-export function addressFromEnv(): Readonly<Address> | undefined {
-  const values = Object.fromEntries(
-    wireKeys().map((key, i) => [key, getEnv(envNames()[i]) || undefined]),
-  );
   try {
-    return fromWire(values);
+    const missing = ENV_NAMES.filter((_, i) => !values[i]);
+    if (missing.length > 0) {
+      throw new Error(`An address needs ${missing.join(" and ")} as well.`);
+    }
+    return agent(values[0] as string, values[1] as string);
   } catch (e) {
+    const present = ENV_NAMES.flatMap((name, i) =>
+      values[i] ? [`${name}=${JSON.stringify(values[i])}`] : [],
+    ).join(", ");
     throw new EnvAddressError(
-      `The LANGSMITH_AGENT_* env vars can't address a run: ${
+      `The LANGSMITH_AGENT_* env vars can't address a run (${present}): ${
         (e as Error).message
       }`,
     );
   }
 }
 
-/** @internal Replica id derivation seed. */
-export function seed(address: Address): string {
-  return ["agent", ...Object.values(toWire(address))].join("/");
-}
+/** (beta) Build, validate and read addresses. */
+export const address = { agent, parse, fromEnv };
 
-/** @internal */
-export function sameAddress(a?: Address, b?: Address): boolean {
-  if (!a || !b) {
-    return a === b;
-  }
-  return a.agentId === b.agentId && a.agentEnvironment === b.agentEnvironment;
+/** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */
+export function envNames(): string[] {
+  return ENV_NAMES;
 }

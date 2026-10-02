@@ -34,15 +34,7 @@ import {
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/agent_addressing.js";
-import {
-  type Address,
-  EnvAddressError,
-  fromWire,
-  sameAddress,
-  seed as addressSeed,
-  toWire,
-  wireKeys,
-} from "./address.js";
+import { EnvAddressError, parse as parseAddress } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -99,7 +91,7 @@ export interface RunTreeConfig {
   id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: string;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -179,7 +171,7 @@ export type WriteReplica = {
   workspaceId?: string;
   projectName?: string;
   /** (beta) Send the replica to this address instead of a project. */
-  address?: Address;
+  address?: string;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
   updates?: KVMap | undefined;
@@ -200,33 +192,23 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "primary",
   "updates",
   "reroot",
-  ...wireKeys(),
+  "address",
 ]);
 
-// URL-encoded JSON of the address's wire fields.
+// The address string, URL-encoded.
 const LANGSMITH_ADDRESS = "langsmith-address";
 
-/** Pops the address wire keys off untrusted `values`; never throws. */
-function takeHeaderAddress(values: Record<string, unknown>): {
-  named: boolean;
-  address?: Address;
-} {
-  const wire: Record<string, unknown> = {};
-  for (const key of wireKeys()) {
-    if (key in values) {
-      wire[key] = values[key];
-      delete values[key];
-    }
+/** Validates an untrusted header address; `undefined` if unusable. */
+function addressFromHeader(value: unknown): string | undefined {
+  if (value == null) {
+    return undefined;
   }
   try {
-    return {
-      named: Object.keys(wire).length > 0,
-      address: fromWire(wire),
-    };
+    return parseAddress(value as string);
   } catch {
     // Values are untrusted, so not logged.
-    console.warn("Ignoring an invalid address in a `baggage` header.");
-    return { named: true };
+    console.warn("Ignoring an unusable address in a `baggage` header.");
+    return undefined;
   }
 }
 
@@ -251,13 +233,13 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
-  address: Address | undefined;
+  address: string | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
-    address?: Address,
+    address?: string,
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -272,7 +254,7 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
-    let address: Address | undefined;
+    let address: string | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -283,15 +265,7 @@ class Baggage {
       } else if (key === "langsmith-project") {
         project_name = value;
       } else if (key === LANGSMITH_ADDRESS) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(value);
-        } catch {
-          parsed = undefined;
-        }
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          address = takeHeaderAddress({ ...parsed }).address;
-        }
+        address = addressFromHeader(value);
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
         replicas = parsed.flatMap((replica): Replica[] => {
@@ -299,12 +273,12 @@ class Baggage {
             return [replica];
           }
           const filtered = filterReplicaForHeaders(replica);
-          const { named, address } = takeHeaderAddress(
-            filtered as Record<string, unknown>,
-          );
+          const raw = (filtered as Record<string, unknown>).address;
+          delete (filtered as Record<string, unknown>).address;
+          const address = addressFromHeader(raw);
           // A project wins over an address; a replica with an invalid
           // address and no project is dropped.
-          if (filtered.projectName || !named) {
+          if (filtered.projectName || raw == null) {
             return [filtered];
           }
           return address ? [{ ...filtered, address }] : [];
@@ -331,11 +305,7 @@ class Baggage {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
     }
     if (this.address) {
-      items.push(
-        `${LANGSMITH_ADDRESS}=${encodeURIComponent(
-          JSON.stringify(toWire(this.address)),
-        )}`,
-      );
+      items.push(`${LANGSMITH_ADDRESS}=${encodeURIComponent(this.address)}`);
     }
 
     return items.join(",");
@@ -356,7 +326,7 @@ export class RunTree implements BaseRun {
   /** Unset for a run sent to an `address`. */
   project_name?: string;
   /** (beta) Set instead of `project_name` for an addressed run. */
-  address?: Address;
+  address?: string;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -742,7 +712,7 @@ export class RunTree implements BaseRun {
   /** A replica naming neither inherits the run tree's destination. */
   private _replicaAddressing(
     replica: WriteReplica,
-  ): [string | undefined, Address | undefined] {
+  ): [string | undefined, string | undefined] {
     const address = checkAddress(replica.address);
     if (replica.projectName != null) {
       rejectConflicting(replica.projectName, address);
@@ -756,7 +726,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName?: string;
-    address?: Address;
+    address?: string;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -785,7 +755,7 @@ export class RunTree implements BaseRun {
       primary === undefined &&
       !this.replicas?.some((r) => r.primary === true) &&
       projectName === this.project_name &&
-      sameAddress(address, this.address)
+      address === this.address
     ) {
       return {
         ...baseRun,
@@ -793,8 +763,7 @@ export class RunTree implements BaseRun {
         address,
       };
     }
-    const seed =
-      projectName ?? (address ? addressSeed(address) : undefined) ?? "agent//";
+    const seed = projectName ?? address ?? "agent//";
 
     // Apply reroot logic before ID remapping
     if (reroot) {
