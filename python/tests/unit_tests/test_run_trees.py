@@ -885,10 +885,9 @@ class TestBaggageAgentAddressing:
         replicas_json = json.dumps(
             [
                 {
-                    # Both members, or the replica is dropped before the
+                    # Without a destination the replica is dropped before the
                     # credential check below can run.
-                    "agent_id": "replica-agent",
-                    "agent_environment": "staging",
+                    "address": "lrn:agents/replica-agent/environments/Staging",
                     "api_key": "secret",
                     "api_url": "http://x",
                 }
@@ -900,3 +899,4 @@ class TestBaggageAgentAddressing:
         replica = parsed.replicas[0]
         assert "api_key" not in replica
         assert "api_url" not in replica
+        assert replica["address"] == "lrn:agents/replica-agent/environments/staging"

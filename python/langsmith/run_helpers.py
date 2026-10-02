@@ -45,7 +45,6 @@ from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
-from langsmith._address import Address
 from langsmith._internal import _agent_addressing
 from langsmith._internal import _aiter as aitertools
 from langsmith._runtime_overrides import (
@@ -174,13 +173,13 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
-    address: Optional[Address] = None,
+    address: Optional[str] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
-    replicas: Optional[Sequence[Union[WriteReplica, Address]]] = None,
+    replicas: Optional[Sequence[Union[WriteReplica, str]]] = None,
     distributed_parent_id: Optional[str] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
@@ -193,7 +192,7 @@ def tracing_context(
 
     Args:
         project_name: The name of the project to log the run to.
-        address: (beta) An `Address` from `langsmith.address`, to log the
+        address: (beta) An address string, e.g. from `langsmith.address.agent`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         tags: The tags to add to the run.
@@ -206,7 +205,7 @@ def tracing_context(
         enabled: Whether tracing is enabled.
 
             Defaults to `None`, meaning it will use the current context value or environment variables.
-        replicas: A sequence of `WriteReplica` dictionaries or `Address` handles
+        replicas: A sequence of `WriteReplica` dictionaries or address strings
             to send runs to.
 
             Example: `[{"api_url": "https://api.example.com", "auth": {"api_key": "key"}, "project_name": "proj"}]`
@@ -285,7 +284,7 @@ def ensure_traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    address: Optional[Address] = None,
+    address: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -329,8 +328,8 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional run tree (deprecated)."""
     project_name: Optional[str]
     """Optional name of the project."""
-    address: Optional[Address]
-    """(beta) An `Address` to log the run to, instead of a project."""
+    address: Optional[str]
+    """(beta) An address string to log the run to, instead of a project."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
     tags: Optional[list[str]]
@@ -339,8 +338,8 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional ID for the run."""
     client: Optional[ls_client.Client]
     """Optional LangSmith client."""
-    replicas: Optional[Sequence[Union[WriteReplica, Address]]]
-    """Optional write replicas (or `Address` handles) for the run and its descendants."""
+    replicas: Optional[Sequence[Union[WriteReplica, str]]]
+    """Optional write replicas (or address strings) for the run and its descendants."""
     # Optional callback function to be called if the run succeeds and before it is sent.
     _on_success: Optional[Callable[[run_trees.RunTree], None]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
@@ -402,7 +401,7 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    address: Optional[Address] = None,
+    address: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -448,7 +447,7 @@ def traceable(
         project_name: The name of the project to log the run to.
 
             Defaults to `None`, which will use the default project.
-        address: (beta) An `Address` from `langsmith.address`, to log the
+        address: (beta) An address string, e.g. from `langsmith.address.agent`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         process_inputs: Custom serialization / processing function for inputs.
@@ -1056,7 +1055,7 @@ class trace:
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
         inputs: Initial input data for the run.
         project_name: Project name to associate the run with.
-        address: (beta) An `Address` from `langsmith.address`, to log the
+        address: (beta) An address string, e.g. from `langsmith.address.agent`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         parent: Parent run.
@@ -1120,7 +1119,7 @@ class trace:
         inputs: Optional[dict] = None,
         extra: Optional[dict] = None,
         project_name: Optional[str] = None,
-        address: Optional[Address] = None,
+        address: Optional[str] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
         ] = None,
@@ -1184,7 +1183,7 @@ class trace:
         client_ = self.client or self.old_ctx.get("client")
         parent_run_ = None
         project_name_: Optional[str] = "default"
-        address_: Optional[Address] = None
+        address_: Optional[str] = None
         try:
             parent_run_ = _get_parent_run(
                 {
@@ -1376,9 +1375,9 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
 
 def _get_addressing(
     project_name: Optional[str],
-    address: Optional[Address] = None,
+    address: Optional[str] = None,
     parent: Optional[run_trees.RunTree] = None,
-) -> tuple[Optional[str], Optional[Address]]:
+) -> tuple[Optional[str], Optional[str]]:
     """Resolve `(project_name, address)` for a new run.
 
     Mirrors `_get_project_name`'s levels, with `parent` (e.g. from headers)
@@ -1400,7 +1399,7 @@ def _address_kwargs(tier: _agent_addressing.Tier) -> dict[str, Any]:
 
 
 def _addressing_tiers(
-    project_name: Optional[str] = None, address: Optional[Address] = None
+    project_name: Optional[str] = None, address: Optional[str] = None
 ) -> tuple[_agent_addressing.Tier, ...]:
     """Return the levels named in code, highest first, without the env vars.
 
@@ -1569,7 +1568,7 @@ class _ContainerInput(TypedDict, total=False):
     client: Optional[ls_client.Client]
     reduce_fn: Optional[Callable]
     project_name: Optional[str]
-    address: Optional[Address]
+    address: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     process_chunk: Optional[Callable]
@@ -1718,7 +1717,7 @@ def _resolve_traceable_addressing(
     parent_run_: Optional[run_trees.RunTree],
     langsmith_extra: LangSmithExtra,
     container_input: _ContainerInput,
-) -> tuple[Optional[str], Optional[Address]]:
+) -> tuple[Optional[str], Optional[str]]:
     """Settle a `@traceable` run's `(project, address)`.
 
     One walk over the precedence levels, highest first: the first level naming
@@ -1762,7 +1761,10 @@ def _setup_run(
     )
     outer_project = _context._PROJECT_NAME.get()
     langsmith_extra = LangSmithExtra(**(langsmith_extra or {}))
-    _agent_addressing.check_address(langsmith_extra.get("address"))
+    if langsmith_extra.get("address") is not None:
+        langsmith_extra["address"] = _agent_addressing.check_address(
+            langsmith_extra["address"]
+        )
     if "replicas" in langsmith_extra:
         langsmith_extra["replicas"] = _agent_addressing.normalize_replicas(
             langsmith_extra["replicas"]

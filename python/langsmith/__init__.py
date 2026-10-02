@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from langsmith._address import Address, address
+    from langsmith import address
     from langsmith._expect import expect
     from langsmith._openapi_client._exceptions import (
         APIConnectionError,
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         RateLimitError,
         UnprocessableEntityError,
     )
+    from langsmith.address import Address
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client, TracingMode
     from langsmith.evaluation import (
@@ -51,7 +52,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.14.2"
+__version__ = "0.14.4"
 version = __version__  # for backwards compatibility
 
 # Metadata key to hide a traced run from LangSmith's Messages View.
@@ -121,11 +122,12 @@ def __getattr__(name: str) -> Any:
 
         return aevaluate_existing
     elif name == "address":
-        from langsmith._address import address
+        import importlib
 
-        return address
+        # `from langsmith import address` would re-enter this hook.
+        return importlib.import_module("langsmith.address")
     elif name == "Address":
-        from langsmith._address import Address
+        from langsmith.address import Address
 
         return Address
     elif name == "tracing_context":

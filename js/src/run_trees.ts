@@ -37,11 +37,7 @@ import {
 import {
   type Address,
   EnvAddressError,
-  fromWire,
-  sameAddress,
-  seed as addressSeed,
-  toWire,
-  wireKeys,
+  parse as parseAddress,
 } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
@@ -200,33 +196,23 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "primary",
   "updates",
   "reroot",
-  ...wireKeys(),
+  "address",
 ]);
 
-// URL-encoded JSON of the address's wire fields.
+// The address string, URL-encoded.
 const LANGSMITH_ADDRESS = "langsmith-address";
 
-/** Pops the address wire keys off untrusted `values`; never throws. */
-function takeHeaderAddress(values: Record<string, unknown>): {
-  named: boolean;
-  address?: Address;
-} {
-  const wire: Record<string, unknown> = {};
-  for (const key of wireKeys()) {
-    if (key in values) {
-      wire[key] = values[key];
-      delete values[key];
-    }
+/** Validates an untrusted header address; `undefined` if unusable. */
+function addressFromHeader(value: unknown): Address | undefined {
+  if (value == null) {
+    return undefined;
   }
   try {
-    return {
-      named: Object.keys(wire).length > 0,
-      address: fromWire(wire),
-    };
+    return parseAddress(value as string);
   } catch {
     // Values are untrusted, so not logged.
-    console.warn("Ignoring an invalid address in a `baggage` header.");
-    return { named: true };
+    console.warn("Ignoring an unusable address in a `baggage` header.");
+    return undefined;
   }
 }
 
@@ -283,15 +269,7 @@ class Baggage {
       } else if (key === "langsmith-project") {
         project_name = value;
       } else if (key === LANGSMITH_ADDRESS) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(value);
-        } catch {
-          parsed = undefined;
-        }
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          address = takeHeaderAddress({ ...parsed }).address;
-        }
+        address = addressFromHeader(value);
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
         replicas = parsed.flatMap((replica): Replica[] => {
@@ -299,12 +277,12 @@ class Baggage {
             return [replica];
           }
           const filtered = filterReplicaForHeaders(replica);
-          const { named, address } = takeHeaderAddress(
-            filtered as Record<string, unknown>,
-          );
+          const raw = (filtered as Record<string, unknown>).address;
+          delete (filtered as Record<string, unknown>).address;
+          const address = addressFromHeader(raw);
           // A project wins over an address; a replica with an invalid
           // address and no project is dropped.
-          if (filtered.projectName || !named) {
+          if (filtered.projectName || raw == null) {
             return [filtered];
           }
           return address ? [{ ...filtered, address }] : [];
@@ -331,11 +309,7 @@ class Baggage {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
     }
     if (this.address) {
-      items.push(
-        `${LANGSMITH_ADDRESS}=${encodeURIComponent(
-          JSON.stringify(toWire(this.address)),
-        )}`,
-      );
+      items.push(`${LANGSMITH_ADDRESS}=${encodeURIComponent(this.address)}`);
     }
 
     return items.join(",");
@@ -785,7 +759,7 @@ export class RunTree implements BaseRun {
       primary === undefined &&
       !this.replicas?.some((r) => r.primary === true) &&
       projectName === this.project_name &&
-      sameAddress(address, this.address)
+      address === this.address
     ) {
       return {
         ...baseRun,
@@ -793,8 +767,7 @@ export class RunTree implements BaseRun {
         address,
       };
     }
-    const seed =
-      projectName ?? (address ? addressSeed(address) : undefined) ?? "agent//";
+    const seed = projectName ?? address ?? "agent//";
 
     // Apply reroot logic before ID remapping
     if (reroot) {

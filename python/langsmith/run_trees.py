@@ -18,9 +18,9 @@ from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 import langsmith._internal._context as _context
+from langsmith import address as _address
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith._address import Address
 from langsmith._internal import _agent_addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import (
@@ -72,7 +72,7 @@ class WriteReplica(TypedDict, total=False):
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
-    address: Optional[Address]
+    address: Optional[str]
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -106,7 +106,7 @@ class _PayloadKey(NamedTuple):
     project_name: Optional[str]
     updates: Optional[dict]
     primary: Optional[bool]
-    address: Optional[Address] = None
+    address: Optional[str] = None
 
 
 class _ReplicaGroup(NamedTuple):
@@ -119,7 +119,7 @@ class _ReplicaGroup(NamedTuple):
 _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset(
     # Routing identifiers, like `project_name`: a distributed child has to know
     # where its parent's replica sent runs. Credentials stay out by omission.
-    {"project_name", "primary", "updates", *Address._wire_keys()}
+    {"project_name", "primary", "updates", "address"}
 )
 
 # Untrusted header-supplied replica `updates` is merged into the run, so restrict it
@@ -207,7 +207,7 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
-# The whole address, as URL-encoded JSON of its wire fields.
+# The address string, URL-encoded.
 LANGSMITH_ADDRESS = sys.intern(f"{LANGSMITH_PREFIX}address")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
@@ -257,7 +257,7 @@ def configure(
     project_name: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
-    address: Optional[Address] = _SENTINEL,
+    address: Optional[str] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -294,7 +294,7 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (beta) An `Address` from `langsmith.address`, to send
+        address: (beta) An address string, e.g. from `langsmith.address.agent`, to send
             traces to instead of a project. Mutually exclusive with
             `project_name`.
 
@@ -405,7 +405,8 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     `default_factory` from reaching for the environment afterwards and
     overriding what was settled.
     """
-    _agent_addressing.check_address(values.get("address"))
+    if values.get("address") is not None:
+        values["address"] = _agent_addressing.check_address(values["address"])
     named_project = next(
         (
             values[key]
@@ -457,12 +458,12 @@ class RunTree(ls_schemas.RunBase):
     project from `address` instead.
     """
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    address: Optional[Address] = Field(
+    address: Optional[str] = Field(
         default=None,
         exclude=True,
         description=(
             "Beta. The address to ingest this run into, instead of a "
-            "project. Unpacked into wire fields only when the run is sent."
+            "project. Put in the payload only when the run is sent."
         ),
     )
     """Agent addressing is in beta and enabled per workspace.
@@ -821,8 +822,7 @@ class RunTree(ls_schemas.RunBase):
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.address is not None:
-            # Excluded from the dump so it travels whole, to be unpacked only
-            # where the payload is built.
+            # Excluded from the dump; put back for the payload builder.
             self_dict["address"] = self.address
         if self.inputs is not None:
             # shallow copy. deep copying will occur in the client
@@ -877,7 +877,7 @@ class RunTree(ls_schemas.RunBase):
         updates: Optional[dict] = None,
         *,
         primary: Optional[bool] = None,
-        address: Optional[Address] = None,
+        address: Optional[str] = None,
     ) -> dict:
         """Rewrites ids/dotted_order for a given target with optional updates."""
         run_dict = self._get_dicts_safe()
@@ -892,7 +892,7 @@ class RunTree(ls_schemas.RunBase):
         seed = (
             project_name
             if project_name is not None
-            else (address._seed() if address is not None else "agent//")
+            else (address if address is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -951,7 +951,7 @@ class RunTree(ls_schemas.RunBase):
 
     def _replica_addressing(
         self, replica: WriteReplica
-    ) -> tuple[Optional[str], Optional[Address]]:
+    ) -> tuple[Optional[str], Optional[str]]:
         """Resolve one replica's `(project_name, address)`.
 
         Same precedence as everywhere else, applied per replica: the replica's
@@ -1387,7 +1387,8 @@ class RunTree(ls_schemas.RunBase):
 
 def _take_address(values: dict[str, Any]) -> dict[str, Any]:
     """Pop and return the project and address keys `values` names."""
-    _agent_addressing.check_address(values.get("address"))
+    if values.get("address") is not None:
+        values["address"] = _agent_addressing.check_address(values["address"])
     return {
         key: value
         for key in (*_PROJECT_ADDRESSING_KEYS, "address")
@@ -1404,7 +1405,7 @@ class _Baggage:
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
-        address: Optional[Address] = None,
+        address: Optional[str] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -1421,7 +1422,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        address_wire: dict[str, Any] = {}
+        address: Optional[str] = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1433,9 +1434,7 @@ class _Baggage:
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
                 elif key == LANGSMITH_ADDRESS:
-                    parsed = json.loads(urllib.parse.unquote(value))
-                    if isinstance(parsed, dict):
-                        address_wire = parsed
+                    address = _address_from_header(urllib.parse.unquote(value))
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1457,21 +1456,17 @@ class _Baggage:
                                 cast(WriteReplica, replica_item)
                             )
                             # A replica has to name a destination, but either
-                            # mode counts. A partial or malformed address is
-                            # dropped here rather than raising downstream.
-                            replica_wire = {
-                                k: cast(dict, filtered_replica).pop(k)
-                                for k in Address._wire_keys()
-                                if k in filtered_replica
-                            }
+                            # mode counts. A malformed address is dropped here
+                            # rather than raising downstream.
+                            replica_address = _address_from_header(
+                                cast(dict, filtered_replica).pop("address", None)
+                            )
                             if filtered_replica.get("project_name"):
                                 # Naming both would raise once resolved, and a
                                 # header must not be able to do that; the
                                 # project takes precedence, so drop the address.
                                 parsed_replicas.append(filtered_replica)
-                            elif (
-                                replica_address := _address_from_header(replica_wire)
-                            ) is not None:
+                            elif replica_address is not None:
                                 filtered_replica["address"] = replica_address
                                 parsed_replicas.append(filtered_replica)
                         else:
@@ -1488,7 +1483,7 @@ class _Baggage:
             tags=tags,
             project_name=project_name,
             replicas=replicas,
-            address=_address_from_header(address_wire),
+            address=address,
         )
 
     @classmethod
@@ -1518,19 +1513,19 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         if self.address is not None:
-            wire = self.address._to_wire()
-            items.append(f"{LANGSMITH_ADDRESS}={urllib.parse.quote(_dumps_json(wire))}")
+            items.append(f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address)}")
         return ",".join(items)
 
 
-def _address_from_header(wire: Mapping[str, Any]) -> Optional[Address]:
+def _address_from_header(value: Any) -> Optional[str]:
     """Build an address from untrusted header input, or `None` if it is unusable."""
+    if value is None:
+        return None
     try:
-        return Address._from_wire(
-            {k: v for k, v in wire.items() if k in Address._wire_keys()}
-        )
-    except (utils.LangSmithUserError, TypeError) as e:
-        logger.warning("Ignoring an unusable address in a `baggage` header: %s", e)
+        return _address.parse(value)
+    except utils.LangSmithUserError:
+        # The value is untrusted, so it is not logged.
+        logger.warning("Ignoring an unusable address in a `baggage` header.")
         return None
 
 
@@ -1662,7 +1657,7 @@ def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
 
 
 def _ensure_write_replicas(
-    replicas: Optional[Sequence[Union[WriteReplica, Address]]],
+    replicas: Optional[Sequence[Union[WriteReplica, str]]],
 ) -> list[WriteReplica]:
     """Convert replicas to WriteReplica format."""
     ensured = (

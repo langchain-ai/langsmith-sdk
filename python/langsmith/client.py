@@ -68,7 +68,6 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._address import Address
 from langsmith._internal import (
     _agent_addressing,
     _orjson,
@@ -2584,8 +2583,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            address (Optional[Address]): (beta) An `Address` from
-                `langsmith.address`, to send the run to instead of a project.
+            address (Optional[str]): (beta) An address string, e.g.
+                from `langsmith.address.agent`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 This is in beta and enabled per workspace; a
@@ -2636,7 +2635,8 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        _agent_addressing.check_address(kwargs.get("address"))
+        if kwargs.get("address") is not None:
+            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body -- `RunTree.post` sends the
@@ -3912,7 +3912,8 @@ class Client:
         replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
             "_replica_auths", None
         )
-        _agent_addressing.check_address(kwargs.get("address"))
+        if kwargs.get("address") is not None:
+            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -8307,7 +8308,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        address: Optional[Address] = None,
+        address: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8380,7 +8381,7 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
-            address (Optional[Address]):
+            address (Optional[str]):
                 The address to attach this feedback to, instead of a project.
                 Pass whatever the run being described was traced to -- for a
                 run created in this process, `run_tree.address`. Cannot be
