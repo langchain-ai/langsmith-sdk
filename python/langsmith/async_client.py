@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._address import Address
 from langsmith._internal import _agent_addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
@@ -621,7 +620,8 @@ class AsyncClient:
             the run, so the trace is lost rather than falling back to a
             project. It may change without notice.
         """
-        _agent_addressing.check_address(kwargs.get("address"))
+        if kwargs.get("address") is not None:
+            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
@@ -1181,7 +1181,7 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
-        address: Optional[Address] = None,
+        address: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
