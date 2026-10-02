@@ -808,9 +808,10 @@ class ServiceLoginURL:
 
     Attributes:
         url: The URL to open in a browser.
-        access: Who may open it — ``"restricted"`` for anyone with
-            ``sandboxes:read`` on the sandbox, ``"workspace"`` for any member
-            of the owning workspace.
+        access: Who may open it — ``"restricted"`` for the sandbox's
+            creator or anyone with ``sandboxes:exec`` on it (workspace admins
+            by default), ``"workspace"`` for any member of the owning
+            workspace.
     """
 
     url: str

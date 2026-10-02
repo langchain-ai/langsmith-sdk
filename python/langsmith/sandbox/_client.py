@@ -869,8 +869,9 @@ class SandboxClient:
             expires_in_seconds: Token TTL in seconds (1--86400, default 600).
             access: Gate the URL behind LangSmith login instead of a token,
                 returning a :class:`ServiceLoginURL`. ``"restricted"`` admits
-                anyone with ``sandboxes:read`` on the sandbox, ``"workspace"``
-                any member of the owning workspace. Neither carries a token or
+                the sandbox's creator or anyone with ``sandboxes:exec`` on it
+                (workspace admins by default), ``"workspace"`` any member of
+                the owning workspace. Neither carries a token or
                 expires, so ``expires_in_seconds`` does not apply. Omit for
                 token mode; a login grant is durable, so token mode is refused
                 with 409 while one is in place.
