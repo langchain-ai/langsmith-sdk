@@ -1,14 +1,18 @@
 ---
 type: SDK architecture
 title: Dual-SDK Architecture and Public Surfaces
-description: How the Python and TypeScript LangSmith SDKs divide handwritten behavior from generated OpenAPI resources, expose their public APIs, and diverge around asynchronous execution and runtime packaging.
+description: How the independent Python and JavaScript/TypeScript SDKs compose handwritten behavior with generated OpenAPI resources, expose public APIs, and differ in lifecycle and asynchronous execution.
 tags: [architecture, sdk, python, typescript, openapi, public-api]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-28T08:35:15.620Z
 sources:
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
+  - id: openwiki-source-625291c113f5f63dc5c85aa2
+    resource: repo://.github/workflows/release_js.yml
+  - id: openwiki-source-4d1d392666be6dfdd7a91a2e
+    resource: repo://.github/workflows/release.yml
   - id: openwiki-source-f317ee207e1653d2033c81a4
     resource: repo://CONTRIBUTING.md
   - id: openwiki-source-e3bc66e65fbfbbea4eb3b049
@@ -43,14 +47,14 @@ sources:
     resource: repo://python/tests/unit_tests/test_async_client.py
   - id: openwiki-source-f6f8016e7d65a51479aabe9b
     resource: repo://python/tests/unit_tests/test_client.py
-  - id: openwiki-source-23775c3de52f3ab95a13cb8b
-    resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-28T08:35:15.620Z" }
 ---
 
 # Dual-SDK Architecture and Public Surfaces
 
 The repository ships two implementations of the same product-facing SDK: the Python `langsmith` package and the JavaScript/TypeScript `langsmith` package. They target the same LangSmith platform concepts—traces and runs, datasets, evaluation, prompt caching, provider wrappers, and sandboxes—but they are independent runtime implementations rather than bindings over a shared library.
+
+Their versions and releases are independent. In the current tree, Python's package version is `0.14.1` in `langsmith/__init__.py` while JavaScript's is `0.10.5` in both `package.json` and the root module. The Python manifest obtains its version dynamically; the release workflows watch `python/langsmith/__init__.py` and `js/package.json` separately, so release version bumps belong in separate pull requests.
 
 Treat **capability parity as an architectural goal, not an exact API contract**. The matching `Client`, run-tree, schema, evaluation, wrapper, and generated resource families make the intended parallel clear. Naming, typing, lifecycle, packaging, and even sync/async behavior remain language-specific. A feature must therefore be checked in both implementations before documenting or changing it as “shared.”
 
@@ -86,7 +90,7 @@ Both languages keep mature handwritten clients because a platform SDK does more 
 
 ### TypeScript
 
-`Client` is the single main client class. JavaScript network operations are promise-based, so there is no separate exported `AsyncClient`; methods such as `createRun` and `flush` are asynchronous on the same object. `createRun` also demonstrates why the handwritten layer remains: it applies sampling, defaults and preprocessing, chooses queued batch ingestion when trace ordering fields are present, and otherwise sends the legacy `/runs` request itself.
+`Client` is the single main client class. JavaScript network operations are promise-based, so there is no separate exported `AsyncClient`; methods such as `createRun` and `flush` are asynchronous on the same object. `createRun` also demonstrates why the handwritten layer remains: it applies sampling, defaults and preprocessing, chooses queued batch ingestion when trace ordering fields are present, and otherwise sends the legacy `/runs` request itself. The class exposes `flush()` to drain queued traces but no general client `close()` method.
 
 The generated client is created lazily by the private `openAPIClient` getter. The bridge:
 
@@ -103,7 +107,7 @@ Resource access also performs a backend compatibility check. Most generated fami
 
 Python intentionally has two public classes:
 
-- `Client` is the feature-rich synchronous and tracing-oriented client. It owns a `requests.Session`, trace queues and buffering, masking/anonymization controls, optional multi-endpoint writes, OpenTelemetry state, and explicit `flush()`/`close()` behavior.
+- `Client` is the feature-rich synchronous and tracing-oriented client. It owns a `requests.Session`, trace queues and buffering, masking/anonymization controls, optional multi-endpoint writes, OpenTelemetry state, and explicit `flush()`/`close()` behavior. `close()` attempts to drain pending traces, stops background/cache work, unregisters its `atexit` handler, and closes the session; it is safe to call repeatedly.
 - `AsyncClient` owns an `httpx.AsyncClient`, asynchronous request/retry methods, async prompt-cache lifecycle, and `async with` support. Entering starts its cache; `aclose()` stops the cache and closes the handwritten HTTP client.
 
 They are not mechanical mirrors. For example, `Client.__init__` accepts tracing batching, masking, OpenTelemetry, sampling, and buffering controls that are absent from the narrower `AsyncClient.__init__`. Conversely, async usage has its own context-manager lifecycle and nonblocking retry path. Preserve those differences unless a change deliberately establishes parity.
@@ -111,6 +115,8 @@ They are not mechanical mirrors. For example, `Client.__init__` accepts tracing 
 There is a second, easily missed distinction: the public v2 properties on **both** Python classes return generated **async** resources. `Client.runs`, for example, is typed as `AsyncRunsResource`, while internal migration paths that need blocking behavior use the private `_get_langsmith_api_sync()` and its generated synchronous client. Thus `Client`'s legacy handwritten methods are synchronous, but calls made through public generated resource properties must be awaited. `AsyncClient` naturally exposes the same async resource style.
 
 `Client` lazily constructs both generated transports. If the caller supplied a `requests.Session`, selected portable settings—headers, cookies, TLS verification/certificates, proxies, and `trust_env`—are translated to an `httpx` wrapper; mounted adapters, `session.auth`, and hooks cannot be carried across. `AsyncClient` constructs its generated `AsyncLangsmith` during initialization using the resolved key, workspace, stripped OpenAPI base URL, timeout, and headers.
+
+The close paths are not symmetrical with those generated transports. `Client.close()` closes the handwritten `requests.Session`, and `AsyncClient.aclose()` closes the handwritten `httpx.AsyncClient`; neither method explicitly closes its cached generated client. Code that changes this boundary must account for both HTTP stacks rather than assuming the public close method already owns every generated transport.
 
 The version-check timing differs by runtime:
 
@@ -131,9 +137,9 @@ Python schemas are handwritten runtime models. They use Pydantic models for vali
 
 ### TypeScript package root and subpaths
 
-`js/src/index.ts` deliberately exports a compact root: `Client`, selected schema types, `RunTree`, utility and cache APIs, UUID helpers, generated error classes, version metadata, and a tracing metadata constant. Broader capabilities are reached through explicit package subpaths such as `langsmith/client`, `langsmith/traceable`, `langsmith/evaluation`, `langsmith/schemas`, `langsmith/wrappers/openai`, test-runner integrations, experimental OpenTelemetry modules, and `langsmith/sandbox`.
+`js/src/index.ts` deliberately exports a compact root: `Client`, selected schema types, `RunTree`, fetch/project helpers, prompt-cache APIs, UUID helpers, generated error classes, version metadata, and a tracing metadata constant. Broader capabilities are reached through explicit package subpaths. The current registry includes client, run-tree, tracing, evaluation, schemas, LangChain, Jest/Vitest, anonymizer, provider wrappers, singleton and test utilities, OpenTelemetry/Vercel/Anthropic experiments, and both stable and experimental sandbox paths. Generated request, response, client, and resource modules are not registered as public subpaths.
 
-Those subpaths are assembled by `js/scripts/create-entrypoints.js`, not by hand-editing a set of wrapper files. The script is the source list for entrypoints; it generates ESM, CommonJS, and declaration shims and rewrites `package.json` `exports` and `files`. The build compiles ESM and CommonJS, then creates these entrypoints. Package exports provide separate `import`, `require`, and type declaration targets, while the `browser` map substitutes browser implementations for filesystem and worker-thread utilities.
+Those subpaths are assembled by `js/scripts/create-entrypoints.js`, not by hand-editing a set of wrapper files. The script is the source registry: for each entrypoint and the root it writes ESM (`.js`), CommonJS (`.cjs`), ESM declaration (`.d.ts`), and CommonJS declaration (`.d.cts`) shims, then rewrites `package.json` `exports` and `files`. The build compiles ESM and CommonJS before running that generator. Package exports provide separate `import`, `require`, and type declaration targets, while the `browser` map substitutes browser implementations for filesystem and worker-thread utilities.
 
 TypeScript's handwritten schemas are structural compile-time interfaces and aliases. For example, attachments use `Uint8Array` or `ArrayBuffer`, and run IDs/timestamps are string/number-shaped. Unlike Python's Pydantic models, these declarations do not perform runtime validation. Generated request/response types live separately under `_openapi_client` and are not exported as package subpaths.
 

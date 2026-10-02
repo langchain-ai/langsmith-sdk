@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:afd395b46979437376c032c367f473e9e8fad389f61502c3ccab89fee5873db6",
+  "pageVersion": "sha256:fcb405c42795251a903684bcd4aef7079272b5d96f4722926cbde9d772bca82d",
   "claims": [
     {
       "id": "claim_10c5b3653eac4b0593546560901764da",
@@ -44,19 +44,19 @@
     },
     {
       "id": "claim_8a1613d5983f492688e4d9485224a6bc",
-      "statement": "Feedback can target a run or a project and can retain trace, comparative-experiment, and evaluator-source relationships; creation rejects requests that provide neither or both run and project targets.",
+      "statement": "Feedback targets either a run/trace or a project summary: creation rejects requests with neither target and rejects a run/trace together with project_id, while feedback records can preserve trace, comparative-experiment, feedback-group, and evaluator-source relationships.",
       "evidence": [
         {
-          "resource": "repo://js/src/client.ts#L5475-L5567",
-          "version": "repo-lines-v1:sha256:37d7ac4e5844847df3295d27010db06521c1ed3dc3a0eb9ebb9a50aac83f2a0b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0MjBiNjFkZGQ2YTA5MjRkZDk0YjQ1MDRhNGM2ZDBhODNjN2FlZTk5MmYzNjQzNDJlZWMzMWY4N2UwODA2OGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjNDk5N2Y2MzlhOWZmMTI4YjE5YWE5N2I3ZGZiYzBjMmNmMWNlNDI4MTc3MDIwZjEwZThiYzViYjM5MTliM2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMTJiNjExODk0M2UzMGMwMDY4MzNlNzgxNjMwYTUzYjMyZjQxN2VmNWY5Nzk1YzNmMTJmMzMwODAyNGM1ZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkOWZlNmIyMDkxNzBlOTIyZTM0MzEwNDViOWRhOTI5YWVjNGMwMTg5NzFlODY0MGQ1Mjk0NmE3ZjlmZDY4ZTQifQ"
+          "resource": "repo://python/langsmith/client.py#L8286-L8308",
+          "version": "repo-lines-v1:sha256:29218ae2c05035acc524d031bdd7ebf9849c81f42032aa02163fe8931b1ab570:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmZjNiODJjYjU0NzMzYjdhOGVjNWJjYThlNTA5ZmU5Mzc0Y2E0ZTU5YjYyZmVlNjE0ZDkxMjI5NDJlZjdkYzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3NWVhMzZjZWFmOTdjMGI1OGU0NTg0MmQ0MGYyNzA1M2MxODI5ZWJlOTY0NTExMTM4NDBhMTE4ZjIxMzQyOWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkNTc0ODMyYjFkNDIzNmNiMTYyYTkxYzAyZTI4ODY0OTQ2MTA1Y2MzMzIzZDFmMmY3MWJiYzk4MGIzNjJlMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNhNzUwMzM5MDk0OTc3NGRmOTY3NmMwMWE0NzE0NjJlYWZmMmE4YjdlMThlNTlhYTkzNjE1MTI3MDUwYmIxMTAifQ"
         },
         {
-          "resource": "repo://js/src/client.ts#L5820-L5865",
-          "version": "repo-lines-v1:sha256:f343090806286a295921aa685829d6710c738505489e6a42024cc5f8df8ca2e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1YjFkNDI0NWI3YmZiNjExZjYxYmQyNDE4OTU5NWZlMGM5NTllNGJkYjZjODg5NTBjNGViZDAyYTMyYjgxY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMGE0NzQwNWIxYTllZTM1Njk1NDVlN2MxNjAwOTk0N2I0N2JjNDY5YzRmOTQwZmU3MzVkNDhiMGI1MjZkMDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhhMmM4Yjg1YTRmODg1MGRjNjdhMTlhOGNhZGVjNmFkMTc5ZmU5YTViNDQwMDc2MjhlZTFiMzUwZDhlMmZhZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyMmYwMzQ4YmJhNjExYzhjMGMzY2FmN2QxZjMzOTQ3YWFiZjZkZmUwY2NhYmI0NWY1ZjZmODFmNjhjNTJkMDEifQ"
+          "resource": "repo://python/langsmith/client.py#L8448-L8529",
+          "version": "repo-lines-v1:sha256:86d8ef0d0cc44b9f8ded3bb05111e9a665dcb3dda17adeab5ee78877ae7ff555:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMDNjYTdlMmY0MWNmNTg1ODc5MjhkYmMzNWM1ODhjNGFmYjJkNGQyYjY3YWE1ZDhiZmM4NzQ1NmNiMjQxNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkOGZmMzFkZWNkZjY5ZTFkZDkyZDVmYjNhOTM0YWQwNzYxMmViYjM0ZDM4MDEzNzMyZDM2OWVlMDIzYzI2YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2MjE5M2Y4ODBhZmU0OGM5ODAyY2IzYTdiZTM2MWNmZDViZjJlZWE1ZGUzMmU1Yjg4OWU1M2RkYmUyZGZhZjQifQ"
         },
         {
-          "resource": "repo://python/langsmith/schemas.py#L616-L650",
-          "version": "repo-lines-v1:sha256:35fb99a7ff2d11217f4f83bf9a52dec83314c34279a6247eb60a2974bb96d0e5:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3NDI0NDViM2YyZTAxMDk0MjBlNjM0NjM0MWU5MjU0ZjhhM2U0YzEzMTI0YmNjYjkyYWQ5OTQwZDNjY2JlMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxODVmNGNkNzA0NTBjNWNiNjNiNWJmZWM3YjhlYjM3YmM3YzIwNmJiMGNjMzY2ZGE1MDE3Y2UyOTBmODAwYzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4YWQ5Y2U2NTFlMDVjMjc5OGY5MGUzNjc3MjJlMDgwZWFiMzUzMjA4Y2E0ZWJjZjBkYTQwZmVlMGJkOWY0ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNjkzZTU0ODIwNWQzZjgzOTU2ZGZkMmE2MDdlZGYxMDdjOTU1MzM5MWE2NDMxNTI1YTU5NzRmMDZiYjM1NmUifQ"
+          "resource": "repo://python/langsmith/schemas.py#L625-L679",
+          "version": "repo-lines-v1:sha256:fede852aec9fa4b49fe4f6a1a166e2cd731d4db8403914ea3e5730a8542e5f55:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3NDI0NDViM2YyZTAxMDk0MjBlNjM0NjM0MWU5MjU0ZjhhM2U0YzEzMTI0YmNjYjkyYWQ5OTQwZDNjY2JlMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4NmE4NGM4N2RmMzJkMjBiNjM3ZTBjMDMzYzRjYTNlMjM1N2NlMThjNmZiYzJhN2Q5MjFmZWJiNDQ1ZWQ5ZmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4YWQ5Y2U2NTFlMDVjMjc5OGY5MGUzNjc3MjJlMDgwZWFiMzUzMjA4Y2E0ZWJjZjBkYTQwZmVlMGJkOWY0ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5ZGMxMjM1MTg0MWM4YWIwMGZiNjAwZWU5M2EwMmExMmQxM2Y2MjcyMjEwYTMyM2RmYmNjZWQxNDdkYzEyZDAifQ"
         }
       ]
     },
@@ -226,25 +226,149 @@
     },
     {
       "id": "claim_474b9fdc158245bc9aefbb7de45327c3",
-      "statement": "Run and dataset sharing create bearer tokens over existing resources rather than cloning them, and unsharing removes the share association; presigned feedback tokens are separately scoped to a run and feedback key for feedback submission without exposing an API key.",
+      "statement": "Sharing mints bearer tokens over existing resources rather than cloning them: generated run sharing exposes a trace-root token and idempotent deletion, handwritten dataset sharing exposes the existing dataset and examples and deletion revokes the association, and presigned feedback tokens are separately scoped to feedback submission for a run and key.",
       "evidence": [
         {
+          "resource": "repo://js/src/_openapi_client/resources/runs/share.ts#L10-L69",
+          "version": "repo-lines-v1:sha256:fc20987044bec1b4c05564c3d1023bc0c9b858178c502ffbb0c01db5973b779e:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNGIwNjgzZTc4N2NmN2U3NTliOWE0ZjVhNDAzMjhhOWY4YzUyMzBjYTI4YzdiYzliMjIxNmQzMDMxOWQ4OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5OWRiZTlhNDU5ZmFlOWJlMTNmMWJlNzI3NTY0OTI3MjFmMTYxODBiZGJiNjlhOWJlMmI3YWE0ZWFkYmVmMzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU3NzI2YmEzYzgwOThiN2U5YTVhODVkNTUxOWE1N2IwMGJkZGMyYzI5YWM3YzM4OWMxYWRkZmY0ODY0ZTM2NGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0MWNhNThkOTNmYTcwOGUxZmYxZDdkYWFmZWNhZGFmN2JhNDQyMDMwMDhkNGFjMzQ5MThiZjNkOGI4YmE1OGEifQ"
+        },
+        {
           "resource": "repo://js/src/client.ts#L5668-L5724",
-          "version": "repo-lines-v1:sha256:6854445638e542c2a8cabb438451b78a8f8cf0ea94751ecd2b0c207819e00dd4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmMmEyZjk5NmYwOGU2ODBiZDI5MjEzNWE2ZmE0OTc4YmRhMjZlNjAyZDg0ZjMzY2IxZDU5NDc3NWQ0MzA0YjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0NDk2NGNkYTFkNWYzMzA4NGU0ODQ0MDFmMGJhNjk0M2U1ZDRlMWVmNzJkYTJiMTg0MjYwZWE4NWNkYjFmYzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA3M2Y2MTNkYmI3NDg3YjYxNmYxOTVkYWVjY2JhZjY3ZGUwYWQ4OTE3NWEwYjM3OGFlNTcwZTUwN2MwYTk4YTQifQ"
+          "version": "repo-lines-v1:sha256:e585f7370c1f014f72030fa5a3c5715afba5d5ff484331dcf84d2f90e67b85f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4NTU1Njk3ZWY4MjZjODA5NDljM2NmYTcxN2E4ZDI4Mzg2ZDk5NDc2MTUwZjVjOGQzMThkZDNiM2JmNmZiMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3Y2M0ODYwODE5YzdlMjhmYzg0ZmM3ODdhNzQyOWZhYjIyMDkzZWI1NmQ4NDk1OWIxODg0OWExZjUyODU4MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2OTMyMmQ5YzdmNjI2Nzk2Zjk4M2JhYjYwZTU0YjhkOTU2NTg1ZmQyZTkwMzUwMmJjN2Y1NjBhNmZkZWYyMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2ZDY4NmRlODliNmJmNGJhOGVjMmNhODI3MDRiN2U0NjBmMDAxZTI3YWJhMWUwNGFkOWMyMGM0OGUxNTBjMjcifQ"
         },
         {
-          "resource": "repo://python/langsmith/client.py#L4935-L5041",
-          "version": "repo-lines-v1:sha256:b7618afadc8646417a12ae58195a7cd7684bc33b933aa0b460ad5514fc075455:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzYmVjNmY3OTdmMTgyNTQ3MDcwMzU1NTM1NGNhZjkyMTYyZjhiMmNjZmRlYWJiZDJhMzdjODVmYTFkZjk3OGQ1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzMGQzODhjNTU1NTQ4OTIzNDRmYWU3ZWJmMmY1MjQ1ZTVhZmVjNWI3NGM1NTcxZjFhMWZiODdjOWVmN2I1NzhjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwY2JhZTIzMWIxZWI0NTUyZjVmYTVjOGVkNGYzMzg5OTBiOTVjZjA4YWQwNTA2MzllYmIyZDBmMTZkN2FkMmE5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4NDg2N2JlNGFlMmNjYjQ5OWY1MDRlYzg3ZDA0MWUyOWQ1ODIzZjU5NjIyNjA2YTI3YWFmYTM3NGE0MDkxNWZkIn0"
+          "resource": "repo://python/langsmith/client.py#L5126-L5275",
+          "version": "repo-lines-v1:sha256:06847c65c6694ef00e891b737bd125aa3b4055a7ae6592ccfad52be396664cfe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiMzZhOWFkOTYxNzY3Mzc1ZTgyODFkOThiM2Y3MmE2Zjk5Mzg0MzNjZjMxZDNiOWQ3ZDU0NTk1YzMxZTA1ZDhjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3MWJkNTliYWYxMDk4YWU5NmZkNzg2NGYzNmU4ODIyYzUxMTFhZTBmZDcwZjZhYjgyNjM2ZmVlMmU4NWY0YWI0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MWRiNzhjNmE3MDI4NDY4ZTc2YzBlNmY3MWM3OTY5NDBjYWRjZGRjYzFmMGYxOTJlMzBjNjY3NWFhZDkzZTFhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5ODRhZmNlNzY3MDgxNzRhM2FmN2M0YTU0MWYxMjQ0ZjgwNzQ3MjI3NzJjMjEyNzcyNGZiOTA3NWQwYmQ0N2Y4In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_80e4052d5f694221b59e0fa7359178c7",
+      "statement": "Python beta agent addressing is an alternative to project addressing for run ingestion: agent_id and agent_environment form the destination pair, explicit code-level project and agent choices are mutually exclusive, and incomplete, conflicting, or workspace-unsupported agent addressing fails without silently falling back to a project.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_agent_addressing.py#L109-L214",
+          "version": "repo-lines-v1:sha256:a8aead3e5dc4b4fc9be0606d24b02229070f21ef5837b06980dd6447dbd79ea7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiZjhjNmE3MWQzYzExYTFlODVlNzE3ZWQzMjhiZmMyN2NlMmJkMjk0ODRhZmRjMTYyMTJhYjhmNTBjMDNmZGEzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1OTA5YTUzYTYxOGQwMjhlMWQzMDAwYzBhN2FiY2VlY2JlNWZiMzdmNGU1MTFlZmU0NjY0M2ZhZDZlNjY4NzJmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2OWZmYTFlMTAwYTNiNDAyNjQ0YjI4MTQzNTI2ZjliODcxNzc5OTg2ZGEzMDEyYTFiMWM1ZjMyMGE3ZDA5YTMwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyNmJhZDQyNDJlOGFhOTk2YmI4NTRlZmY2N2M1OTMxNTllZjg0NWMxYjQ1NDAwODE2NmY1NDg5NzQwM2NjZjUxIn0"
         },
         {
-          "resource": "repo://python/langsmith/client.py#L5043-L5162",
-          "version": "repo-lines-v1:sha256:3c6037e165276d3b5bfd193686dc71e0093de61ff4743c580aca8c46c1f65ddc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiMzZhOWFkOTYxNzY3Mzc1ZTgyODFkOThiM2Y3MmE2Zjk5Mzg0MzNjZjMxZDNiOWQ3ZDU0NTk1YzMxZTA1ZDhjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1OTA5YTUzYTYxOGQwMjhlMWQzMDAwYzBhN2FiY2VlY2JlNWZiMzdmNGU1MTFlZmU0NjY0M2ZhZDZlNjY4NzJmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MWRiNzhjNmE3MDI4NDY4ZTc2YzBlNmY3MWM3OTY5NDBjYWRjZGRjYzFmMGYxOTJlMzBjNjY3NWFhZDkzZTFhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4YjMyZDNiNjhhMDg0Njk4MGUwNzdkYjZlZGQ0YjlmNTM0NmIyN2ExOGJjN2IxMjcwMjk5MDdjZTMwZjIxZTAwIn0"
+          "resource": "repo://python/langsmith/_internal/_agent_addressing.py#L18-L106",
+          "version": "repo-lines-v1:sha256:5e4b2e485b4fd731ee8695b4e1aa7035f17ec5e29680b0f94caeb68d1fde031b:eyJzZWxlY3RlZExpbmVDb3VudCI6ODksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNmNiNWI4MGZkZWNhYWFkZGE5YjBjZjU1NjVhMjVkNGFiMzI4OGFjMjg5ZTkwMDVkMzcwMTc0YWQxNDQxMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlMzdiMGE5OGIxNDNlMTVhZDdlYTNhNWUwZDgzNjQzMDM0OGI4NzUwMTc3NTNmZGIwZmEyMTdmYzhmOTMxYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4NmEwY2I3ZDE2MjFjN2IyN2Q5YWQ5NGIzZTQ3ZGMwYTI1NGM1NTUzNDMwZDk1ZTdjMjQzZTBjNTcyNzNkNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAzYWIxNzFhMDE3MmRiZTBkY2QxMDRkYTc1OTIwMGQ4ZDY3ZDViMWQyZmFkNjYwOWZlNjMxNDI5ZmI5ZmUxMDcifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L2581-L2593",
+          "version": "repo-lines-v1:sha256:3acbf6353924c8fa3a3c131246678ba6ba9a769b3191e916d60ecb6708803189:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ZjI0OWZjODUwN2Q4MTIxODkxNDJiYjNkNTNmMmUwYzA5Mjk1ZWJlNTYzMDhlMWU1NWVmNWZlYTRiYTkzMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZWFlZGU0ZWI5ZGYzNjA1NDk0MjcxZjA1MjUxN2FlNDVkYzdiZWEyMWEwNjFmMGJlYzMzMTBiNDg0MWM5ZDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiZWE5MjZkZWQxOTQzMTU1ZTUzNjJkZWM2ZTYyN2MxOTM2ZmM4Yjg4NTE4N2ViNTE3MzlhZTgyYWM0MDg0N2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyZWRjNzIyZjFhMTI0Nzg5YThiMWExYmQ5NjA5NDUzODlmOGMyZmU0OTUxZGU5MzIyODAzYWIwZWJkZTU0NzEifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_client.py#L8248-L8359",
+          "version": "repo-lines-v1:sha256:71ec04de64a582d55946b9a848890460edc61f7c2f1c0294d329fa912fb96024:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwYmQ1YjlhYmRhYTE0M2EyNjc2ZjRlZGI4NTdkZGEyYTE0NmY3YjBlZWJjN2E3ZTc4OTc0YmQ1MTY1MjY3YWZhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1NTAzMmU5NjRkMDkzMjM1MWU1ZDE4NTI2OTI4MWIxNzFhM2EwOWIwOGIyODZlNjYxZWE0NzAzMjNjODJlYjRkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZmJkMDA5MzE0YmMyNzA4NDE2NzM0YTAyYWU1ZmYzOWExZTQ4YTA1MGJlOTFmNDNiMmZhYTkyMDAyYzYyYmZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlMWM3YjVhNzNlMzdlNjk4MmY1M2ZlNzY4MDJjNDNlNTIzZTJmYWMxYmE2ZjVlYWIwN2NhMjAwZGVhNjk4M2RkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_c6a712cde8ee4378ae2b4d00ee71d30e",
+      "statement": "Run creates resolve agent addressing, but updates do not consult ambient agent variables: an address-free patch inherits the destination established by its post, while an agent-addressed RunTree patch carries the run's explicit pair, preventing post and patch from being routed differently.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_agent_addressing.py#L217-L274",
+          "version": "repo-lines-v1:sha256:77a08a2d5d2f19eae76e3f57616ce946a78036e17e4ff046782a204d13aea014:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhYTY4YWJmNjJlMmY1ZDkwNmQzY2FlMGMyMTIyZmMwYmNiYjNiOTNhNGRhMjAyODczODBmYmQ3ODM1YzhhOGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MjdiNGI1MmYyZmQyMDNhYzkwMGQwNWQxZjQ3NTc5YmVmNGZiZTlmNzM4NTUwMzQxNjM0MTFhNmE0M2YxODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L3913-L3932",
+          "version": "repo-lines-v1:sha256:4de92872ba0ca35911e6fc0eff03cf8af3436d48091accd828c7e2a6f1f71064:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMmMwNjUzODMxZDUzMjlhODRiYTYwY2FmOWRkNGNjNTk5NmFlODdkNDU2ZDA4YjhhOGE0NGRkZDczY2ZlZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMTQ4MWZiNjllYTZmMzhmZDRmMjY0MGFiZTBhMGZiNDZkN2VkOWE2YTkyMzI2MWU0OGMyMTVmNDc3Yzg5ZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2MGNlMTU1YzdjMzZlMWYwNDRlYTVlOWE5MjVmMmM1NmFjM2FhZmMxZmIyN2JmOGQzNjc3OGNkZTJlOTU0OGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhZmMxZWZiYTkzZmE4YjMzY2Q1YTA4NmIxYzMxODEyMDQ4OTM5MmM4NWJjMWMzZjE5YWU2YzhlYzkwZWQ4YzIifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_client.py#L8595-L8670",
+          "version": "repo-lines-v1:sha256:c1c06f38822d23c64b2ec181bc772b97927f701f7f6ce97a17358f93a71bcf0a:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3OTUwOTFiMGNmNWE3ZWVmZWZmZmIzZGU1MWIyYzFhNzBkZTYxMzc0YmFlNzFhNDczMjlhZjZiMTMwYjEwZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhMGUzNGNmMmMwMGZlYzc0YTA3ODRlOTM0N2JjN2RhYWQwNzRmYmFiY2E5MTMwYTljNzMxYTAxMTllMTIzMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhYjNmNDI5OTlkMzBkZTQzYWQ1MDk4NzhhZjNiNzMzNGI2NjNlYWFkNjU3M2I2MTU4ZWMxNjMzOTAwMjM0NDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyYzdlNmU4YTY0YmJjNjVhNWRiY2M4OTFmZDI3ZTFjMmEyYTU2NmM3ZWVlMzIzNGUzOTZiZjE5MWI4NTkwNTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1fb4b5942e714cb58702647215cfac0b",
+      "statement": "Feedback for an agent-addressed run follows that run rather than ambient configuration: callers supply the run's agent_id and agent_environment as location context instead of session_id, the client never reads LANGSMITH_AGENT_ID for feedback, and supplied agent fields survive serialization while unset fields are omitted.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/client.py#L8313-L8397",
+          "version": "repo-lines-v1:sha256:5fbb070bedbd953ae958e671bdae1e1ca21c4d0ed6504200de188db521c11f2c:eyJzZWxlY3RlZExpbmVDb3VudCI6ODUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5Y2M4ZDE2OGQwZjEyNGNlMTE2MzAwMTA3ZWY5ZmEyY2ZhM2MzN2MzNWI0OTIwNTkxOTkyMDE1ZDY0ZGUyNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljZjQ0NTc2NjM4YThhZGYzMTZkOWMxNGIzZTVhMmQ5MTNkNWNhNjI3ZmFjZjVjNTY4M2ZjNmFhNjIwYzliMWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5NzMzYzMxMTMwMTI4YWVlOTY1MzlhZDYxYmE5NjFjNzM4OGNhODRmYTQ4MWNmOTg2Y2NhZDdlZGVmY2Q1YjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4MmM1NDI3MWU2YTlmZTExMDUxNjk2YTM0ODMzMjNiYTc2ZjhiZjEyMDEzMTAyMmE0NmU0ODlkMjhhNTNlMjcifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L8448-L8529",
+          "version": "repo-lines-v1:sha256:86d8ef0d0cc44b9f8ded3bb05111e9a665dcb3dda17adeab5ee78877ae7ff555:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMDNjYTdlMmY0MWNmNTg1ODc5MjhkYmMzNWM1ODhjNGFmYjJkNGQyYjY3YWE1ZDhiZmM4NzQ1NmNiMjQxNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkOGZmMzFkZWNkZjY5ZTFkZDkyZDVmYjNhOTM0YWQwNzYxMmViYjM0ZDM4MDEzNzMyZDM2OWVlMDIzYzI2YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2MjE5M2Y4ODBhZmU0OGM5ODAyY2IzYTdiZTM2MWNmZDViZjJlZWE1ZGUzMmU1Yjg4OWU1M2RkYmUyZGZhZjQifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/schemas.py#L658-L669",
+          "version": "repo-lines-v1:sha256:43bf532e61f262013482ed59bc0823476cd39bb6aa9227c62c0a1e8391088bd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1OWEwNTZjMmNkMGUyN2JhNjg0Zjk0ZDBjZjgyNThjMzhjYWJlOTk4OTZiYjg0NjM1ZGJiM2YxN2VmZjczNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNzU3NzVkY2E1YzBiNDhiODlkYmJiNjI0ZDQ5NjQzZmM2MDk3ZjZlMmE2NzIzMDc3Y2RmMTMwOTFhYTdhYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0ZTc3MzI0M2Q3NGJjNDgyMmQ0OGIwMTgzMjFmNDU0N2YyYTI3ZjlkMmJiYTcwYWQxY2NlOWJjNWI4ZmE0YWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhMDYyYzEwNjlkYjEyMTk0ZTNhZWU3NDc4Zjc0MWU3NGQ0ZmZjNWQ5OWUxNWFkNTZiODEyNzY0MmE1ZGFiMzAifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_client.py#L8750-L8861",
+          "version": "repo-lines-v1:sha256:6758f95eb306deef78d1ad17b0168fd02a6c64e69575ab7576187ae614873b3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxOWJkMWU3Y2ViNGFkZTRkMGNiYzJiNmRiOTUyNjIyZTc3YzkxNzUwNWUwNDVkNDJiMTg1ODczOWRhZTIxODA2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxY2FmZTgyOTUwMWUzOTE4NDk0YzY0ZWRkYWMxYTA2MTYwNjk0NTkxZjY5Njk5MTI3N2U3MGJjZTIxMzRhNzFjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MTM1MGRiYTlhOWFhZDljYzhkNjkwZDI3NDQ4OGFhMzAxZDEzODA2NTk5YTQwMGMxM2M1YWU3ZTUwMDc1MTY2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_c6f7fec3e4324d0f98e9cced6e6fc1a0",
+      "statement": "The SDK cannot construct a project-shaped URL for an agent-addressed run until the run is read back with session_id, because only the backend knows which environment project the agent pair resolved to; it raises instead of returning a URL for the wrong project.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_agent_addressing.py#L156-L177",
+          "version": "repo-lines-v1:sha256:04394e4671b5508817493c437f633cb1215acc7461e5579e7ce84a20ef8f09d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkZTk2ZTBhYTQzMGY1YzkwYjIwNTI2N2JlYzFjNmZjMmQ4MGQ2MDQ0MWMwMDZjOTZkYTkzY2M5NmMxY2ZhNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNhZDY3NjA4MWNhZDljYjMzMGVlOGMyMmJmOWEzNjdmZTMzZTBjNmJhYzE1YWQ4ODhiMzkyNTgwNWQ2ZDYwYzYifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L4913-L4943",
+          "version": "repo-lines-v1:sha256:2c46d2c8db9a84b8ad6ccc5a838758ebceefac9333da348f3a170d91fa7a07ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwNDQ2ZGQyNWYyNmEyNzg1YzU0YTZkYTBiMzBiY2I4MDU4ODhkMTkzOTEyYTlkZjI4MGI3ZDc5MDQ0MDM1NWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1OTI4YjliNjhhZmI1NzZjZTEyMDk0MWIxMDkzMWQwNmQzNjFlZWQ1NjE2MDU5OTYyZDFhYjc4ZWY4NTJmZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmZTdiYTY4YzU4ZmUzNjFkNmU5M2VhZTExZjZmMWQ3ZjA3NDQxMTNkNmRkZjAxMDI5Mzc5N2Q5MWEyMDgyY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwMDJkYjYzNDMyN2ZiM2E4MzIzYTMyZmM5Mzc3YTcxNDc4ODE0MGZhNTMxZThjNjhkOTE0NmEzMTAyOTI3OTIifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_client.py#L8525-L8556",
+          "version": "repo-lines-v1:sha256:154bfe7095a19a5c9f52ec119db668b09e12fe85cc5c8a5e0867d5f17989ab7e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNTc5NzUxYzk1YzVhMTBiNGZkZmVhN2Q5ZGRiYjUxYWFlOGJlYmQwYmExMjg3NTU3OGZlOGQ1NzJhZTY2NjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViN2EwOTgwOWIwNjRjNmM2Y2Y0MmE1YmJkNWM3YTM4Y2MwMDQ1MGQ1NGJmYjJhNTljZWVmZWM2MzJkYmMxYWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1ZWE2N2NmZWZjNmQ3MjgzNDY1NzkwZWVhM2ViY2YzMGQzMDkyM2VkYWM0NzQyY2RmNTMxMzc3YjEyYjE2ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzMmJmZTJhMTc2NzllYjk5OTdiM2E2Y2RkNzJhZjQ2Y2ZhYWRiOWM1MWM3ZmVkMmY2ZTFkZmRiMTg5MDAwZTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b8d438170038438b9c947f53a1495d19",
+      "statement": "Generated resources are the current façade for runs, traces, threads, public runs, dataset-v2 operations, and annotation-queue items; most require backend 0.16.0 and annotation-queue items require 0.16.14, while handwritten run, thread, sharing, and public-run compatibility methods warn that they will be removed after January 31, 2027.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/client.ts#L1765-L1809",
+          "version": "repo-lines-v1:sha256:4b5b892ac3820b459a57848d8f2a1d3427c2535b7e5f71972df24b81b9ba87b6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5NmIwMDBhMzk1MTJkNmJkZTUxMWE2ZTkwNWY3ZTBmNzIyMzhhMWNjNTg1NTEwODI1Y2ExMWQwNWYyNTAyMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkZjBkZTdhOGFkODdhZTk5ODBjZjFiOTRkY2JlMWY3YTA4YWViMWM1NjViNTAzYzc1MmY3NGQ1YTBkMGVjMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5MzA1MmQ0NmJjYjVlYzM5YzA4NjBlMmM3YjU4MWE4OTdkMTc4M2I1YzY5OWE1MTkyYmYyYjg3OTJhZTYwODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwMjhiOWYwZTNiMTUwMDE1OGIxZmE4ZDhjMGM4NTgyZTkxNGEwMDM2ZWZhMDUzZGFiYzhhMGZiOGNiYWZlOGUifQ"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L3186-L3217",
+          "version": "repo-lines-v1:sha256:2490a35b03fbc84deb9feca68edcdae306f8193780931bdf1f4744659c87e0c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkZTU5NWU5YzczOGM3N2VjMjYwN2UyYTU2MDg3OTJkMzkzN2EyYjE1NGFmMzNkOTdiZjMxYzViODhlN2MyNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliOTgxYmNiMmI3MmI4YjU5Mzg1Mzg2ZDlmOGFkMWI3YzU0ZjY2OTU0NWJmMzRmNGY1ZDgxODdmOWNhZDhjMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlMTJiNjExODk0M2UzMGMwMDY4MzNlNzgxNjMwYTUzYjMyZjQxN2VmNWY5Nzk1YzNmMTJmMzMwODAyNGM1ZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliZGQ2NWJjZmI2MjRkNTVhYjM3NDQyYWY1ZWQ5NGI5ZjE3NWRmYzRmZjEwNzBlY2M2ODc2N2I5ZTU1NjQxNzQifQ"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L3311-L3412",
+          "version": "repo-lines-v1:sha256:fa49ba535f549719c0ecbce44df95f0cb4932a81bb06d47b4c233049a811c8c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0ZjJhMmY5OTZmMDhlNjgwYmQyOTIxMzVhNmZhNDk3OGJkYTI2ZTYwMmQ4NGYzM2NiMWQ1OTQ3NzVkNDMwNGI1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZmUyNGI5YzRjZGJjNTY1MzUxNDMzZTEzZWE3ZDRkZTYyMjA1NDRkNWU5ZDU2OTUwM2UyODY1NzJjNTZlYmZkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3ZDcwOGVjODJkMTViOThlMWVlZGYwNjAxMGY1NDkzMmE2YThjZDc5NjM0ZWVjZjVlMTc0ZTY1MjAwMzUxYzgzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwYmM0ODgzYjA1ZWI0Mzg1N2MwMTNkNmY4OTUwZTYzZWMwZTYxNjk0ZThhNDA5ZjQyNzI3YTNjZjhkYzkxZDQxIn0"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L3600-L3647",
+          "version": "repo-lines-v1:sha256:69b900806b0850e1818b118540c60c840e72714a38451770df76e3fa38ca50d4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlZWVmM2I3Y2MxYWI4NGE2YTZhNmY2ODI5ZTA1MWU0ODgyOTU1NjU2OTQwNzEyNmI4NGMxYmU2OWFiYTc2M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwN2M5NTc2NWJlMjZkYjM1MmQyYjI4NzBjNDAxZjJmMzg1YmFjYTg2ZTFiOWRkYjM2NDE0NGJkNTRiMTZjZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZDg2MzJlNTRlOTI5OGFiYjk1ODcyN2UyZDUxNDA4YWJhZjEzNjYwMzUzNzkxMDE0MGFiZjY1YjMwYWI2MTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiMjM1MjgwNjUwZWYwN2E5MWQzNzRkYjAzN2ZmZmQ0ZTkxMmI4NWYwNjFhODA4NGQxODkwM2Q5MGRmMzYxMmIifQ"
+        },
+        {
+          "resource": "repo://js/src/client.ts#L3872-L3973",
+          "version": "repo-lines-v1:sha256:e8f969c1ee6d9cefb3c7abe23f6db081cc0b2409678dc38c2053a03dc2f6612a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4ZTg2MmJlZWQ2ODRmYjc1NGU1NmY5N2NjZjUxMWJiNDVkMjhhMDNiMmNjYTNjMGQ5NzE5YmYyOTVmNDExZTUyIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiOTc4ZTI1MDNiOGNmMzdhMDZmN2Q2ZjBhM2E2YjZmZTM1NjkxZmJjYWI1MGI4Nzc1Y2FiNmZhYmM3MWM1OTJiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwY2YzZTcxMzRjNWVjN2U2Yjc1NjZlZmYxMTFjNGE2MTA5ZWFkODFmZTk3YTczYjUwYmUyYzBhMGY4ODRmOTVlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyYTFhODhhOTdjY2QyN2VhYmU0YWQ0NWFiZWE1ZWQ2M2I1ZTViNTUwODcwNzExNDhiOWI2NGE2ZTNkNWFiNzcxIn0"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L1607-L1709",
+          "version": "repo-lines-v1:sha256:a97c8648fbd6dee2fbc8918f2ea3df114020136bd1dd0ace0802ae17e77094d0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MjhmNDY3ZGMxNmFlODQxZGJmMWVmN2RhZjg0NjlmZjZlZmIyYTcwNzRlZjliNTJlZDc2NmQyNjRjNTY0YWU2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5YzQ1ZDJlMDEzM2ZlOTBlYmEyNDJkZDRiNzkyZGIyZGFlMzJiYjEzNTVmNTc3M2QxMDJlNzIwYjQ5OGRlMzM5IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhMDRmMzBlNTZhOWM1Mzc0NGY2Y2E0MzNjMTU2MjVlYTdmOGI4ZWE4YzNlOGE0ZjRmOTY2YTlkNWY3MWY5MWJhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyNjM1NDRjOWY0MjEzZjY4OTFiYzE5MjM0YmQ3YWE0NWVlOGFiOTI4NDM0MDQ3YmI1ZjFkYzQwM2IyOTBjNmE2In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_34a077098aed445b87bf08e3d19b01b3",
+      "statement": "Legacy annotation-queue run-membership and status/count methods are deprecated for removal after January 31, 2027 in favor of generated item create, update, list, placement, status, count, and bulk-delete routes.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/_openapi_client/resources/annotation-queues/runs.ts#L14-L81",
+          "version": "repo-lines-v1:sha256:50484bca5d075eaaf61a09de27ad6e945d3bc0b582406f9dba53cfc86cd2e225:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExOWZlN2ZjZDM2MWQ5ZDc2OGE5ZGZkMzJjOWI0Njc4ZmRjZTUzYzkyOWI1ZTMzM2VhOWY2MTkzYjg0MWFkOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ODFhN2Q4YzUyM2ZiMTk5MzAzYzFjY2VmZWQ2NzcyNTRiMWRhZDJlMWU3NjU2ZTM3NDY2YzNmNzcyZTU0NWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwNzRjODVkNjQwMzE4YmJhNWEwZjMwNjBjNDExYTk0YWQzODJiMTQzYzEzZTYxZWI3MjBhMTBjZjQ1YmIyNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4NjdkNjk1MzQzZGM2ZDk4ZDRmNDBhNjJkOTM4NTMxYzMyZDk1ZjdhNTFiM2RhY2NhZDdmZjYwOWNkOGRlMWMifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_openapi_client/resources/annotation_queues/annotation_queues.py#L274-L640",
+          "version": "repo-lines-v1:sha256:d7db972e55402bd607d56f070212d9a5cfab4bb17d655c7b3d3a50c008a431a2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzY3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiNWRjNzIzNzFlMGMzZWU0ZDc0NWRiZWY2MTcwYzc5Zjc3ZWY2NThhOWE5ZGFkZjk0MGFkZWM0ZTg4Y2U2Yjk1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0YjAyNjk3NTVkYWQwNzFkZTliYjU5M2U1N2RlNmVlNmNlMmY1M2E3NDIxYzRhZDI2N2MxYWE4NWVjY2QzNWNlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyNTFiNzhlNjYyZmQ0OTdhMWMyOGMwNWZjMmI1MDExYTJhNDQyZmY2MDNhZjgxZTExYjFjMDQ1YWFkYTQwNjQ1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0ZTQ2YjQ0YzhlMjFiMGI5OWVlYjBhMTY0NTEyNWM0ZDcwNmI3ZDk3ODJiYWViMzJiMTYxOWJiYTcwNTQ0ZmUyIn0"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-15T08:28:54.852Z"
+    "at": "2026-09-28T08:35:15.620Z"
   }
 }

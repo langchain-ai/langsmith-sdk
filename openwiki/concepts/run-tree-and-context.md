@@ -1,11 +1,11 @@
 ---
 type: tracing data model
 title: Run Trees, Trace Identity, and Context Propagation
-description: Explains how LangSmith SDK runs form ordered trace trees, how identity and context cross async and service boundaries, and how completion, attachments, and replica routing affect ingestion.
+description: Explains how LangSmith SDK runs form ordered trace trees, how identity and context cross async and service boundaries, and how completion, attachments, addressing, and replica routing affect ingestion.
 tags: [tracing, run-tree, context-propagation, distributed-tracing, batch-ingest]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-28T08:35:15.620Z
 sources:
   - id: openwiki-source-c27c18f68326f94a1c4b2695
     resource: repo://js/src/client.ts
@@ -19,8 +19,12 @@ sources:
     resource: repo://js/src/traceable.ts
   - id: openwiki-source-b4d02d5e1be87b91734c40dd
     resource: repo://js/src/uuid.ts
+  - id: openwiki-source-38bfba5f188f2d820764e1a0
+    resource: repo://python/langsmith/_internal/_agent_addressing.py
   - id: openwiki-source-af46ecbd1bee679d8801badc
     resource: repo://python/langsmith/_internal/_context.py
+  - id: openwiki-source-090791cdda46ba3cf5fdeee7
+    resource: repo://python/langsmith/_internal/_uuid.py
   - id: openwiki-source-197446e566d18b5ec23537cc
     resource: repo://python/langsmith/client.py
   - id: openwiki-source-923dd73ee83ba4b6c0554733
@@ -29,25 +33,25 @@ sources:
     resource: repo://python/langsmith/run_trees.py
   - id: openwiki-source-a3a852032af86998ed5cf20c
     resource: repo://python/langsmith/schemas.py
-  - id: openwiki-source-2c3298aa8af8e3ba3adc774e
-    resource: repo://python/langsmith/uuid.py
+  - id: openwiki-source-968e7cb254562232d57fe9b1
+    resource: repo://python/tests/unit_tests/test_run_helpers.py
   - id: openwiki-source-ef6ea4c43ce3bdf40075cb1b
     resource: repo://python/tests/unit_tests/test_run_trees.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-28T08:35:15.620Z" }
 ---
 
 # Run Trees, Trace Identity, and Context Propagation
 
-A **run** is the SDK's span-like record for one operation: a chain, model call, tool call, retriever, or another named unit of work. A root run represents a trace; descendants represent nested work. `RunTree` is the mutable, client-side form used while capturing that work. It owns the run payload, parent and child links, trace identity, ordering, completion fields, and routing instructions needed to post the start and patch the result.
+A **run** is the SDK's span-like record for one operation: a chain, model call, tool call, retriever, or another named unit of work. A root run represents a trace; descendants represent nested work. `RunTree` is the mutable, client-side form used while capturing that work. It owns the run payload, structural identity, ordering, completion fields, and routing instructions needed to post the start and patch the result.
 
-The JavaScript and Python implementations share the same wire-level model, but their runtime context and stream wrappers differ. Code that produces runs manually should preserve the wire invariants described below rather than copying incidental wrapper behavior from one language.
+The JavaScript and Python implementations share the core trace wire model, but their runtime context, stream wrappers, and some routing features differ. In particular, the project-versus-agent addressing rules documented below are currently Python behavior; do not infer JavaScript parity. Manual run producers should preserve the wire invariants rather than copy incidental wrapper behavior from either language.
 
 ## The run tree and its identities
 
 The important fields have distinct jobs:
 
 - `id` identifies exactly one run. When absent, both SDKs generate a UUID v7 from the run start time. Time-derived UUIDs improve temporal locality but do not replace `dotted_order`.
-- `parent_run_id` is the direct structural edge to the parent. The in-memory `parent_run` reference and `child_runs` list are construction conveniences; posting normally serializes runs individually.
+- `parent_run_id` is the direct structural edge to the parent. JavaScript also retains an in-memory `parent_run`; Python consumes a supplied parent to derive `parent_run_id` and `parent_dotted_order` but no longer retains that back-reference. Both implementations keep `child_runs` as a construction convenience, while normal posting serializes runs independently.
 - `trace_id` identifies the whole trace. A root defaults it to its own `id`; a child inherits the root value from its parent.
 - `dotted_order` is the complete ancestry and ordering key. Each segment combines a sortable timestamp prefix with that segment's run UUID, and child segments are appended to the parent's value with `.`.
 - `start_time`, `end_time`, `inputs`, `outputs`, `error`, `events`, `extra.metadata`, `tags`, and `attachments` carry the run's lifecycle and observations.
@@ -80,27 +84,32 @@ For safe producers and transformations:
 
 ## Construction and context propagation
 
-`createChild` / `create_child` is the direct construction entrypoint. It sets the parent link, project and client, generates or accepts the child's identity, extends `dotted_order`, and adds the child to the parent's in-memory list. Parent metadata is copied into the child and child keys win. Direct child construction does **not** universally imply tag inheritance: the tracing wrappers assemble inherited tags before calling it.
+`createChild` / `create_child` is the direct construction entrypoint. It sets the structural parent fields, project or Python agent destination, client, identity, and extended `dotted_order`, then adds the child to the parent's in-memory child list. Parent metadata is copied into the child and child keys win. Direct child construction does **not** universally imply tag inheritance: the tracing wrappers assemble inherited tags before calling it.
 
-Most application code instead uses `traceable` or Python's `trace` context manager. A wrapper discovers the current parent, creates a child or a new root, posts the start, installs the child as current context while user code runs, and ends and patches it later. Nested calls therefore become children without explicitly passing a `RunTree`.
+Most application code instead uses `traceable` or Python's `trace` context manager. Setup discovers the current parent, creates a child or a new root, posts the start when tracing is enabled, and installs the run as current context while user code executes. Nested wrappers recover that run and repeat the child path. Ordinary values finalize after the function settles; generators and streams defer finalization until exhaustion, error, or close.
 
 ```mermaid
 flowchart TD
-    Caller["Caller enters traceable operation"] --> Parent{"Current parent exists"}
-    Parent -->|no| Root["Create root run"]
-    Parent -->|yes| Child["Create child from parent"]
-    Root --> Identity["Set trace_id and dotted_order"]
-    Child --> Identity
-    Identity --> Start["Post run start"]
-    Start --> Context["Install run in async context"]
-    Context --> Work["Execute user work"]
-    Work --> Nested["Nested traced call"]
+    Enter["Enter tracing wrapper"] --> Discover["Read active tracing context"]
+    Discover --> HasParent{"Parent run found"}
+    HasParent -->|yes| Child["Create child and extend dotted order"]
+    HasParent -->|no| Root["Create root and set trace identity"]
+    Child --> Post["Post start when tracing is enabled"]
+    Root --> Post
+    Post --> Install["Install new run in copied or async-local context"]
+    Install --> Execute["Execute user code"]
+    Execute --> Nested["Nested traced call reads current run"]
     Nested --> Child
-    Work --> Finish["End with outputs or error"]
-    Finish --> Patch["Patch completion"]
+    Execute --> Result{"Result shape"}
+    Result -->|value or promise| Settle["Process output or error"]
+    Result -->|iterator or stream| Iterate["Run continuations in captured context"]
+    Iterate --> Settle
+    Settle --> Finish["End run in memory"]
+    Finish --> Patch["Patch completion when tracing is enabled"]
+    Patch --> Restore["Return or rethrow and restore outer context"]
 ```
 
-*The active async context turns nested traced work into children while preserving root trace identity and ordered ancestry.*
+*The wrappers post before nested execution, preserve the new run across asynchronous continuations, and finalize only when the actual value or stream lifecycle settles.*
 
 ### JavaScript runtime context
 
@@ -110,11 +119,27 @@ The run also carries symbol-keyed LangChain context variables. `createChild` cop
 
 ### Python runtime context
 
-Python uses `contextvars` for the active parent, project, tags, metadata, tracing mode, client, replicas, and distributed parent ID. The active parent is stored as a **weak reference**, preventing contexts captured by `asyncio.create_task`, `call_later`, and similar APIs from keeping completed trees alive indefinitely.
+Python uses `contextvars` for the active parent, project, agent ID and environment, tags, metadata, tracing mode, client, replicas, and distributed parent ID. The active parent is stored as a **weak reference**, preventing contexts captured by `asyncio.create_task`, `call_later`, and similar APIs from keeping completed trees alive indefinitely.
 
 `_setup_run` takes a copied context and installs the new run there. On Python versions that support an explicit task context, async wrappers create a task with that context; older runtimes temporarily restore the tracing context around awaits. Generator iteration similarly runs each `next` or `anext` in the captured context, because generator bodies execute during iteration rather than construction.
 
 `tracing_context` is the scoped configuration entrypoint. It can accept a `RunTree`, request headers, a dotted-order string, or `parent=False`; it merges parent tags and metadata with block-local values and restores the previous context on exit. `configure` supplies process-wide fallbacks, while context-local values take precedence during run setup.
+
+## Python project-versus-agent addressing
+
+Python can address a run either to a project (`project_name` / `session_name` or an ID) or, as a beta feature, to an agent (`agent_id` plus `agent_environment`). Agent addressing is workspace-gated: an unsupported workspace rejects the run and the SDK does not fall back to a project. JavaScript `RunTree` does not currently expose this addressing mode.
+
+Resolution deliberately distinguishes values named in code from environment defaults:
+
+- Code-level tiers are collected from the active context, current parent, invocation (`langsmith_extra`), decorator, and `configure` fallback. A settled parent destination is inherited by children; wrappers also install the settled project or agent pair into the copied context for deeper nesting.
+- If code names a project, it suppresses an ambient agent. If code names an agent, it suppresses an environment project. A partial agent pair named in code can be completed by the corresponding environment variable.
+- Naming a project and any agent field in the **same call** is rejected with `LangSmithUserError`. This catches an otherwise silent conflict before resolution discards one side. Restoring a captured context while deliberately supplying a project is treated as inheritance: that project wins and the inherited agent pair is cleared.
+- If only environment variables supply addressing, the SDK does not invent a preference. A configured project and agent travel together for the endpoint to reject; a lone agent field also travels and fails there. Suppressing either case would silently route the run to `default`, so the behavior is fail-closed.
+- With no project or agent configuration, the normal environment project or `default` is used.
+
+`RunTree.create_child` copies the parent's already-settled project or agent fields, so later environment changes cannot redirect a descendant. A replica that names neither mode inherits the run's destination as one unit; an explicitly addressed replica must choose one mode. Agent-addressed replicas use the agent ID and environment as their deterministic remapping destination seed.
+
+Agent-addressed runs cannot build a run URL until a `session_id` is known: only the backend knows which project the agent environment resolved to. Completion patches do not newly consult agent environment variables; they retain the target established by the create or let the backend locate the run by ID.
 
 ## Metadata, tags, and distributed handoff
 
@@ -123,11 +148,14 @@ Metadata lives under `extra.metadata`. During direct child creation, parent meta
 Across a service boundary, `toHeaders` / `to_headers` exports:
 
 - `langsmith-trace`: the full current `dotted_order`;
-- `baggage`: URL-encoded LangSmith metadata, tags, and project information.
+- `baggage`: URL-encoded LangSmith metadata, tags, and project information;
+- in Python only, `langsmith-agent-id` and `langsmith-agent-environment` baggage entries when the run is agent-addressed.
 
 `fromHeaders` / `from_headers` reconstructs a placeholder for the upstream run. The first dotted segment supplies `trace_id`, the last supplies `id`, and Python also recovers the immediate `parent_run_id` when one exists. The placeholder is not responsible for completing the upstream span; creating a child from it extends the same trace in the receiving process. Missing `langsmith-trace` produces no parent.
 
-Replica routing received from baggage is treated as untrusted. Credentials and dedicated `client` objects are not propagated. JavaScript retains only header-safe routing fields. Python additionally fail-closes replica `updates` to an allow-list (defaulting to `reroot`, `metadata`, and `tags`, configurable with `LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS`) and always retains `reroot`.
+Python preserves one addressing mode across the hop. A baggage project takes precedence over an agent carried by the same header. A destination explicitly named by receiving code is protected from conflicting untrusted baggage; an incomplete baggage agent pair is ignored with a warning rather than allowed to crash or redirect the receiver. An ambient agent does not hijack a project-addressed upstream trace.
+
+Replica routing parsed from baggage is also treated as untrusted. Credentials and dedicated `client` objects are not propagated. JavaScript retains only header-safe routing fields. Python retains project or a complete agent destination, fail-closes replica `updates` to an allow-list (defaulting to `reroot`, `metadata`, and `tags`, configurable with `LANGSMITH_BAGGAGE_ALLOWED_UPDATE_FIELDS`), and always retains `reroot`.
 
 ## Lifecycle and completion semantics
 
@@ -164,11 +192,11 @@ On multipart ingest, attachment parts are keyed to the run's trace operation whi
 
 ## Replica routing and rerooting
 
-A run can carry write replicas that choose a destination URL/client, project, authentication, whether IDs stay primary, payload updates, and optional `reroot` behavior. Children inherit replica configuration; JavaScript strips `reroot` during inheritance so it applies only where explicitly requested.
+A run can carry write replicas that choose a destination URL/client, project, authentication, whether IDs stay primary, payload updates, and optional `reroot` behavior. Python replicas may instead choose an agent destination. Children inherit replica configuration; JavaScript strips `reroot` during inheritance so it applies only where explicitly requested.
 
-Primary replicas preserve original IDs. Secondary replicas deterministically derive UUID v7 IDs from the original run ID and destination project, and rewrite `id`, `parent_run_id`, `trace_id`, and every UUID suffix in `dotted_order` consistently. Determinism allows independently posted parent and child operations to meet at the same replica tree.
+Primary replicas preserve original IDs. Secondary replicas deterministically derive UUID v7 IDs from the original run ID and destination—project in both SDKs, or the agent pair in Python—and rewrite `id`, `parent_run_id`, `trace_id`, and every UUID suffix in `dotted_order` consistently. Determinism allows independently posted parent and child operations to meet at the same replica tree.
 
-Rerooting intentionally changes the tree visible to one destination. At a distributed boundary, the reconstructed parent's ID is retained as the distributed parent marker. A rerooted descendant slices earlier segments from `dotted_order`, removes the matching `parent_run_id`, and sets `trace_id` to the new root. JavaScript also tracks the replica-specific reroot root in run context so later descendants use the same sliced hierarchy. Python groups replicas that produce byte-identical payloads so one serialization can be dispatched with several authentication destinations; a per-replica `client` can route that destination through a different tracing mode.
+Rerooting intentionally changes the tree visible to one destination. At a distributed boundary, the reconstructed parent's ID is retained as the distributed parent marker. A rerooted descendant slices earlier segments from `dotted_order`, removes the matching `parent_run_id`, and sets `trace_id` to the new root. JavaScript also tracks the replica-specific reroot root in run context so later descendants use the same sliced hierarchy. Python groups replicas that share the same client and produce the same transformed payload so one serialization can be dispatched with several authentication destinations; a per-replica `client` can route that destination through a different tracing mode.
 
 ## Safe extension checklist
 
@@ -180,7 +208,8 @@ When adding a wrapper, scheduler handoff, or ingestion transform:
 - Finalize exactly once on success, error, early close, and task cancellation; preserve partial stream outputs and rethrow user exceptions.
 - Do not let error cleanup wait indefinitely for children.
 - Keep binary data in attachments and preserve the Python filesystem opt-in.
+- In Python, keep project and agent addressing mutually exclusive at explicit entrypoints, inherit the settled destination whole, and never resolve malformed ambient configuration to `default`.
 - Remap all identity-bearing fields together for secondary replicas, and strip credentials from baggage.
-- Test a three-level tree, equal timestamps, cross-service headers, early iterator close, stream error, async task cancellation, merged create/update batches, and replica reroot descendants.
+- Test a three-level tree, equal timestamps, cross-service headers, early iterator close, stream error, async task cancellation, merged create/update batches, project-versus-agent conflicts, and replica reroot descendants.
 
 Focused regression coverage lives in `js/src/tests/run_trees.test.ts`, `js/src/tests/traceable.test.ts`, `python/tests/unit_tests/test_run_trees.py`, and `python/tests/unit_tests/test_run_helpers.py`. These tests are most valuable when assertions inspect the resulting tree and payload fields—not just whether the wrapped function returned its value.

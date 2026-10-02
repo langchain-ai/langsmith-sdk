@@ -1,14 +1,16 @@
 ---
 type: integration architecture
 title: Provider Wrappers, Agent Integrations, and OpenTelemetry
-description: How LangSmith adapts provider SDK calls, agent and realtime lifecycles, and native OpenTelemetry spans into normalized, traceable runs with streaming output and usage metadata.
-tags: [integrations, provider-wrappers, agents, streaming, opentelemetry, tracing]
+description: Runtime boundaries for provider wrappers, agent and voice integrations, native OpenTelemetry processors, span translation, export ownership, and teardown in the LangSmith SDKs.
+tags: [integrations, provider-wrappers, agents, voice, opentelemetry, tracing]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-09-28T08:35:15.620Z
 sources:
   - id: openwiki-source-5eb7ef0adb97e08a2b3cdb23
     resource: repo://js/src/experimental/otel/exporter.ts
+  - id: openwiki-source-7f921b56a955da8dd8f06dcc
+    resource: repo://js/src/experimental/otel/processor.ts
   - id: openwiki-source-18cc3ec28ef2ab143a56b403
     resource: repo://js/src/experimental/otel/setup.ts
   - id: openwiki-source-7845c7a7ee3335641329dc3b
@@ -31,6 +33,8 @@ sources:
     resource: repo://js/src/wrappers/openai_agents.ts
   - id: openwiki-source-070b035ec6a4a95fd3231bf7
     resource: repo://js/src/wrappers/openai.ts
+  - id: openwiki-source-b7bd987744fd2fee3a94c4a2
+    resource: repo://python/langsmith/_internal/_background_thread.py
   - id: openwiki-source-c501336cc4fcd3def1f507cc
     resource: repo://python/langsmith/_internal/otel/_otel_exporter.py
   - id: openwiki-source-905f6f7b025fcd9e23aef2bd
@@ -39,6 +43,10 @@ sources:
     resource: repo://python/langsmith/_internal/voice/base_span_processor.py
   - id: openwiki-source-197446e566d18b5ec23537cc
     resource: repo://python/langsmith/client.py
+  - id: openwiki-source-805bc008fd27e027bc58ef8e
+    resource: repo://python/langsmith/integrations/claude_agent_sdk/_client.py
+  - id: openwiki-source-27ee7ff1503440c88a11573b
+    resource: repo://python/langsmith/integrations/livekit/processor.py
   - id: openwiki-source-ae37b5ea730255ce612c4c81
     resource: repo://python/langsmith/integrations/openai_agents_sdk/_openai_agents.py
   - id: openwiki-source-38dba9f40c8195f6195366ee
@@ -49,34 +57,53 @@ sources:
     resource: repo://python/langsmith/integrations/otel/processor.py
   - id: openwiki-source-923dd73ee83ba4b6c0554733
     resource: repo://python/langsmith/run_helpers.py
+  - id: openwiki-source-d24db28b13d4f51293c3d183
+    resource: repo://python/langsmith/utils.py
   - id: openwiki-source-26578a90de417b7eaa065baa
     resource: repo://python/tests/unit_tests/test_span_utils.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+  - id: openwiki-source-6f223e49e68d7c8abec56e0d
+    resource: repo://python/tests/unit_tests/wrappers/test_claude_agent_sdk_hooks.py
+  - id: openwiki-source-f92710d9b82c85cd2070b84a
+    resource: repo://python/tests/unit_tests/wrappers/test_livekit.py
+generated: { by: "openwiki/0.5.2", at: "2026-09-28T08:35:15.620Z" }
 ---
 
 # Provider Wrappers, Agent Integrations, and OpenTelemetry
 
-LangSmith integrations preserve the third-party API as much as possible while adapting its observability model to a common run model. A provider call becomes an `llm` run, a tool callback becomes a `tool` run, and agent orchestration becomes a hierarchy of `chain`, `tool`, and `llm` runs. The adaptation boundary is also where provider-specific messages, stream chunks, token accounting, lifecycle callbacks, and metadata become stable LangSmith inputs and outputs.
+LangSmith integrations preserve a third-party API while adapting its observability model. A model call becomes an `llm` run, a tool callback becomes a `tool` run, and agent orchestration becomes a hierarchy of `chain`, `tool`, and `llm` runs. Provider-specific messages, stream chunks, usage, callbacks, and metadata are normalized at that boundary.
 
-There are two transport families after adaptation:
+The most important distinction is the transport after adaptation:
 
-- **Run transport** uses `traceable` and `RunTree`, then posts and patches runs through the LangSmith client.
-- **OTLP transport** emits or rewrites OpenTelemetry spans and sends them through an exporter and processor. Native OTel instrumentation can therefore coexist with LangSmith tracing without requiring provider wrappers to imitate an OTel SDK.
+- **RunTree integrations**—provider wrappers, composition wrappers, agent lifecycle hooks, and session proxies—call `traceable`, `trace`, or `RunTree` operations. Their post and patch operations go through the LangSmith `Client` and its batching lifecycle.
+- **Native OTel integrations**—`OtelSpanProcessor`, the JavaScript experimental OTel processor, and voice-framework translators—receive or create OTel spans. Their OTel processor/exporter chain owns batching and sends OTLP directly; it does **not** enqueue runs in the `Client` batch queue. The public Python and JavaScript exporters default to `{LANGSMITH_ENDPOINT}/otel/v1/traces`.
+- **Run-to-OTel tracing mode** is a bridge between those families, not native span processing. Python `Client(tracing_mode="otel")` still accepts serialized RunTree post/update operations through the Client queue, converts them to spans internally, and hands those spans to an OTel provider. `hybrid` sends the same run operations through both paths.
 
-## Adaptation patterns
+## Integration taxonomy
 
-### Call-bound provider wrappers
+| Boundary | Representative entrypoint | Emits | Lifecycle owner |
+|---|---|---|---|
+| Model client method | `wrapOpenAI`, `wrapAnthropic`, `wrapGemini`, `wrapSDK` | `RunTree` operations | traced call or consumed stream |
+| Framework model/tool loop | `wrapAISDK` and `LangSmithMiddleware` | parent and child `RunTree` operations | wrapped framework operation |
+| Agent callbacks | OpenAI Agents tracing processors, Claude Agent SDK hooks | hierarchical `RunTree` operations | SDK trace/span callbacks or response generator |
+| Realtime connection | OpenAI Realtime proxy | session and event `RunTree` operations | connection/session context |
+| Framework-native OTel | `LiveKitLangSmithSpanProcessor`, Pipecat processor | translated OTel spans | translating processor and downstream processor |
+| General native OTel | `OtelSpanProcessor`, `LangSmithOTLPSpanProcessor` | OTel spans | tracer provider and span processor |
+| Run-to-OTel mode | Python internal `OTELExporter` | spans derived from serialized run operations | `Client` queue plus OTel provider |
 
-The OpenAI, Anthropic, and Gemini wrappers in JavaScript and Python patch only the model-facing methods that have useful semantics. They keep normal sync, async, parse, raw-response, and streaming behavior, but wrap the call with `traceable` and provider-specific configuration. In JavaScript, `wrapOpenAI` also rejects an already wrapped client so that one provider call cannot accidentally create duplicate runs. `wrapSDK` is the deliberately broader fallback: its recursive proxy traces every function it finds as an `llm` call, so it should be used only on the portion of an arbitrary SDK intended for model invocation.
+Choose the narrowest boundary available. A provider wrapper is preferable for ordinary model clients; a composition wrapper belongs around a framework that owns the model/tool loop; callback SDKs need lifecycle processors; realtime APIs need a session proxy; and frameworks that already emit OTel need a translating processor in front of an OTLP exporter.
 
-A wrapper supplies four kinds of policy to the shared tracing layer:
+## Provider wrappers and streams
 
-1. **Input normalization.** Chat prompts become message-shaped inputs suitable for display and replay. Anthropic's JavaScript wrapper represents `system` as the first system message in the traced copy, masks transport secret fields, and redacts MCP server credentials without changing the request object sent to Anthropic.
-2. **Invocation metadata.** Provider, model, model type, temperature, stop sequences, maximum tokens, and selected invocation parameters are recorded under stable `ls_*` keys. Wrapper-level metadata and per-call configuration are merged without duplicating `ls_invocation_params`.
-3. **Output normalization.** Provider response objects are reduced to message- or completion-shaped outputs while retaining identifiers and normalized `usage_metadata` needed by LangSmith.
-4. **Streaming reduction.** Chunks are yielded unchanged to the caller while an aggregator or `reduce_fn` accumulates a final output. JavaScript's OpenAI and Anthropic stream helpers ensure SDK methods such as `finalMessage`, `finalResponse`, and `finalChatCompletion` consume the stream first. Python's traced stream wrappers end the run on normal exhaustion, context-manager exit, or iteration error and re-raise the application error.
+The OpenAI, Anthropic, and Gemini wrappers in JavaScript and Python patch only model-facing methods with useful semantics. They retain normal sync, async, parse, raw-response, and streaming behavior while supplying provider policy to the shared tracing layer:
 
-Usage normalization is semantic rather than a field rename. For example, Anthropic reports uncached input tokens separately from cache-read and cache-creation tokens; the normalized total adds all of them and preserves cache categories in `input_token_details`. Realtime OpenAI usage delegates to the same shared mapper used by ordinary OpenAI wrappers, including audio and cached-token details when present.
+1. **Input normalization** converts provider prompts into replayable message-shaped inputs. The JavaScript Anthropic wrapper places `system` first in the traced copy and redacts secret and MCP credential fields without changing the provider request.
+2. **Invocation metadata** records provider, model, model type, temperature, stop sequences, maximum tokens, and selected parameters under stable `ls_*` keys. Wrapper and per-call metadata are merged.
+3. **Output normalization** reduces provider objects to message- or completion-shaped outputs while retaining IDs and normalized `usage_metadata`.
+4. **Streaming reduction** yields chunks unchanged while an aggregator builds the final traced output. SDK helpers such as `finalMessage`, `finalResponse`, and `finalChatCompletion` still consume the underlying stream before returning.
+
+`wrapOpenAI` rejects an already wrapped JavaScript client to prevent duplicate runs. `wrapSDK` is intentionally broader: its recursive proxy traces every discovered function as an `llm` call, so callers should apply it only to the model-invocation portion of an arbitrary SDK.
+
+Usage normalization is semantic rather than a field rename. Anthropic cache-read and cache-creation input tokens contribute to normalized totals and remain visible in `input_token_details`; OpenAI Realtime delegates to the same usage mapper as ordinary OpenAI wrappers, including cached and audio token details.
 
 ```mermaid
 sequenceDiagram
@@ -84,102 +111,120 @@ sequenceDiagram
     participant Wrapper as Provider wrapper
     participant Traceable
     participant Provider as Third-party SDK
-    participant Stream as Stream aggregator
-    participant Usage as Usage extractor
+    participant Stream as Stream reducer
     participant RunTree
-    participant Ingest as LangSmith ingestion
+    participant Client as LangSmith Client queue
+    participant Ingest as Run ingestion
 
-    App->>Wrapper: Call with provider-native arguments
-    Wrapper->>Traceable: Normalize traced input and invocation metadata
+    App->>Wrapper: Call provider-native method
+    Wrapper->>Traceable: Supply traced input and metadata
     Traceable->>RunTree: Create and post run
+    RunTree->>Client: Enqueue post
     Traceable->>Provider: Invoke original method
-    Provider-->>Stream: Response chunks
+    Provider-->>Stream: Return response chunks
     Stream-->>App: Yield unchanged chunks
-    Stream->>Usage: Reduce final output and token fields
-    Usage->>RunTree: Set outputs and usage_metadata
-    RunTree->>Ingest: Patch completed run
+    Stream->>RunTree: End with reduced output and usage
+    RunTree->>Client: Enqueue patch
+    Client->>Ingest: Flush run operations
 ```
 
-*Provider-wrapper flow from an unchanged SDK call through stream aggregation, usage extraction, `RunTree`, and ingestion.*
+*Provider calls and chunks remain provider-native while the wrapper owns RunTree creation and completion.*
 
-The run is not complete merely because the SDK returned a stream object. Completion is tied to consumption or cancellation: JavaScript's tracing tap records token events, aggregates consumed chunks, marks cancellation as an error, and then ends and patches the run. Consequently, applications should consume or explicitly close streams; relying on object finalization is weaker than completing the stream lifecycle.
+Returning a stream object does not complete the run. Completion follows normal exhaustion, explicit cancellation/close, context-manager exit, or iteration failure. JavaScript records token events and marks cancellation as an error; Python ends the traced stream and re-raises application errors. Applications should consume or explicitly close streams rather than rely on finalization.
 
-### Composition wrappers for model, tool, and agent loops
+## Agent and orchestration integrations
 
-The Vercel AI SDK integration wraps orchestration functions rather than one provider. `wrapAISDK` returns traced `generateText`, `streamText`, object-generation variants, and a wrapped `ToolLoopAgent` when available. Each outer operation gets a chain-like run, the language model is wrapped with `LangSmithMiddleware` to create a child `llm` run, and tool `execute` functions become child `tool` runs. Base configuration is merged with per-call `providerOptions.langsmith`; dedicated child-input and child-output processors prevent an outer redaction or formatter from being applied accidentally to model children.
+### Composition wrappers
 
-For model streams, `LangSmithMiddleware` creates and posts a child `RunTree`, passes every chunk through a `TransformStream`, and reduces text, reasoning, tool calls, provider metadata, finish reason, and usage at flush. It rebuilds a message-shaped output, ends the child, and patches it. Raw HTTP request and response details are excluded by default and are included only when `traceRawHttp` is enabled.
+`wrapAISDK` traces orchestration calls such as text, stream, and object generation and wraps `ToolLoopAgent` when available. The outer operation is chain-like, `LangSmithMiddleware` creates child `llm` runs, and tool `execute` functions create child `tool` runs. Base configuration is merged with per-call `providerOptions.langsmith`; separate child input/output processors prevent an outer formatter or redactor from accidentally being reused for model children.
 
-Agent classification is contextual. Vercel-generated runs preserve an inherited non-root `ls_agent_type`; a run directly under a tool is classified as `subagent`, while a true top-level integration can default to `root`. This metadata supplements the run hierarchy rather than replacing parent-child relationships.
+For a model stream, middleware posts the child run, forwards each chunk through a `TransformStream`, and at flush reduces text, reasoning, tool calls, provider metadata, finish reason, and usage. Raw HTTP request/response capture remains opt-in through `traceRawHttp`.
 
-### Lifecycle processors for agent SDKs
+### OpenAI Agents lifecycle processors
 
-Some agent SDKs expose trace and span callbacks instead of a function that can be decorated. `OpenAIAgentsTracingProcessor` adapts that lifecycle directly:
+OpenAI Agents exposes trace and span callbacks rather than a single decoratable function. The processor maps trace start to a root or nested `chain` run and maps agent, handoff, generation, response, function, and guardrail spans to child run types. Some spans cannot be posted until meaningful input arrives; end callbacks therefore either post then patch or patch an already posted run. Response/generation data supplies root input and the latest root output.
 
-- trace start creates a root or nested `chain` `RunTree` and installs it as current context;
-- span start maps agent, handoff, generation, response, function, and guardrail data to an appropriate child run type;
-- response or generation completion supplies the first meaningful root input and latest root output;
-- span and trace end set outputs or errors, post runs whose complete input was unavailable at start, patch already posted runs, and restore context;
-- `forceFlush` and `shutdown` delegate completion to the LangSmith client.
+The JavaScript processor installs the active run synchronously in `AsyncLocalStorage` so a nested `traceable()` call inside a tool becomes a child of the active agent span. Matching start and end callbacks must execute on the same async task for restoration to return to the right prior context. Explicit processor installation is tracing opt-in, even when `LANGSMITH_TRACING` is unset. Processor metadata is merged with trace metadata, `groupId` becomes `thread_id`, and explicit `ls_agent_type` values—including null opt-out—are preserved. `forceFlush()` and `shutdown()` delegate to the owning LangSmith client.
 
-The JavaScript processor installs the `RunTree` in `AsyncLocalStorage` synchronously because the Agents SDK's start/end callbacks are not one wrap-able function. This makes a nested `traceable()` call inside a tool attach to the active agent span. It also creates a lifecycle constraint: context restoration assumes the matching start and end callbacks occur on the same async task, as the Agents SDK does. Installing the processor is explicit tracing opt-in in JavaScript, so its root and inherited children post even if `LANGSMITH_TRACING` is unset.
+### Claude Agent SDK hooks
 
-Agent metadata is merged from processor defaults and per-trace metadata, then stamped with `ls_integration`. An OpenAI Agents `groupId` becomes `thread_id`; a user-supplied `ls_agent_type`, including an explicit null opt-out, is preserved. Structural classification marks guardrails as `middleware` and agents beneath a tool as `subagent`, while preserving existing middleware, subagent, or compaction tags.
+The Claude integration wraps the SDK response generator and injects additive `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, and `SubagentStop` hooks. Tool runs are keyed by tool-use ID. An Agent tool owns its subagent `chain`, and tools invoked by that subagent nest beneath it. Per-client `SessionState` is bound through a `ContextVar`, preventing concurrent clients from sharing hook-correlation maps.
 
-Claude Agent SDK integration follows the same lifecycle principle with a different event source. Its wrapped async generator observes streamed messages and additive hooks for tool and subagent events, always calls `StreamManager.finish()` in `finally`, strips MCP connection details from traced options, and merges top-level message fragments for the final conversation output. The provider generator and its extra methods remain available to the caller.
+Assistant fragments with the same message ID accumulate into one `llm` run. Patches are deferred until transcript reconciliation can apply final usage and fill model turns missing from the live stream. In `finally`, the integration closes and patches pending model runs, reconciles transcripts, ends outstanding tools/subagents, unregisters session state, and restores caller tracing context. Consumer cancellation and SDK errors therefore do not strand the hierarchy; errors still propagate to the caller.
 
-### Realtime and voice sessions
+### Realtime sessions
 
-Realtime integrations treat the connection or session as the lifecycle owner. The OpenAI Realtime proxy delegates ordinary connection methods and observes both async iteration and `recv`. A session context creates a conversation root, applies `thread_id`, and guarantees teardown. Meaningful events open spans; noisy delta events are generally folded into side state instead. A `response.done` event creates the model record with normalized output, model metadata, and usage, while transcript events build the conversation rollup. Teardown is best-effort and closes any active event span, records body errors on the root, and finalizes transcript and optional audio.
+The OpenAI Realtime proxy observes async iteration and `recv` while delegating ordinary connection methods. A session context owns a conversation root and `thread_id`. Meaningful events become child runs while noisy deltas are folded into side state; `response.done` records normalized model output, model metadata, and usage. Exit is best-effort: active event runs are closed, body errors are recorded on the root, and transcript and optional audio are finalized.
 
-Frameworks such as LiveKit and Pipecat already emit native OTel spans. Their processors therefore use a **translate-then-forward** chain: `BaseLangSmithSpanProcessor` captures thread context at span start, creates a translated draft at span end, stamps static metadata and the cached `thread_id`, lets the framework subclass classify and rewrite it, rebuilds a fresh `ReadableSpan`, and only then forwards it downstream. Wrapping a downstream processor is intentional; making the translator a sibling exporter could race and export the unmodified span. Translation failures are isolated and the original span is exported untranslated where possible. Audio attachments are base64 encoded and size-capped by default.
+## Native OpenTelemetry processing and translation
 
-## OpenTelemetry interoperability and ownership boundaries
+Native OTel processing is independent of the `Client` run queue. In Python, `OtelExporter` subclasses the HTTP `OTLPSpanExporter`, defaults to `{LANGSMITH_ENDPOINT}/otel/v1/traces`, and adds `x-api-key` and `Langsmith-Project`. `OtelSpanProcessor` wraps that exporter in `BatchSpanProcessor` by default, can accept another processor class, and stamps OTel-safe `langsmith.metadata.*` attributes at span start. Its `force_flush()` and `shutdown()` delegate to the inner processor; the tracer provider or application that installed it must invoke them.
 
-### Optional dependencies
+JavaScript's `LangSmithOTLPTraceExporter` has equivalent endpoint, authentication, project, and standard `OTEL_EXPORTER_OTLP_*` override behavior. It can transform spans before export and translates AI SDK telemetry attributes into LangSmith and GenAI attributes. `LangSmithOTLPSpanProcessor` exports only LangSmith-marked or AI SDK spans, skips non-traceable ancestors while recording the nearest traceable parent, and frees per-trace bookkeeping after every observed span ends. Its `shutdown()` first waits for shared-client RunTree batches—important when an application mixes both transport families—then shuts down OTel batching.
 
-OpenTelemetry is optional. The JavaScript singleton in `js/src/singletons/otel.ts` deliberately imports no OTel packages and supplies no-op trace and context implementations until `initializeOTEL` provides real instances. If OTel tracing mode is selected but initialization was omitted, it warns once and still executes the wrapped function. The experimental initializer requires the OTel API, base trace SDK, OTLP protobuf exporter, and async-hooks context manager as peer dependencies.
+```mermaid
+flowchart TD
+    RunAPI["Provider wrapper or agent hook"] --> RunTree["traceable, trace, or RunTree"]
+    RunTree --> ClientQueue["LangSmith Client batch queue"]
+    ClientQueue --> RunIngest["Run post and patch ingestion"]
+    ClientQueue --> InternalBridge["Internal Run-to-OTel bridge in otel or hybrid mode"]
+    InternalBridge --> OTelProvider["OTel tracer provider"]
 
-Python exposes dependency-free helper imports lazily, while constructing `OtelExporter` or `OtelSpanProcessor` without the OTel packages raises an actionable `ImportError` recommending `pip install langsmith[otel]`. A Python `Client` in `otel` or `hybrid` mode uses the caller-supplied provider, an already initialized global provider, or creates an internal OTLP provider when none exists. If the packages are absent, it warns and falls back to LangSmith-only tracing.
+    NativeInstrumentation["Native OTel instrumentation"] --> Translator["Optional framework translator"]
+    Translator --> SpanProcessor["OTel span processor"]
+    SpanProcessor --> OTLPExporter["OTLP exporter"]
+    OTLPExporter --> OTelIngest["LangSmith OTLP endpoint"]
+```
 
-### Do not replace an application's global provider
+*RunTree operations use the Client queue; native OTel spans bypass it and are owned by the OTel processor/exporter chain.*
 
-A global tracer provider and global context manager are process-wide resources and normally can be installed only once.
+### Translate before export
 
-- Python's `langsmith.integrations.otel.configure()` is for a fresh, LangSmith-only OTel setup. It checks for the default proxy/no-op provider, installs a real provider only in that state, and returns `False` rather than replacing an existing provider. If another observability system already owns the provider, construct `OtelSpanProcessor` and add it with `provider.add_span_processor(...)`.
-- JavaScript's deprecated `initializeOTEL()` creates an `AsyncHooksContextManager` unless a manager is supplied or setup is skipped. It catches failure when another library already owns global context. Without `globalTracerProvider`, it creates a `BasicTracerProvider` containing the LangSmith processor and attempts to register it globally; registration can fail if a provider already exists. Passing `globalTracerProvider` avoids provider replacement, but the function only returns and records the LangSmith processor—it does not attach it to that provider. The application must attach or construct the provider with the returned processor using the API appropriate to its OTel SDK version.
+LiveKit and Pipecat already emit OTel spans. `BaseLangSmithSpanProcessor` therefore wraps a downstream processor rather than sitting beside it. At start it caches context-derived `thread_id` by trace. At end it creates a `TranslatedSpan` draft, adds static metadata and the cached thread, lets the framework subclass classify and rewrite attributes, finalizes a fresh `ReadableSpan`, and only then calls downstream `on_end`. A sibling processor could race and export the original span before translation. Translation failures are isolated and export the original data where possible.
 
-This boundary is operationally important: use a **processor addition** when OTel already exists, and use a **global initializer** only when LangSmith owns OTel bootstrap. Likewise, set `skipGlobalContextManagerSetup: true` when a JavaScript runtime or instrumentation package already manages context.
+The default downstream is `BatchSpanProcessor(OtelExporter(...))`; supplying a downstream transfers forwarding, flush, and shutdown into that chain. Audio is base64 encoded and limited to 150 MB of raw bytes by default; oversize data is skipped.
 
-### Export and translation paths
+LiveKit adds a session-level state machine around translation. It keeps per-conversation state in bounded TTL caches, holds the root until the `agent_session` ends and required session report or egress recording arrives, and releases with available data after a configurable timeout. Realtime transcripts arriving outside spans are FIFO-paired with `user_speaking` spans. `force_flush()` drains only downstream exported spans and deliberately leaves an in-progress root deferred. `shutdown()` is terminal: it cancels timers, force-exports held roots and untranscribed speaking spans, clears state, and then shuts down downstream processing.
 
-The public Python `OtelExporter` is an `OTLPSpanExporter` configured for `{LANGSMITH_ENDPOINT}/otel/v1/traces`, `x-api-key`, and `Langsmith-Project`. `OtelSpanProcessor` combines that exporter with `BatchSpanProcessor` by default, accepts a different processor class, and can stamp OTel-safe `langsmith.metadata.*` values on every span. JavaScript's `LangSmithOTLPTraceExporter` applies equivalent endpoint, auth, and project defaults while honoring standard `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` overrides. Its `transformExportedSpan` hook can add or remove attributes before export, and it translates AI SDK telemetry attributes into LangSmith and GenAI conventions, including run kind and usage.
+## Python RunTree-to-OTel tracing mode
 
-The opposite direction is used by LangSmith tracing mode: Python's internal `OTELExporter` converts batched run post/update operations into OTel spans with deterministic trace/span IDs, GenAI attributes, LangSmith metadata, serialized inputs and outputs, status, and token usage. Posts open spans and updates end them; a thread-safe in-flight store associates both operations. Orphaned spans are periodically ended and removed after `LANGSMITH_OTEL_SPAN_TTL_SECONDS` (default 3600 seconds), preventing incomplete traces from accumulating indefinitely.
+The internal `OTELExporter` serves `Client(tracing_mode="otel" | "hybrid")`; despite its name, it is not the public native OTLP exporter. Client background workers first drain serialized run operations. The bridge then:
 
-Native OTel span rewriting must not mutate `ReadableSpan`, whose attributes and events are treated as read-only. Shared translation helpers rebuild a new span while copying identity, parent, resource, status, timing, links, and instrumentation scope. This is the extension point used by voice and agent-framework processors that need provider-specific attribute translation.
+- derives deterministic OTel trace and span IDs from RunTree UUIDs and uses an in-flight parent span when available, otherwise the captured OTel context;
+- maps run kind/name, project, metadata, tags, serialized descriptors, prompt/completion payloads, request fields, provider/model, status, token usage, finish reasons, tool definitions, tool name, and tool-call ID to LangSmith and GenAI attributes;
+- creates a span on `post`; a post carrying `end_time` is ended immediately, while a later update mutates the span and ends/removes it when `end_time` arrives;
+- stores in-flight entries behind a lock because control and autoscaled background workers can export concurrently;
+- checks for stale spans before batches, no more often than every ten seconds, and atomically removes and ends recording orphans older than `LANGSMITH_OTEL_SPAN_TTL_SECONDS` or legacy `LANGCHAIN_OTEL_SPAN_TTL_SECONDS` (default 3600 seconds).
 
-## Configuration and safe extension
+When the Client must create its own provider, the internal provider uses an OTLP HTTP exporter with default `{LANGSMITH_ENDPOINT}/otel`, standard OTel endpoint/header overrides, and a `langsmith.internal_provider` resource marker. This internal bootstrap default is distinct from the public native `OtelExporter` default `/otel/v1/traces`.
 
-Use the narrowest integration boundary available:
+## Global provider and optional dependency boundaries
 
-- choose a provider wrapper when calls originate from a normal model client;
-- choose a composition wrapper when one framework owns model and tool loops;
-- register a lifecycle processor when an agent SDK exposes trace/span callbacks;
-- proxy a realtime session when events, turns, and teardown define correctness;
-- chain a translating span processor in front of an exporter when a framework already emits OTel.
+OpenTelemetry remains optional. JavaScript's OTel singleton imports no OTel package and supplies no-op trace/context implementations until `initializeOTEL()` provides real instances. If OTel tracing is selected without initialization it warns once while still executing application code. The deprecated experimental initializer requires the OTel API, base trace SDK, protobuf exporter, and async-hooks context manager as peers.
 
-Input/output processors and exporter transforms are privacy boundaries. They should return new values instead of mutating provider arguments or OTel spans. Enabling raw HTTP capture or audio attachment materially increases trace volume and may expose sensitive data, so it should be explicit. On shutdown, flush the owning processor/client: JavaScript's LangSmith OTel span processor first waits for pending `RunTree` batches, while OTel processors and realtime contexts need their normal shutdown/exit lifecycle to release final buffered data.
+Python lazily exposes dependency-free helpers. Constructing processors without OTel packages raises an actionable `ImportError`; a Client requesting OTel mode warns and falls back to LangSmith-only tracing when dependencies are unavailable.
+
+Global providers and context managers are process resources:
+
+- Python `configure()` is only for a fresh LangSmith-only OTel setup. It installs a provider only when the global provider is still the proxy/no-op and returns `False` rather than replacing an existing provider. Add `OtelSpanProcessor` to an existing provider instead.
+- JavaScript `initializeOTEL()` may create and register an `AsyncHooksContextManager` and a `BasicTracerProvider`. If `globalTracerProvider` is supplied, the returned LangSmith processor is **not** automatically attached; the application must add or construct the provider with it. Use `skipGlobalContextManagerSetup: true` when another runtime owns context.
+
+## Ownership, privacy, and failure invariants
+
+- Input/output processors and exporter transforms are privacy boundaries. Prefer returned copies over mutating provider arguments or original `ReadableSpan` objects.
+- Raw HTTP and audio capture are explicit because they can expose sensitive data and substantially increase payload size.
+- Provider chunks must reach callers unchanged even though the trace reducer observes them.
+- Integration failures should not replace provider errors. Stream and lifecycle wrappers finalize what they can, restore context, and re-raise application failures.
+- Flush the component that owns buffering: the `Client` for RunTree operations, the OTel processor/provider for native spans, and the session context or specialized voice processor for deferred conversation state. Mid-session flush is not equivalent to terminal shutdown.
 
 ## Focused verification
 
-The highest-value tests assert behavior rather than wrapper existence:
+The most useful tests protect behavior at boundaries:
 
-- `js/src/tests/wrapped_openai.test.ts` verifies that only creation calls are traced, response retrieval remains untouched, and normalized model metadata and usage reach the run.
-- `js/src/tests/anthropic_usage.test.ts` locks down additive cache-token accounting and the canonical cache detail names.
-- `js/src/tests/openai_agents_sdk.test.ts` exercises delayed post/patch ordering, nested context, `groupId` to `thread_id`, agent-type defaults and opt-outs, usage, errors, and lifecycle cleanup.
-- Vercel wrapper and telemetry integration tests verify parent/child model runs, stream usage, and that usage belongs on the model span rather than being spuriously copied to orchestration roots.
-- `python/tests/unit_tests/test_otel_exporter.py` verifies optional configuration, exporter defaults without environment mutation, OTel-safe metadata, TTL cleanup, and concurrent mutation of the in-flight span store.
-- `python/tests/unit_tests/test_span_utils.py` verifies translated spans copy all untouched fields and never mutate the original `ReadableSpan`.
+- `js/src/tests/wrapped_openai.test.ts` verifies that creation is traced, retrieval remains untouched, and normalized metadata and usage reach the run.
+- `js/src/tests/openai_agents_sdk.test.ts` covers delayed post/patch ordering, nested context, `groupId` to `thread_id`, agent classifications and opt-outs, usage, errors, and cleanup.
+- `python/tests/unit_tests/wrappers/test_claude_agent_sdk_hooks.py` covers tool/subagent nesting, per-session isolation, deferred finalization, and transcript gap filling.
+- `python/tests/unit_tests/wrappers/test_livekit.py` covers translation without mutation, deferred roots, out-of-band transcripts, recording races/timeouts, `force_flush()` versus `shutdown()`, and concurrent state/export ownership.
+- `python/tests/unit_tests/test_otel_exporter.py` covers metadata safety, tool and finish attributes, provider defaults, TTL cleanup, and concurrent mutation of the in-flight span store.
 
-When extending an integration, add tests for both non-streaming and partial/failed streaming, sync and async variants where supported, usage detail fields, parent context restoration, explicit metadata override precedence, and flush or teardown. Those are the boundaries where an API-compatible wrapper can otherwise produce an incomplete or incorrectly nested trace.
+When extending an integration, test non-streaming and partial/failed streaming, sync and async variants where supported, usage details, parent restoration, metadata precedence, and both flush and terminal teardown. Those are the points where an API-compatible wrapper can still produce incomplete, duplicated, or incorrectly nested traces.

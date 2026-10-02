@@ -1,11 +1,11 @@
 ---
 type: ingestion workflow
 title: Trace Capture, Transformation, and Ingestion
-description: End-to-end Python and JavaScript trace lifecycle, including direct, queued JSON, multipart, compressed, SDK-to-OpenTelemetry, and native OpenTelemetry ingestion routes. Compares routing, transformation, execution context, retries, failures, and flush behavior.
+description: End-to-end Python and JavaScript trace lifecycle across direct, queued, compressed, SDK-to-OpenTelemetry, and native OpenTelemetry ingestion routes, including execution ownership, retries, failure, flush, and shutdown.
 tags: [tracing, ingestion, batching, opentelemetry, reliability, javascript, python]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T09:58:29.947Z
+    at: 2026-09-28T08:35:15.620Z
 sources:
   - id: openwiki-source-c27c18f68326f94a1c4b2695
     resource: repo://js/src/client.ts
@@ -55,7 +55,7 @@ sources:
     resource: repo://python/tests/unit_tests/test_operations.py
   - id: openwiki-source-1edc900ad0c3c273f57c6434
     resource: repo://python/tests/unit_tests/test_otel_exporter.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T09:52:25.586Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-09-28T08:35:15.620Z" }
 ---
 
 # Trace Capture, Transformation, and Ingestion
@@ -126,6 +126,12 @@ JavaScript `traceable` and Python `@traceable` establish a `RunTree` in tracing 
 
 Direct `RunTree` users have the same contract through JavaScript `postRun()` / `patchRun()` and Python `post()` / `patch()`. Python patching ends a run when needed. Patch inputs are omitted by default, so later coalescing does not replace the create's inputs unless the caller explicitly includes them.
 
+### RunTree and Client execution ownership
+
+The `RunTree` methods themselves do not choose a transport thread. Python `post()` and `patch()` synchronously call `Client.create_run()` / `Client.update_run()` on the caller thread. Those Client methods either perform direct HTTP there, append to the compressed frame there, or enqueue and return; only queued work later moves to the tracing control thread, a scaled drain subthread, or the shared compression pool. The Python `RunTree` docstrings that say “asynchronously” or “in a background thread” describe the common queued outcome, not an unconditional thread handoff by `RunTree`.
+
+JavaScript `postRun()` and `patchRun()` run as promises on the event loop and await each replica Client call. A direct Client call awaits `fetch`; an eligible auto-batched call enqueues and normally returns without awaiting delivery. The no-replica branches catch and log Client failures, and `postRun()` also wraps replica dispatch; replica failures from `patchRun()` can reject. Neither JavaScript batching nor native JavaScript OTEL creates a LangSmith-owned network thread.
+
 ```mermaid
 sequenceDiagram
     participant App
@@ -173,11 +179,11 @@ Sampling applies to operations produced by LangSmith capture. A public OTEL proc
 Before Client serialization or SDK OTEL translation:
 
 - `hideInputs`, `hideOutputs`, and `hideMetadata` and their Python snake-case equivalents can erase values or run a custom transform.
-- An anonymizer can process inputs, outputs, metadata, and error text. Runtime-added metadata is privacy-processed too.
-- Runtime information is merged under `extra.runtime`, environment metadata under `extra.metadata`, and `ls_tracing_sample_rate` records the rate unless `omitTracedRuntimeInfo` / `omit_traced_runtime_info` is enabled.
-- Stream token payloads are removed from events before transport.
+- The anonymizer processes inputs and outputs, and both SDKs wrap error text for anonymization. Metadata uses the configured metadata privacy transform. These are field transforms, not a general transform over arbitrary event objects.
+- Runtime information is merged under `extra.runtime`, environment metadata under `extra.metadata`, and `ls_tracing_sample_rate` records the rate unless `omitTracedRuntimeInfo` / `omit_traced_runtime_info` is enabled. Runtime-added metadata is passed through metadata privacy processing.
+- Stream token payloads are removed from `new_token` events before transport; other event objects are retained.
 
-Python's order is `_run_transform`, `_insert_runtime_env`, then operation serialization. JavaScript prepares user fields and merges runtime data before queuing; an OTEL-mode batch masks metadata before translation. Public native-span processors do not retroactively apply Client `hide_*` settings. Their extension points are span attributes, OpenTelemetry sampling/processors, and the JavaScript exporter's `transformExportedSpan` callback.
+For Python creates and explicit bulk-ingest calls, the order is `_run_transform`, `_insert_runtime_env`, then operation serialization. `update_run()` transforms supplied fields directly and inserts runtime attribution only when it has a non-empty `extra` object. JavaScript prepares supplied user fields and merges runtime data before queueing; direct creates always merge it, while direct updates merge it only when `extra` exists. An OTEL-mode batch masks metadata before translation. Public native-span processors do not retroactively apply Client `hide_*` settings. Their extension points are span attributes, OpenTelemetry sampling/processors, and the JavaScript exporter's `transformExportedSpan` callback.
 
 ## The LangSmith Client transport family
 
@@ -193,7 +199,7 @@ JavaScript keeps prepared objects in `AutoBatchQueue` and serializes during asse
 
 JavaScript drains after its aggregation delay or count/estimated-byte thresholds. It groups by API URL, API key, and workspace before requests. Both direct and queued `fetch` calls execute on the event loop.
 
-Python creates a bounded priority queue and tracing control thread when `auto_batch_tracing=True`. The control thread may add bounded drain subthreads under backlog. Ordinary uncompressed `/runs/batch` and `/runs/multipart` requests run synchronously on whichever control/drain thread owns the batch. Groups are keyed by endpoint and the complete auth tuple. Replica destinations can share serialized bytes but receive separate requests and credentials; failures are per destination, not transactional.
+Python creates a bounded priority queue and tracing control thread when `auto_batch_tracing=True`. The control thread may add bounded drain subthreads under backlog. Ordinary uncompressed `/runs/batch` and `/runs/multipart` requests run synchronously on whichever control/drain thread owns the batch. Groups are keyed by endpoint and the complete auth tuple. `RunTree` replica groups can reuse one remapped payload across destinations that share Client, project-or-agent addressing, updates, and primary status, while each member contributes its own authentication. A replica may instead name a dedicated Client, allowing a different tracing mode. Primary replicas retain IDs; non-primary replicas deterministically remap run, trace, parent, and dotted-order IDs using the destination project or agent seed. Requests and failures remain per destination, not transactional.
 
 The optional Python `langsmith_pyo3.BlockingTracingClient`, requested by `LANGSMITH_USE_PYO3_CLIENT`, can accept valid trace-aware create/update operations. Import or construction failure warns and falls back to Python ingestion. It is an optimization route, not a change to the lifecycle contract.
 
@@ -255,9 +261,10 @@ Python additionally invokes `tracing_error_callback`. For terminal multipart and
 ## Flush and shutdown
 
 - **JavaScript `flush()`** drains the current `AutoBatchQueue` and awaits its batch processing. In `manualFlushMode`, callers must invoke it; timers do not drain automatically.
-- **JavaScript `awaitPendingTraceBatches()`** allows traceable finalizers to enqueue, waits in-flight drains (including CPU serialization), queued item promises, and request-queue idleness, then force-flushes the default OTEL processor when Client OTEL translation is active. In manual mode it warns and returns rather than replacing `flush()`.
-- **Python `Client.flush(timeout)`** submits buffered run transforms, waits unfinished queue tasks, drains zstd data, and waits tracked compression-send futures within the remaining timeout. `None` waits indefinitely; a finite timeout may leave work outstanding.
-- **Public Python OTEL** requires `OtelSpanProcessor.force_flush()` or `shutdown()` for its own batch buffer. A completed `Client.flush()` is not a substitute for a custom provider's processor flush.
+- **JavaScript `awaitPendingTraceBatches()`** allows traceable finalizers to enqueue, waits in-flight drains (including CPU serialization), queued item promises, and request-queue idleness, then force-flushes the default OTEL processor when Client OTEL translation is active. In manual mode it warns and returns rather than replacing `flush()`. `Client.cleanup()` only stops the prompt-cache refresh timer; it is not a trace flush or transport shutdown.
+- **Python `Client.flush(timeout)`** submits buffered run transforms, waits unfinished queue tasks, drains zstd data, and waits tracked compression-send futures within the remaining timeout. `None` waits indefinitely; a finite timeout may leave work outstanding. It does not force-flush the OpenTelemetry provider used by Python `otel` or `hybrid` translation.
+- **Python `Client.cleanup(timeout)` and `close(timeout)`** call `flush()` before setting the manual-cleanup flag that lets tracing threads stop. `close()` additionally closes the requests session and unregisters its `atexit` session-close handler. Passing `0` skips waiting, so it is an explicit loss-vs-blocking choice.
+- **Public or translated Python OTEL** requires the relevant provider/processor `force_flush()` or `shutdown()` for its span batch buffer. A completed `Client.flush()` is not a substitute; the public `OtelSpanProcessor` delegates both operations to its inner processor.
 - **Public JavaScript OTEL** uses processor `forceFlush()` / `shutdown()`. `LangSmithOTLPSpanProcessor.shutdown()` first waits shared Client trace batches and then invokes inherited shutdown; that sequencing coordinates two independent buffers and does not make Client flush the owner of native spans.
 
 Flush completion means the relevant queue reached its completion boundary. It does not convert swallowed terminal background delivery errors into application exceptions.
