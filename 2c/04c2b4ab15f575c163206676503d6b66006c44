@@ -1,0 +1,21 @@
+js/src/tests/run_trees.test.ts
+  s_1b239793e0f6c3::t_8b72d04ce6a792 909-929
+js/src/client.ts
+  s_1b239793e0f6c3::t_8b72d04ce6a792 694-695,2608-2609,2767
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2c04c2b4ab15f575c163206676503d6b66006c44",
+  "prompts": {},
+  "sessions": {
+    "s_1b239793e0f6c3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9d37a43-6b65-4f9a-b48f-b2823667af13",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+python/tests/unit_tests/test_operations.py
+  s_39e01e14c0a780::t_c683ade7ef2c30 234,236-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2d48272934ccead6ca9eb0b35837f73f332cff52",
+  "prompts": {},
+  "sessions": {
+    "s_39e01e14c0a780": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0705f29e-2f01-42d8-b878-4b8c03f8ed03",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

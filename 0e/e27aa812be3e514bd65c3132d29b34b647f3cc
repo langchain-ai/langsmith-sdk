@@ -1,0 +1,16 @@
+js/src/experimental/otel/exporter.ts
+  h_b47ec433af8c62 79-81,101-103,105-106
+js/src/tests/otel_exporter.test.ts
+  h_b47ec433af8c62 1-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0ee27aa812be3e514bd65c3132d29b34b647f3cc",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

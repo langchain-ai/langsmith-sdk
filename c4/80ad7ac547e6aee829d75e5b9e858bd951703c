@@ -1,0 +1,36 @@
+python/tests/unit_tests/test_run_trees.py
+  s_a5ffb959c7b051::t_08660449043971 890,902
+python/langsmith/address.py
+  s_a5ffb959c7b051::t_88d7c19157e2aa 25-27
+  s_a5ffb959c7b051::t_08660449043971 8,47,89,95,104
+js/src/tests/address.test.ts
+  s_a5ffb959c7b051::t_88d7c19157e2aa 86-88,256-258,537-539,541-543
+  s_a5ffb959c7b051::t_1082b3470d0dc7 125
+  s_a5ffb959c7b051::t_08660449043971 27-28,90,102,113-114,119-123,126-127,186,196,238,323,339,372,382,411,413,464,489,513,530,553,559
+python/tests/unit_tests/test_client.py
+  s_a5ffb959c7b051::t_08660449043971 8269,8369,8384,8500,8504
+python/tests/unit_tests/test_operations.py
+  s_a5ffb959c7b051::t_08660449043971 238
+python/tests/unit_tests/test_address.py
+  s_a5ffb959c7b051::t_1082b3470d0dc7 136-137
+  s_a5ffb959c7b051::t_08660449043971 79,85,118-119,130-134,138,207,513,524,544-545,574,589
+  s_a5ffb959c7b051::t_88d7c19157e2aa 115-116,525,651-653
+js/src/address.ts
+  s_a5ffb959c7b051::t_08660449043971 5,17,25-26,36,77,82,91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c480ad7ac547e6aee829d75e5b9e858bd951703c",
+  "prompts": {},
+  "sessions": {
+    "s_a5ffb959c7b051": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44bc4a6c-4b70-40b5-b008-29ba9d6dd6bf",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
