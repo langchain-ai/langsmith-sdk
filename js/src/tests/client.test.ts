@@ -1087,6 +1087,22 @@ describe("Client", () => {
   });
 
   describe("env functions", () => {
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      originalEnv = process.env;
+      process.env = Object.fromEntries(
+        Object.entries(originalEnv).filter(
+          ([key]) =>
+            !key.startsWith("LANGSMITH_") && !key.startsWith("LANGCHAIN_"),
+        ),
+      );
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
     it("should return the env variables correctly", async () => {
       // eslint-disable-next-line no-process-env
       process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
@@ -1096,6 +1112,8 @@ describe("Client", () => {
       process.env.LANGCHAIN_OTHER_KEY = "test_other_key";
       // eslint-disable-next-line no-process-env
       process.env.LANGCHAIN_OTHER_NON_SENSITIVE_METADATA = "test_some_metadata";
+      process.env.LANGSMITH_OTHER_NON_SENSITIVE_METADATA =
+        "test_smith_metadata";
       // eslint-disable-next-line no-process-env
       process.env.LANGCHAIN_ENDPOINT = "https://example.com";
       // eslint-disable-next-line no-process-env
@@ -1112,14 +1130,15 @@ describe("Client", () => {
         LANGCHAIN_OTHER_KEY: "te**********ey",
         LANGCHAIN_ENDPOINT: "https://example.com",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
+        LANGSMITH_OTHER_NON_SENSITIVE_METADATA: "test_smith_metadata",
         LANGSMITH_ADMIN_PASSWORD: "hu**********r2",
       });
       expect(envVars).not.toHaveProperty("SOME_RANDOM_THING");
 
-      delete langchainMetadataEnvVars.LANGSMITH_TRACING;
       expect(langchainMetadataEnvVars).toEqual({
         revision_id: "test_revision_id",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
+        LANGSMITH_OTHER_NON_SENSITIVE_METADATA: "test_smith_metadata",
       });
     });
   });
