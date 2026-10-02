@@ -28,13 +28,10 @@ function wrapClaudeAgentQuery<
     streamManager: StreamManager,
   ) {
     try {
-      let systemCount = 0;
+      const getNewInputs = trackNewInputs(prompt);
       for await (const message of originalGenerator) {
-        if (message.type === "system") {
-          const content = getLatestInput(prompt, systemCount);
-          systemCount += 1;
-
-          if (content != null) await streamManager.addMessage(content);
+        for (const input of getNewInputs()) {
+          await streamManager.addMessage(input);
         }
 
         await streamManager.addMessage(message);
@@ -45,30 +42,45 @@ function wrapClaudeAgentQuery<
     }
   }
 
-  function getLatestInput(
+  function trackNewInputs(
     arg: string | AsyncIterable<SDKMessage> | undefined,
-    systemCount: number,
-  ): SDKUserMessage | undefined {
-    const value = (() => {
-      if (typeof arg !== "object" || arg == null) return arg;
+  ): () => SDKUserMessage[] {
+    let addedInputs = 0;
+    return () => {
+      const inputs = getConsumedInputs(arg);
+      const newInputs = inputs.slice(addedInputs);
+      addedInputs = inputs.length;
+      return newInputs;
+    };
+  }
+
+  function getConsumedInputs(
+    arg: string | AsyncIterable<SDKMessage> | undefined,
+  ): SDKUserMessage[] {
+    const values: unknown[] = (() => {
+      if (typeof arg === "string") return [arg];
+      if (typeof arg !== "object" || arg == null) return [];
 
       const toJSON = (arg as unknown as Record<string, unknown>)["toJSON"];
-      if (typeof toJSON !== "function") return undefined;
-      const latest = toJSON();
-      return latest?.at(systemCount);
+      if (typeof toJSON !== "function") return [];
+      return toJSON() ?? [];
     })();
 
-    if (value == null) return undefined;
-    if (typeof value === "string") {
-      return {
-        type: "user" as const,
-        message: { content: value, role: "user" },
-        parent_tool_use_id: null,
-        session_id: "",
-      };
-    }
-
-    return typeof value === "object" && value != null ? value : undefined;
+    return values.flatMap((value): SDKUserMessage[] => {
+      if (typeof value === "string") {
+        return [
+          {
+            type: "user" as const,
+            message: { content: value, role: "user" },
+            parent_tool_use_id: null,
+            session_id: "",
+          },
+        ];
+      }
+      return typeof value === "object" && value != null
+        ? [value as SDKUserMessage]
+        : [];
+    });
   }
 
   async function processInputs(rawInputs: unknown) {
