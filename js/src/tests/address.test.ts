@@ -20,6 +20,9 @@ import {
 import { _resetWarnedMessages } from "../utils/warn.js";
 import { mockClient } from "./utils/mock_client.js";
 
+// What a JS caller can pass; the SDK validates it at runtime.
+const jsCaller = (value: string) => value as Address;
+
 const SUPPORT: Address = address.agent("customer-support", "production");
 const SUPPORT_STR = "agents/customer-support/environments/production";
 const STAGING_STR = "agents/customer-support/environments/staging";
@@ -187,18 +190,21 @@ describe("RunTree", () => {
   test("accepts and normalises a plain string", () => {
     const run = new RunTree({
       name: "r",
-      address: "agents/customer-support/environments/PRODUCTION",
+      address: jsCaller("agents/customer-support/environments/PRODUCTION"),
     });
     expect(run.address).toBe(SUPPORT_STR);
   });
 
   test("rejects a malformed or non-agent string", () => {
-    expect(() => new RunTree({ name: "r", address: "support" })).toThrow(
-      /must be a string like/,
-    );
+    expect(
+      () => new RunTree({ name: "r", address: jsCaller("support") }),
+    ).toThrow(/must be a string like/);
     expect(
       () =>
-        new RunTree({ name: "r", address: "projects/a/environments/staging" }),
+        new RunTree({
+          name: "r",
+          address: jsCaller("projects/a/environments/staging"),
+        }),
     ).toThrow();
   });
 
@@ -226,7 +232,7 @@ describe("RunTree", () => {
     const { client, callSpy } = mockClient();
     await new RunTree({
       name: "r",
-      address: "agents/customer-support/environments/Production",
+      address: jsCaller("agents/customer-support/environments/Production"),
       client,
     }).postRun();
     const [body] = await postedRuns(callSpy, client);
@@ -243,7 +249,9 @@ describe("RunTree", () => {
       address: SUPPORT,
       client,
       replicas: [
-        { address: "agents/customer-support/environments/PRODUCTION" },
+        {
+          address: jsCaller("agents/customer-support/environments/PRODUCTION"),
+        },
       ],
     });
     await run.postRun();
@@ -366,7 +374,7 @@ describe("traceable", () => {
     const fn = traceable(async () => "ok", {
       client,
       tracingEnabled: true,
-      address: "agents/customer-support/environments/Staging",
+      address: jsCaller("agents/customer-support/environments/Staging"),
     });
     await fn();
     const [body] = await postedRuns(callSpy, client);
@@ -425,7 +433,7 @@ describe("Client", () => {
         name: "r",
         inputs: {},
         run_type: "chain",
-        address: "nope",
+        address: jsCaller("nope"),
       }),
     ).rejects.toThrow(/must be a string like/);
   });
@@ -473,7 +481,7 @@ describe("Client", () => {
     await client.createFeedback({
       runId: "00000000-0000-0000-0000-000000000001",
       key: "k",
-      address: "agents/customer-support/environments/PRODUCTION",
+      address: jsCaller("agents/customer-support/environments/PRODUCTION"),
     });
     const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
       String(url).endsWith("/feedback"),
@@ -489,7 +497,7 @@ describe("Client", () => {
       client.createFeedback({
         runId: "00000000-0000-0000-0000-000000000001",
         key: "k",
-        address: "nope",
+        address: jsCaller("nope"),
       }),
     ).rejects.toThrow(/must be a string like/);
   });
@@ -497,7 +505,7 @@ describe("Client", () => {
   test("a direct updateRun sends the address string", async () => {
     const { client, callSpy } = mockClient();
     await client.updateRun("00000000-0000-0000-0000-000000000001", {
-      address: "agents/customer-support/environments/STAGING",
+      address: jsCaller("agents/customer-support/environments/STAGING"),
     });
     const [, init] = callSpy.mock.calls.find(
       ([, init]: [string, any]) => init?.method === "PATCH",
@@ -505,5 +513,52 @@ describe("Client", () => {
     const body = bodyOf(init);
     expect(body.address).toBe(STAGING_STR);
     expect(body).not.toHaveProperty("agent_id");
+  });
+});
+
+// Compile-time checks: `tsc` fails if a `@ts-expect-error` stops erroring.
+describe("address types", () => {
+  test("literals, parse and agent results are accepted", () => {
+    const dynamic: string = SUPPORT_STR;
+    const literal = new RunTree({
+      name: "r",
+      address: "agents/support-bot/environments/production",
+    });
+    const parsed = new RunTree({ name: "r", address: address.parse(dynamic) });
+    const built = new RunTree({
+      name: "r",
+      address: address.agent("support-bot", dynamic.slice(-10)),
+    });
+    expect(literal.address).toBe("agents/support-bot/environments/production");
+    expect(parsed.address).toBe(SUPPORT_STR);
+    expect(built.address).toBe("agents/support-bot/environments/production");
+    const traced = traceable(async () => 1, { address: SUPPORT });
+    expect(typeof traced).toBe("function");
+  });
+
+  test("a wrong environment, collection or dynamic string is rejected", () => {
+    const dynamic: string = SUPPORT_STR;
+    const rejected = (build: () => unknown) => expect(build).toBeDefined(); // never called; only type-checked
+    rejected(() => {
+      // @ts-expect-error unknown environment
+      traceable(async () => 1, { address: "agents/x/environments/prod" });
+      // @ts-expect-error wrong collection
+      traceable(async () => 1, { address: "projects/x" });
+      // @ts-expect-error a dynamic string must go through address.parse
+      traceable(async () => 1, { address: dynamic });
+      // @ts-expect-error unknown environment
+      new RunTree({ name: "r", address: "agents/x/environments/prod" });
+      // @ts-expect-error wrong collection
+      new RunTree({ name: "r", address: "projects/x" });
+      // @ts-expect-error a dynamic string must go through address.parse
+      new RunTree({ name: "r", address: dynamic });
+      // @ts-expect-error a replica takes an Address too
+      new RunTree({ name: "r", replicas: [{ address: dynamic }] });
+      const { client } = mockClient();
+      // @ts-expect-error createRun takes an Address
+      client.createRun({ name: "r", run_type: "chain", address: dynamic });
+      // @ts-expect-error createFeedback takes an Address
+      client.createFeedback({ runId: "r", key: "k", address: dynamic });
+    });
   });
 });

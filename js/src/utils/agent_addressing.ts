@@ -12,7 +12,7 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, string | undefined];
+export type Tier = [string | undefined, Address | undefined];
 
 /** Validate and normalise an address at an entry point; the SDK carries the result. */
 export function checkAddress(address: unknown): Address | undefined {
@@ -88,7 +88,7 @@ export function warnOnEnv(): void {
  * @throws {EnvAddressError} If the env names half an address.
  */
 export function applyToPayload(
-  run: { address?: string; session_id?: string; session_name?: string },
+  run: { address?: Address; session_id?: string; session_name?: string },
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;

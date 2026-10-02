@@ -2,10 +2,11 @@
  * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  *
- * An address is a plain string, `agents/{id}/environments/{environment}`.
- * The constructors here validate one and return it as an `Address`; anywhere
- * an address is accepted, any `string` is validated the same way. The
- * environment is always rendered lowercase.
+ * An address is a plain string, `agents/{id}/environments/{environment}`,
+ * typed as a template literal so a literal is checked at compile time. A
+ * dynamic `string` goes through `address.parse`, which validates it at
+ * runtime (JS callers are validated the same way). The environment is always
+ * rendered lowercase.
  *
  * @example
  * ```ts
@@ -13,17 +14,25 @@
  *
  * const support = address.agent("customer-support", "production");
  * const handle = traceable(fn, { address: support });
- * // or any string: { address: "agents/customer-support/environments/staging" }
+ * // or a literal: { address: "agents/customer-support/environments/staging" }
  * ```
  */
 import { getEnvironmentVariable } from "./utils/env.js";
 
-/** (beta) A validated address string. */
-export type Address = string & { readonly __brand: "Address" };
+/** (beta) An agent environment. */
+export type Environment = "local" | "development" | "staging" | "production";
+
+/** (beta) An address string, `agents/{id}/environments/{environment}`. */
+export type Address = `agents/${string}/environments/${Environment}`;
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
 const AGENT_ID_PATTERN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
-const ENVIRONMENTS = ["local", "development", "staging", "production"];
+const ENVIRONMENTS: string[] = [
+  "local",
+  "development",
+  "staging",
+  "production",
+];
 const ADDRESS_PATTERN = /^agents\/([^/]*)\/environments\/([^/]*)$/;
 
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
@@ -44,7 +53,10 @@ export class EnvAddressError extends Error {
  *   `production`, in any case.
  * @throws If a value is invalid.
  */
-export function agent(agentId: string, agentEnvironment: string): Address {
+export function agent(
+  agentId: string,
+  agentEnvironment: Environment | (string & {}),
+): Address {
   if (typeof agentId !== "string" || !AGENT_ID_PATTERN.test(agentId)) {
     throw new Error(
       "Address agent id must be 1 to 63 lowercase ASCII letters, digits, or " +
@@ -62,7 +74,7 @@ export function agent(agentId: string, agentEnvironment: string): Address {
         `${JSON.stringify(agentEnvironment)}.`,
     );
   }
-  return `agents/${agentId}/environments/${environment}` as Address;
+  return `agents/${agentId}/environments/${environment as Environment}`;
 }
 
 /**

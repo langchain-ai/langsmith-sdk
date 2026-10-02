@@ -34,7 +34,11 @@ import {
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/agent_addressing.js";
-import { EnvAddressError, parse as parseAddress } from "./address.js";
+import {
+  type Address,
+  EnvAddressError,
+  parse as parseAddress,
+} from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -91,7 +95,7 @@ export interface RunTreeConfig {
   id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: string;
+  address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -171,7 +175,7 @@ export type WriteReplica = {
   workspaceId?: string;
   projectName?: string;
   /** (beta) Send the replica to this address instead of a project. */
-  address?: string;
+  address?: Address;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
   updates?: KVMap | undefined;
@@ -199,7 +203,7 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
 const LANGSMITH_ADDRESS = "langsmith-address";
 
 /** Validates an untrusted header address; `undefined` if unusable. */
-function addressFromHeader(value: unknown): string | undefined {
+function addressFromHeader(value: unknown): Address | undefined {
   if (value == null) {
     return undefined;
   }
@@ -233,13 +237,13 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
-  address: string | undefined;
+  address: Address | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
-    address?: string,
+    address?: Address,
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -254,7 +258,7 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
-    let address: string | undefined;
+    let address: Address | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -326,7 +330,7 @@ export class RunTree implements BaseRun {
   /** Unset for a run sent to an `address`. */
   project_name?: string;
   /** (beta) Set instead of `project_name` for an addressed run. */
-  address?: string;
+  address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -712,7 +716,7 @@ export class RunTree implements BaseRun {
   /** A replica naming neither inherits the run tree's destination. */
   private _replicaAddressing(
     replica: WriteReplica,
-  ): [string | undefined, string | undefined] {
+  ): [string | undefined, Address | undefined] {
     const address = checkAddress(replica.address);
     if (replica.projectName != null) {
       rejectConflicting(replica.projectName, address);
@@ -726,7 +730,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName?: string;
-    address?: string;
+    address?: Address;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
