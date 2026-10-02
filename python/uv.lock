@@ -948,6 +948,22 @@ wheels = [
 ]
 
 [[package]]
+name = "deepgram-sdk"
+version = "7.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/bc/3c6cf6b9f2888b43425eb5229718cbf390125ec47189c51bb2ec667ea25f/deepgram_sdk-7.11.0.tar.gz", hash = "sha256:d59a162ac2b41a65e5923b0e190dcc3e470a5e9791344fd2f791022e40883734", size = 247807, upload-time = "2026-09-28T09:51:02.428Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/f0/0203098b9f118ba18875f730b8bf25c6bcf94b5f715e4f32df756fe253a2/deepgram_sdk-7.11.0-py3-none-any.whl", hash = "sha256:bc8aa74e6338a1f508829fe9ca4c628770fde136035e5895f623bad0968b18f6", size = 647309, upload-time = "2026-09-28T09:51:00.715Z" },
+]
+
+[[package]]
 name = "defusedxml"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1698,6 +1714,9 @@ dependencies = [
 claude-agent-sdk = [
     { name = "claude-agent-sdk" },
 ]
+deepgram-voice = [
+    { name = "deepgram-sdk" },
+]
 gemini-live = [
     { name = "google-genai" },
 ]
@@ -1767,6 +1786,7 @@ dev = [
     { name = "claude-agent-sdk" },
     { name = "dataclasses-json" },
     { name = "debugpy" },
+    { name = "deepgram-sdk" },
     { name = "fastapi" },
     { name = "freezegun" },
     { name = "google-adk" },
@@ -1827,6 +1847,7 @@ requires-dist = [
     { name = "cachetools", marker = "extra == 'livekit'", specifier = ">=5.0.0" },
     { name = "cachetools", marker = "extra == 'pipecat'", specifier = ">=5.0.0" },
     { name = "claude-agent-sdk", marker = "python_full_version >= '3.10' and extra == 'claude-agent-sdk'", specifier = ">=0.1.0" },
+    { name = "deepgram-sdk", marker = "extra == 'deepgram-voice'", specifier = ">=5.0.0,<8.0.0" },
     { name = "distro", specifier = ">=1.7.0" },
     { name = "google-adk", marker = "extra == 'google-adk'", specifier = ">=1.0.0" },
     { name = "google-adk", marker = "extra == 'google-adk-live'", specifier = ">=2.3.0" },
@@ -1870,7 +1891,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["claude-agent-sdk", "gemini-live", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "sandbox-auth", "strands-agents", "vcr"]
+provides-extras = ["claude-agent-sdk", "deepgram-voice", "gemini-live", "google-adk", "google-adk-live", "langsmith-pyo3", "livekit", "openai-agents", "openai-realtime", "otel", "pipecat", "pytest", "sandbox", "sandbox-auth", "strands-agents", "vcr"]
 
 [package.metadata.requires-dev]
 bench = [
@@ -1883,6 +1904,7 @@ dev = [
     { name = "claude-agent-sdk", marker = "python_full_version >= '3.10'", specifier = ">=0.1.0" },
     { name = "dataclasses-json", specifier = ">=0.6.4" },
     { name = "debugpy", specifier = ">=1.8.17" },
+    { name = "deepgram-sdk", specifier = ">=5.0.0,<8.0.0" },
     { name = "fastapi", specifier = ">=0.115.4" },
     { name = "freezegun", specifier = ">=1.2.2" },
     { name = "google-adk", specifier = ">=1.0.0" },
