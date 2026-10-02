@@ -85,6 +85,33 @@ def test_dict_element_inside_evaluation_results_is_not_extracted():
     ) == ["d1"]
 
 
+def _conditional_same_key(run, example):
+    if not example.outputs:
+        return {"key": "correctness", "score": 0}
+    return {"key": "correctness", "score": 1}
+
+
+def _conditional_distinct_keys(run, example):
+    if not example.outputs:
+        return {"key": "empty", "score": 0}
+    return {"key": "correctness", "score": 1}
+
+
+def test_duplicate_keys_from_multiple_returns_are_deduplicated():
+    # An early-return-on-empty evaluator emits the same key from both branches.
+    assert _extract_code_evaluator_feedback_keys(_conditional_same_key) == [
+        "correctness"
+    ]
+
+
+def test_distinct_keys_from_multiple_returns_are_preserved():
+    # Dedup must not collapse genuinely different keys.
+    assert set(_extract_code_evaluator_feedback_keys(_conditional_distinct_keys)) == {
+        "correctness",
+        "empty",
+    }
+
+
 def test_falls_back_to_function_name_for_dynamic_key():
     # No literal `key` to read, so extraction falls back to the function name.
     assert _extract_code_evaluator_feedback_keys(_dynamic_key) == ["_dynamic_key"]
