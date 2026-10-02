@@ -164,7 +164,7 @@ def _spy_children(monkeypatch):
     return created
 
 
-def test_import_does_not_load_websocket_packages():
+def test_import_loads_deepgram_without_websockets():
     result = subprocess.run(
         [
             sys.executable,
@@ -172,7 +172,7 @@ def test_import_does_not_load_websocket_packages():
             (
                 "import sys; import langsmith.integrations.deepgram_voice; "
                 "assert 'websockets' not in sys.modules; "
-                "assert 'deepgram' not in sys.modules"
+                "assert 'deepgram' in sys.modules"
             ),
         ],
         capture_output=True,

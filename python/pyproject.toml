@@ -90,6 +90,9 @@ openai-realtime = [
 # Raw Gemini Live WebSocket tracing via ``wrap_gemini_live``.
 gemini-live = ["google-genai>=1.75"]
 
+# Enabled via `pip install langsmith[deepgram-voice]`
+deepgram-voice = ["deepgram-sdk>=5.0.0,<8.0.0"]
+
 # Enabled via `pip install langsmith[openai-agents]`
 openai-agents = ["openai-agents>=0.0.3"]
 
@@ -174,6 +177,7 @@ dev = [
     "langchain-anthropic>=1.0.0,<1.5.0",
     "debugpy>=1.8.17",
     "google-genai>=1.2.0",
+    "deepgram-sdk>=5.0.0,<8.0.0",
     "pillow>=12.0.0",
     "ty==0.0.75",
     "pytest-httpx>=0.30.0",

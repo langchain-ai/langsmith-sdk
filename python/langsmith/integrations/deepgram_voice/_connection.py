@@ -15,6 +15,8 @@ import uuid
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from deepgram.core.events import EventType
+
 from langsmith._internal._package_version import get_package_version
 from langsmith._internal.voice.helpers import observe_safely
 from langsmith._internal.voice.session import (
@@ -350,18 +352,8 @@ class _TracedDeepgramVoiceConnection:
         if not callable(on) or not callable(start_listening):
             return
         try:
-            # EventType is a string enum in the official SDK. Import it lazily so
-            # importing this integration never requires the optional dependency.
-            from deepgram.core.events import EventType  # type: ignore[import-not-found]
-
-            message_event: Any = EventType.MESSAGE
-        except ImportError:
-            # Keeps compatible structural fakes and older SDK-shaped clients
-            # dependency-free; string enums compare and hash like their values.
-            message_event = "message"
-        try:
             on(
-                message_event,
+                EventType.MESSAGE,
                 lambda frame: observe_safely(self._tracer.observe, frame),
             )
         except Exception:

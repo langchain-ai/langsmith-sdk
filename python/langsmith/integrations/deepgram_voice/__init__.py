@@ -1,4 +1,7 @@
-"""LangSmith tracing for Deepgram's Voice Agent API."""
+"""LangSmith tracing for Deepgram's Voice Agent API.
+
+Install with ``pip install langsmith[deepgram-voice]``.
+"""
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.integrations.deepgram_voice._connection import (

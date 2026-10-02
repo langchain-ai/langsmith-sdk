@@ -211,24 +211,50 @@ class TestTranscriptAndTitle:
 
 
 class TestTurns:
-    def test_turn_patch_resends_inputs_learned_after_post(self):
+    @pytest.mark.parametrize("close_method", ["end_turn", "start_turn", "finalize"])
+    def test_turn_posts_completed_transcript_once(self, close_method):
         s = _session()
-        patched = []
-        real_patch = session_mod.RunTree.patch
-
-        def spy_patch(self, *args, **kwargs):
-            if self.name == "turn":
-                patched.append((dict(self.inputs), kwargs.get("exclude_inputs")))
-            return real_patch(self, *args, **kwargs)
-
-        with mock.patch.object(session_mod.RunTree, "patch", spy_patch):
+        with (
+            mock.patch.object(Client, "create_run") as create_run,
+            mock.patch.object(Client, "update_run") as update_run,
+        ):
             s.start_turn()
-            s.add_message("user", "weather?")
-            s.end_turn()
+            turn = s._current_turn
+            assert turn is not None
+            create_run.assert_not_called()
 
-        assert patched == [
-            ({"messages": [{"role": "user", "content": "weather?"}]}, False)
-        ]
+            s.add_message("user", "weather?")
+            s.add_message("assistant", "sunny")
+            s.add_turn_metadata(was_interrupted=True)
+            with s.event_span({}, s.now(), name="event", inbound=False) as event:
+                assert event.parent_run_id == turn.id
+            assert all(
+                call.kwargs["id"] != turn.id for call in create_run.call_args_list
+            )
+
+            getattr(s, close_method)()
+            s.finalize()
+            turn_posts = [
+                call.kwargs
+                for call in create_run.call_args_list
+                if call.kwargs["id"] == turn.id
+            ]
+
+        assert len(turn_posts) == 1
+        posted = turn_posts[0]
+        assert posted["inputs"] == {
+            "messages": [{"role": "user", "content": "weather?"}]
+        }
+        assert posted["outputs"] == {
+            "messages": [{"role": "assistant", "content": "sunny"}]
+        }
+        assert posted["end_time"] is not None
+        assert posted["end_time"] >= posted["start_time"]
+        assert posted["parent_run_id"] == s.run.id
+        assert posted["extra"]["metadata"]["was_interrupted"] is True
+        assert all(
+            call.kwargs["run_id"] != turn.id for call in update_run.call_args_list
+        )
 
     def test_turn_groups_messages_and_carries_metadata(self):
         s = _session()

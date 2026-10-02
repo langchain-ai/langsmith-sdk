@@ -106,8 +106,9 @@ class EventSession:
         Subsequent ``event_span`` calls nest under this turn until the next
         ``start_turn`` / ``end_turn`` (or ``finalize``). User transcript lines
         become the turn's ``inputs`` and assistant transcript lines become its
-        ``outputs``, so each turn reads like a normal chain run. Opt-in: an
-        adapter that never calls this keeps the flat root layout.
+        ``outputs``, so each turn reads like a normal chain run. The turn is
+        posted only when it closes, with its complete transcript and end time.
+        Opt-in: an adapter that never calls this keeps the flat root layout.
         """
         self._close_turn()
         self._turn_count += 1
@@ -119,7 +120,6 @@ class EventSession:
             tags=["turn"],
             extra={"metadata": {"turn": self._turn_count}},
         )
-        turn.post()
         self._current_turn = turn
 
     def _close_turn(self) -> None:
@@ -132,9 +132,9 @@ class EventSession:
         outputs = [msg for msg in msgs if msg["role"] != "user"]
         turn.set(inputs={"messages": inputs} if inputs else {})
         turn.end(outputs={"messages": outputs} if outputs else {})
-        # The transcript only exists once the turn ends; ``patch`` omits inputs
-        # by default, so re-send them explicitly.
-        turn.patch(exclude_inputs=False)
+        # SmithDB cannot update inputs after creation, so send the completed
+        # transcript and end time together in a single deferred POST.
+        turn.post()
         self._current_turn = None
 
     def end_turn(self) -> None:
