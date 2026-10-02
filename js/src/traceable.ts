@@ -828,7 +828,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     }
     // Runtime config outranks decorator config, whichever mode each names.
     [ensuredConfig.project_name, ensuredConfig.address] = firstNamed(
-      [runtimeConfig?.project_name, runtimeConfig?.address],
+      [runtimeConfig?.project_name, checkAddress(runtimeConfig?.address)],
       [runTreeConfig.project_name, runTreeConfig.address],
     );
 

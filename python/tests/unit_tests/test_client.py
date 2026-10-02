@@ -49,7 +49,6 @@ from requests import HTTPError
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
-from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _agent_addressing, _operations, _orjson
 from langsmith._internal._beta_decorator import (
@@ -8267,12 +8266,9 @@ def test_agent_addressed_run_sends_no_project(
     patch_body = _wait_for_part(session, "patch")
 
     for kind, body in (("post", post_body), ("patch", patch_body)):
-        assert body.get("address") == {
-            "kind": "AGENT",
-            "id": "my-agent",
-            "environment": "STAGING",
-        }, kind
+        assert body.get("address") == "lrn:agents/my-agent/environments/staging", kind
         assert "agent_id" not in body, kind
+        assert "agent_environment" not in body, kind
         assert "session_name" not in body, kind
         assert "session_id" not in body, kind
 
@@ -8370,8 +8366,7 @@ class TestNoRunUrlForAnAgentAddressedRun:
         run = mock.Mock(
             id=uuid.uuid4(),
             session_id=uuid.uuid4(),
-            agent_id="my-agent",
-            agent_environment="staging",
+            address="lrn:agents/my-agent/environments/staging",
         )
         with mock.patch.object(Client, "_get_tenant_id", return_value=uuid.uuid4()):
             assert "/projects/p/" in client._construct_run_url(run=run)
@@ -8386,8 +8381,7 @@ class TestRemoteInputNeverRaises:
             [
                 {
                     "project_name": "p-remote",
-                    "agent_id": "ag-remote",
-                    "agent_environment": "prod",
+                    "address": "lrn:agents/ag-remote/environments/production",
                 }
             ]
         )
@@ -8412,7 +8406,7 @@ class TestPatchInheritsThePostsTarget:
         _clean_agent_env(
             monkeypatch,
             LANGSMITH_AGENT_ID="ag",
-            LANGSMITH_AGENT_ENVIRONMENT="env",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
         post: dict = {"session_name": "myproj"}
         _agent_addressing.apply_to_payload(post)
@@ -8436,7 +8430,7 @@ def test_batch_update_does_not_resolve_the_ambient_agent(
     broken.
     """
     _clean_agent_env(
-        monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="env"
+        monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="staging"
     )
     session = mock.Mock()
     session.request = mock.Mock()
@@ -8457,10 +8451,9 @@ def test_batch_update_does_not_resolve_the_ambient_agent(
     patch = _wait_for_part(session, "patch")
 
     assert post.get("session_name") == "p"
-    assert "agent_id" not in post
+    assert "address" not in post
     # The patch inherits the post's target by naming nothing at all.
-    assert "agent_id" not in patch
-    assert "agent_environment" not in patch
+    assert "address" not in patch
 
 
 class TestAgentAddressingWarnsOnce:
@@ -8482,62 +8475,9 @@ class TestAgentAddressingWarnsOnce:
 
 
 class TestFeedbackAgentAddressing:
-    """A `feedback.<id>` part is addressed by agent or by project, never both."""
+    """A `feedback.<id>` part is addressed by address or by project, never both."""
 
-    @pytest.mark.parametrize(
-        "kwargs",
-        [
-            # Each of these is rejected by the endpoint, not the SDK.
-            {"agent_id": "my-agent", "session_id": uuid.UUID(int=1)},
-            # `project_id` is deliberately absent: a pre-existing guard already
-            # rejects it alongside `run_id`, for reasons unrelated to agents.
-            {"agent_id": "my-agent"},
-            {"agent_environment": "staging"},
-        ],
-    )
-    def test_create_feedback_never_rejects_addressing(self, kwargs: dict) -> None:
-        """No client-side validation; the endpoint answers with a 400."""
-        session = mock.Mock()
-        session.request = mock.Mock()
-        client = Client(api_url="http://localhost:1984", api_key="123", session=session)
-        with (
-            mock.patch.object(ls_client, "_check_feedback_session_id"),
-            mock.patch.object(Client, "_should_sample", return_value=False),
-        ):
-            client.create_feedback(
-                run_id=uuid.uuid4(),
-                key="correctness",
-                score=1,
-                trace_id=uuid.uuid4(),
-                **kwargs,
-            )
-
-    @pytest.mark.parametrize(
-        ("kwargs", "expected_agent"),
-        [
-            ({"agent_id": "my-agent"}, {"agent_id": "my-agent"}),
-            ({"agent_environment": "staging"}, {"agent_environment": "staging"}),
-        ],
-    )
-    def test_half_an_agent_pair_is_forwarded(
-        self, kwargs: dict, expected_agent: dict
-    ) -> None:
-        """Forwarded so the endpoint answers, not dropped onto another project."""
-        serialized = _operations.serialize_feedback_dict(
-            {
-                "id": uuid.uuid4(),
-                "trace_id": uuid.uuid4(),
-                "key": "correctness",
-                "score": 1,
-                **kwargs,
-            }
-        )
-        body = json.loads(serialized.feedback)
-        assert {
-            key: body[key] for key in ("agent_id", "agent_environment") if key in body
-        } == expected_agent
-
-    def test_unset_agent_fields_are_omitted_not_nulled(self) -> None:
+    def test_an_unset_address_is_omitted_not_nulled(self) -> None:
         """A null must not read as "provided" to the endpoint."""
         serialized = _operations.serialize_feedback_dict(
             {
@@ -8550,19 +8490,17 @@ class TestFeedbackAgentAddressing:
         body = json.loads(serialized.feedback)
         assert "address" not in body
 
-    def test_agent_addressing_reaches_the_feedback_part(self) -> None:
+    def test_the_address_reaches_the_feedback_part_as_one_string(self) -> None:
         serialized = _operations.serialize_feedback_dict(
             {
                 "id": uuid.uuid4(),
                 "trace_id": uuid.uuid4(),
                 "key": "correctness",
                 "score": 1,
-                "agent_id": "my-agent",
-                "agent_environment": "staging",
+                "address": "lrn:agents/my-agent/environments/staging",
             }
         )
         body = json.loads(serialized.feedback)
-        assert (body["agent_id"], body["agent_environment"]) == (
-            "my-agent",
-            "staging",
-        )
+        assert body["address"] == "lrn:agents/my-agent/environments/staging"
+        assert "agent_id" not in body
+        assert "agent_environment" not in body

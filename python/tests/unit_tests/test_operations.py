@@ -231,7 +231,10 @@ def test_combine_does_not_warn_for_duplicate_posts_to_one_destination(
 
 
 def test_destination_fields_cover_address() -> None:
-    import langsmith as ls
+    from langsmith._internal import _agent_addressing
 
-    address = ls.address(agent_id="a", agent_environment="e")
-    assert set(address._to_payload()) <= set(_DESTINATION_FIELDS)
+    payload: dict = {}
+    _agent_addressing.apply_to_payload(
+        payload | {"address": "lrn:agents/a/environments/local"}
+    )
+    assert set(payload) <= set(_DESTINATION_FIELDS)

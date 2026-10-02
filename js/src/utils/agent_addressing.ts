@@ -1,10 +1,9 @@
 import {
   type Address,
   EnvAddressError,
-  addressFromEnv,
   envNames,
-  normalizeAddress,
-  toPayload,
+  fromEnv as addressFromEnv,
+  parse,
 } from "../address.js";
 import {
   getEnvironmentVariable,
@@ -15,17 +14,9 @@ import { warnOnce } from "./warn.js";
 /** One precedence level: the `[project, address]` it names. */
 export type Tier = [string | undefined, Address | undefined];
 
-function isRendered(value: unknown): boolean {
-  return (
-    value != null &&
-    typeof value === "object" &&
-    "kind" in (value as Record<string, unknown>)
-  );
-}
-
-/** Validate an address at an entry point; the SDK carries the frozen copy. */
-export function checkAddress(address: unknown): Readonly<Address> | undefined {
-  return address == null ? undefined : normalizeAddress(address);
+/** Validate and normalise an address at an entry point; the SDK carries the result. */
+export function checkAddress(address: unknown): Address | undefined {
+  return address == null ? undefined : parse(address as string);
 }
 
 export function rejectConflicting(project: unknown, address: unknown): void {
@@ -91,9 +82,8 @@ export function warnOnEnv(): void {
 }
 
 /**
- * Render `address` into its wire fields, in place. Without one, a create
- * naming no project takes the env address. Already-rendered payloads (runs
- * re-prepared when batched) are left alone.
+ * Put the run's address in its payload field, as one lowercase string.
+ * Without one, a create naming no project takes the env address.
  *
  * @throws {EnvAddressError} If the env names half an address.
  */
@@ -102,15 +92,11 @@ export function applyToPayload(
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  // Already rendered into its wire object by an earlier call.
-  const rendered = isRendered(payload.address);
-  let address = rendered ? undefined : checkAddress(payload.address);
-  if (!rendered) {
-    delete payload.address;
-  }
+  let address = checkAddress(payload.address);
+  delete payload.address;
   const namedProject =
     payload.session_id != null || payload.session_name != null;
-  if (!address && !update && !namedProject && !rendered) {
+  if (!address && !update && !namedProject) {
     address = addressFromEnv();
   }
   if (!address) {
@@ -120,7 +106,7 @@ export function applyToPayload(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  Object.assign(payload, toPayload(address));
+  payload.address = address;
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;
