@@ -352,7 +352,9 @@ class _AdkLiveTracer:
             run = queue.pop(0)
             self._prune_empty()
             self._trace.close_span(
-                run, outputs=outputs, metadata={"raw_event": dump_event(event)}
+                run,
+                outputs=outputs,
+                metadata={"raw_event": dump_event(event)},
             )
             return
         with self._trace.event_span(
