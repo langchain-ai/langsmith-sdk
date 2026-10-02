@@ -58,6 +58,7 @@ from langsmith.sandbox._mounts import (
     validate_mount_config_proxy_config,
 )
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
+from langsmith.sandbox._tracing import add_sandbox_metadata
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 if TYPE_CHECKING:
@@ -127,6 +128,7 @@ class AsyncSandboxClient:
         self._api_key = resolved_api_key
         self._timeout = timeout
         self._max_retries = max_retries
+        self._sandbox_ids: dict[str, str] = {}
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
@@ -138,6 +140,25 @@ class AsyncSandboxClient:
             transport=transport, timeout=timeout, headers=client_headers
         )
         self._registries_client: Optional[AsyncLangsmith] = None
+
+    def _trace_sandbox(self, name: str) -> Optional[str]:
+        """Attach metadata when the sandbox ID is already known."""
+        sandbox_id = self._sandbox_ids.get(name)
+        if sandbox_id is None:
+            try:
+                sandbox_id = str(uuid.UUID(name))
+            except ValueError:
+                pass
+        add_sandbox_metadata(sandbox_id)
+        return sandbox_id
+
+    def _forget_sandbox(self, name: str) -> None:
+        sandbox_id = self._sandbox_ids.get(name, name)
+        self._sandbox_ids = {
+            cached_name: cached_id
+            for cached_name, cached_id in self._sandbox_ids.items()
+            if cached_name != name and cached_id != sandbox_id
+        }
 
     def _api_root(self) -> str:
         """Return the API root URL, without the ``/v2/sandboxes`` suffix."""
@@ -501,9 +522,13 @@ class AsyncSandboxClient:
                 headers=self._request_headers(headers),
             )
             response.raise_for_status()
-            return AsyncSandbox.from_dict(
+            sandbox = AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
             )
+            if sandbox.id:
+                self._sandbox_ids[sandbox.name] = sandbox.id
+            add_sandbox_metadata(sandbox.id)
+            return sandbox
         except httpx.HTTPStatusError as e:
             handle_sandbox_creation_error(e)
             raise  # pragma: no cover
@@ -525,14 +550,19 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name)
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
-            return AsyncSandbox.from_dict(
+            sandbox = AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
             )
+            if sandbox.id:
+                self._sandbox_ids[sandbox.name] = sandbox.id
+            add_sandbox_metadata(sandbox.id)
+            return sandbox
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -613,6 +643,7 @@ class AsyncSandboxClient:
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name)
         payload: dict[str, Any] = {}
         if new_name is not None:
@@ -631,9 +662,14 @@ class AsyncSandboxClient:
                 url, json=payload, headers=self._request_headers(headers)
             )
             response.raise_for_status()
-            return AsyncSandbox.from_dict(
+            self._forget_sandbox(name)
+            sandbox = AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
             )
+            if sandbox.id:
+                self._sandbox_ids[sandbox.name] = sandbox.id
+            add_sandbox_metadata(sandbox.id)
+            return sandbox
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -661,6 +697,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name)
 
         try:
@@ -668,6 +705,7 @@ class AsyncSandboxClient:
                 url, headers=self._request_headers(headers)
             )
             response.raise_for_status()
+            self._forget_sandbox(name)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -694,6 +732,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "status")
 
         try:
@@ -774,6 +813,7 @@ class AsyncSandboxClient:
                 f'access must be "restricted" or "workspace", got {access!r}'
             )
         login_mode = access is not None
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "service-url")
         payload: dict[str, Any] = {"port": port}
         if not login_mode:
@@ -796,7 +836,9 @@ class AsyncSandboxClient:
             response.raise_for_status()
             if login_mode:
                 return ServiceLoginURL.from_dict(response.json())
-            return AsyncServiceURL.from_dict(response.json(), _refresher=_refresher)
+            service = AsyncServiceURL.from_dict(response.json(), _refresher=_refresher)
+            service._sandbox_id = self._trace_sandbox(name)
+            return service
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -851,6 +893,7 @@ class AsyncSandboxClient:
                 f"expires_in_seconds must be greater than 0 "
                 f"(got {expires_in_seconds}); omit it for a link that never expires"
             )
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "download-url")
         payload: dict[str, Any] = {"path": path}
         if expires_in_seconds is not None:
@@ -944,6 +987,7 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "start")
 
         try:
@@ -970,6 +1014,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "stop")
 
         try:
@@ -1174,6 +1219,7 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(sandbox_name)
         url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}

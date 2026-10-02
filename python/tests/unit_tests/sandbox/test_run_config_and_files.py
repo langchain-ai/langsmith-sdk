@@ -140,6 +140,7 @@ class TestRunConfigOnRequests:
 class TestCloseInput:
     def _handle(self, *, stdin_closed: bool, pty: bool = False) -> CommandHandle:
         handle = CommandHandle.__new__(CommandHandle)
+        handle._sandbox = MagicMock(id=None)
         handle._control = MagicMock()
         handle._stdin_closed = stdin_closed
         handle._pty = pty
@@ -419,6 +420,7 @@ class TestReconnectPreservesIdentity:
 
     def test_handle_built_by_reconnect_keeps_pty(self):
         handle = CommandHandle.__new__(CommandHandle)
+        handle._sandbox = MagicMock(id=None)
         handle._control = MagicMock()
         handle._stdin_closed = False
         handle._pty = True

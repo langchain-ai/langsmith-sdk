@@ -41,6 +41,20 @@ pip install langsmith
 > The `langsmith[sandbox]` extra is still accepted for backward
 > compatibility, but it no longer installs anything extra.
 
+## Tracing metadata
+
+Sandbox operations add `sandbox_id` to the active LangSmith run's metadata,
+without creating additional spans. This applies to both sync and async clients,
+including command execution, file operations, lifecycle calls, and service HTTP
+requests. Existing unrelated metadata is preserved; if one run uses multiple
+sandboxes, `sandbox_id` identifies the most recently used sandbox.
+
+The SDK uses the sandbox's ID, never its display name or dataplane URL. Client
+methods that accept names use IDs learned from create, get, or update responses;
+call `get_sandbox()` first when attaching by name. No lookup requests are added
+just for tracing. Operations without an active run or a known ID, and listing
+sandboxes, leave metadata unchanged.
+
 ## Configuration
 
 The client automatically uses LangSmith environment variables:

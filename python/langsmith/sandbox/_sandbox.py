@@ -62,6 +62,7 @@ from langsmith.sandbox._sse_execute import (
 from langsmith.sandbox._sse_execute import (
     start_payload as _sse_start_payload,
 )
+from langsmith.sandbox._tracing import add_sandbox_metadata
 from langsmith.sandbox._tunnel import Tunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
@@ -228,6 +229,7 @@ class Sandbox:
 
     def __enter__(self) -> Sandbox:
         """Enter context manager."""
+        add_sandbox_metadata(self.id)
         return self
 
     def __exit__(
@@ -237,6 +239,7 @@ class Sandbox:
         exc_tb: Optional[Any],
     ) -> None:
         """Exit context manager, optionally deleting the sandbox."""
+        add_sandbox_metadata(self.id)
         if self._auto_delete:
             try:
                 self._client.delete_sandbox(self.name)
@@ -258,6 +261,7 @@ class Sandbox:
         Raises:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
         """
+        add_sandbox_metadata(self.id)
         if not self.dataplane_url:
             raise DataplaneNotConfiguredError(
                 f"Sandbox '{self.name}' does not have a dataplane_url configured. "
@@ -1033,12 +1037,15 @@ class Sandbox:
             ValueError: If port or expires_in_seconds is out of range.
             SandboxClientError: For other errors.
         """
-        return self._client.service(
+        add_sandbox_metadata(self.id)
+        service = self._client.service(
             self.name,
             port,
             expires_in_seconds=expires_in_seconds,
             headers=headers,
         )
+        service._sandbox_id = self.id
+        return service
 
     def generate_download_url(
         self,
@@ -1078,6 +1085,7 @@ class Sandbox:
             ValueError: If expires_in_seconds is not positive.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         return self._client.generate_download_url(
             self.name,
             path,
@@ -1108,6 +1116,7 @@ class Sandbox:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         refreshed = self._client.start_sandbox(
             self.name, timeout=timeout, headers=headers
         )
@@ -1124,6 +1133,7 @@ class Sandbox:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         self._client.stop_sandbox(self.name, headers=headers)
         # dataplane_url stays set: it is stable across stop/start and a request
         # on it resumes the sandbox.
@@ -1139,6 +1149,7 @@ class Sandbox:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         self._client.delete_sandbox(self.name, headers=headers)
 
     def capture_snapshot(
@@ -1168,6 +1179,7 @@ class Sandbox:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         return self._client.capture_snapshot(
             self.name,
             name,

@@ -38,6 +38,7 @@ import {
   resolveCloseInput,
 } from "./helpers.js";
 import { CommandHandle } from "./command_handle.js";
+import { addSandboxMetadata } from "./tracing.js";
 import {
   connectDeadline,
   isWsAvailable,
@@ -151,6 +152,7 @@ export class Sandbox {
    * @throws LangSmithDataplaneNotConfiguredError if dataplane_url is not configured.
    */
   private requireDataplaneUrl(): string {
+    addSandboxMetadata(this.id);
     if (!this.dataplane_url) {
       throw new LangSmithDataplaneNotConfiguredError(
         `Sandbox '${this.name}' does not have a dataplane_url configured. ` +
@@ -710,6 +712,7 @@ export class Sandbox {
     path: string,
     options: GenerateDownloadURLOptions = {},
   ): Promise<DownloadURL> {
+    addSandboxMetadata(this.id);
     return this._client.generateDownloadURL(this.name, path, options);
   }
 
@@ -727,6 +730,7 @@ export class Sandbox {
    * ```
    */
   async delete(): Promise<void> {
+    addSandboxMetadata(this.id);
     await this._client.deleteSandbox(this.name);
   }
 
@@ -738,6 +742,7 @@ export class Sandbox {
    * @param timeout - Timeout in seconds when waiting for ready. Default: 120.
    */
   async start(options: StartSandboxOptions = {}): Promise<void> {
+    addSandboxMetadata(this.id);
     const refreshed = await this._client.startSandbox(this.name, options);
     this.status = refreshed.status;
     this.dataplane_url = refreshed.dataplane_url;
@@ -747,6 +752,7 @@ export class Sandbox {
    * Stop a running sandbox (preserves sandbox files for later restart).
    */
   async stop(): Promise<void> {
+    addSandboxMetadata(this.id);
     await this._client.stopSandbox(this.name);
     // dataplane_url stays set: it is stable across stop/start and a request on
     // it resumes the sandbox.
@@ -764,6 +770,7 @@ export class Sandbox {
     name: string,
     options: CaptureSnapshotOptions = {},
   ): Promise<Snapshot> {
+    addSandboxMetadata(this.id);
     return this._client.captureSnapshot(this.name, name, options);
   }
 }
