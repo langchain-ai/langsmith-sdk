@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from typing import List, Iterable
 from typing_extensions import Literal
 
-from ..types import issue_list_params
+from ..types import issue_list_params, issue_retrieve_params
 from .._httpx import httpx
 from .._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
-from .._utils import path_template, maybe_transform
+from .._utils import path_template, maybe_transform, async_maybe_transform
 from .._compat import cached_property
 from .._resource import SyncAPIResource, AsyncAPIResource
 from .._response import (
@@ -29,6 +30,8 @@ class IssuesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return IssuesResourceWithRawResponse(self)
 
@@ -36,6 +39,8 @@ class IssuesResource(SyncAPIResource):
     def with_streaming_response(self) -> IssuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return IssuesResourceWithStreamingResponse(self)
 
@@ -43,6 +48,7 @@ class IssuesResource(SyncAPIResource):
         self,
         id: str,
         *,
+        include_linear_context: bool | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -56,6 +62,9 @@ class IssuesResource(SyncAPIResource):
         Returns one issue for the authenticated tenant.
 
         Args:
+          include_linear_context: Include current Linear workflow state and validated linked GitHub pull request
+              URLs
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -69,7 +78,13 @@ class IssuesResource(SyncAPIResource):
         return self._get(
             path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=maybe_transform(
+                    {"include_linear_context": include_linear_context}, issue_retrieve_params.IssueRetrieveParams
+                ),
             ),
             cast_to=Issue,
         )
@@ -77,13 +92,17 @@ class IssuesResource(SyncAPIResource):
     def list(
         self,
         *,
+        activity: List[Literal["fixing", "watching", "recurred"]] | Omit = omit,
         limit: int | Omit = omit,
         offset: int | Omit = omit,
         session_id: str | Omit = omit,
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
-        sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
+        severity_exact: Iterable[Literal[0, 1, 2, 3]] | Omit = omit,
+        sort_by: Literal["default", "created_at", "updated_at", "last_seen", "last_updated", "trace_count", "severity"]
+        | Omit = omit,
         status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
+        status_first: bool | Omit = omit,
         tag: str | Omit = omit,
         trace_id: str | Omit = omit,
         updated_at: str | Omit = omit,
@@ -101,6 +120,8 @@ class IssuesResource(SyncAPIResource):
         status, severity, tag, linked trace, or last modified time.
 
         Args:
+          activity: Filter by Engine activity (repeatable; OR semantics)
+
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
           offset: Page offset (non-negative integer; at most 100000)
@@ -111,9 +132,13 @@ class IssuesResource(SyncAPIResource):
 
           severity: Filter by severity
 
+          severity_exact: Filter by exact severity (repeatable; OR semantics)
+
           sort_by: Sort field
 
           status: Filter by status
+
+          status_first: Group results by issue lifecycle status before applying sort_by
 
           tag: Filter by tag (exact match)
 
@@ -139,13 +164,16 @@ class IssuesResource(SyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "activity": activity,
                         "limit": limit,
                         "offset": offset,
                         "session_id": session_id,
                         "session_name": session_name,
                         "severity": severity,
+                        "severity_exact": severity_exact,
                         "sort_by": sort_by,
                         "status": status,
+                        "status_first": status_first,
                         "tag": tag,
                         "trace_id": trace_id,
                         "updated_at": updated_at,
@@ -163,6 +191,8 @@ class AsyncIssuesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncIssuesResourceWithRawResponse(self)
 
@@ -170,6 +200,8 @@ class AsyncIssuesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncIssuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncIssuesResourceWithStreamingResponse(self)
 
@@ -177,6 +209,7 @@ class AsyncIssuesResource(AsyncAPIResource):
         self,
         id: str,
         *,
+        include_linear_context: bool | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -190,6 +223,9 @@ class AsyncIssuesResource(AsyncAPIResource):
         Returns one issue for the authenticated tenant.
 
         Args:
+          include_linear_context: Include current Linear workflow state and validated linked GitHub pull request
+              URLs
+
           extra_headers: Send extra headers
 
           extra_query: Add additional query parameters to the request
@@ -203,7 +239,13 @@ class AsyncIssuesResource(AsyncAPIResource):
         return await self._get(
             path_template("/api/v1/platform/issues/{id}", id=id),
             options=make_request_options(
-                extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body, timeout=timeout
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                query=await async_maybe_transform(
+                    {"include_linear_context": include_linear_context}, issue_retrieve_params.IssueRetrieveParams
+                ),
             ),
             cast_to=Issue,
         )
@@ -211,13 +253,17 @@ class AsyncIssuesResource(AsyncAPIResource):
     def list(
         self,
         *,
+        activity: List[Literal["fixing", "watching", "recurred"]] | Omit = omit,
         limit: int | Omit = omit,
         offset: int | Omit = omit,
         session_id: str | Omit = omit,
         session_name: str | Omit = omit,
         severity: Literal[0, 1, 2, 3] | Omit = omit,
-        sort_by: Literal["created_at", "updated_at", "severity"] | Omit = omit,
+        severity_exact: Iterable[Literal[0, 1, 2, 3]] | Omit = omit,
+        sort_by: Literal["default", "created_at", "updated_at", "last_seen", "last_updated", "trace_count", "severity"]
+        | Omit = omit,
         status: Literal["open", "fixing", "watching", "completed", "ignored"] | Omit = omit,
+        status_first: bool | Omit = omit,
         tag: str | Omit = omit,
         trace_id: str | Omit = omit,
         updated_at: str | Omit = omit,
@@ -235,6 +281,8 @@ class AsyncIssuesResource(AsyncAPIResource):
         status, severity, tag, linked trace, or last modified time.
 
         Args:
+          activity: Filter by Engine activity (repeatable; OR semantics)
+
           limit: Page size (positive integer; defaults to 50, capped at 500)
 
           offset: Page offset (non-negative integer; at most 100000)
@@ -245,9 +293,13 @@ class AsyncIssuesResource(AsyncAPIResource):
 
           severity: Filter by severity
 
+          severity_exact: Filter by exact severity (repeatable; OR semantics)
+
           sort_by: Sort field
 
           status: Filter by status
+
+          status_first: Group results by issue lifecycle status before applying sort_by
 
           tag: Filter by tag (exact match)
 
@@ -273,13 +325,16 @@ class AsyncIssuesResource(AsyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "activity": activity,
                         "limit": limit,
                         "offset": offset,
                         "session_id": session_id,
                         "session_name": session_name,
                         "severity": severity,
+                        "severity_exact": severity_exact,
                         "sort_by": sort_by,
                         "status": status,
+                        "status_first": status_first,
                         "tag": tag,
                         "trace_id": trace_id,
                         "updated_at": updated_at,

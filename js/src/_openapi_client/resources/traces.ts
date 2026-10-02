@@ -200,6 +200,7 @@ export interface TraceListRunsParams {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**

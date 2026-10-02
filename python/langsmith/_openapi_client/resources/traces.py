@@ -33,6 +33,8 @@ class TracesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return TracesResourceWithRawResponse(self)
 
@@ -40,6 +42,8 @@ class TracesResource(SyncAPIResource):
     def with_streaming_response(self) -> TracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return TracesResourceWithStreamingResponse(self)
 
@@ -98,6 +102,7 @@ class TracesResource(SyncAPIResource):
                 "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
+                "LS_USER_ID",
             ]
         ]
         | Omit = omit,
@@ -273,6 +278,8 @@ class AsyncTracesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncTracesResourceWithRawResponse(self)
 
@@ -280,6 +287,8 @@ class AsyncTracesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncTracesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncTracesResourceWithStreamingResponse(self)
 
@@ -338,6 +347,7 @@ class AsyncTracesResource(AsyncAPIResource):
                 "LAST_QUEUED_AT",
                 "SHARE_URL",
                 "FEEDBACK_STATS",
+                "LS_USER_ID",
             ]
         ]
         | Omit = omit,

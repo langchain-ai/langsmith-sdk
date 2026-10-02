@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing_extensions import Required, TypedDict
+from typing import Union
+from datetime import datetime
+from typing_extensions import Required, Annotated, TypedDict
+
+from ..._utils import PropertyInfo
 
 __all__ = ["ItemRetrieveCountParams"]
 
@@ -12,7 +16,13 @@ class ItemRetrieveCountParams(TypedDict, total=False):
     """Count bucket: all, needs_my_review, needs_others_review, or archived."""
 
     end_time: str
-    """Exclusive upper bound for archived item timestamp"""
+    """Archived strictly before this time. Only used when status=archived"""
+
+    max_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """Trace started at or before this time"""
+
+    min_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """Trace started at or after this time"""
 
     start_time: str
-    """Exclusive lower bound for archived item timestamp"""
+    """Archived strictly after this time. Only used when status=archived"""
