@@ -776,6 +776,15 @@ export namespace BoxCreateParams {
       headers?: Array<Rule.Header>;
 
       /**
+       * MatchHeaders restricts a header injection rule to requests carrying every listed
+       * header, each written "name: value" with a lowercase name and an exact value.
+       * Pair with headers of the same name to swap a placeholder the sandbox sends (e.g.
+       * "authorization: Bearer account-b") for a real credential, so one host can serve
+       * several accounts. Rules are evaluated in order and the first match wins.
+       */
+      match_headers?: Array<string>;
+
+      /**
        * MatchHosts is only accepted for header injection rules. Provider auth rules use
        * built-in host matching.
        */
@@ -974,6 +983,15 @@ export namespace BoxUpdateParams {
       gcp?: Rule.Gcp;
 
       headers?: Array<Rule.Header>;
+
+      /**
+       * MatchHeaders restricts a header injection rule to requests carrying every listed
+       * header, each written "name: value" with a lowercase name and an exact value.
+       * Pair with headers of the same name to swap a placeholder the sandbox sends (e.g.
+       * "authorization: Bearer account-b") for a real credential, so one host can serve
+       * several accounts. Rules are evaluated in order and the first match wins.
+       */
+      match_headers?: Array<string>;
 
       /**
        * MatchHosts is only accepted for header injection rules. Provider auth rules use
