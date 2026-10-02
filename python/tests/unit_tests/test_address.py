@@ -76,13 +76,13 @@ def _root() -> tuple:
 
 class TestConstructors:
     def test_agent_builds_the_string(self) -> None:
-        assert SUPPORT == "agents/support/environments/production"
+        assert SUPPORT == "lrn:agents/support/environments/production"
         assert isinstance(SUPPORT, str)
 
     @pytest.mark.parametrize("agent_id", ["a", "a" * 63, "support-v2"])
     def test_valid_agent_ids(self, agent_id: str) -> None:
         assert ls_address.agent(agent_id, "local") == (
-            f"agents/{agent_id}/environments/local"
+            f"lrn:agents/{agent_id}/environments/local"
         )
 
     @pytest.mark.parametrize(
@@ -112,10 +112,11 @@ class TestConstructors:
     def test_environments_are_lowercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
             assert (
-                ls_address.agent("a", given) == f"agents/a/environments/{environment}"
+                ls_address.agent("a", given)
+                == f"lrn:agents/a/environments/{environment}"
             )
-            assert ls_address.parse(f"agents/a/environments/{given}") == (
-                f"agents/a/environments/{environment}"
+            assert ls_address.parse(f"lrn:agents/a/environments/{given}") == (
+                f"lrn:agents/a/environments/{environment}"
             )
 
     def test_parse_round_trips(self) -> None:
@@ -126,14 +127,15 @@ class TestConstructors:
         [
             "support",
             "",
-            "agents/support",
-            "agents/support/environments/",
-            "agents/Support/environments/production",
-            "agents/support/environments/prod",
-            "agents/support/environments/production/extra",
+            "lrn:agents/support",
+            "lrn:agents/support/environments/",
+            "lrn:agents/Support/environments/production",
+            "lrn:agents/support/environments/prod",
+            "lrn:agents/support/environments/production/extra",
             "experiments/e/environments/production",
-            " agents/support/environments/production",
-            "agents/support/environments/production\n",
+            " lrn:agents/support/environments/production",
+            "agents/support/environments/production",
+            "lrn:agents/support/environments/production\n",
             42,
         ],
     )
@@ -202,7 +204,7 @@ class TestConstructors:
 class TestStringsAtEntryPoints:
     """Any `str` is accepted, validated and lowercased once at the entry."""
 
-    UPPER = "agents/support/environments/PRODUCTION"
+    UPPER = "lrn:agents/support/environments/PRODUCTION"
 
     def test_tracing_context(self, client: Client) -> None:
         with ls.tracing_context(enabled=True, client=client, address=self.UPPER):
@@ -508,7 +510,7 @@ class TestPropagation:
 
     def test_a_malformed_header_address_is_ignored(self) -> None:
         headers = RunTree(name="up", project_name="upstream").to_headers()
-        for bad in ("support", "agents/Bad_Id/environments/local", "%7B%7D", ""):
+        for bad in ("support", "lrn:agents/Bad_Id/environments/local", "%7B%7D", ""):
             bad_headers = {
                 **headers,
                 "baggage": f"{headers['baggage']},langsmith-address={bad}",
@@ -519,8 +521,8 @@ class TestPropagation:
 
     def test_the_baggage_carries_one_lowercase_string(self) -> None:
         headers = RunTree(name="up", address=SUPPORT).to_headers()
-        assert "langsmith-address=agents/support/environments/production" in (
-            headers["baggage"].replace("%2F", "/")
+        assert "langsmith-address=lrn:agents/support/environments/production" in (
+            headers["baggage"].replace("%2F", "/").replace("%3A", ":")
         )
 
     def test_a_header_replica_with_an_address_round_trips(self) -> None:
@@ -539,8 +541,8 @@ class TestReplicas:
         run = RunTree(
             name="r",
             replicas=[
-                "agents/support/environments/STAGING",
-                {"address": "agents/support/environments/PRODUCTION"},
+                "lrn:agents/support/environments/STAGING",
+                {"address": "lrn:agents/support/environments/PRODUCTION"},
             ],
         )
         assert run.replicas == [{"address": STAGING}, {"address": SUPPORT}]
@@ -569,7 +571,7 @@ class TestWire:
     def test_a_run_payload_carries_one_lowercase_string(self) -> None:
         payload = RunTree(name="r", address=SUPPORT)._get_dicts_safe()
         _agent_addressing.apply_to_payload(payload)
-        assert payload["address"] == "agents/support/environments/production"
+        assert payload["address"] == "lrn:agents/support/environments/production"
         assert "agent_id" not in payload
         assert "agent_environment" not in payload
         assert "session_name" not in payload
@@ -584,7 +586,7 @@ class TestWire:
         assert payload["address"] == SUPPORT
 
     def test_a_payload_address_is_normalized_once(self) -> None:
-        payload = {"id": "x", "address": "agents/support/environments/Production"}
+        payload = {"id": "x", "address": "lrn:agents/support/environments/Production"}
         _agent_addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT
 
@@ -646,9 +648,9 @@ class TestWire:
         )
 
     def test_feedback_carries_one_lowercase_string(self) -> None:
-        dumped = self._feedback("agents/support/environments/PRODUCTION").model_dump(
-            exclude_none=True
-        )
+        dumped = self._feedback(
+            "lrn:agents/support/environments/PRODUCTION"
+        ).model_dump(exclude_none=True)
         assert dumped["address"] == SUPPORT
         assert "agent_id" not in dumped
 

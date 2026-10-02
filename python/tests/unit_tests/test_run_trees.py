@@ -887,7 +887,7 @@ class TestBaggageAgentAddressing:
                 {
                     # Without a destination the replica is dropped before the
                     # credential check below can run.
-                    "address": "agents/replica-agent/environments/Staging",
+                    "address": "lrn:agents/replica-agent/environments/Staging",
                     "api_key": "secret",
                     "api_url": "http://x",
                 }
@@ -899,4 +899,4 @@ class TestBaggageAgentAddressing:
         replica = parsed.replicas[0]
         assert "api_key" not in replica
         assert "api_url" not in replica
-        assert replica["address"] == "agents/replica-agent/environments/staging"
+        assert replica["address"] == "lrn:agents/replica-agent/environments/staging"

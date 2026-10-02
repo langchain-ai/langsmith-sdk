@@ -24,8 +24,8 @@ import { mockClient } from "./utils/mock_client.js";
 const jsCaller = (value: string) => value as Address;
 
 const SUPPORT: Address = address.agent("customer-support", "production");
-const SUPPORT_STR = "agents/customer-support/environments/production";
-const STAGING_STR = "agents/customer-support/environments/staging";
+const SUPPORT_STR = "lrn:agents/customer-support/environments/production";
+const STAGING_STR = "lrn:agents/customer-support/environments/staging";
 
 const ENV_KEYS = [
   "LANGSMITH_AGENT_ID",
@@ -83,9 +83,11 @@ describe("address", () => {
 
   test("agent builds a lowercase string", () => {
     expect(SUPPORT).toBe(SUPPORT_STR);
-    expect(address.agent("a", "STAGING")).toBe("agents/a/environments/staging");
+    expect(address.agent("a", "STAGING")).toBe(
+      "lrn:agents/a/environments/staging",
+    );
     for (const env of ["local", "development", "staging", "production"]) {
-      expect(address.agent("a", env)).toBe(`agents/a/environments/${env}`);
+      expect(address.agent("a", env)).toBe(`lrn:agents/a/environments/${env}`);
     }
   });
 
@@ -97,7 +99,7 @@ describe("address", () => {
     }
     for (const id of ["a", "a".repeat(63), "support-v2"]) {
       expect(address.agent(id, "production")).toBe(
-        `agents/${id}/environments/production`,
+        `lrn:agents/${id}/environments/production`,
       );
     }
     for (const env of ["", "prod", "e"]) {
@@ -108,20 +110,21 @@ describe("address", () => {
 
   test("parse validates and lowercases the environment", () => {
     expect(address.parse(SUPPORT_STR)).toBe(SUPPORT_STR);
-    expect(address.parse("agents/a/environments/Production")).toBe(
-      "agents/a/environments/production",
+    expect(address.parse("lrn:agents/a/environments/Production")).toBe(
+      "lrn:agents/a/environments/production",
     );
     for (const bad of [
       "",
       "support",
-      "agents/a",
-      "agents/a/environments/",
-      "agents//environments/production",
-      "agents/a/environments/production/x",
-      "agents/a/environments/production\n",
+      "lrn:agents/a",
+      "lrn:agents/a/environments/",
+      "lrn:agents//environments/production",
+      "lrn:agents/a/environments/production/x",
+      "lrn:agents/a/environments/production\n",
       "projects/a/environments/production",
-      "agents/Bad/environments/production",
-      "agents/a/environments/prod",
+      "agents/a/environments/production",
+      "lrn:agents/Bad/environments/production",
+      "lrn:agents/a/environments/prod",
     ]) {
       expect(() => address.parse(bad)).toThrow();
     }
@@ -180,7 +183,7 @@ describe("precedence", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "staging";
-    expect(resolveFromEnv()[1]).toBe("agents/a/environments/staging");
+    expect(resolveFromEnv()[1]).toBe("lrn:agents/a/environments/staging");
     process.env.LANGSMITH_PROJECT = "p";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
   });
@@ -190,7 +193,7 @@ describe("RunTree", () => {
   test("accepts and normalises a plain string", () => {
     const run = new RunTree({
       name: "r",
-      address: jsCaller("agents/customer-support/environments/PRODUCTION"),
+      address: jsCaller("lrn:agents/customer-support/environments/PRODUCTION"),
     });
     expect(run.address).toBe(SUPPORT_STR);
   });
@@ -232,7 +235,7 @@ describe("RunTree", () => {
     const { client, callSpy } = mockClient();
     await new RunTree({
       name: "r",
-      address: jsCaller("agents/customer-support/environments/Production"),
+      address: jsCaller("lrn:agents/customer-support/environments/Production"),
       client,
     }).postRun();
     const [body] = await postedRuns(callSpy, client);
@@ -250,7 +253,9 @@ describe("RunTree", () => {
       client,
       replicas: [
         {
-          address: jsCaller("agents/customer-support/environments/PRODUCTION"),
+          address: jsCaller(
+            "lrn:agents/customer-support/environments/PRODUCTION",
+          ),
         },
       ],
     });
@@ -315,7 +320,7 @@ describe("baggage", () => {
     for (const value of [
       "not-an-address",
       '{"agent_id":"a"}',
-      "agents/a/environments/nope",
+      "lrn:agents/a/environments/nope",
       "",
     ]) {
       warn.mockClear();
@@ -331,7 +336,7 @@ describe("baggage", () => {
     const child = RunTree.fromHeaders(
       headersWith(
         `langsmith-address=${encodeURIComponent(
-          "agents/customer-support/environments/STAGING",
+          "lrn:agents/customer-support/environments/STAGING",
         )}`,
       ),
     )!;
@@ -364,7 +369,7 @@ describe("traceable", () => {
     ).toThrow(/not both/);
     expect(() =>
       traceable(async () => "ok", {
-        address: "agents/Bad/environments/production",
+        address: "lrn:agents/Bad/environments/production",
       }),
     ).toThrow(/1 to 63 lowercase/);
   });
@@ -374,7 +379,7 @@ describe("traceable", () => {
     const fn = traceable(async () => "ok", {
       client,
       tracingEnabled: true,
-      address: jsCaller("agents/customer-support/environments/Staging"),
+      address: jsCaller("lrn:agents/customer-support/environments/Staging"),
     });
     await fn();
     const [body] = await postedRuns(callSpy, client);
@@ -403,9 +408,9 @@ describe("traceable", () => {
       project_name: "p",
       argsConfigPath: [1],
     });
-    await (fn as any)("x", { address: "agents/a/environments/LOCAL" });
+    await (fn as any)("x", { address: "lrn:agents/a/environments/LOCAL" });
     const [body] = await postedRuns(callSpy, client);
-    expect(body.address).toBe("agents/a/environments/local");
+    expect(body.address).toBe("lrn:agents/a/environments/local");
   });
 });
 
@@ -456,7 +461,7 @@ describe("Client", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "local";
     const payload: any = {
-      address: "agents/customer-support/environments/PRODUCTION",
+      address: "lrn:agents/customer-support/environments/PRODUCTION",
     };
     applyToPayload(payload);
     applyToPayload(payload);
@@ -481,7 +486,7 @@ describe("Client", () => {
     await client.createFeedback({
       runId: "00000000-0000-0000-0000-000000000001",
       key: "k",
-      address: jsCaller("agents/customer-support/environments/PRODUCTION"),
+      address: jsCaller("lrn:agents/customer-support/environments/PRODUCTION"),
     });
     const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
       String(url).endsWith("/feedback"),
@@ -505,7 +510,7 @@ describe("Client", () => {
   test("a direct updateRun sends the address string", async () => {
     const { client, callSpy } = mockClient();
     await client.updateRun("00000000-0000-0000-0000-000000000001", {
-      address: jsCaller("agents/customer-support/environments/STAGING"),
+      address: jsCaller("lrn:agents/customer-support/environments/STAGING"),
     });
     const [, init] = callSpy.mock.calls.find(
       ([, init]: [string, any]) => init?.method === "PATCH",
@@ -522,16 +527,20 @@ describe("address types", () => {
     const dynamic: string = SUPPORT_STR;
     const literal = new RunTree({
       name: "r",
-      address: "agents/support-bot/environments/production",
+      address: "lrn:agents/support-bot/environments/production",
     });
     const parsed = new RunTree({ name: "r", address: address.parse(dynamic) });
     const built = new RunTree({
       name: "r",
       address: address.agent("support-bot", dynamic.slice(-10)),
     });
-    expect(literal.address).toBe("agents/support-bot/environments/production");
+    expect(literal.address).toBe(
+      "lrn:agents/support-bot/environments/production",
+    );
     expect(parsed.address).toBe(SUPPORT_STR);
-    expect(built.address).toBe("agents/support-bot/environments/production");
+    expect(built.address).toBe(
+      "lrn:agents/support-bot/environments/production",
+    );
     const traced = traceable(async () => 1, { address: SUPPORT });
     expect(typeof traced).toBe("function");
   });
@@ -541,13 +550,13 @@ describe("address types", () => {
     const rejected = (build: () => unknown) => expect(build).toBeDefined(); // never called; only type-checked
     rejected(() => {
       // @ts-expect-error unknown environment
-      traceable(async () => 1, { address: "agents/x/environments/prod" });
+      traceable(async () => 1, { address: "lrn:agents/x/environments/prod" });
       // @ts-expect-error wrong collection
       traceable(async () => 1, { address: "projects/x" });
       // @ts-expect-error a dynamic string must go through address.parse
       traceable(async () => 1, { address: dynamic });
       // @ts-expect-error unknown environment
-      new RunTree({ name: "r", address: "agents/x/environments/prod" });
+      new RunTree({ name: "r", address: "lrn:agents/x/environments/prod" });
       // @ts-expect-error wrong collection
       new RunTree({ name: "r", address: "projects/x" });
       // @ts-expect-error a dynamic string must go through address.parse

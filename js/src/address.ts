@@ -2,7 +2,7 @@
  * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  *
- * An address is a plain string, `agents/{id}/environments/{environment}`,
+ * An address is a plain string, `lrn:agents/{id}/environments/{environment}`,
  * typed as a template literal so a literal is checked at compile time. A
  * dynamic `string` goes through `address.parse`, which validates it at
  * runtime (JS callers are validated the same way). The environment is always
@@ -14,7 +14,7 @@
  *
  * const support = address.agent("customer-support", "production");
  * const handle = traceable(fn, { address: support });
- * // or a literal: { address: "agents/customer-support/environments/staging" }
+ * // or a literal: { address: "lrn:agents/customer-support/environments/staging" }
  * ```
  */
 import { getEnvironmentVariable } from "./utils/env.js";
@@ -22,8 +22,8 @@ import { getEnvironmentVariable } from "./utils/env.js";
 /** (beta) An agent environment. */
 export type Environment = "local" | "development" | "staging" | "production";
 
-/** (beta) An address string, `agents/{id}/environments/{environment}`. */
-export type Address = `agents/${string}/environments/${Environment}`;
+/** (beta) An address string, `lrn:agents/{id}/environments/{environment}`. */
+export type Address = `lrn:agents/${string}/environments/${Environment}`;
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
 const AGENT_ID_PATTERN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -33,7 +33,7 @@ const ENVIRONMENTS: string[] = [
   "staging",
   "production",
 ];
-const ADDRESS_PATTERN = /^agents\/([^/]*)\/environments\/([^/]*)$/;
+const ADDRESS_PATTERN = /^lrn:agents\/([^/]*)\/environments\/([^/]*)$/;
 
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
 
@@ -74,12 +74,12 @@ export function agent(
         `${JSON.stringify(agentEnvironment)}.`,
     );
   }
-  return `agents/${agentId}/environments/${environment as Environment}`;
+  return `lrn:agents/${agentId}/environments/${environment as Environment}`;
 }
 
 /**
  * (beta) Validate an address string, lowercasing its environment.
- * Only agent addresses, `agents/{id}/environments/{environment}`, exist.
+ * Only agent addresses, `lrn:agents/{id}/environments/{environment}`, exist.
  * @throws If `value` is not a valid agent address.
  */
 export function parse(value: string): Address {
@@ -88,7 +88,7 @@ export function parse(value: string): Address {
   if (!match) {
     throw new Error(
       "An address must be a string like " +
-        `"agents/{id}/environments/{environment}", got ${JSON.stringify(value)}.`,
+        `"lrn:agents/{id}/environments/{environment}", got ${JSON.stringify(value)}.`,
     );
   }
   return agent(match[1], match[2]);

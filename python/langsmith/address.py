@@ -5,7 +5,7 @@
     without it rejects the runs, so tracing is lost rather than falling back
     to a project. This API may change without notice.
 
-An address is a plain string, `agents/{id}/environments/{environment}`. The
+An address is a plain string, `lrn:agents/{id}/environments/{environment}`. The
 constructors here validate one and return it as an `Address`; anywhere an
 address is accepted, any `str` is validated the same way. The environment is
 one of `local`, `development`, `staging` or `production`, and is always
@@ -22,7 +22,9 @@ Example:
     def handle(order): ...
 
 
-    with ls.tracing_context(address="agents/customer-support/environments/staging"):
+    with ls.tracing_context(
+        address="lrn:agents/customer-support/environments/staging"
+    ):
         handle(order)
     ```
 """
@@ -42,7 +44,7 @@ Address = NewType("Address", str)
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _ENVIRONMENTS = ("local", "development", "staging", "production")
-_ADDRESS_PATTERN = re.compile(r"agents/([^/]*)/environments/([^/]*)")
+_ADDRESS_PATTERN = re.compile(r"lrn:agents/([^/]*)/environments/([^/]*)")
 
 
 class EnvAddressError(utils.LangSmithUserError):
@@ -84,13 +86,13 @@ def agent(agent_id: str, agent_environment: str) -> Address:
             f"Address environment must be one of {', '.join(_ENVIRONMENTS)}, "
             f"got {agent_environment!r}."
         )
-    return Address(f"agents/{agent_id}/environments/{environment}")
+    return Address(f"lrn:agents/{agent_id}/environments/{environment}")
 
 
 def parse(address: str) -> Address:
     """(beta) Validate an address string, lowercasing its environment.
 
-    Only agent addresses, `agents/{id}/environments/{environment}`, exist.
+    Only agent addresses, `lrn:agents/{id}/environments/{environment}`, exist.
 
     Raises:
         LangSmithUserError: If `address` is not a valid agent address.
@@ -99,7 +101,7 @@ def parse(address: str) -> Address:
     if match is None:
         raise utils.LangSmithUserError(
             "An address must be a string like "
-            f"'agents/{{id}}/environments/{{environment}}', got {address!r}."
+            f"'lrn:agents/{{id}}/environments/{{environment}}', got {address!r}."
         )
     return agent(*match.groups())
 

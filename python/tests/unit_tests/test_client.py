@@ -8266,7 +8266,7 @@ def test_agent_addressed_run_sends_no_project(
     patch_body = _wait_for_part(session, "patch")
 
     for kind, body in (("post", post_body), ("patch", patch_body)):
-        assert body.get("address") == "agents/my-agent/environments/staging", kind
+        assert body.get("address") == "lrn:agents/my-agent/environments/staging", kind
         assert "agent_id" not in body, kind
         assert "agent_environment" not in body, kind
         assert "session_name" not in body, kind
@@ -8366,7 +8366,7 @@ class TestNoRunUrlForAnAgentAddressedRun:
         run = mock.Mock(
             id=uuid.uuid4(),
             session_id=uuid.uuid4(),
-            address="agents/my-agent/environments/staging",
+            address="lrn:agents/my-agent/environments/staging",
         )
         with mock.patch.object(Client, "_get_tenant_id", return_value=uuid.uuid4()):
             assert "/projects/p/" in client._construct_run_url(run=run)
@@ -8381,7 +8381,7 @@ class TestRemoteInputNeverRaises:
             [
                 {
                     "project_name": "p-remote",
-                    "address": "agents/ag-remote/environments/production",
+                    "address": "lrn:agents/ag-remote/environments/production",
                 }
             ]
         )
@@ -8497,10 +8497,10 @@ class TestFeedbackAgentAddressing:
                 "trace_id": uuid.uuid4(),
                 "key": "correctness",
                 "score": 1,
-                "address": "agents/my-agent/environments/staging",
+                "address": "lrn:agents/my-agent/environments/staging",
             }
         )
         body = json.loads(serialized.feedback)
-        assert body["address"] == "agents/my-agent/environments/staging"
+        assert body["address"] == "lrn:agents/my-agent/environments/staging"
         assert "agent_id" not in body
         assert "agent_environment" not in body
