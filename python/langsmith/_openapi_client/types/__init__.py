@@ -5,7 +5,6 @@ from __future__ import annotations
 from .run import Run as Run
 from .issue import Issue as Issue
 from .trace import Trace as Trace
-from .shared import AgentAddress as AgentAddress
 from .thread import Thread as Thread
 from .missing import Missing as Missing
 from .run_type import RunType as RunType

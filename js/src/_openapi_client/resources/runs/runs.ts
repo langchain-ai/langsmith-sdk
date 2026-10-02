@@ -2,7 +2,6 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../../core/resource.js';
-import * as Shared from '../shared.js';
 import * as ShareAPI from './share.js';
 import { Share, ShareCreateParams, ShareCreateResponse, ShareDeleteParams } from './share.js';
 import { APIPromise } from '../../core/api-promise.js';
@@ -513,24 +512,11 @@ export interface RunIngest {
 
   /**
    * Beta. Addresses the run to an Agent environment in place of session_id or
-   * session_name. Cannot be combined with agent_id or agent_environment. Only
-   * workspaces enabled for Agent addressing accept it; others get a 403.
+   * session_name, as lrn:agents/{id}/environments/{environment}. The environment is
+   * case-insensitive. Only workspaces enabled for Agent addressing accept it; others
+   * get a 403.
    */
-  address?: Shared.AgentAddress;
-
-  /**
-   * Beta. The Agent environment the run belongs to, case-insensitive; requires
-   * agent_id. Only workspaces enabled for Agent addressing accept it; others get
-   * a 403.
-   */
-  agent_environment?: 'LOCAL' | 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION';
-
-  /**
-   * Beta, superseded by address. Addresses the run to an Agent, with
-   * agent_environment, in place of session_id or session_name. Only workspaces
-   * enabled for Agent addressing accept it; others get a 403.
-   */
-  agent_id?: string;
+  address?: string;
 
   dotted_order?: string;
 
