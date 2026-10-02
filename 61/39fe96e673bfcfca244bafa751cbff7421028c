@@ -1,0 +1,65 @@
+js/src/index.ts
+  s_d2919c26749e54::t_eacd8176700e07 19-24
+js/src/utils/agent_addressing.ts
+  s_d2919c26749e54::t_023988f7bfa675 15
+  s_d2919c26749e54::t_2d67908ae271f5 91
+js/src/client.ts
+  s_d2919c26749e54::t_b3c84b56934cb5 618
+  s_d2919c26749e54::t_faa62a295fcfb4 3286
+  s_d2919c26749e54::t_03ecc7c5e3a82a 90
+  s_d2919c26749e54::t_037785ab8eb282 5575
+  s_d2919c26749e54::t_c56b1ca2b5caf1 546
+js/src/run_trees.ts
+  s_d2919c26749e54::t_bf3aafffcc0a4d 261
+  s_d2919c26749e54::t_e7809f4574cb2b 333
+  s_d2919c26749e54::t_94cd54bfc2e39d 719
+  s_d2919c26749e54::t_d1c7b0452c5061 98
+  s_d2919c26749e54::t_7299011b3013a3 178
+  s_d2919c26749e54::t_925d0439a35659 206
+  s_d2919c26749e54::t_e135bc7ab8f522 240
+  s_d2919c26749e54::t_7e7c3af7336fc0 37-41
+  s_d2919c26749e54::t_79372e8c755d4f 733
+  s_d2919c26749e54::t_6dee5ab9e0782e 246
+js/src/tests/address.test.ts
+  s_d2919c26749e54::t_2bd102446fc1b6 377
+  s_d2919c26749e54::t_d3952197ac81de 508
+  s_d2919c26749e54::t_bccb4a7aab2760 518-522,537-540,542-564
+  s_d2919c26749e54::t_1cc99a3f71a21a 436
+  s_d2919c26749e54::t_18193d4d79aefa 200-201,204-207
+  s_d2919c26749e54::t_2fc67477144ce9 523-536
+  s_d2919c26749e54::t_d5177d219980c8 23-25
+  s_d2919c26749e54::t_6e707d4f6f16f0 541
+  s_d2919c26749e54::t_17261190307d2e 193
+  s_d2919c26749e54::t_4a61e714ca1fe8 252-254
+  s_d2919c26749e54::t_01da42256f52df 484
+  s_d2919c26749e54::t_4a7e49562d7891 500
+  s_d2919c26749e54::t_ffe08df6cb70db 235
+  s_d2919c26749e54::t_2a6f0c70068870 199
+js/src/address.ts
+  s_d2919c26749e54::t_38e4d01091a2d9 5-9
+  s_d2919c26749e54::t_14df5ef868761a 22-26
+  s_d2919c26749e54::t_e7b080169d46b6 17
+  s_d2919c26749e54::t_40359d1ae51db1 77
+  s_d2919c26749e54::t_6e707d4f6f16f0 30-35
+  s_d2919c26749e54::t_093fb804a4610b 56-59
+js/src/schemas.ts
+  s_d2919c26749e54::t_38364cd3b1bf77 1-2
+  s_d2919c26749e54::t_631c941c78b1a0 222
+  s_d2919c26749e54::t_4f683f64623323 242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6139fe96e673bfcfca244bafa751cbff7421028c",
+  "prompts": {},
+  "sessions": {
+    "s_d2919c26749e54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d901b44-ac0d-4c95-a955-242ebeeca7ed",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
