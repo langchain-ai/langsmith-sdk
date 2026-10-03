@@ -765,7 +765,14 @@ def instrument_claude_client(original_class: Any) -> None:
                 raise
             finally:
                 tracker.close()
-                reconcile_from_transcripts(tracker, session=session)
+                # Reconciliation only patches observability data; it must
+                # never fail a response that already finished streaming.
+                try:
+                    reconcile_from_transcripts(tracker, session=session)
+                except Exception:
+                    logger.exception(
+                        "Failed to reconcile usage from Claude Agent SDK transcripts"
+                    )
                 tracker.flush()
                 clear_parent_run_tree(parent_token)
                 try:
