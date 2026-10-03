@@ -542,6 +542,52 @@ class TestReadLLMTurnsFromTranscript:
         assert read_llm_turns_from_transcript("/nonexistent/path.jsonl") == []
 
 
+# A complete first entry followed by a second entry that the SDK is still
+# appending: the read stops partway through a multibyte UTF-8 character
+# (the first two bytes of U+2026) with no trailing newline.
+_TRUNCATED_TRANSCRIPT = (
+    b'{"type":"assistant","message":{"id":"m1",'
+    b'"usage":{"input_tokens":3,"output_tokens":5},"stop_reason":"end_turn"}}\n'
+    b'{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":1}}} '
+    b"\xe2\x80"
+)
+
+
+class TestTranscriptTruncatedMidCharacter:
+    """Transcript readers tolerate a trailing line cut mid UTF-8 character."""
+
+    def test_usage_reader_skips_truncated_line(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_usage_and_stop_reasons_from_transcript,
+        )
+
+        transcript = tmp_path / "session.jsonl"
+        transcript.write_bytes(_TRUNCATED_TRANSCRIPT)
+
+        usage_by_id, stop_reasons = read_usage_and_stop_reasons_from_transcript(
+            str(transcript)
+        )
+
+        assert set(usage_by_id) == {"m1"}
+        assert usage_by_id["m1"]["input_tokens"] == 3
+        assert usage_by_id["m1"]["output_tokens"] == 5
+        assert stop_reasons == {"m1": "end_turn"}
+
+    def test_llm_turns_reader_skips_truncated_line(self, tmp_path):
+        from langsmith.integrations.claude_agent_sdk._usage import (
+            read_llm_turns_from_transcript,
+        )
+
+        transcript = tmp_path / "session.jsonl"
+        transcript.write_bytes(_TRUNCATED_TRANSCRIPT)
+
+        turns = read_llm_turns_from_transcript(str(transcript))
+
+        assert [t["message_id"] for t in turns] == ["m1"]
+        assert turns[0]["stop_reason"] == "end_turn"
+        assert turns[0]["usage"] == {"input_tokens": 3, "output_tokens": 5}
+
+
 class TestMissingSubagentLLMRuns:
     """reconcile_from_transcripts creates LLM runs for subagent turns
     that were not seen in the live stream."""
@@ -1243,6 +1289,32 @@ class TestReceiveMessagesInstrumented:
 
         assert len(root_runs) == 1
         assert "transport died" in (root_runs[0].error or "")
+        assert root_runs[0].end_time is not None
+
+    def test_reconcile_failure_does_not_reach_caller(
+        self, client_cls, root_runs, monkeypatch
+    ):
+        """Usage reconciliation is observability only; its errors are logged."""
+        from langsmith.integrations.claude_agent_sdk import _client as _client_module
+
+        def _boom(*args, **kwargs):
+            raise UnicodeDecodeError("utf-8", b"\xe2\x80", 0, 2, "unexpected end")
+
+        monkeypatch.setattr(_client_module, "reconcile_from_transcripts", _boom)
+
+        received = []
+
+        async def main():
+            client = client_cls()
+            await client.query("say hi")
+            async for msg in client.receive_response():
+                received.append(msg)
+
+        self._run(main())
+
+        assert isinstance(received[-1], ResultMessage)
+        assert len(root_runs) == 1
+        assert root_runs[0].error is None
         assert root_runs[0].end_time is not None
 
     def test_receive_response_not_double_traced(self, client_cls, root_runs):
