@@ -263,6 +263,36 @@ def _elide_surrogates(s: bytes) -> bytes:
     return _SURROGATE_RE.sub(b"", s)
 
 
+_CYCLIC_PLACEHOLDER = "<cyclic>"
+_DEPTH_PLACEHOLDER = "<depth limit exceeded>"
+_MAX_BREAK_DEPTH = 64
+
+
+def _break_cycles(obj: Any, _depth: int = 0, _seen: frozenset = frozenset()) -> Any:
+    """Return a copy of obj with cyclic dict/list references replaced by a placeholder.
+
+    Uses id-based cycle detection for dict and list containers and caps traversal
+    at ``_MAX_BREAK_DEPTH`` levels to prevent RecursionError on very deep structures.
+    """
+    if _depth > _MAX_BREAK_DEPTH:
+        return _DEPTH_PLACEHOLDER
+    if isinstance(obj, dict):
+        oid = id(obj)
+        if oid in _seen:
+            return _CYCLIC_PLACEHOLDER
+        child_seen = _seen | {oid}
+        return {
+            k: _break_cycles(v, _depth + 1, child_seen) for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        oid = id(obj)
+        if oid in _seen:
+            return _CYCLIC_PLACEHOLDER
+        child_seen = _seen | {oid}
+        return [_break_cycles(v, _depth + 1, child_seen) for v in obj]
+    return obj
+
+
 def dumps_json(obj: Any) -> bytes:
     """Serialize an object to a JSON formatted string.
 
@@ -282,44 +312,66 @@ def dumps_json(obj: Any) -> bytes:
             default=_serialize_json,
             option=_ORJSON_OPTIONS_FAST,
         )
-    except TypeError as e:
-        # Usually caused by UTF surrogate characters or non-str dict keys
-        logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
-        # OPT_NON_STR_KEYS makes orjson accept a `str` subclass key verbatim.
-        obj = _redact_secrets(obj)
-        try:
-            # Let orjson coerce non-str keys. Only stringify the ones it can't handle.
-            return _orjson.dumps(
-                obj,
-                default=_serialize_json_with_normalized_keys,
-                option=_ORJSON_OPTIONS,
-            )
-        except TypeError:
-            pass
-        normalized_obj = _normalize_json_keys(obj)
-        try:
-            return _orjson.dumps(
-                normalized_obj,
-                default=_serialize_json_with_normalized_keys,
-                option=_ORJSON_OPTIONS,
-            )
-        except TypeError as retry_e:
+    except (TypeError, RecursionError) as e:
+        _is_cycle = isinstance(e, RecursionError) or "Recursion" in str(e)
+        if _is_cycle:
+            # orjson raises TypeError("Recursion limit reached") for cyclic or
+            # very deeply nested plain dict/list structures.  Python itself raises
+            # RecursionError on the stdlib fallback path.  Break any cycles first,
+            # then retry the fast path before falling through to the full chain.
             logger.debug(
-                "Orjson serialization with normalized keys failed: "
-                f"{repr(retry_e)}. Falling back to json."
+                "Recursion limit reached during serialization; "
+                "breaking cycles and retrying."
             )
-        result = json.dumps(
+            obj = _break_cycles(obj)
+            try:
+                return _orjson.dumps(
+                    obj,
+                    default=_serialize_json,
+                    option=_ORJSON_OPTIONS_FAST,
+                )
+            except (TypeError, RecursionError):
+                pass
+        else:
+            # Usually caused by UTF surrogate characters or non-str dict keys
+            logger.debug(
+                f"Orjson serialization failed: {repr(e)}. Falling back to json."
+            )
+    # OPT_NON_STR_KEYS makes orjson accept a `str` subclass key verbatim.
+    obj = _redact_secrets(obj)
+    try:
+        # Let orjson coerce non-str keys. Only stringify the ones it can't handle.
+        return _orjson.dumps(
+            obj,
+            default=_serialize_json_with_normalized_keys,
+            option=_ORJSON_OPTIONS,
+        )
+    except TypeError:
+        pass
+    normalized_obj = _normalize_json_keys(obj)
+    try:
+        return _orjson.dumps(
             normalized_obj,
             default=_serialize_json_with_normalized_keys,
-            ensure_ascii=True,
-        ).encode("utf-8")
-        if _SURROGATE_RE.search(result):
-            # orjson.loads serves only to detect lone surrogates here (it
-            # rejects them, triggering the elision below). On success the
-            # stdlib bytes are kept as-is: re-dumping the parsed value through
-            # orjson would silently convert integers >= 2**64 to floats.
-            try:
-                _orjson.loads(result.decode("utf-8", errors="surrogateescape"))
-            except _orjson.JSONDecodeError:
-                result = _elide_surrogates(result)
-        return result
+            option=_ORJSON_OPTIONS,
+        )
+    except TypeError as retry_e:
+        logger.debug(
+            "Orjson serialization with normalized keys failed: "
+            f"{repr(retry_e)}. Falling back to json."
+        )
+    result = json.dumps(
+        normalized_obj,
+        default=_serialize_json_with_normalized_keys,
+        ensure_ascii=True,
+    ).encode("utf-8")
+    if _SURROGATE_RE.search(result):
+        # orjson.loads serves only to detect lone surrogates here (it
+        # rejects them, triggering the elision below). On success the
+        # stdlib bytes are kept as-is: re-dumping the parsed value through
+        # orjson would silently convert integers >= 2**64 to floats.
+        try:
+            _orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+        except _orjson.JSONDecodeError:
+            result = _elide_surrogates(result)
+    return result
