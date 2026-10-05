@@ -104,11 +104,11 @@ class EventSession:
         """Open a new conversational-turn span, closing the previous one.
 
         Subsequent ``event_span`` calls nest under this turn until the next
-        ``start_turn`` / ``end_turn`` (or ``finalize``). User transcript lines
-        become the turn's ``inputs`` and assistant transcript lines become its
-        ``outputs``, so each turn reads like a normal chain run. The turn is
-        posted only when it closes, with its complete transcript and end time.
-        Opt-in: an adapter that never calls this keeps the flat root layout.
+        ``start_turn`` / ``end_turn`` (or ``finalize``). The turn's ``outputs``
+        contain all transcript lines added during it, so each turn previews its
+        own exchange. The turn is posted only when it closes, with its complete
+        transcript and end time. Opt-in: an adapter that never calls this keeps
+        the flat root layout.
         """
         self._close_turn()
         self._turn_count += 1
@@ -128,12 +128,8 @@ class EventSession:
         if turn is None:
             return
         msgs = self.messages[self._turn_msg_start :]
-        inputs = [msg for msg in msgs if msg["role"] == "user"]
-        outputs = [msg for msg in msgs if msg["role"] != "user"]
-        turn.set(inputs={"messages": inputs} if inputs else {})
-        turn.end(outputs={"messages": outputs} if outputs else {})
-        # SmithDB cannot update inputs after creation, so send the completed
-        # transcript and end time together in a single deferred POST.
+        turn.end(outputs={"messages": msgs} if msgs else {})
+        # Send the complete transcript and end time in a single deferred POST.
         turn.post()
         self._current_turn = None
 

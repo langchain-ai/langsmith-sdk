@@ -519,9 +519,12 @@ async def test_events_roll_up_into_turn_without_synthetic_model_spans(monkeypatc
 
     turns = [run for name, run in created if name == "turn"]
     assert len(turns) == 1
-    assert turns[0].inputs == {"messages": [{"role": "user", "content": "Hello"}]}
+    assert turns[0].inputs == {}
     assert turns[0].outputs == {
-        "messages": [{"role": "assistant", "content": "Hi there"}]
+        "messages": [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there"},
+        ]
     }
 
     names = [name for name, _ in created]
@@ -584,18 +587,19 @@ async def test_binary_audio_is_not_traced_and_barge_in_marks_turn(monkeypatch):
 
     turns = [run for name, run in created if name == "turn"]
     assert len(turns) == 2
-    assert turns[0].inputs == {
-        "messages": [{"role": "user", "content": "first question"}]
-    }
+    assert turns[0].inputs == {}
     assert turns[0].outputs == {
-        "messages": [{"role": "assistant", "content": "long answer"}]
+        "messages": [
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "long answer"},
+        ]
     }
     first_turn_metadata = (turns[0].extra or {}).get("metadata") or {}
     assert first_turn_metadata["was_interrupted"] is True
-    assert turns[1].inputs == {
+    assert turns[1].inputs == {}
+    assert turns[1].outputs == {
         "messages": [{"role": "user", "content": "second question"}]
     }
-    assert turns[1].outputs == {}
     audio_done = next(run for name, run in created if name == "AgentAudioDone")
     assert audio_done.parent_run_id == trace.run.id
     audio_done_metadata = (audio_done.extra or {}).get("metadata") or {}
@@ -717,8 +721,8 @@ async def test_tool_response_closes_tool_span(monkeypatch):
     assert trace.run.outputs == {"messages": expected_messages}
     turns = [run for name, run in created if name == "turn"]
     assert len(turns) == 1
-    assert turns[0].inputs == {"messages": [expected_messages[0]]}
-    assert turns[0].outputs == {"messages": expected_messages[1:]}
+    assert turns[0].inputs == {}
+    assert turns[0].outputs == {"messages": expected_messages}
     assert not any(name == "LatencyReport" for name, _ in created)
     assert len([run for name, run in created if name == "AgentThinking"]) == 1
 

@@ -242,11 +242,12 @@ class TestTurns:
 
         assert len(turn_posts) == 1
         posted = turn_posts[0]
-        assert posted["inputs"] == {
-            "messages": [{"role": "user", "content": "weather?"}]
-        }
+        assert posted["inputs"] == {}
         assert posted["outputs"] == {
-            "messages": [{"role": "assistant", "content": "sunny"}]
+            "messages": [
+                {"role": "user", "content": "weather?"},
+                {"role": "assistant", "content": "sunny"},
+            ]
         }
         assert posted["end_time"] is not None
         assert posted["end_time"] >= posted["start_time"]
@@ -270,9 +271,13 @@ class TestTurns:
         assert meta["was_interrupted"] is True
         assert meta["latency_to_first_audio_ms"] == 120
         s.finalize()
-        # User messages are inputs; assistant messages are outputs.
-        assert turn.inputs == {"messages": [{"role": "user", "content": "weather?"}]}
-        assert turn.outputs == {"messages": [{"role": "assistant", "content": "sunny"}]}
+        assert turn.inputs == {}
+        assert turn.outputs == {
+            "messages": [
+                {"role": "user", "content": "weather?"},
+                {"role": "assistant", "content": "sunny"},
+            ]
+        }
 
     def test_add_turn_metadata_noop_without_open_turn(self):
         s = _session()
