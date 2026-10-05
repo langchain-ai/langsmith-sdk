@@ -1,20 +1,30 @@
 ---
-type: testing strategy
+type: test strategy
 title: Repository Test Strategy and Safe Validation
-description: A maintainer guide to choosing the narrowest meaningful Python or TypeScript checks, keeping tests isolated, and escalating from focused unit tests to integration, compatibility, export, and performance suites.
+description: Evidence-oriented guidance for selecting focused Python and TypeScript checks, preserving offline safeguards, and escalating through integration, packaging, runtime compatibility, and performance validation.
 tags: [testing, validation, python, typescript, continuous-integration]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-05T08:37:48.776Z
 sources:
   - id: openwiki-source-da2782db3eab7ffafd3e6ffb
     resource: repo://.github/actions/js-integration-tests/action.yml
   - id: openwiki-source-a93e3bfc9711dec876b53fb1
     resource: repo://.github/actions/js-vitest-eval-test/action.yml
+  - id: openwiki-source-e4356c6252bf553f8703f4b3
+    resource: repo://.github/actions/python-integration-tests/action.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-fcfa45d3cc652ec605c0952f
+    resource: repo://.github/workflows/codspeed.yml
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
+  - id: openwiki-source-e5b19eeb85283ad42b1ae962
+    resource: repo://.github/workflows/py-baseline.yml
+  - id: openwiki-source-aa61974e278ddb346c2c5ac3
+    resource: repo://.github/workflows/py-bench-datadog.yml
+  - id: openwiki-source-551926675e59cc7f77474cd3
+    resource: repo://.github/workflows/py-bench.yml
   - id: openwiki-source-1278717ecdbca75bfb2a542f
     resource: repo://js/AGENTS.md
   - id: openwiki-source-2937fffe86eb25f8c32e8423
@@ -25,6 +35,8 @@ sources:
     resource: repo://js/internal/environment_tests/test-exports-esm/package.json
   - id: openwiki-source-1962d0d1a656e42c2e3f453e
     resource: repo://js/jest.config.cjs
+  - id: openwiki-source-40ef1f9bdc568e8c3c606309
+    resource: repo://js/ls.vitest.config.ts
   - id: openwiki-source-e3bc66e65fbfbbea4eb3b049
     resource: repo://js/package.json
   - id: openwiki-source-6f03acb1dbd0338d2d029c28
@@ -43,7 +55,7 @@ sources:
     resource: repo://python/Makefile
   - id: openwiki-source-86f79b074f4ac8d604a1778a
     resource: repo://python/tests/integration_tests/conftest.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-05T08:37:48.776Z" }
 ---
 
 # Repository Test Strategy and Safe Validation
@@ -113,7 +125,7 @@ pnpm test:integration src/tests/client.int.test.ts
 pnpm test:vitest src/tests/guard.vitesttest.ts
 ```
 
-The normal `pnpm test` script excludes `*.int.test.ts`; `pnpm test:integration` selects that suffix. Jest runs TypeScript as ESM in a Node environment and ignores Vitest-specific files. Vitest selects `*.vitesttest.*` files. Choose the runner from the test filename rather than assuming the two suites are interchangeable.
+The normal `pnpm test` script excludes `*.int.test.ts`; `pnpm test:integration` selects that suffix. Jest runs TypeScript as ESM in a Node environment and ignores both Vitest-specific suffixes. `pnpm test:vitest` uses `vitest.config.ts` to select `*.vitesttest.*`, while `pnpm test:eval:vitest` uses `ls.vitest.config.ts` to select `*.vitesteval.*` and load the LangSmith reporter. Choose the runner and configuration from the test filename rather than assuming the suites are interchangeable.
 
 ## What each suite proves
 
@@ -126,13 +138,17 @@ The normal `pnpm test` script excludes `*.int.test.ts`; `pnpm test:integration` 
 | External compatibility | The local SDK can coexist with a downstream package such as `deepagents` | Dependency range, import, or package-resolution regression |
 | Performance | A stable workload records latency/throughput rather than asserting only functional output | Serialization, batching, or event-loop regression; investigate variance before treating one local run as conclusive |
 
-CI runs Python unit tests on Python 3.10–3.13. JavaScript unit tests cover Node 22 and 24 on Linux, plus Node 24 on Windows and macOS, and CI also builds and type-checks the package. A local focused pass therefore does not establish version or operating-system compatibility.
+CI runs Python unit tests on Python 3.10–3.13. JavaScript unit tests cover Node 22 and 24 on Linux, plus Node 24 on Windows and macOS. Each JS unit job installs, builds, checks the package version, then runs both Jest and the `*.vitesttest.*` suite; a separate build job checks the package and declarations. A local focused pass therefore does not establish version or operating-system compatibility.
+
+The Python wheel job is a stricter dependency check than importing from the checkout: it builds with `--no-sources`, installs the wheel with `--no-deps` into a fresh environment, installs only declared runtime dependencies, and imports both the generated OpenAPI client and core `Client`. This catches undeclared runtime dependencies and generated-client packaging mistakes.
 
 ### Environment-aware integration
 
-The integration matrix targets `beta`, ClickHouse-only, dual, and SmithDB-only deployments. Python integration tests are split deterministically into six shards by hashing pytest node IDs; capability markers remove tests unsupported by a target backend. The JS suite uses `LANGSMITH_TEST_EXCLUDE_MARKERS` and the `requiresV2`, `requiresClickhouse`, and `requiresBetaDataset` helpers for the same purpose. Do not “fix” an environment-specific failure by globally skipping a test: attach the narrow capability marker only when the endpoint truly does not exist there.
+The integration matrix targets `beta`, `v16-ch-only`, `v16-dual`, and `v16-smithdb-only`. Push and ordinary PR runs select beta; nightly runs select all four; manual dispatch can select one or all. For each selected environment, CI creates six deterministic Python integration shards by hashing pytest node IDs, one Python evaluation job, one JS Jest integration job, and one JS Vitest evaluation job. Python doctests run only once against beta.
 
-Normal PR/push Python integration runs retain `-x`, while JS integration and Vitest evaluation default to complete failure output. Nightly CI runs every environment and clears Python fail-fast. For manual debugging, prefer a narrow selection with fail-fast disabled; this preserves useful failure context without paying for the entire matrix.
+Capability markers remove tests unsupported by a target backend. Python receives a pytest marker expression; JS integration receives `LANGSMITH_TEST_EXCLUDE_MARKERS` for `require_v2`, `require_clickhouse`, and non-beta `require_beta_dataset` cases. Do not “fix” an environment-specific failure by globally skipping a test: attach the narrow capability marker only when the endpoint truly does not exist there.
+
+Matrix `fail-fast: false` keeps sibling jobs running after a job fails; it is separate from runner-level bailout. Normal push/PR Python integration and evaluation jobs retain `-x`, while JS integration and Vitest evaluation report all selected failures. Nightly CI clears Python fail-fast, and a manual dispatch can toggle Python `-x` or JS/Vitest bail. For local debugging, prefer a narrow selection with fail-fast disabled; this preserves useful failure context without paying for the entire matrix.
 
 ## Network isolation, fixtures, and cassettes
 
@@ -157,12 +173,11 @@ Start with the listed seam, then add adjacent tests when a change spans contract
 |---|---|---|---|
 | Trace creation, context, batching, ingestion | `tests/unit_tests/test_run_helpers.py`, `test_run_trees.py`, `test_background_thread.py`, `test_hybrid_tracing.py` | `src/tests/traceable.test.ts`, `run_trees.test.ts`, `context.test.ts`, `batch_client.test.ts`, `failed_traces.test.ts` | Run `test_runs.py`, `run_trees.int.test.ts`, `traces.int.test.ts`, or context integration after changing remote visibility or propagation |
 | Core client, retries, headers, replicas, attachments | `test_client.py`, `test_async_client.py`, `test_custom_headers.py`, multipart/replica tests | `client.test.ts`, `client_retry.test.ts`, `client_headers.test.ts`, `replica_endpoints.test.ts` | Use client integration tests for endpoint and backend behavior; use wheel/export tests for dependency/import changes |
-| Evaluation and test-framework adapters | `tests/unit_tests/evaluation/`, then `tests/evaluation/` | `evaluate_runner.test.ts`, `src/tests/jestlike/`, `vitest_reporter.vitesttest.ts` | Run Python `make evals` or `pnpm test:eval:vitest` when result upload/reporting crosses LangSmith |
-| Provider and agent wrappers | `tests/unit_tests/wrappers/` | the matching `wrapped_*.test.ts`, agent SDK, or Vercel test | Run the matching wrapper integration file when provider request/response translation changes; use sanitized cassettes where supported |
-<!-- openwiki: broken internal link [/openwiki/workflows/sandbox-lifecycle-and-execution] file "/openwiki/workflows/sandbox-lifecycle-and-execution" does not exist. Fix the href or restore the target, then delete this comment. -->
-| Sandbox lifecycle, command transport, WebSocket/Yamux | `tests/unit_tests/sandbox/`, especially command retry, transport, tunnel, and sync/async conversion | `sandbox.test.ts` plus handshake, reconnect acknowledgment, command-ID retry, and error tests | Use live sandbox validation only for server-owned lifecycle or protocol behavior; see [Sandbox Lifecycle and Execution](/openwiki/workflows/sandbox-lifecycle-and-execution) |
+| Evaluation and test-framework adapters | `tests/unit_tests/evaluation/`, then the live `tests/evaluation/` suite | `evaluate_runner.test.ts`, `src/tests/jestlike/`, `vitest_reporter.vitesttest.ts`, and `*.vitesteval.ts` | Run Python `make evals` or `pnpm test:eval:vitest` when result upload, experiment association, or reporter behavior crosses LangSmith |
+| Provider and agent wrappers | `tests/unit_tests/wrappers/` | the matching `wrapped_*.test.ts`, `wrapped_*.vitesttest.ts`, agent SDK, or Vercel test | Run the matching wrapper integration file when provider request/response translation changes; use sanitized cassettes where supported |
+| Sandbox lifecycle and SSE/WebSocket command transport | `tests/unit_tests/sandbox/`, especially `test_sse_execute.py`, WebSocket execution, command-ID retry, transport, tunnel, and sync/async conversion; `test_sandbox_sse_exec.py` is live | `sandbox.test.ts` plus WebSocket handshake, reconnect acknowledgment, command-ID retry, and error tests | Use live sandbox validation only for server-owned lifecycle or protocol behavior; see [Sandbox Lifecycle and Execution](/openwiki/workflows/sandbox-lifecycle-and-execution.md) |
 | Public exports, generated entry points, runtime compatibility | Build first, then `make test-wheel-imports` for Python runtime dependencies | Build first, then the one `js/internal/environment_tests` Docker service matching ESM, CJS, Cloudflare, Vite, Webpack, esbuild, or Metro | Run all environment jobs when changing `package.json` exports, entrypoint generation, declarations, or shared runtime dependencies |
-| Performance-sensitive tracing/serialization | `make benchmark-fast`; use `make benchmark-codspeed` or `make benchmark-datadog` for the pytest benchmark cases | opt in to `src/tests/perf.int.test.ts` with `LANGSMITH_RUN_PERF_BENCH=true` | Compare against a baseline on the same machine/CI; the JS benchmark uses a fake fetch and emits machine-readable results |
+| Performance-sensitive tracing/serialization | `make benchmark-fast`; use `make benchmark-codspeed` or `make benchmark-datadog` for the pytest benchmark cases | opt in to `src/tests/perf.int.test.ts` with `LANGSMITH_RUN_PERF_BENCH=true` | Compare against a baseline on the same machine or CI; the JS benchmark uses a fake fetch and emits machine-readable results |
 
 For a JS export check, build the package before starting the isolated consumer:
 
@@ -176,6 +191,10 @@ docker compose -f js/internal/environment_tests/docker-compose.yml run test-expo
 Replace the service with `test-exports-cjs`, `test-exports-cf`, `test-exports-vite`, `test-exports-webpack`, `test-exports-esbuild`, or `test-exports-metro` as appropriate. These projects install `langsmith` from the repository and exercise consumer compilation/bundling, which an in-repository import cannot prove.
 
 Generated OpenAPI client directories are a special ownership boundary: do not hand-edit `python/langsmith/_openapi_client/` or `js/src/_openapi_client/`. Pull requests touching them are accepted only from the authorized SDK synchronization workflow. Validate changes at the generator/sync source rather than trying to bypass the protection check.
+
+### Performance validation
+
+Treat a local benchmark as directional evidence, not a gate. `make benchmark-fast` writes a short `pyperf` result to `out/benchmark.json`; the PR workflow restores a main-branch baseline and compares the two. The dedicated CodSpeed workflow instead runs the shared `bench/test_bench.py` cases on Python 3.13 in separate memory and wall-time matrix legs with matrix fail-fast disabled. The Datadog workflow runs those same pytest-benchmark cases on Python 3.13, but only main/manual runs receive Datadog credentials and upload history; PR runs remain uninstrumented. Compare like with like, and escalate performance-sensitive changes to the CI runner rather than drawing conclusions across different machines or instruments.
 
 ## Required full pre-PR validation
 
@@ -199,4 +218,4 @@ pnpm test
 
 For TypeScript changes that affect types, packaging, Vitest adapters, or exports, also run the corresponding `pnpm build`, `pnpm test:vitest`, and environment test even though the three commands above are the repository's mandatory pre-PR baseline. For integration-boundary changes, run the focused live suite with credentials and no fail-fast, then rely on CI's environment matrix for full backend coverage.
 
-CI path detection runs SDK jobs when that SDK or `.github/**` changes and the final `CI Success` job fails if any required job failed or was cancelled while allowing legitimately skipped jobs. Related operational context is in [Development and Release](/openwiki/operations/development-and-release.md); assertion/reporting behavior is covered by [Test Tracking and Assertions](/openwiki/testing/test-tracking-and-assertions.md), and tracing integration behavior by [Trace Capture and Ingestion](/openwiki/workflows/trace-capture-and-ingestion.md).
+CI path detection runs SDK jobs when that SDK or `.github/**` changes and the final `CI Success` job fails if any required job failed or was cancelled while allowing legitimately skipped jobs. Related operational context is in [Development and Release](/openwiki/operations/development-and-release.md); assertion/reporting behavior is covered by [Test Tracking and Assertions](/openwiki/testing/test-tracking-and-assertions.md), evaluation workflows by [Evaluation and Experiments](/openwiki/workflows/evaluation-and-experiments.md), and tracing integration behavior by [Trace Capture and Ingestion](/openwiki/workflows/trace-capture-and-ingestion.md).

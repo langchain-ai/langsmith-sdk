@@ -1,11 +1,11 @@
 ---
 type: contributor operations guide
 title: Development, Generated Code, Builds, and Releases
-description: Contributor workflows for validating, building, and releasing the Python and TypeScript SDKs, including generated-code ownership, version synchronization, CI selection, and publication controls.
+description: Contributor workflows for validating, building, and independently releasing the Python and TypeScript SDKs, including generated-code boundaries, CI selection, compatibility gates, and version ownership.
 tags: [development, build, release, ci, python, typescript, openapi]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-05T08:37:48.776Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
@@ -41,7 +41,7 @@ sources:
     resource: repo://python/Makefile
   - id: openwiki-source-e8ccc4222c6775a30580b26e
     resource: repo://python/pyproject.toml
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-05T08:37:48.776Z" }
 ---
 
 # Development, Generated Code, Builds, and Releases
@@ -56,7 +56,13 @@ Generated API changes arrive through the external `stlc_sync_python_and_js_sdks`
 
 There are other generated **build outputs**, but they have a different lifecycle. TypeScript's root entrypoint shims and `dist/` contents are recreated by the build scripts and are not the source of truth. The entrypoint registry in `js/scripts/create-entrypoints.js` is the extension point for adding a public package subpath; it regenerates `package.json` exports and file inclusion, TypeDoc entrypoints, root `.js`/`.cjs`/declaration shims, and the corresponding `.gitignore` section.
 
+## Staging-repository migration caveat
+
+This monorepo is being ported to `langsmith-python-staging` and `langsmith-javascript-staging`, the intended future homes of the SDKs. New work should start in those repositories when practical. Meanwhile, merges to this repository's `main` that touch `python/` or `js/` are mirrored hourly, one pull request at a time, with paths rewritten. Dependency manifests and lockfiles—specifically `pyproject.toml`, `package.json`, and lockfile changes—are not mirrored, so those changes require an explicit manual port. Account for that second change path when modifying dependencies, package metadata, or release inputs here.
+
 ## Local contributor loop
+
+For an external contributor's pull request, do not authorize its GitHub Actions. Review the complete diff and workflow-affecting changes first, cherry-pick only explicit reviewed commit SHAs onto a clean maintainer-owned branch in this repository with `git cherry-pick -x`, verify the final diff and local checks, and open a replacement pull request that credits and links the original. Later contributor commits require the same explicit review; they are not automatically synchronized.
 
 ### Python
 
@@ -96,7 +102,7 @@ That target builds without workspace sources, installs the wheel with `--no-deps
 
 ### TypeScript / JavaScript
 
-Use the pinned pnpm major from `js/package.json` and work from `js/`:
+Use the exact `pnpm@10.33.0` package manager pinned in `js/package.json` and work from `js/`:
 
 ```bash
 cd js
@@ -114,7 +120,7 @@ pnpm run build
 NODE_OPTIONS=--experimental-vm-modules npx jest src/tests/context.test.ts
 ```
 
-A successful `pnpm run build` is also a type and package-surface check. CI separately installs with `--frozen-lockfile`, runs formatting and lint checks, builds, runs Jest and Vitest across supported Node/OS combinations, and exercises the installed package through ESM, CJS, Cloudflare, Vite, Webpack, esbuild, and Metro environments. These export tests matter whenever an entrypoint, module format, declaration, package export, or dependency boundary changes.
+A successful `pnpm run build` is also a type and package-surface check. CI separately installs with `--frozen-lockfile`, runs formatting and lint checks, builds, runs Jest and Vitest across its Node/OS matrix, and exercises the built package through ESM, CJS, Cloudflare, Vite, Webpack, esbuild, and Metro environments. It also installs each local SDK with `deepagents`/`deepagents`-ecosystem dependencies and runs focused compatibility smoke tests. These package-boundary checks matter whenever an entrypoint, module format, declaration, package export, or dependency boundary changes.
 
 The repository-level pre-commit configuration can autoformat, autofix lint, and run type checks for changed Python and TypeScript files. It is a convenience, not a substitute for the complete language-specific commands above.
 
@@ -144,14 +150,16 @@ When adding or removing a public TypeScript subpath, update the `entrypoints` ma
 
 The main `CI` workflow runs for pushes to `main`, pull requests targeting `main`, a nightly schedule at 03:17 UTC, and manual dispatch. Runs with the same workflow, event type, and ref share a concurrency group, and a newer run cancels the older one.
 
-For ordinary lint, build, unit, compatibility, and export jobs, path detection selects Python for changes under `python/**` and JavaScript for changes under `js/**`; a change under `.github/**` selects both. Nightly runs opt both languages in regardless of changed paths. The final `CI Success` gate waits for all listed jobs: skipped jobs are acceptable, but any failure or cancellation fails the gate.
+For ordinary lint, build, unit, compatibility, and export jobs, path detection selects Python for changes under `python/**` and JavaScript for changes under `js/**`; a change under `.github/**` selects both. Nightly runs opt both languages in regardless of changed paths. The final `CI Success` gate waits for all listed jobs—including both Deep Agents smoke tests and the unconditional Bun smoke test. Skipped jobs are acceptable, but any failure or cancellation fails the gate.
+
+The workflow's principal marketplace actions are pinned by commit SHA (currently checkout v7.0.1, setup-uv v10.2.0, pnpm action-setup v6.1.0, and setup-node v6). Python lint uses 3.12, unit/build coverage spans 3.10–3.13 on Ubuntu 22.04, and the strict wheel job uses 3.11. JavaScript formatting, linting, building, exports, and integration use Node 24; unit tests cover Node 22 and 24 on Ubuntu plus Node 24 on Windows and macOS. Treat these matrices as the CI compatibility contract rather than assuming the local interpreter alone is sufficient.
 
 Integration selection is intentionally different:
 
 - On a pull request, Python integration jobs run for changed `python/**/*.py`, JavaScript integration/eval jobs run for changed JS/TS-family source files, and a `release` label opts both languages in.
 - A push runs both integration families against the default beta environment.
-- Manual dispatch can enable each language independently, choose one supported environment or all environments, and control fail-fast behavior.
-- The nightly runs every suite across beta, ClickHouse-only, dual, and SmithDB-only environments, applies environment-specific test-marker exclusions, and posts to Slack only if the nightly success gate fails.
+- Manual dispatch can enable each language independently, choose one supported environment or all environments, and control per-test early exit (`-x` for Python and `--bail` for JavaScript). Matrix `fail-fast` remains disabled, so one failed matrix member does not cancel its siblings.
+- The nightly runs every suite across beta, ClickHouse-only, dual, and SmithDB-only environments, applies environment-specific test-marker exclusions, disables Python early exit to expose all failures, and posts to Slack only if the nightly success gate fails.
 - Python integration tests use six shards per environment plus evals; doctests run once against beta. JavaScript integration and Vitest eval jobs are unsharded. The Bun integration smoke test is unconditional within this workflow.
 
 See [Repository Test Strategy](../testing/repository-test-strategy.md) for which local or integration suite to extend for a behavior change.

@@ -1,11 +1,11 @@
 ---
 type: SDK architecture
 title: Dual-SDK Architecture and Public Surfaces
-description: How the Python and TypeScript LangSmith SDKs divide handwritten behavior from generated OpenAPI resources, expose their public APIs, and diverge around asynchronous execution and runtime packaging.
+description: How the Python and TypeScript LangSmith SDKs divide handwritten composition from generated OpenAPI resources, bridge configuration and authentication, and expose supported public facades.
 tags: [architecture, sdk, python, typescript, openapi, public-api]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-05T08:37:48.776Z
 sources:
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
@@ -45,7 +45,7 @@ sources:
     resource: repo://python/tests/unit_tests/test_client.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-05T08:37:48.776Z" }
 ---
 
 # Dual-SDK Architecture and Public Surfaces
@@ -86,7 +86,7 @@ Both languages keep mature handwritten clients because a platform SDK does more 
 
 ### TypeScript
 
-`Client` is the single main client class. JavaScript network operations are promise-based, so there is no separate exported `AsyncClient`; methods such as `createRun` and `flush` are asynchronous on the same object. `createRun` also demonstrates why the handwritten layer remains: it applies sampling, defaults and preprocessing, chooses queued batch ingestion when trace ordering fields are present, and otherwise sends the legacy `/runs` request itself.
+`Client` is the single main client class. JavaScript network operations are promise-based, so there is no separate exported `AsyncClient`; methods such as `createRun` and `flush` are asynchronous on the same object. `createRun` also demonstrates why the handwritten layer remains: it applies sampling, address/project defaults and preprocessing, chooses queued batch ingestion only when auto-batching is enabled and both trace-ordering fields are present, and otherwise sends the legacy `/runs` request itself.
 
 The generated client is created lazily by the private `openAPIClient` getter. The bridge:
 
@@ -110,7 +110,9 @@ They are not mechanical mirrors. For example, `Client.__init__` accepts tracing 
 
 There is a second, easily missed distinction: the public v2 properties on **both** Python classes return generated **async** resources. `Client.runs`, for example, is typed as `AsyncRunsResource`, while internal migration paths that need blocking behavior use the private `_get_langsmith_api_sync()` and its generated synchronous client. Thus `Client`'s legacy handwritten methods are synchronous, but calls made through public generated resource properties must be awaited. `AsyncClient` naturally exposes the same async resource style.
 
-`Client` lazily constructs both generated transports. If the caller supplied a `requests.Session`, selected portable settings—headers, cookies, TLS verification/certificates, proxies, and `trust_env`—are translated to an `httpx` wrapper; mounted adapters, `session.auth`, and hooks cannot be carried across. `AsyncClient` constructs its generated `AsyncLangsmith` during initialization using the resolved key, workspace, stripped OpenAPI base URL, timeout, and headers.
+`Client` lazily constructs both generated transports. If the caller supplied a `requests.Session`, selected portable settings—headers, cookies, TLS verification/certificates, proxies, and `trust_env`—are translated to an `httpx` wrapper; mounted adapters, `session.auth`, hooks, adapter pool bounds, and adapter retries cannot be carried across. `AsyncClient` constructs its generated `AsyncLangsmith` during initialization using the resolved key, workspace, stripped OpenAPI base URL, timeout, and headers.
+
+This is a snapshot boundary in Python. `Client` caches each generated transport after first use, while `AsyncClient` creates its generated transport once in `__init__`; later `api_key`, `workspace_id`, or `headers` setter calls recompute the handwritten transport's headers but do not rebuild the generated client. Configure those values before first generated-resource access on `Client`, and before constructing `AsyncClient`, when the generated facade must use them.
 
 The version-check timing differs by runtime:
 
@@ -131,7 +133,7 @@ Python schemas are handwritten runtime models. They use Pydantic models for vali
 
 ### TypeScript package root and subpaths
 
-`js/src/index.ts` deliberately exports a compact root: `Client`, selected schema types, `RunTree`, utility and cache APIs, UUID helpers, generated error classes, version metadata, and a tracing metadata constant. Broader capabilities are reached through explicit package subpaths such as `langsmith/client`, `langsmith/traceable`, `langsmith/evaluation`, `langsmith/schemas`, `langsmith/wrappers/openai`, test-runner integrations, experimental OpenTelemetry modules, and `langsmith/sandbox`.
+`js/src/index.ts` deliberately exports a compact root: `Client`, selected schema types, `RunTree`, address/environment helpers, the fetch override, project/tracing utilities, UUID helpers, prompt-cache APIs, generated error classes, version metadata, and a tracing metadata constant. Broader capabilities are reached through explicit package subpaths such as `langsmith/client`, `langsmith/traceable`, `langsmith/evaluation`, `langsmith/schemas`, `langsmith/wrappers/openai`, test-runner integrations, experimental OpenTelemetry modules, and `langsmith/sandbox`.
 
 Those subpaths are assembled by `js/scripts/create-entrypoints.js`, not by hand-editing a set of wrapper files. The script is the source list for entrypoints; it generates ESM, CommonJS, and declaration shims and rewrites `package.json` `exports` and `files`. The build compiles ESM and CommonJS, then creates these entrypoints. Package exports provide separate `import`, `require`, and type declaration targets, while the `browser` map substitutes browser implementations for filesystem and worker-thread utilities.
 
