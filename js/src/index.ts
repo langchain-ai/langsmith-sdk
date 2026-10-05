@@ -12,6 +12,11 @@ export type {
   Feedback,
   FeedbackConfigSchema,
   RetrieverOutput,
+  InsightsReport,
+  InsightsReportResult,
+  InsightsCluster,
+  InsightsSummaryReport,
+  InsightsHighlightedTrace,
 } from "./schemas.js";
 
 export { RunTree, type RunTreeConfig, type WriteReplica } from "./run_trees.js";
