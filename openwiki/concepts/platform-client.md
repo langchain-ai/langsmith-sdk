@@ -1,14 +1,20 @@
 ---
-type: platform client domain map
+type: platform client domain model
 title: LangSmith Platform Client Domains
-description: Maps the LangSmith handwritten clients' resource ownership, cross-resource identifiers, iteration behavior, Hub prompt lifecycle, sharing, annotation queues, and prompt cache safety boundaries.
+description: Maps the LangSmith clients' resource ownership, foreign-key and partition invariants, generated-resource boundaries, sharing capabilities, pagination, and prompt safety lifecycle.
 tags: [client, platform-api, runs, datasets, feedback, experiments, prompts, annotation-queues, caching]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-05T08:37:48.776Z
 sources:
+  - id: openwiki-source-a6a026ff55dc604233910ecf
+    resource: repo://js/src/_openapi_client/resources/public/runs.ts
+  - id: openwiki-source-7e03e6d816f049eae92d966b
+    resource: repo://js/src/_openapi_client/resources/runs/share.ts
   - id: openwiki-source-c27c18f68326f94a1c4b2695
     resource: repo://js/src/client.ts
+  - id: openwiki-source-9eb7746a61fcf255cdf88e39
+    resource: repo://js/src/tests/client.test.ts
   - id: openwiki-source-0bdf51b3c96e803c9c2f18a6
     resource: repo://js/src/utils/prompt_cache/index.ts
   - id: openwiki-source-50d8666c9a019407e1803101
@@ -23,7 +29,7 @@ sources:
     resource: repo://python/tests/unit_tests/test_client.py
   - id: openwiki-source-f23e027d98f7965606b30563
     resource: repo://python/tests/unit_tests/test_prompt_cache.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-05T08:37:48.776Z" }
 ---
 
 The Python `Client` and `AsyncClient` and the JavaScript `Client` are façades over a connected resource graph, not independent bags of CRUD methods. A safe change starts by identifying which resource owns the state, which IDs are foreign keys, and whether the operation belongs to a handwritten compatibility surface or a generated resource.
@@ -58,11 +64,11 @@ The important ownership boundaries are:
 | --- | --- | --- |
 | Runs and projects | A project is the API's `session`; `Run.session_id` is its project ID. Runs form traces through `trace_id`, `parent_run_id`, and `dotted_order`. | Name-based project inputs are resolved to project UUIDs before run queries. Loading children is explicit and heavier: the client queries the trace, orders descendants, and rebuilds `child_runs`. |
 | Datasets and examples | Every `Example` has a `dataset_id`; an example may record `source_run_id`. A run may point back through `reference_example_id`. | Dataset names are conveniences at the edge. Multipart create/update endpoints are dataset-scoped, so batches must retain one correct dataset ID; attachments travel with each example part. Dataset versions are selected by timestamp or tag. |
-| Feedback | Feedback has its own ID and can target either a run (`run_id`, optionally `trace_id`) or a project (`session_id`) for summary feedback. It may also carry `comparative_experiment_id` and evaluator provenance. | Creation rejects providing neither or both run and project targets. Evaluator results are normalized into feedback records while preserving target run, source run, project, trace, and start time when known. |
+| Feedback | Feedback has its own ID and targets either a run/trace or a project summary. For run feedback, `session_id` is the containing project partition, `trace_id` identifies the trace, and `start_time` is an optional lookup accelerator; `comparative_experiment_id`, `feedback_group_id`, and evaluator source-run provenance remain separate identities. | Creation rejects a missing target and rejects combining a run/trace target with `project_id`. Run feedback now requires project context (`session_id`) or a beta run `address`; compatibility overloads without either are gated by backend capability before feedback transport. |
 | Experiments | An experiment is represented by a project whose `reference_dataset_id` identifies the evaluated dataset. A comparative experiment contains experiment/project IDs and one reference dataset ID. | If the comparative call omits the dataset ID, the client derives it from the first experiment project. Keep these IDs aligned; comparison feedback uses the comparative experiment ID, not a project ID. |
 | Annotation queues | A queue owns review membership and rubric metadata; its members are runs. | Modern membership uses a `RunKey`: `run_id`, `session_id`, and `start_time`, with optional `source_proposed_example_id`. These partition fields avoid scanning for a bare run UUID. Legacy bare-ID insertion remains a deprecated route. |
 | Prompts and Hub | A prompt repository is addressed as `owner/name`; a commit adds `:hash` or `:tag`, with `latest` as the default. An unqualified name uses owner `-` for the current tenant. | Metadata belongs to the repository; serialized prompt content belongs to commits. Push creates or patches the repo, then creates a commit and optional commit tags. Owner checks prevent mutating another tenant's repository. Agents and skills reuse the Hub identifier grammar but store directory/file commits rather than prompt manifests. |
-| Sharing | Sharing creates a token attached to a run or dataset, while the underlying resource ID remains unchanged. | Public reads parse a token or public URL and use `/public/...` routes. Dataset sharing exposes the dataset and its examples; unsharing revokes the public link rather than deleting the dataset. Presigned feedback tokens are narrower capabilities tied to a run and feedback key, intended for clients that must not receive an API key. |
+| Sharing | Sharing creates a token attached to an existing run trace or dataset; it is distinct from explicitly cloning a public dataset into a tenant. | Modern run sharing is generated under `runs.share`: creation can carry run, trace, and project partition context, while deletion addresses the trace and project. Legacy Python public-run readers accept a token or public URL; generated public-run APIs and JavaScript legacy readers take the token. Dataset sharing exposes the dataset and examples, and unsharing deletes only the share association. Presigned feedback tokens are narrower capabilities tied to a run and feedback key. |
 | Threads | A thread is a grouping over runs inside a project, keyed by `thread_id`, rather than an independently created handwritten-client object. | Thread reads require project context and translate to run filtering; grouped thread queries return aggregate count and representative run fields. New generated `threads` resources own the current query surface. |
 
 These relationships are explicit in the schemas: projects are also called sessions, runs carry project/trace/example keys, examples carry dataset/source-run keys, and comparative feedback has a separate comparison identifier. [run and trace keys](repo://python/langsmith/schemas.py#L307-L354) [project and reference dataset](repo://python/langsmith/schemas.py#L704-L725) [dataset/example ownership](repo://python/langsmith/schemas.py#L82-L149) [feedback targets](repo://python/langsmith/schemas.py#L616-L650) [comparative experiment](repo://python/langsmith/schemas.py#L972-L998)
@@ -90,6 +96,14 @@ Runs preserve three different notions that should not be substituted:
 - `thread_id`: application-level grouping across traces, stored and queried as run metadata.
 
 A run may additionally bind evaluation output to `reference_example_id`. Child hydration queries by project and trace, then uses `parent_run_id` and `dotted_order`; a child lacking a parent is treated as invalid data. [child hydration](repo://js/src/client.ts#L3257-L3295) [thread filtering](repo://js/src/client.ts#L3587-L3623)
+
+### Feedback target and partition checks
+
+The target choice and the lookup partition are related but not interchangeable. Python treats `trace_id` as the run target when `run_id` is absent; it rejects requests with none of `run_id`, `trace_id`, and `project_id`, while JavaScript requires `runId` or `projectId`. Both reject a run target together with `project_id`. Project-summary feedback serializes that project as `session_id` with no run. Run feedback serializes its containing project separately as `session_id`; `trace_id` does not replace that project partition. An experimental `address` can locate an addressed run instead, but it conflicts with project/session context and is not inferred from ambient configuration. [Python target normalization and checks](repo://python/langsmith/client.py#L8441-L8455) [JavaScript target checks and request mapping](repo://js/src/client.ts#L5579-L5627)
+
+The params-object JavaScript overload makes `sessionId` mandatory for a normal run at the type boundary. Legacy JavaScript and both Python clients still accept run feedback without `session_id` for compatibility, but first inspect server info: a SmithDB-only deployment raises locally after `/info` and never sends `/feedback`; other deployments emit a deprecation warning and continue. Supplying `session_id` or an `address` skips that capability check. `start_time` remains optional, although providing it improves partition lookup performance. [JavaScript input union](repo://js/src/client.ts#L567-L629) [JavaScript capability gate](repo://js/src/client.ts#L2482-L2507) [Python capability gate](repo://python/langsmith/client.py#L778-L794) [focused transport test](repo://js/src/tests/client.test.ts#L324-L416)
+
+Feedback provenance is another foreign-key axis: `source_run_id` is stored under `feedback_source.metadata.__run`, while `comparative_experiment_id` and `feedback_group_id` identify a comparison and a preference group. None of these is the target run, trace, or project. Keep them intact when normalizing evaluator results. [feedback schema](repo://python/langsmith/schemas.py#L619-L655) [Python source-run mapping](repo://python/langsmith/client.py#L8462-L8499)
 
 Annotation queues strengthen the same rule. The preferred membership key includes the run UUID plus project/session and start-time partition keys. The generated queue resource should be used for new item/status workflows; the handwritten insertion method documents and implements the transition from bare IDs to `/runs/by-key`. [RunKey contract](repo://python/langsmith/schemas.py#L865-L881) [queue insertion routing](repo://js/src/client.ts#L6245-L6331)
 
@@ -140,9 +154,11 @@ Caches can be dumped to JSON and loaded for offline use. Writes use a temporary 
 
 ## Sharing and capability boundaries
 
-Sharing does not clone resources. A run share token resolves public run or trace views; a dataset share token resolves the existing dataset and shared examples. Public URLs are presentation forms of those tokens and are accepted by parsing helpers. Revocation deletes the share association. [run public access](repo://python/langsmith/client.py#L4935-L5041) [dataset sharing](repo://python/langsmith/client.py#L5043-L5162)
+Sharing does not clone resources. The handwritten run methods `shareRun` / `share_run`, `unshareRun` / `unshare_run`, shared-link reads, and public-run reads are deprecated in favor of generated `runs.share`, run `SHARE_URL` selection, and `public.runs`. The generated create operation mints or returns a share token for the run's trace root and accepts `session_id` plus `trace_id` so SmithDB can locate the partition; generated deletion uses the trace ID plus `session_id` and is idempotent. The legacy endpoint still associates a token directly through the run ID and DELETE removes that association. [generated JavaScript run sharing](repo://js/src/_openapi_client/resources/runs/share.ts#L10-L69) [legacy JavaScript sharing and revocation](repo://js/src/client.ts#L3924-L4007) [partitioned integration test](repo://js/src/tests/runs_share.int.test.ts#L42-L94)
 
-Presigned feedback tokens are deliberately separate from broad share links and API keys. They bind authorization to one run and feedback key, default to a short expiration, and allow browser feedback submission without exposing the workspace credential. Treat either token type as a bearer capability: avoid logging it and revoke or expire it when no longer needed. [feedback-token scope](repo://js/src/client.ts#L5668-L5724)
+A dataset share likewise PUTs the existing `dataset_id` and returns a public URL; DELETE revokes the share without deleting the dataset. Public dataset reads expose that dataset and its examples. This is different from `clonePublicDataset`, which reads the public dataset and examples and creates new tenant-owned resources. Python's legacy run and dataset readers parse either a UUID token or a public URL, including hosted UI-to-API host translation; generated public-run methods and JavaScript handwritten public readers expect an extracted token. Do not pass an arbitrary public URL where the selected surface requires a UUID. [dataset sharing and revocation](repo://python/langsmith/client.py#L5164-L5269) [token and URL parsing](repo://python/langsmith/client.py#L618-L644) [JavaScript clone flow](repo://js/src/client.ts#L7907-L7973)
+
+Share tokens and public URLs are bearer capabilities even though the client may still send its ordinary headers to public routes. Presigned feedback tokens are a separate, narrower capability: token creation binds authorization to one run and feedback key, defaults to a three-hour expiry, and lets a browser submit feedback without receiving a workspace API key. The Python submission path accepts a token or URL but rejects a parsed source API URL different from the client's API URL before POSTing. Avoid logging either class of token; revoke a share or let feedback capabilities expire when no longer needed. [JavaScript feedback-token contract](repo://js/src/client.ts#L5741-L5797) [Python token submission and creation](repo://python/langsmith/client.py#L8730-L8815)
 
 ## Focused change checklist
 

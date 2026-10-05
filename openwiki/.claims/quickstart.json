@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:ae1d447e60b57903a515e98604b9eda38fd08b4926641b9a6abdf1d4027797bb",
+  "pageVersion": "sha256:f54abc049b2795b0fd740103f01c1295cbf5950f310f279f3915427c31d1e8df",
   "claims": [
     {
       "id": "claim_eece04b17cf7463a9ea62f275d7c94ac",
@@ -32,19 +32,19 @@
     },
     {
       "id": "claim_2e5e7887b4f94bd79752d24bda2089f3",
-      "statement": "Python's package root is a curated lazy facade: `__getattr__` resolves public clients, tracing, evaluation, testing, cache, and exception APIs on demand, while `__all__` records the supported root-level names.",
+      "statement": "Python's package root is a curated lazy facade: `__getattr__` resolves public client, tracing, evaluation, testing, address, cache, UUID, secret/runtime, and generated exception APIs on demand, while `__all__` records the supported root-level names.",
       "evidence": [
         {
-          "resource": "repo://python/langsmith/__init__.py#L122-L220",
-          "version": "repo-lines-v1:sha256:647c1d34f2f66b01ab7fcaf9af82f0ffb3e4245c50389261ebe42ab15ad9496e:eyJzZWxlY3RlZExpbmVDb3VudCI6OTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhMWI0NzM2NTJiNmQxM2U3NDMxOGY4MTc2ZjQ5NDBiN2Q5ZTlkM2MzMWM3MDk3Y2VhMzQ2NTE3YWQ0OWJiNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2MzlhODYzOTYwMjQwNmJlMjEwNTFkYzFiZjQ1NzI5NjA0OGMzZmQxYjMxODMwOWNiMGMwZWM3NTg3MWFmYTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMDk5MGU3ZGYzNjVlZTNjYzkyMTVjMjc5MmJhNDY4Y2Y4YmFlNjk2YjYzZTYxYzBmYjQ4MWE1MzI0ZjdiYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4NDYwZjlmZTQ0M2E0MzRjZmU0ZmIzNjU2MWY5OWRiMjIzOGFmN2E4YmM1YWYwOThjM2ZlMDY5ZDU3NDFkZmQifQ"
+          "resource": "repo://python/langsmith/__init__.py#L124-L209",
+          "version": "repo-lines-v1:sha256:6d8326ad25dec04655598aef1545812a42e3e66d3017086868eb936631b397bb:eyJzZWxlY3RlZExpbmVDb3VudCI6ODYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmYWY4MjdkMDIyNWZjYjljMDU0MmNlYzg0Zjc5OGE4MmZmYzM1MzY4MjU3NGE2MWVmOWI0NTc0MzhmYWE2NGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3YjcwZGRjOGZhZDI4MDIxMmMwOTVjNDJlNTY2NWM4ZDI0YzdhYTU0NzIzZGRkMjE4OGVlZDc0MjVlMWMyOGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMDk5MGU3ZGYzNjVlZTNjYzkyMTVjMjc5MmJhNDY4Y2Y4YmFlNjk2YjYzZTYxYzBmYjQ4MWE1MzI0ZjdiYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4YWYyZGQ3MTQ1YmE5MTY1NThlNTc5YWJiMGQ4MjMxY2M3ZjJhOWQ1YjRkMGY5OTcxZDQ3NmIzMGE0MWU2NjUifQ"
         },
         {
-          "resource": "repo://python/langsmith/__init__.py#L225-L275",
-          "version": "repo-lines-v1:sha256:0fa35b125e84f0d12004cbebc1b0b9ef0c957c9d6440f376bc6785a533f3aea6:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNGQ3N2EwYTU0MzZiZjIyYjBkOGM3ZmYyMGY3ZmY3N2M0ZjFjYjMyYzZhOGM5MWQ1MDJkODJjYTY2Njc2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1ZDRkZDRiY2IxMzViNjY3ZTM2ZmI2NmRkN2NmMGY5MzFjYzViOGU2ODdkZWZlZTIxOTgzZDk4ZmZiZmE0Y2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://python/langsmith/__init__.py#L211-L288",
+          "version": "repo-lines-v1:sha256:85079f3dde06086cb8ad74d11be4850e369a702ffd46c4a9db088195c4642fa2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiOTExZTQ2N2MxNTkwNmMyOGI2MzY2ZGIyMjk2Y2NmY2JiNzVhMWRmMTk5YTZmZjkxMjU1MDNhOWI0NjNjMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5NDE2ZTA5Zjc4YmEzMTZjMDMyNTY4MjEzYjg1NWVlNzU2ZTQxNTY1ZDkxOGYwOTUxOWM4MWZkNjIwZjQwNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjMjQ2Nzg5ZmNiZjUwNjc5NTIwZDA0ODljNWRiMThiYTkxNTc4MzVhZjhkMzQ3MmE1NzAyNTFjNzEwMzJjNTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://python/langsmith/__init__.py#L60-L121",
-          "version": "repo-lines-v1:sha256:812ed3d8ed4fb543e06fc6f0c49c04cbb85dab1c286c3ef85c885a3413fa1c5b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDJmMjBkZDNkZGEwZDgyNzI1MGYyMjU4Y2M5MDYxZDE1NGFkYTQzZjIzOTUxOGZiOTFmZjliM2FiNmE4M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwNzU3ZGIwM2E0OTE3NWQ2MjljOWY1ZjY5ZWMzZjdlMTI2YTg5NzcyZWY5YmY5ZTZkYmY2ZTYwZDNkNTBjOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0Zjg4NjY3ZmNhY2IzNTAzZWQ0ZmUwNTZiNDRkOGE3N2FiY2VjYTY4MjBhYjQ4MDlhYTk3NDI2ZDFkZDQ0ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5ODk3MjAxNjVlOWNhZmFmMWUzY2U1MmViZDI3OGNjYzMzYjJlZGFkOTJiMDM1NDUyNjMzMTM5OTc2ZGVhNjMifQ"
+          "resource": "repo://python/langsmith/__init__.py#L62-L123",
+          "version": "repo-lines-v1:sha256:812ed3d8ed4fb543e06fc6f0c49c04cbb85dab1c286c3ef85c885a3413fa1c5b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDJmMjBkZDNkZGEwZDgyNzI1MGYyMjU4Y2M5MDYxZDE1NGFkYTQzZjIzOTUxOGZiOTFmZjliM2FiNmE4M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwNzU3ZGIwM2E0OTE3NWQ2MjljOWY1ZjY5ZWMzZjdlMTI2YTg5NzcyZWY5YmY5ZTZkYmY2ZTYwZDNkNTBjOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0Zjg4NjY3ZmNhY2IzNTAzZWQ0ZmUwNTZiNDRkOGE3N2FiY2VjYTY4MjBhYjQ4MDlhYTk3NDI2ZDFkZDQ0ODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxNTgxMWNiZjdmZjZhMDM0ODdlNWI5N2U5NmExZjhkMzZkNzVmMDY3YTEyMGM2OWM5YzU2NzhhMzA5MmM4OTcifQ"
         }
       ]
     },
@@ -68,11 +68,11 @@
     },
     {
       "id": "claim_08c3af5c16ec4d65803531c16b6ed16c",
-      "statement": "The TypeScript package has a compact root API and separate public subpaths for clients, tracing, evaluation, test runners, wrappers, OpenTelemetry, and sandbox support; `js/scripts/create-entrypoints.js` is the registry that generates aligned ESM, CommonJS, declaration shims, and package metadata for those subpaths.",
+      "statement": "The TypeScript package root exports a compact surface including the client, selected schemas, run trees, address APIs, cache and UUID utilities, and generated error classes, while tracing, evaluation, test runners, wrappers, OpenTelemetry, and sandbox are public subpaths; `js/scripts/create-entrypoints.js` generates aligned ESM, CommonJS, declaration shims, and package metadata for the root and registered subpaths.",
       "evidence": [
         {
-          "resource": "repo://js/scripts/create-entrypoints.js#L4-L35",
-          "version": "repo-lines-v1:sha256:8ab6017eb68132b391dcdc572de9c77b740167754d37eb6a0f76147d01e71845:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ODY1YzhmNjg4MDRlYzBmYWQ1Y2VkNGI4ODIyZWE3MDg4ZTg5YWM2ZjY3MjlkNGMxZDM1NjA0YzcyZGE5NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhOTJkOWY4MmNhOTkwMTFiODUzYTcyMDkwOTk0YTRkMTNlY2NhOTNhMWMxNjY5MzA4MDI0ODAyN2JiN2RkYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxMWViZWM1YTIwZTFjM2ZiMDQyYTdlZTcwYmE0MjZlMzM1MjM4ZjJmZTBjZWExNTRjMTgyOWJiMzhiNmNiYTQifQ"
+          "resource": "repo://js/scripts/create-entrypoints.js#L4-L40",
+          "version": "repo-lines-v1:sha256:b85948099286c5578ec1b5cf2fda184226480c048cb1bf5f88a054c156574b6d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2ODY1YzhmNjg4MDRlYzBmYWQ1Y2VkNGI4ODIyZWE3MDg4ZTg5YWM2ZjY3MjlkNGMxZDM1NjA0YzcyZGE5NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlMDJhYWZmMmUzYjY5YTEwZTk1NWYxMTExZDJlY2Q2MjU2MTA0MDA2ZmExYjBjMDEzMTkxOTdkMDIxYzliNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhOTJkOWY4MmNhOTkwMTFiODUzYTcyMDkwOTk0YTRkMTNlY2NhOTNhMWMxNjY5MzA4MDI0ODAyN2JiN2RkYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkZTdmNDkzMDVjYjYxZGIxMmQzNGMxY2ExMWI1Zjk5M2RkM2U0MThjYWUzMzJkZDIxMTk3MjhjNzIxMmNkZDQifQ"
         },
         {
           "resource": "repo://js/scripts/create-entrypoints.js#L48-L80",
@@ -83,8 +83,8 @@
           "version": "repo-lines-v1:sha256:4556813edcec58b6427b803ecd4cdd3af0bd9b7ee947be85c24b72e49a577ff5:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhNDZiNmExYjVlNDUzZTVjN2FhYzJkZjRjMGMxNDhkODgwYWNiMDg0ZDlmOTMzNzdiNjQ4NDViZGI0MDRjNDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxOTk1YjQ2YTFkNGUxMWFhNWJkNjQyYTY1ODBiYzlhZThjYmUzNTQwM2M0NTU3NWQ0NWNmZGRiNDNkNzNlYTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlM2RkNzk0MTE3OTZmM2UzMDEyMGMwYzBmMzYzMmM0ZTg3ODRkMGM4NDRhNmNhNmVkM2FmY2VkY2ZlNzRhMGQifQ"
         },
         {
-          "resource": "repo://js/src/index.ts#L1-L38",
-          "version": "repo-lines-v1:sha256:56020fd9f22903ab0906cc61034b433fc88c867aef8cbd34938b1b5ac9e9588e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNzQ0MjkwOTg3MDNlNjM0Y2M2NjRlNDk3NWQxNGFjNDkxMjc0OWU1MTYyNGFiMWEzNTNiZTI0NzNmOWMxMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1YTI3NDA5ZmZjNzY3MTgwOTFmZDRlYzE4ODA4MjQ5YjUyMmNiMWZjNzczMWM0MDdlMGEzMjkwYWU3M2ZjZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0NmE5ZDA1MzE0N2Q4Mjk3MWYyNmNkMjIxMDNkMGY4M2E5MmE3NGRhM2EzZjVkNWExODAyNGQzMDYwZGQxYWMifQ"
+          "resource": "repo://js/src/index.ts#L1-L67",
+          "version": "repo-lines-v1:sha256:49bb7d6fdbc7926fc5c84b2a7e933c309891038ebc6a90d988fb1682ade33cdd:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNzQ0MjkwOTg3MDNlNjM0Y2M2NjRlNDk3NWQxNGFjNDkxMjc0OWU1MTYyNGFiMWEzNTNiZTI0NzNmOWMxMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YmEyMTliZGM5YmU4ZmYxODYxM2YyMjc0OTU5NTc4MjNmNmMwNmMwOTUxMjQ2M2QwOWMzYzkxZDMxY2E2MjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -185,6 +185,6 @@
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-16T06:53:56.756Z"
+    "at": "2026-10-05T08:37:48.776Z"
   }
 }
