@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections import deque
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -95,6 +96,9 @@ class _DeepgramVoiceTracer:
         self._session = session
         self._is_agent_speaking = is_agent_speaking
         self._open_tools: dict[str, tuple[str, RunTree]] = {}
+        # Deepgram can echo client-side results after we send and trace them.
+        # Retain only recent IDs so duplicate detection stays bounded.
+        self._completed_tool_ids: deque[str] = deque(maxlen=256)
         self._history_message_count = 0
         # After a barge-in, the talked-over response still sends its own
         # ``AgentAudioDone``, which must not close the new turn.
@@ -182,12 +186,9 @@ class _DeepgramVoiceTracer:
         if role == "user":
             if not self._session.has_open_turn:
                 self._start_turn()
-            self._session.add_message(role, content)
             self._session.set_title(content)
-            self._record_event(message, now, inputs={"role": role, "content": content})
-        else:
-            self._session.add_message(role, content)
-            self._record_event(message, now, outputs={"role": role, "content": content})
+        self._session.add_message(role, content)
+        self._record_event(message, now, outputs={"role": role, "content": content})
 
     def _observe_tool_request(self, message: dict[str, Any]) -> None:
         calls = []
@@ -215,6 +216,9 @@ class _DeepgramVoiceTracer:
     def _close_tool(self, message: dict[str, Any], *, now: float) -> None:
         match = self._matching_tool(message)
         if match is None:
+            call_id = message.get("id")
+            if isinstance(call_id, str) and call_id in self._completed_tool_ids:
+                return
             self._record_event(
                 message,
                 now,
@@ -237,6 +241,7 @@ class _DeepgramVoiceTracer:
             outputs={"content": message.get("content")},
             metadata={"raw_response": message},
         )
+        self._completed_tool_ids.append(call_id)
 
     def _matching_tool(
         self, message: dict[str, Any]
@@ -324,6 +329,7 @@ class _DeepgramVoiceTracer:
             run.error = "function did not complete before the session ended"
             self._session.close_span(run)
         self._open_tools.clear()
+        self._completed_tool_ids.clear()
 
 
 class _TracedDeepgramVoiceConnection:

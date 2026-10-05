@@ -498,11 +498,11 @@ async def test_events_roll_up_into_turn_without_synthetic_model_spans(monkeypatc
 
     conversation_events = [run for name, run in created if name == "ConversationText"]
     assert len(conversation_events) == 2
-    assert conversation_events[0].inputs == {
+    assert conversation_events[0].inputs == {}
+    assert conversation_events[0].outputs == {
         "role": "user",
         "content": "Hello",
     }
-    assert conversation_events[0].outputs == {}
     assert conversation_events[1].inputs == {}
     assert conversation_events[1].outputs == {
         "role": "assistant",
@@ -725,6 +725,122 @@ async def test_tool_response_closes_tool_span(monkeypatch):
     assert turns[0].outputs == {"messages": expected_messages}
     assert not any(name == "LatencyReport" for name, _ in created)
     assert len([run for name, run in created if name == "AgentThinking"]) == 1
+
+
+@pytest.mark.parametrize("inbound_first", [False, True])
+async def test_echoed_tool_responses_do_not_create_extra_spans(
+    monkeypatch, inbound_first
+):
+    from deepgram.agent.v1.types import (
+        AgentV1ReceiveFunctionCallResponse,
+        AgentV1SendFunctionCallResponse,
+    )
+
+    created = _spy_children(monkeypatch)
+    request = FakeSdkMessage(
+        type="FunctionCallRequest",
+        functions=[
+            {
+                "id": "call-1",
+                "name": "lookup_weather",
+                "arguments": '{"city":"Paris"}',
+                "client_side": True,
+            }
+        ],
+    )
+    response_fields = {
+        "id": "call-1",
+        "name": "lookup_weather",
+        "content": '{"temperature": 21}',
+    }
+    echoed = AgentV1ReceiveFunctionCallResponse(**response_fields)
+    outbound = AgentV1SendFunctionCallResponse(**response_fields)
+    raw = FakeSdkConnection([request, echoed, echoed])
+
+    async with wrap_deepgram_voice(raw) as connection:
+        assert await connection.recv() is request
+        if inbound_first:
+            assert await connection.recv() is echoed
+        await connection.send_function_call_response(outbound)
+        async for frame in connection:
+            assert frame is echoed
+        trace = connection._session
+
+    tools = [run for _, run in created if run.run_type == "tool"]
+    assert len(tools) == 1
+    assert tools[0].name == "lookup_weather"
+    assert tools[0].outputs == {"content": response_fields["content"]}
+    assert tools[0].error is None
+    assert not any(name == "FunctionCallResponse" for name, _ in created)
+    assert [msg for msg in trace.messages if msg["role"] == "tool"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "name": "lookup_weather",
+            "content": response_fields["content"],
+        }
+    ]
+
+
+async def test_unknown_response_id_is_not_suppressed_after_tool_completion(monkeypatch):
+    created = _spy_children(monkeypatch)
+    frames = [
+        _frame(
+            "FunctionCallRequest",
+            functions=[
+                {
+                    "id": "call-1",
+                    "name": "lookup_weather",
+                    "arguments": '{"city":"Paris"}',
+                    "client_side": False,
+                }
+            ],
+        ),
+        _frame(
+            "FunctionCallResponse",
+            id="call-1",
+            name="lookup_weather",
+            content="sunny",
+        ),
+        _frame(
+            "FunctionCallResponse",
+            id="unknown-call",
+            name="lookup_weather",
+            content="cloudy",
+        ),
+        _frame(
+            "FunctionCallRequest",
+            functions=[
+                {
+                    "id": "call-2",
+                    "name": "lookup_weather",
+                    "arguments": '{"city":"London"}',
+                    "client_side": False,
+                }
+            ],
+        ),
+        _frame(
+            "FunctionCallResponse",
+            id="call-2",
+            name="lookup_weather",
+            content="rainy",
+        ),
+    ]
+
+    async with wrap_deepgram_voice(FakeConnection(frames)) as connection:
+        async for _ in connection:
+            pass
+        trace = connection._session
+
+    unmatched = next(run for name, run in created if name == "FunctionCallResponse")
+    assert (unmatched.extra or {})["metadata"]["unmatched_tool_response"] is True
+    assert unmatched.outputs == {"name": "lookup_weather", "content": "cloudy"}
+    results = [msg for msg in trace.messages if msg["role"] == "tool"]
+    assert [msg["tool_call_id"] for msg in results] == ["call-1", "call-2"]
+    assert [msg["content"] for msg in results] == ["sunny", "rainy"]
+    tools = [run for name, run in created if name == "lookup_weather"]
+    assert len(tools) == 2
+    assert all(run.error is None for run in tools)
 
 
 async def test_idless_server_tool_response_matches_unique_name(monkeypatch):
