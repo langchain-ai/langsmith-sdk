@@ -178,6 +178,16 @@ class TestUserToken:
             )
         assert len(httpx_mock.get_requests()) == 1
 
+    def test_unknown_kid_does_not_refetch_within_refresh_window(
+        self, httpx_mock: HTTPXMock, jwks, key, verifier
+    ):
+        verifier.verify_user_token(_sign(key, _user_claims()), audience=SERVICE_HOST)
+        with pytest.raises(SandboxTokenVerificationError, match="unknown signing key"):
+            verifier.verify_user_token(
+                _sign(key, _user_claims(), kid="unknown"), audience=SERVICE_HOST
+            )
+        assert len(httpx_mock.get_requests()) == 1
+
     def test_refetches_on_rotated_key(self, httpx_mock: HTTPXMock, key, verifier):
         rotated = Ed25519PrivateKey.generate()
         httpx_mock.add_response(url=JWKS_URL, json={"keys": [_jwk(key, KID)]})
@@ -331,6 +341,39 @@ class TestCallback:
         with pytest.raises(SandboxTokenVerificationError, match="audience"):
             verifier.verify_callback(
                 body=body, signature=signature, aud=lambda a: a == "https://x/cb"
+            )
+
+    @pytest.mark.parametrize(
+        ("request_fields", "error"),
+        [
+            pytest.param(
+                {"body_base64": "%%%"}, "malformed callback body", id="invalid base64"
+            ),
+            pytest.param(
+                {"body_base64": "aGVsbG8=", "headers": {"X-Test": None}},
+                "malformed callback body",
+                id="invalid headers",
+            ),
+        ],
+    )
+    def test_rejects_malformed_full_request(
+        self, jwks, key, verifier, request_fields, error
+    ):
+        body = _callback_body(
+            request={
+                "method": "POST",
+                "url": "https://api.github.com/repos",
+                "scheme": "https",
+                "host": "api.github.com",
+                "path": "/repos",
+                **request_fields,
+            }
+        )
+        with pytest.raises(SandboxTokenVerificationError, match=error):
+            verifier.verify_callback(
+                body=body,
+                signature=_sign(key, _callback_claims(body)),
+                aud=CALLBACK_URL,
             )
 
     def test_aud_optional(self, jwks, key, verifier):
