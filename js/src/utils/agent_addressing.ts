@@ -2,7 +2,7 @@ import {
   type Address,
   Agent,
   EnvAddressError,
-  checkedAddress,
+  ensureAddress,
   envNames,
 } from "../address.js";
 import {
@@ -12,23 +12,13 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, Agent | undefined];
-
-/** The `Address` validated at an entry point as an `Agent`; the SDK carries the result. */
-export function checkAddress(address: unknown): Agent | undefined {
-  return address == null ? undefined : checkedAddress(address);
-}
-
-function describe(address: unknown): string {
-  const { id, env } = address as { id?: unknown; env?: unknown };
-  return id !== undefined ? `${String(id)}/${String(env)}` : typeof address;
-}
+export type Tier = [string | undefined, Address | undefined];
 
 export function rejectConflicting(project: unknown, address: unknown): void {
   if (project && address) {
     throw new Error(
       `A run is sent to a project (${JSON.stringify(project)}) or to an ` +
-        `address (${describe(address)}), not both.`,
+        "address, not both.",
     );
   }
 }
@@ -97,12 +87,12 @@ export function applyToPayload(
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  let address = checkAddress(payload.address);
+  let address = ensureAddress(payload.address);
   delete payload.address;
   const namedProject =
     payload.session_id != null || payload.session_name != null;
   if (!address && !update && !namedProject) {
-    address = Agent.fromEnv();
+    address = resolveFromEnv()[1];
   }
   if (!address) {
     return;

@@ -29,12 +29,16 @@ import {
 } from "./utils/_uuid.js";
 import { v5 as uuidv5 } from "./utils/uuid/src/index.js";
 import {
-  checkAddress,
   logUntraced,
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/agent_addressing.js";
-import { type Address, Agent, EnvAddressError } from "./address.js";
+import {
+  type Address,
+  EnvAddressError,
+  addressFromFields,
+  ensureAddress,
+} from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -195,20 +199,19 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "address",
 ]);
 
-// The address travels as its agent id and environment, URL-encoded.
-const LANGSMITH_AGENT_ID = "langsmith-agent-id";
-const LANGSMITH_AGENT_ENVIRONMENT = "langsmith-agent-environment";
+// The address travels as one `langsmith-agent-*` entry per field, URL-encoded.
+const ADDRESS_ENTRY_PREFIX = "langsmith-agent-";
 
-/** Validates an untrusted header agent; `undefined` if absent or unusable. */
-function agentFromHeader(id: unknown, env: unknown): Agent | undefined {
-  if (id == null && env == null) {
+/** Rebuilds an untrusted header address; `undefined` if absent or unusable. */
+function addressFromHeader(fields: unknown): Address | undefined {
+  if (fields == null) {
     return undefined;
   }
   try {
-    if (id == null || env == null) {
-      throw new Error("half an agent");
+    if (typeof fields !== "object" || Array.isArray(fields)) {
+      throw new Error("not address fields");
     }
-    return new Agent(id as string, env as string);
+    return addressFromFields(fields as Record<string, unknown>);
   } catch {
     // Values are untrusted, so not logged.
     console.warn("Ignoring an unusable address in a `baggage` header.");
@@ -237,13 +240,13 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
-  address: Agent | undefined;
+  address: Address | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
-    address?: Agent,
+    address?: Address,
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -258,8 +261,7 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
-    let agentId: string | undefined;
-    let agentEnv: string | undefined;
+    let addressFields: Record<string, string> | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -269,10 +271,10 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
-      } else if (key === LANGSMITH_AGENT_ID) {
-        agentId = value;
-      } else if (key === LANGSMITH_AGENT_ENVIRONMENT) {
-        agentEnv = value;
+      } else if (key.startsWith(ADDRESS_ENTRY_PREFIX)) {
+        addressFields ??= {};
+        addressFields[key.slice("langsmith-".length).replace(/-/g, "_")] =
+          value;
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
         replicas = parsed.flatMap((replica): Replica[] => {
@@ -282,14 +284,7 @@ class Baggage {
           const filtered = filterReplicaForHeaders(replica);
           const raw = (filtered as Record<string, unknown>).address;
           delete (filtered as Record<string, unknown>).address;
-          const parts = (raw ?? {}) as Record<string, unknown>;
-          const address =
-            raw == null
-              ? undefined
-              : agentFromHeader(
-                  parts.agent_id ?? null,
-                  parts.agent_environment,
-                );
+          const address = addressFromHeader(raw);
           // A project wins over an address; a replica with an invalid
           // address and no project is dropped.
           if (filtered.projectName || raw == null) {
@@ -300,7 +295,7 @@ class Baggage {
       }
     }
 
-    const address = agentFromHeader(agentId, agentEnv);
+    const address = addressFromHeader(addressFields);
     return new Baggage(metadata, tags, project_name, replicas, address);
   }
 
@@ -320,10 +315,11 @@ class Baggage {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
     }
     if (this.address) {
-      items.push(
-        `${LANGSMITH_AGENT_ID}=${encodeURIComponent(this.address.id)}`,
-        `${LANGSMITH_AGENT_ENVIRONMENT}=${encodeURIComponent(this.address.env)}`,
-      );
+      for (const [key, value] of Object.entries(this.address._toFields())) {
+        items.push(
+          `langsmith-${key.replace(/_/g, "-")}=${encodeURIComponent(value)}`,
+        );
+      }
     }
 
     return items.join(",");
@@ -344,7 +340,7 @@ export class RunTree implements BaseRun {
   /** Unset for a run sent to an `address`. */
   project_name?: string;
   /** (beta) Set instead of `project_name` for an addressed run. */
-  address?: Agent;
+  address?: Address;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -450,7 +446,7 @@ export class RunTree implements BaseRun {
 
   /** Falls back to the env; a bad env leaves the run untraced. */
   private _resolveAddressing(config: RunTreeConfig): void {
-    const address = checkAddress(config.address);
+    const address = ensureAddress(config.address);
     const project = config.project_name || undefined;
     rejectConflicting(project, address);
     if (project || address) {
@@ -730,8 +726,8 @@ export class RunTree implements BaseRun {
   /** A replica naming neither inherits the run tree's destination. */
   private _replicaAddressing(
     replica: WriteReplica,
-  ): [string | undefined, Agent | undefined] {
-    const address = checkAddress(replica.address);
+  ): [string | undefined, Address | undefined] {
+    const address = ensureAddress(replica.address);
     if (replica.projectName != null) {
       rejectConflicting(replica.projectName, address);
       return [replica.projectName, undefined];
@@ -744,7 +740,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName?: string;
-    address?: Agent;
+    address?: Address;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -1418,7 +1414,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
             updates: replica[1],
           };
         }
-        const address = checkAddress(replica.address);
+        const address = ensureAddress(replica.address);
         return address ? { ...replica, address } : replica;
       })
     : _getWriteReplicasFromEnv();

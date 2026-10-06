@@ -87,10 +87,9 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type Address, EnvAddressError } from "./address.js";
+import { type Address, EnvAddressError, ensureAddress } from "./address.js";
 import {
   applyToPayload,
-  checkAddress,
   logUntraced,
   rejectConflicting,
   resolveFromEnv,
@@ -2548,7 +2547,7 @@ export class Client implements LangSmithTracingClientInterface {
       ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
-    const address = checkAddress(run.address);
+    const address = ensureAddress(run.address);
     // `RunTree.postRun` passes a built run body, carrying the wire `session_name`.
     const bodySessionName = (run as RunCreate).session_name;
     rejectConflicting(run.project_name ?? bodySessionName, address);
@@ -3153,7 +3152,7 @@ export class Client implements LangSmithTracingClientInterface {
       run.events = this._filterNewTokenEvents(run.events);
     }
     // Fail on a bad address now; the queued path validates again when built.
-    checkAddress(run.address);
+    ensureAddress(run.address);
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
@@ -5576,7 +5575,7 @@ export class Client implements LangSmithTracingClientInterface {
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
-    const address = checkAddress(rawAddress);
+    const address = ensureAddress(rawAddress);
     rejectConflicting(sessionId ?? projectId, address);
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");

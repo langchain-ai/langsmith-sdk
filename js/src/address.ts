@@ -6,9 +6,10 @@
  * implementation that names an agent's environment, with its environment always
  * lowercase. Others can follow without changing the tracing API.
  *
- * Anywhere an address is accepted, only an `Address` is. It is validated once
- * at that entry point and carried as an `Agent` from there on. The backend's
- * identifier for it stays private to the SDK and appears only on the wire.
+ * Anywhere an address is accepted, only an `Address` is. It is checked once at
+ * that entry point and carried as is: the SDK never needs to know what kind of
+ * address it holds. The backend's identifier for it stays private to the SDK
+ * and appears only on the wire.
  *
  * @example
  * ```ts
@@ -33,6 +34,8 @@ export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
 export interface Address {
   /** @internal The wire identifier; not part of the public surface. */
   _toLrn(): Lrn;
+  /** @internal The address as flat string fields for trace headers. */
+  _toFields(): Record<string, string>;
 }
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
@@ -43,7 +46,6 @@ const ENVIRONMENTS: string[] = [
   "staging",
   "production",
 ];
-const LRN_PATTERN = /^lrn:agents\/([^/]*)\/environments\/([^/]*)$/;
 
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
 
@@ -102,6 +104,11 @@ export class Agent implements Address {
     return `lrn:agents/${this.id}/environments/${this.env}`;
   }
 
+  /** @internal */
+  _toFields(): Record<string, string> {
+    return { agent_id: this.id, agent_environment: this.env };
+  }
+
   /**
    * Read the agent named by `LANGSMITH_AGENT_ID` and
    * `LANGSMITH_AGENT_ENVIRONMENT`; `undefined` if neither is set.
@@ -135,36 +142,46 @@ function isAddress(value: unknown): value is Address {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as Address)._toLrn === "function"
+    typeof (value as Address)._toLrn === "function" &&
+    typeof (value as Address)._toFields === "function"
   );
 }
 
 /**
- * @internal Build an `Agent` from a wire LRN, lowercasing its environment.
- * @throws If `lrn` is not a valid agent LRN.
+ * @internal The entry-point guard: `value` must be an `Address` (or absent),
+ * and is returned as is. Strings are rejected.
+ * @throws If `value` is not an address.
  */
-export function agentFromLrn(lrn: unknown): Agent {
-  const match = typeof lrn === "string" ? LRN_PATTERN.exec(lrn) : null;
-  if (!match) {
-    throw new Error("The address is not a valid agent address.");
+export function ensureAddress(value: unknown): Address | undefined {
+  if (value == null) {
+    return undefined;
   }
-  return new Agent(match[1], match[2]);
-}
-
-/**
- * @internal Validate an `Address` and return it as a normalized `Agent`: frozen,
- * with a lowercase environment. Strings are rejected.
- * @throws If `value` is not a valid address.
- */
-export function checkedAddress(value: unknown): Agent {
   if (!isAddress(value)) {
     throw new Error(
       "address must be an Address such as `new Agent(id, env)`, got " +
         `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
     );
   }
-  // A custom Address renders an LRN; read it back as an Agent.
-  return agentFromLrn(value._toLrn());
+  return value;
+}
+
+/**
+ * @internal Rebuild an address from its header fields; only the fields it
+ * knows are read.
+ * @returns `undefined` if there are no fields.
+ * @throws If the fields are half-present or invalid.
+ */
+export function addressFromFields(
+  fields: Record<string, unknown>,
+): Address | undefined {
+  const { agent_id: id, agent_environment: env } = fields;
+  if (id == null && env == null) {
+    return undefined;
+  }
+  if (id == null || env == null) {
+    throw new Error("The address fields are incomplete.");
+  }
+  return new Agent(id as string, env as string);
 }
 
 /** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */

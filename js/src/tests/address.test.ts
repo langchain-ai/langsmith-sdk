@@ -183,14 +183,11 @@ describe("precedence", () => {
 });
 
 describe("RunTree", () => {
-  test("carries a normalized Agent, not a string", () => {
+  test("carries the Address it was given", () => {
     const run = new RunTree({
       name: "r",
-      address: jsCaller({
-        _toLrn: () => "lrn:agents/customer-support/environments/PRODUCTION",
-      }),
+      address: new Agent("customer-support", "PRODUCTION"),
     });
-    expect(run.address).toBeInstanceOf(Agent);
     expect(run.address).toEqual(SUPPORT_AGENT);
     expect(Object.isFrozen(run.address)).toBe(true);
   });
@@ -372,13 +369,6 @@ describe("traceable", () => {
         project_name: "p",
       }),
     ).toThrow(/not both/);
-    expect(() =>
-      traceable(async () => "ok", {
-        address: jsCaller({
-          _toLrn: () => "lrn:agents/Bad/environments/local",
-        }),
-      }),
-    ).toThrow(/1 to 63 lowercase/);
   });
 
   test("a string address is rejected at wrap time", () => {
@@ -599,46 +589,53 @@ describe("address types", () => {
 
 describe("Address objects", () => {
   class Custom implements Address {
-    constructor(private readonly lrn: string) {}
+    constructor(
+      private readonly lrn: string,
+      private readonly fields: Record<string, string>,
+    ) {}
     _toLrn(): any {
       return this.lrn;
     }
+    _toFields(): Record<string, string> {
+      return this.fields;
+    }
   }
+  const CUSTOM_LRN = "lrn:agents/other/environments/local";
 
-  test("a run tree carries an Agent for an Address", () => {
-    expect(new RunTree({ name: "r", address: SUPPORT_AGENT }).address).toEqual(
-      SUPPORT_AGENT,
-    );
+  test("a custom Address is carried as is, never converted", () => {
+    const custom = new Custom(CUSTOM_LRN, { thing_id: "x" });
+    expect(new RunTree({ name: "r", address: custom }).address).toBe(custom);
   });
 
-  test("any implementation is accepted and normalized", () => {
-    const custom = new Custom(
-      "lrn:agents/customer-support/environments/STAGING",
-    );
-    const { address } = new RunTree({ name: "r", address: custom });
-    expect(address).toBeInstanceOf(Agent);
-    expect(address).toEqual(STAGING_AGENT);
+  test("a custom Address flows through a run tree, a payload and headers", () => {
+    const custom = new Custom(CUSTOM_LRN, { thing_id: "x y", thing_kind: "k" });
+    const run = new RunTree({ name: "r", address: custom });
+    const payload: any = { address: run.address };
+    applyToPayload(payload);
+    expect(payload).toEqual({ address: CUSTOM_LRN });
+    const baggage = decodeURIComponent(run.toHeaders().baggage);
+    expect(baggage).toContain("langsmith-thing-id=x y");
+    expect(baggage).toContain("langsmith-thing-kind=k");
   });
 
-  test("a custom implementation is posted as its LRN", async () => {
+  test("a custom Address is posted as its LRN", async () => {
     const { client, callSpy } = mockClient();
     await new RunTree({
       name: "r",
-      address: new Custom(SUPPORT_STR),
+      address: new Custom(CUSTOM_LRN, {}),
       client,
     }).postRun();
     const [body] = await postedRuns(callSpy, client);
-    expect(body.address).toBe(SUPPORT_STR);
+    expect(body.address).toBe(CUSTOM_LRN);
   });
 
-  test("an implementation must render a valid LRN", () => {
-    const err = () =>
-      new RunTree({ name: "r", address: new Custom("experiments/e") });
-    expect(err).toThrow(/not a valid agent address/);
-    expect(err).toThrow(/^(?!.*experiments\/e)/);
+  test("a non-Address object is rejected", () => {
     expect(() => new RunTree({ name: "r", address: {} as any })).toThrow(
       /address must be an Address/,
     );
+    expect(
+      () => new RunTree({ name: "r", address: { _toLrn: () => "x" } as any }),
+    ).toThrow(/address must be an Address/);
   });
 
   test("replicas take an Address", () => {
