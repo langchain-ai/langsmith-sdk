@@ -50,7 +50,7 @@ from langsmith._internal import _aiter as aitertools
 from langsmith._runtime_overrides import (
     _aio_to_thread_override_active as _runtime_override_active,
 )
-from langsmith.address import AddressLike
+from langsmith.address import Address
 from langsmith.env import _runtime_env
 from langsmith.run_trees import WriteReplica
 
@@ -174,7 +174,7 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
-    address: Optional[AddressLike] = None,
+    address: Optional[Address] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
@@ -193,7 +193,7 @@ def tracing_context(
 
     Args:
         project_name: The name of the project to log the run to.
-        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN string, to log the
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         tags: The tags to add to the run.
@@ -285,7 +285,7 @@ def ensure_traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    address: Optional[AddressLike] = None,
+    address: Optional[Address] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -329,7 +329,7 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional run tree (deprecated)."""
     project_name: Optional[str]
     """Optional name of the project."""
-    address: Optional[str]
+    address: Optional[Address]
     """(beta) An address string to log the run to, instead of a project."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
@@ -402,7 +402,7 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    address: Optional[AddressLike] = None,
+    address: Optional[Address] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -448,7 +448,7 @@ def traceable(
         project_name: The name of the project to log the run to.
 
             Defaults to `None`, which will use the default project.
-        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN string, to log the
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         process_inputs: Custom serialization / processing function for inputs.
@@ -1056,7 +1056,7 @@ class trace:
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
         inputs: Initial input data for the run.
         project_name: Project name to associate the run with.
-        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN string, to log the
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         parent: Parent run.
@@ -1120,7 +1120,7 @@ class trace:
         inputs: Optional[dict] = None,
         extra: Optional[dict] = None,
         project_name: Optional[str] = None,
-        address: Optional[AddressLike] = None,
+        address: Optional[Address] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
         ] = None,
@@ -1184,7 +1184,7 @@ class trace:
         client_ = self.client or self.old_ctx.get("client")
         parent_run_ = None
         project_name_: Optional[str] = "default"
-        address_: Optional[str] = None
+        address_: Optional[Address] = None
         try:
             parent_run_ = _get_parent_run(
                 {
@@ -1376,9 +1376,9 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
 
 def _get_addressing(
     project_name: Optional[str],
-    address: Optional[str] = None,
+    address: Optional[Address] = None,
     parent: Optional[run_trees.RunTree] = None,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[Address]]:
     """Resolve `(project_name, address)` for a new run.
 
     Mirrors `_get_project_name`'s levels, with `parent` (e.g. from headers)
@@ -1400,7 +1400,7 @@ def _address_kwargs(tier: _agent_addressing.Tier) -> dict[str, Any]:
 
 
 def _addressing_tiers(
-    project_name: Optional[str] = None, address: Optional[str] = None
+    project_name: Optional[str] = None, address: Optional[Address] = None
 ) -> tuple[_agent_addressing.Tier, ...]:
     """Return the levels named in code, highest first, without the env vars.
 
@@ -1569,7 +1569,7 @@ class _ContainerInput(TypedDict, total=False):
     client: Optional[ls_client.Client]
     reduce_fn: Optional[Callable]
     project_name: Optional[str]
-    address: Optional[str]
+    address: Optional[Address]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     process_chunk: Optional[Callable]
@@ -1718,7 +1718,7 @@ def _resolve_traceable_addressing(
     parent_run_: Optional[run_trees.RunTree],
     langsmith_extra: LangSmithExtra,
     container_input: _ContainerInput,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[Address]]:
     """Settle a `@traceable` run's `(project, address)`.
 
     One walk over the precedence levels, highest first: the first level naming
@@ -1779,7 +1779,8 @@ def _setup_run(
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
     enabled = container_input.get("enabled")
-    selected_project, selected_address = None, None
+    selected_project: Optional[str] = None
+    selected_address: Optional[Address] = None
     env_error: Optional[_agent_addressing.EnvAddressError] = None
     try:
         parent_run_ = _get_parent_run(

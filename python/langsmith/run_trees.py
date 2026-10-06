@@ -23,7 +23,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _agent_addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
-from langsmith.address import AddressLike
+from langsmith.address import Address, Agent
 from langsmith.client import (
     ID_TYPE,
     RUN_TYPE_T,
@@ -73,7 +73,7 @@ class WriteReplica(TypedDict, total=False):
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
-    address: Optional[AddressLike]
+    address: Optional[Address]
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -107,7 +107,7 @@ class _PayloadKey(NamedTuple):
     project_name: Optional[str]
     updates: Optional[dict]
     primary: Optional[bool]
-    address: Optional[str] = None
+    address: Optional[Address] = None
 
 
 class _ReplicaGroup(NamedTuple):
@@ -258,7 +258,7 @@ def configure(
     project_name: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
-    address: Optional[AddressLike] = _SENTINEL,
+    address: Optional[Address] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -295,9 +295,8 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN
-            string, to send traces to instead of a project. Mutually exclusive with
-            `project_name`.
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, to send traces
+            to instead of a project. Mutually exclusive with `project_name`.
 
             Pass `None` to explicitly clear it.
         tags: A list of tags to be applied to all traced runs.
@@ -340,10 +339,10 @@ def configure(
     """
     global _CLIENT
     set_address = address is not _SENTINEL
-    lrn = _agent_addressing.check_address(address) if set_address else None
+    checked = _agent_addressing.check_address(address) if set_address else None
     _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
-        address=lrn,
+        address=checked,
     )
     with _LOCK:
         if client is not _SENTINEL:
@@ -353,13 +352,13 @@ def configure(
             _context._GLOBAL_TRACING_ENABLED = enabled
         # One level holds one mode: naming one replaces the other. Set the
         # same way as `project_name` always has been, context var included.
-        if project_name is not _SENTINEL or (set_address and lrn is not None):
+        if project_name is not _SENTINEL or (set_address and checked is not None):
             project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
         if set_address or (project_name is not _SENTINEL and project_name is not None):
-            _context._ADDRESS.set(lrn)
-            _context._GLOBAL_ADDRESS = lrn
+            _context._ADDRESS.set(checked)
+            _context._GLOBAL_ADDRESS = checked
         if tags is not _SENTINEL:
             _context._TAGS.set(tags)
             _context._GLOBAL_TAGS = tags
@@ -457,7 +456,7 @@ class RunTree(ls_schemas.RunBase):
     project from `address` instead.
     """
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    address: Optional[str] = Field(
+    address: Optional[Agent] = Field(
         default=None,
         exclude=True,
         description=(
@@ -876,7 +875,7 @@ class RunTree(ls_schemas.RunBase):
         updates: Optional[dict] = None,
         *,
         primary: Optional[bool] = None,
-        address: Optional[str] = None,
+        address: Optional[Address] = None,
     ) -> dict:
         """Rewrites ids/dotted_order for a given target with optional updates."""
         run_dict = self._get_dicts_safe()
@@ -891,7 +890,7 @@ class RunTree(ls_schemas.RunBase):
         seed = (
             project_name
             if project_name is not None
-            else (address if address is not None else "agent//")
+            else (address.lrn() if address is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -950,7 +949,7 @@ class RunTree(ls_schemas.RunBase):
 
     def _replica_addressing(
         self, replica: WriteReplica
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[Optional[str], Optional[Address]]:
         """Resolve one replica's `(project_name, address)`.
 
         Same precedence as everywhere else, applied per replica: the replica's
@@ -1404,7 +1403,7 @@ class _Baggage:
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
-        address: Optional[str] = None,
+        address: Optional[Agent] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -1421,7 +1420,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        address: Optional[str] = None
+        address: Optional[Agent] = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1512,16 +1511,18 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         if self.address is not None:
-            items.append(f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address)}")
+            items.append(
+                f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address.lrn())}"
+            )
         return ",".join(items)
 
 
-def _address_from_header(value: Any) -> Optional[str]:
+def _address_from_header(value: Any) -> Optional[Agent]:
     """Build an address from untrusted header input, or `None` if it is unusable."""
     if value is None:
         return None
     try:
-        return _address.to_lrn(value)
+        return _address.Agent.parse(value)
     except utils.LangSmithUserError:
         # The value is untrusted, so it is not logged.
         logger.warning("Ignoring an unusable address in a `baggage` header.")

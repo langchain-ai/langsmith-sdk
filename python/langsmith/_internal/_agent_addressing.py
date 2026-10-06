@@ -31,6 +31,7 @@ from __future__ import annotations
 import functools
 import logging
 import warnings
+from collections.abc import Mapping
 from typing import Any, Optional
 
 from langsmith import address as _address
@@ -41,22 +42,22 @@ from langsmith.address import EnvAddressError
 _LOGGER = logging.getLogger(__name__)
 
 
-def check_address(address: Any) -> Optional[str]:
-    """Return the LRN of `address`, an `Address` or a string, or `None`.
+def check_address(address: Any) -> Optional[_address.Agent]:
+    """Return `address` validated as an `Agent`, or `None` if it is `None`.
 
     Raises:
-        utils.LangSmithUserError: If `address` is not a valid address string.
+        utils.LangSmithUserError: If `address` is not a valid `Address`.
     """
-    return None if address is None else _address.to_lrn(address)
+    return None if address is None else _address.check(address)
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
-    """Put a bare address string replica in an `address` key, and check the rest."""
+    """Put a bare `Address` replica in an `address` key, and check the rest."""
     if replicas is None:
         return None
     normalized = []
     for replica in replicas:
-        if isinstance(replica, (str, _address.Address)):
+        if not isinstance(replica, Mapping):
             normalized.append({"address": check_address(replica)})
             continue
         normalized_replica = dict(replica)
@@ -79,11 +80,11 @@ def warn_is_beta() -> None:
     )
 
 
-Tier = tuple[Optional[str], Optional[str]]
+Tier = tuple[Optional[str], Optional[_address.Address]]
 """One precedence level: the `(project, address)` it names, either may be unset."""
 
 
-def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[str]]:
+def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[_address.Address]]:
     """Settle a run's single destination, as `(project, address)`.
 
     `tiers` are the levels named in code, highest precedence first; the env
@@ -104,7 +105,7 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[str]]:
         if address is not None:
             return None, address
     env_project = utils.get_tracer_project(return_default_value=False) or None
-    env_address = _address.lrn_from_env()
+    env_address = _address.Agent.from_env()
     if env_project and env_address is not None:
         raise EnvAddressError(
             str(_both_at_one_level(env_project, env_address, "in the environment"))
@@ -129,10 +130,10 @@ def first_named(*tiers: Tier) -> Tier:
 
 
 def _both_at_one_level(
-    project: str, address: str, where: str
+    project: str, address: _address.Address, where: str
 ) -> utils.LangSmithUserError:
     return utils.LangSmithUserError(
-        f"A project ({project!r}) and an address ({address!r}) are both set "
+        f"A project ({project!r}) and an address ({address.lrn()!r}) are both set "
         f"{where}, so neither outranks the other. Set only one there, or set "
         "the one you want at a higher-precedence level."
     )
@@ -161,7 +162,7 @@ def warn_on_env() -> None:
     if not present:
         return
     try:
-        address = _address.lrn_from_env()
+        address = _address.Agent.from_env()
     except EnvAddressError as e:
         warnings.warn(
             f"{e} Calls that name no destination in code are not traced.",
@@ -176,7 +177,7 @@ def warn_on_env() -> None:
         return
     warnings.warn(
         f"The address from LANGSMITH_AGENT_ID and LANGSMITH_AGENT_ENVIRONMENT "
-        f"({address!r}) and a configured "
+        f"({address.lrn()!r}) and a configured "
         f"project ({project!r}) are both set in the environment, so calls that name "
         "no destination in code are not traced. Unset one of them.",
         utils.LangSmithWarning,
@@ -184,7 +185,7 @@ def warn_on_env() -> None:
     )
 
 
-def reject_url(session_id: Optional[Any], address: Optional[str]) -> None:
+def reject_url(session_id: Optional[Any], address: Optional[Any]) -> None:
     """Refuse to build a run URL the SDK cannot know.
 
     A run URL is keyed on the project id, and the endpoint resolves an address
@@ -203,7 +204,7 @@ def reject_conflicting(
     *,
     project: Optional[Any] = None,
     session_id: Optional[Any] = None,
-    address: Optional[str] = None,
+    address: Optional[_address.Address] = None,
 ) -> None:
     """Reject a call that names both a project and an address.
 
@@ -219,12 +220,12 @@ def reject_conflicting(
     if named_project is not None and address is not None:
         raise utils.LangSmithUserError(
             f"A run is addressed by project ({named_project!r}) or by address "
-            f"({address!r}), not both."
+            f"({address.lrn()!r}), not both."
         )
 
 
 def apply_to_payload(payload: dict, *, update: bool = False) -> None:
-    """Put a run payload's address in its wire field, as one lowercase string.
+    """Put a run payload's address in its wire field, as its LRN string.
 
     The one place a run's `address` is settled. A project already on the
     payload addresses the run, so the environment is not consulted. With no
@@ -234,16 +235,26 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     address from the post that established it, and one naming nothing is
     resolved by run id.
     """
-    address = check_address(payload.pop("address", None))
+    address = _from_payload(payload.pop("address", None))
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
     if address is None and not (update or named_project):
-        address = _address.lrn_from_env()
+        address = _address.Agent.from_env()
     if address is None:
         return
     warn_is_beta()
-    payload["address"] = address
+    payload["address"] = address.lrn()
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)
+
+
+def _from_payload(value: Any) -> Optional[_address.Agent]:
+    """Read a payload's `address`: an `Address`, or the LRN of one already applied.
+
+    A retried batch re-sends the caller's dicts, already in wire form.
+    """
+    if isinstance(value, str):
+        return _address.Agent.parse(value)
+    return check_address(value)

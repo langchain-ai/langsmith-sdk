@@ -11,9 +11,9 @@ itself as an LRN, a string like `lrn:agents/{id}/environments/{environment}`.
 follow without changing the tracing API. The environment is one of `local`,
 `development`, `staging` or `production`, and is always rendered lowercase.
 
-Anywhere an address is accepted, an `Address` or an LRN string is. It is
-validated once at that entry point, and only its LRN is carried from there on
-and sent in the `address` field of the payload.
+Anywhere an address is accepted, an `Address` is; it is validated once at that
+entry point. The LRN is only the wire format: it is what is sent in the
+`address` field of a payload and in trace headers, and is never taken as input.
 
 Example:
     ```python
@@ -35,11 +35,11 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from typing import Any, Optional, Protocol, Union, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from langsmith import utils
 
-__all__ = ["Address", "AddressLike", "Agent", "EnvAddressError"]
+__all__ = ["Address", "Agent", "EnvAddressError"]
 
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
@@ -54,10 +54,6 @@ class Address(Protocol):
     def lrn(self) -> str:
         """Return this address as an LRN string."""
         ...
-
-
-AddressLike = Union[Address, str]
-"""(beta) An `Address`, or the LRN string of one."""
 
 
 class EnvAddressError(utils.LangSmithUserError):
@@ -116,7 +112,7 @@ class Agent:
 
     @classmethod
     def parse(cls, lrn: str) -> Agent:
-        """Build from an agent LRN, lowercasing its environment.
+        """Build from an agent LRN read off the wire, lowercasing its environment.
 
         Raises:
             LangSmithUserError: If `lrn` is not a valid agent LRN.
@@ -124,7 +120,7 @@ class Agent:
         match = _LRN_PATTERN.fullmatch(lrn) if isinstance(lrn, str) else None
         if match is None:
             raise utils.LangSmithUserError(
-                "An address must be an `Address` or a string like "
+                "Expected an LRN like "
                 f"'lrn:agents/{{id}}/environments/{{environment}}', got {lrn!r}."
             )
         return cls(*match.groups())
@@ -158,28 +154,25 @@ class Agent:
             ) from e
 
 
-def to_lrn(address: Any) -> str:
-    """Validate an `Address` or LRN string and return its normalized LRN.
+def check(address: Any) -> Agent:
+    """Validate an `Address` and return it as an `Agent`.
 
-    The one place an address becomes the string the SDK carries and sends.
-
-    Raises:
-        LangSmithUserError: If `address` is not a valid address.
-    """
-    lrn = address
-    if not isinstance(address, str) and isinstance(address, Address):
-        lrn = address.lrn()
-    return Agent.parse(lrn).lrn()
-
-
-def lrn_from_env() -> Optional[str]:
-    """Return the LRN named by the `LANGSMITH_AGENT_*` env vars, if any.
+    The one place an address is checked and normalized; the SDK carries the
+    result, and renders its LRN only where it goes on the wire. An LRN string
+    is not an address.
 
     Raises:
-        EnvAddressError: If only one is set, or a value is invalid.
+        LangSmithUserError: If `address` is not an `Address` that renders a
+            valid agent LRN.
     """
-    agent = Agent.from_env()
-    return None if agent is None else agent.lrn()
+    if isinstance(address, Agent):
+        return address
+    if isinstance(address, str) or not isinstance(address, Address):
+        raise utils.LangSmithUserError(
+            "An address must be an `Address` such as `ls.Agent(id, env)`, "
+            f"got {address!r}."
+        )
+    return Agent.parse(address.lrn())
 
 
 def env_values() -> dict[str, Optional[str]]:

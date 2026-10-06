@@ -132,7 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
-from langsmith.address import AddressLike
+from langsmith.address import Address
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -362,6 +362,7 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
     from langsmith._openapi_client.types.run import Run as V2Run
@@ -1706,6 +1707,12 @@ class Client:
         return self._get_langsmith_api().traces
 
     @property
+    def sessions(self) -> AsyncSessionsResource:
+        """Access the sessions resource (resolve an address to its project)."""
+        _check_backend_version(self.info.version, min_version="0.16.0")
+        return self._get_langsmith_api().sessions
+
+    @property
     def public(self) -> AsyncPublicResource:
         """Access the public shared-run resource."""
         _check_backend_version(self.info.version, min_version="0.16.0")
@@ -2584,8 +2591,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            address (Optional[AddressLike]): (beta) An `Address` such as
-                `ls.Agent(id, env)`, or its LRN string, to send the run to instead of a project.
+            address (Optional[Address]): (beta) An `Address` such as
+                `ls.Agent(id, env)`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 This is in beta and enabled per workspace; a
@@ -8309,7 +8316,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        address: Optional[AddressLike] = None,
+        address: Optional[Address] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8382,7 +8389,7 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
-            address (Optional[str]):
+            address (Optional[Address]):
                 The address to attach this feedback to, instead of a project.
                 Pass whatever the run being described was traced to -- for a
                 run created in this process, `run_tree.address`. Cannot be
