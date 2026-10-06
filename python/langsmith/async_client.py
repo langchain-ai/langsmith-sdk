@@ -50,6 +50,7 @@ from langsmith._internal._v2_migration_utils import (
     _v2_run_to_schema,
     get_query_backend,
 )
+from langsmith.address import AddressLike
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -1181,7 +1182,7 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
-        address: Optional[str] = None,
+        address: Optional[AddressLike] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.

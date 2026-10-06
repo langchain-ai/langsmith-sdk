@@ -1,9 +1,9 @@
 import {
-  type Address,
   EnvAddressError,
+  type Lrn,
   envNames,
-  fromEnv as addressFromEnv,
-  parse,
+  lrnFromEnv,
+  toLrn,
 } from "../address.js";
 import {
   getEnvironmentVariable,
@@ -12,11 +12,11 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, Address | undefined];
+export type Tier = [string | undefined, Lrn | undefined];
 
-/** Validate and normalise an address at an entry point; the SDK carries the result. */
-export function checkAddress(address: unknown): Address | undefined {
-  return address == null ? undefined : parse(address as string);
+/** The LRN of an `Address` or LRN string, validated at an entry point; the SDK carries the result. */
+export function checkAddress(address: unknown): Lrn | undefined {
+  return address == null ? undefined : toLrn(address);
 }
 
 export function rejectConflicting(project: unknown, address: unknown): void {
@@ -53,7 +53,7 @@ function getEnvProject(): string | undefined {
  */
 export function resolveFromEnv(): Tier {
   const project = getEnvProject();
-  const address = addressFromEnv();
+  const address = lrnFromEnv();
   if (project && address) {
     throw new EnvAddressError(
       "LANGSMITH_AGENT_* and a project are both set in the environment.",
@@ -88,7 +88,7 @@ export function warnOnEnv(): void {
  * @throws {EnvAddressError} If the env names half an address.
  */
 export function applyToPayload(
-  run: { address?: Address; session_id?: string; session_name?: string },
+  run: { address?: Lrn; session_id?: string; session_name?: string },
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
@@ -97,7 +97,7 @@ export function applyToPayload(
   const namedProject =
     payload.session_id != null || payload.session_name != null;
   if (!address && !update && !namedProject) {
-    address = addressFromEnv();
+    address = lrnFromEnv();
   }
   if (!address) {
     return;

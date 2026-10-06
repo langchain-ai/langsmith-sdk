@@ -23,6 +23,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _agent_addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
+from langsmith.address import AddressLike
 from langsmith.client import (
     ID_TYPE,
     RUN_TYPE_T,
@@ -72,7 +73,7 @@ class WriteReplica(TypedDict, total=False):
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
-    address: Optional[str]
+    address: Optional[AddressLike]
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -257,7 +258,7 @@ def configure(
     project_name: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
-    address: Optional[str] = _SENTINEL,
+    address: Optional[AddressLike] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -294,8 +295,8 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (beta) An address string, e.g. from `langsmith.address.agent`, to send
-            traces to instead of a project. Mutually exclusive with
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN
+            string, to send traces to instead of a project. Mutually exclusive with
             `project_name`.
 
             Pass `None` to explicitly clear it.
@@ -339,11 +340,10 @@ def configure(
     """
     global _CLIENT
     set_address = address is not _SENTINEL
-    if set_address:
-        address = _agent_addressing.check_address(address)
+    lrn = _agent_addressing.check_address(address) if set_address else None
     _agent_addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
-        address=address if set_address else None,
+        address=lrn,
     )
     with _LOCK:
         if client is not _SENTINEL:
@@ -353,14 +353,13 @@ def configure(
             _context._GLOBAL_TRACING_ENABLED = enabled
         # One level holds one mode: naming one replaces the other. Set the
         # same way as `project_name` always has been, context var included.
-        if project_name is not _SENTINEL or (set_address and address is not None):
+        if project_name is not _SENTINEL or (set_address and lrn is not None):
             project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
         if set_address or (project_name is not _SENTINEL and project_name is not None):
-            address = address if set_address else None
-            _context._ADDRESS.set(address)
-            _context._GLOBAL_ADDRESS = address
+            _context._ADDRESS.set(lrn)
+            _context._GLOBAL_ADDRESS = lrn
         if tags is not _SENTINEL:
             _context._TAGS.set(tags)
             _context._GLOBAL_TAGS = tags
@@ -958,7 +957,7 @@ class RunTree(ls_schemas.RunBase):
         own project wins over its own agent, and a replica that names neither
         inherits the run tree's addressing whole rather than mixing the two.
         """
-        address = replica.get("address")
+        address = _agent_addressing.check_address(replica.get("address"))
         if (project_name := replica.get("project_name")) is not None:
             _agent_addressing.reject_conflicting(project=project_name, address=address)
             return project_name, None
@@ -1522,7 +1521,7 @@ def _address_from_header(value: Any) -> Optional[str]:
     if value is None:
         return None
     try:
-        return _address.parse(value)
+        return _address.to_lrn(value)
     except utils.LangSmithUserError:
         # The value is untrusted, so it is not logged.
         logger.warning("Ignoring an unusable address in a `baggage` header.")

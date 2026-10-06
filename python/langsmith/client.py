@@ -132,6 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
+from langsmith.address import AddressLike
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -2583,8 +2584,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            address (Optional[str]): (beta) An address string, e.g.
-                from `langsmith.address.agent`, to send the run to instead of a project.
+            address (Optional[AddressLike]): (beta) An `Address` such as
+                `ls.Agent(id, env)`, or its LRN string, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 This is in beta and enabled per workspace; a
@@ -8308,7 +8309,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        address: Optional[str] = None,
+        address: Optional[AddressLike] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.

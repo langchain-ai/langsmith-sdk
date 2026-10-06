@@ -6,7 +6,7 @@
     to a project. This API may change without notice.
 
 A run goes to exactly one destination: a project (`project_name`) or an
-address (`langsmith.address.agent(agent_id, agent_environment)`), which
+address (`langsmith.Agent(id, env)`), which
 names an agent and one of its environments. The server resolves an address to
 the agent environment's project, so traces follow the agent rather than a
 project name. Project addressing keeps working alongside it.
@@ -42,12 +42,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def check_address(address: Any) -> Optional[str]:
-    """Return `address` validated and normalized, or `None` if it is `None`.
+    """Return the LRN of `address`, an `Address` or a string, or `None`.
 
     Raises:
         utils.LangSmithUserError: If `address` is not a valid address string.
     """
-    return None if address is None else _address.parse(address)
+    return None if address is None else _address.to_lrn(address)
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
@@ -56,7 +56,7 @@ def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
         return None
     normalized = []
     for replica in replicas:
-        if isinstance(replica, str):
+        if isinstance(replica, (str, _address.Address)):
             normalized.append({"address": check_address(replica)})
             continue
         normalized_replica = dict(replica)
@@ -104,7 +104,7 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[str]]:
         if address is not None:
             return None, address
     env_project = utils.get_tracer_project(return_default_value=False) or None
-    env_address = _address.from_env()
+    env_address = _address.lrn_from_env()
     if env_project and env_address is not None:
         raise EnvAddressError(
             str(_both_at_one_level(env_project, env_address, "in the environment"))
@@ -161,7 +161,7 @@ def warn_on_env() -> None:
     if not present:
         return
     try:
-        address = _address.from_env()
+        address = _address.lrn_from_env()
     except EnvAddressError as e:
         warnings.warn(
             f"{e} Calls that name no destination in code are not traced.",
@@ -239,7 +239,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
     if address is None and not (update or named_project):
-        address = _address.from_env()
+        address = _address.lrn_from_env()
     if address is None:
         return
     warn_is_beta()

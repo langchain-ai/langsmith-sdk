@@ -9,7 +9,7 @@ import {
   test,
 } from "@jest/globals";
 import * as langsmith from "../index.js";
-import { type Address, EnvAddressError, address } from "../address.js";
+import { Agent, type Address, type Lrn, EnvAddressError } from "../address.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import {
@@ -21,9 +21,10 @@ import { _resetWarnedMessages } from "../utils/warn.js";
 import { mockClient } from "./utils/mock_client.js";
 
 // What a JS caller can pass; the SDK validates it at runtime.
-const jsCaller = (value: string) => value as Address;
+const jsCaller = (value: string) => value as Lrn;
 
-const SUPPORT: Address = address.agent("customer-support", "production");
+const SUPPORT_AGENT = new Agent("customer-support", "production");
+const SUPPORT: Lrn = SUPPORT_AGENT.toLrn();
 const SUPPORT_STR = "lrn:agents/customer-support/environments/production";
 const STAGING_STR = "lrn:agents/customer-support/environments/staging";
 
@@ -77,40 +78,52 @@ function headersWith(baggage: string) {
 
 describe("address", () => {
   test("is exported from the package", () => {
-    expect(langsmith.address).toBe(address);
-    expect(Object.keys(address).sort()).toEqual(["agent", "fromEnv", "parse"]);
+    expect(langsmith.Agent).toBe(Agent);
+  });
+
+  test("an agent is an immutable address", () => {
+    const address: Address = SUPPORT_AGENT;
+    expect(address.toLrn()).toBe(SUPPORT_STR);
+    expect(String(SUPPORT_AGENT)).toBe(SUPPORT_STR);
+    expect(SUPPORT_AGENT.id).toBe("customer-support");
+    expect(new Agent("customer-support", "PRODUCTION")).toEqual(SUPPORT_AGENT);
+    expect(() => {
+      (SUPPORT_AGENT as any).env = "staging";
+    }).toThrow();
   });
 
   test("agent builds a lowercase string", () => {
     expect(SUPPORT).toBe(SUPPORT_STR);
-    expect(address.agent("a", "STAGING")).toBe(
+    expect(new Agent("a", "STAGING").toLrn()).toBe(
       "lrn:agents/a/environments/staging",
     );
     for (const env of ["local", "development", "staging", "production"]) {
-      expect(address.agent("a", env)).toBe(`lrn:agents/a/environments/${env}`);
+      expect(new Agent("a", env).toLrn()).toBe(
+        `lrn:agents/a/environments/${env}`,
+      );
     }
   });
 
   test("agent rejects invalid values", () => {
     for (const id of ["", "a".repeat(64), "Support", "1a", "a-", "a_b"]) {
-      expect(() => address.agent(id, "production")).toThrow(
+      expect(() => new Agent(id, "production").toLrn()).toThrow(
         /1 to 63 lowercase/,
       );
     }
     for (const id of ["a", "a".repeat(63), "support-v2"]) {
-      expect(address.agent(id, "production")).toBe(
+      expect(new Agent(id, "production").toLrn()).toBe(
         `lrn:agents/${id}/environments/production`,
       );
     }
     for (const env of ["", "prod", "e"]) {
-      expect(() => address.agent("a", env)).toThrow(/must be one of/);
+      expect(() => new Agent("a", env).toLrn()).toThrow(/must be one of/);
     }
-    expect(() => address.agent("a", undefined as any)).toThrow();
+    expect(() => new Agent("a", undefined as any)).toThrow();
   });
 
   test("parse validates and lowercases the environment", () => {
-    expect(address.parse(SUPPORT_STR)).toBe(SUPPORT_STR);
-    expect(address.parse("lrn:agents/a/environments/Production")).toBe(
+    expect(Agent.parse(SUPPORT_STR).toLrn()).toBe(SUPPORT_STR);
+    expect(Agent.parse("lrn:agents/a/environments/Production").toLrn()).toBe(
       "lrn:agents/a/environments/production",
     );
     for (const bad of [
@@ -126,45 +139,47 @@ describe("address", () => {
       "lrn:agents/Bad/environments/production",
       "lrn:agents/a/environments/prod",
     ]) {
-      expect(() => address.parse(bad)).toThrow();
+      expect(() => Agent.parse(bad).toLrn()).toThrow();
     }
-    expect(() => address.parse({} as any)).toThrow(/must be a string/);
+    expect(() => Agent.parse({} as any).toLrn()).toThrow(
+      /must be an `Address` or a string/,
+    );
   });
 
   test("round-trips through agent and parse", () => {
-    const built = address.agent("a-b", "Local");
-    expect(address.parse(built)).toBe(built);
+    const built = new Agent("a-b", "Local").toLrn();
+    expect(Agent.parse(built).toLrn()).toBe(built);
   });
 });
 
 describe("fromEnv", () => {
   test("is undefined when nothing is set", () => {
-    expect(address.fromEnv()).toBeUndefined();
+    expect(Agent.fromEnv()?.toLrn()).toBeUndefined();
   });
 
   test("half an address or an invalid value throws", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
-    expect(() => address.fromEnv()).toThrow(EnvAddressError);
-    expect(() => address.fromEnv()).toThrow(/LANGSMITH_AGENT_ENVIRONMENT/);
+    expect(() => Agent.fromEnv()).toThrow(EnvAddressError);
+    expect(() => Agent.fromEnv()).toThrow(/LANGSMITH_AGENT_ENVIRONMENT/);
     delete process.env.LANGSMITH_AGENT_ID;
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
-    expect(() => address.fromEnv()).toThrow(/LANGSMITH_AGENT_ID/);
+    expect(() => Agent.fromEnv()).toThrow(/LANGSMITH_AGENT_ID/);
     process.env.LANGSMITH_AGENT_ID = "Bad";
-    expect(() => address.fromEnv()).toThrow(EnvAddressError);
+    expect(() => Agent.fromEnv()).toThrow(EnvAddressError);
     process.env.LANGSMITH_AGENT_ID = "a";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "nope";
-    expect(() => address.fromEnv()).toThrow(EnvAddressError);
+    expect(() => Agent.fromEnv()).toThrow(EnvAddressError);
   });
 
   test("reads both vars, case-insensitively for the environment", () => {
     process.env.LANGSMITH_AGENT_ID = "customer-support";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "Production";
-    expect(address.fromEnv()).toBe(SUPPORT_STR);
+    expect(Agent.fromEnv()?.toLrn()).toBe(SUPPORT_STR);
   });
 
   test("there is no LANGSMITH_ADDRESS env var", () => {
     process.env.LANGSMITH_ADDRESS = SUPPORT_STR;
-    expect(address.fromEnv()).toBeUndefined();
+    expect(Agent.fromEnv()?.toLrn()).toBeUndefined();
     expect(resolveFromEnv()).toEqual(["default", undefined]);
   });
 });
@@ -201,7 +216,7 @@ describe("RunTree", () => {
   test("rejects a malformed or non-agent string", () => {
     expect(
       () => new RunTree({ name: "r", address: jsCaller("support") }),
-    ).toThrow(/must be a string like/);
+    ).toThrow(/string like/);
     expect(
       () =>
         new RunTree({
@@ -440,7 +455,7 @@ describe("Client", () => {
         run_type: "chain",
         address: jsCaller("nope"),
       }),
-    ).rejects.toThrow(/must be a string like/);
+    ).rejects.toThrow(/string like/);
   });
 
   test("createRun rejects a session_name beside an address", async () => {
@@ -504,7 +519,7 @@ describe("Client", () => {
         key: "k",
         address: jsCaller("nope"),
       }),
-    ).rejects.toThrow(/must be a string like/);
+    ).rejects.toThrow(/string like/);
   });
 
   test("a direct updateRun sends the address string", async () => {
@@ -529,10 +544,13 @@ describe("address types", () => {
       name: "r",
       address: "lrn:agents/support-bot/environments/production",
     });
-    const parsed = new RunTree({ name: "r", address: address.parse(dynamic) });
+    const parsed = new RunTree({
+      name: "r",
+      address: Agent.parse(dynamic).toLrn(),
+    });
     const built = new RunTree({
       name: "r",
-      address: address.agent("support-bot", dynamic.slice(-10)),
+      address: new Agent("support-bot", dynamic.slice(-10)).toLrn(),
     });
     expect(literal.address).toBe(
       "lrn:agents/support-bot/environments/production",
@@ -553,21 +571,75 @@ describe("address types", () => {
       traceable(async () => 1, { address: "lrn:agents/x/environments/prod" });
       // @ts-expect-error wrong collection
       traceable(async () => 1, { address: "projects/x" });
-      // @ts-expect-error a dynamic string must go through address.parse
+      // @ts-expect-error a dynamic string must go through Agent.parse
       traceable(async () => 1, { address: dynamic });
       // @ts-expect-error unknown environment
       new RunTree({ name: "r", address: "lrn:agents/x/environments/prod" });
       // @ts-expect-error wrong collection
       new RunTree({ name: "r", address: "projects/x" });
-      // @ts-expect-error a dynamic string must go through address.parse
+      // @ts-expect-error a dynamic string must go through Agent.parse
       new RunTree({ name: "r", address: dynamic });
-      // @ts-expect-error a replica takes an Address too
+      // @ts-expect-error a replica takes an Address or LRN too
       new RunTree({ name: "r", replicas: [{ address: dynamic }] });
       const { client } = mockClient();
-      // @ts-expect-error createRun takes an Address
+      // @ts-expect-error createRun takes an Address or LRN
       client.createRun({ name: "r", run_type: "chain", address: dynamic });
-      // @ts-expect-error createFeedback takes an Address
+      // @ts-expect-error createFeedback takes an Address or LRN
       client.createFeedback({ runId: "r", key: "k", address: dynamic });
     });
+  });
+});
+
+describe("Address objects", () => {
+  class Custom implements Address {
+    constructor(private readonly lrn: string) {}
+    toLrn(): Lrn {
+      return this.lrn as Lrn;
+    }
+  }
+
+  test("a run tree carries the LRN of an Address", () => {
+    expect(new RunTree({ name: "r", address: SUPPORT_AGENT }).address).toBe(
+      SUPPORT_STR,
+    );
+  });
+
+  test("any implementation is accepted and normalized", () => {
+    const custom = new Custom(
+      "lrn:agents/customer-support/environments/STAGING",
+    );
+    expect(new RunTree({ name: "r", address: custom }).address).toBe(
+      STAGING_STR,
+    );
+  });
+
+  test("an implementation must render a valid LRN", () => {
+    expect(
+      () => new RunTree({ name: "r", address: new Custom("experiments/e") }),
+    ).toThrow(/string like/);
+    expect(() => new RunTree({ name: "r", address: {} as any })).toThrow(
+      /string like/,
+    );
+  });
+
+  test("replicas take an Address", () => {
+    const tree = new RunTree({
+      name: "r",
+      replicas: [{ address: SUPPORT_AGENT }],
+    });
+    expect(tree.replicas?.[0]).toMatchObject({ address: SUPPORT_STR });
+  });
+
+  test("createFeedback sends the LRN string of an Address", async () => {
+    const { client, callSpy } = mockClient();
+    await client.createFeedback({
+      runId: "00000000-0000-0000-0000-000000000001",
+      key: "k",
+      address: SUPPORT_AGENT,
+    });
+    const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
+      String(url).endsWith("/feedback"),
+    );
+    expect(JSON.parse(init.body).address).toBe(SUPPORT_STR);
   });
 });

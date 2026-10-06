@@ -34,11 +34,7 @@ import {
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/agent_addressing.js";
-import {
-  type Address,
-  EnvAddressError,
-  parse as parseAddress,
-} from "./address.js";
+import { type Address, EnvAddressError, type Lrn, toLrn } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -95,7 +91,7 @@ export interface RunTreeConfig {
   id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: Address | Lrn;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -175,7 +171,7 @@ export type WriteReplica = {
   workspaceId?: string;
   projectName?: string;
   /** (beta) Send the replica to this address instead of a project. */
-  address?: Address;
+  address?: Address | Lrn;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
   updates?: KVMap | undefined;
@@ -203,12 +199,12 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
 const LANGSMITH_ADDRESS = "langsmith-address";
 
 /** Validates an untrusted header address; `undefined` if unusable. */
-function addressFromHeader(value: unknown): Address | undefined {
+function addressFromHeader(value: unknown): Lrn | undefined {
   if (value == null) {
     return undefined;
   }
   try {
-    return parseAddress(value as string);
+    return toLrn(value);
   } catch {
     // Values are untrusted, so not logged.
     console.warn("Ignoring an unusable address in a `baggage` header.");
@@ -237,13 +233,13 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
-  address: Address | undefined;
+  address: Lrn | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
-    address?: Address,
+    address?: Lrn,
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -258,7 +254,7 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
-    let address: Address | undefined;
+    let address: Lrn | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -330,7 +326,7 @@ export class RunTree implements BaseRun {
   /** Unset for a run sent to an `address`. */
   project_name?: string;
   /** (beta) Set instead of `project_name` for an addressed run. */
-  address?: Address;
+  address?: Lrn;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -716,7 +712,7 @@ export class RunTree implements BaseRun {
   /** A replica naming neither inherits the run tree's destination. */
   private _replicaAddressing(
     replica: WriteReplica,
-  ): [string | undefined, Address | undefined] {
+  ): [string | undefined, Lrn | undefined] {
     const address = checkAddress(replica.address);
     if (replica.projectName != null) {
       rejectConflicting(replica.projectName, address);
@@ -730,7 +726,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName?: string;
-    address?: Address;
+    address?: Lrn;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -1102,8 +1098,7 @@ export class RunTree implements BaseRun {
   ): RunTree {
     // We only handle the callback manager case for now
     const callbackManager = parentConfig?.callbacks as
-      | CallbackManagerLike
-      | undefined;
+      CallbackManagerLike | undefined;
     let parentRun: RunTree | undefined;
     let projectName: string | undefined;
     let client: Client | undefined;

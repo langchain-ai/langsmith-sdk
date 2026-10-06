@@ -373,14 +373,12 @@ const getTracingRunTree = <Args extends unknown[]>(
   runTree: RunTree,
   inputs: Args,
   getInvocationParams:
-    | ((...args: Args) => InvocationParamsSchema | undefined)
-    | undefined,
+    ((...args: Args) => InvocationParamsSchema | undefined) | undefined,
   processInputs: (
     inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
   extractAttachments:
-    | ((...args: Args) => [Attachments | undefined, KVMap])
-    | undefined,
+    ((...args: Args) => [Attachments | undefined, KVMap]) | undefined,
 ): RunTree | ContextPlaceholder => {
   if (!isEnvTracingEnabled(runTree.tracingEnabled)) {
     return { tracingEnabled: runTree.tracingEnabled };
@@ -829,7 +827,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     // Runtime config outranks decorator config, whichever mode each names.
     [ensuredConfig.project_name, ensuredConfig.address] = firstNamed(
       [runtimeConfig?.project_name, checkAddress(runtimeConfig?.address)],
-      [runTreeConfig.project_name, runTreeConfig.address],
+      [runTreeConfig.project_name, checkAddress(runTreeConfig.address)],
     );
 
     let runEndedPromiseResolver: () => void;

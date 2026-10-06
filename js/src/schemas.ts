@@ -1,4 +1,4 @@
-import type { Address } from "./address.js";
+import type { Lrn } from "./address.js";
 
 export interface TracerSession {
   // The ID of the tenant, or organization
@@ -46,13 +46,7 @@ export interface TracerSessionResult extends TracerSession {
 export type KVMap = Record<string, any>;
 // DEPRECATED: Use a raw string instead.
 export type RunType =
-  | "llm"
-  | "chain"
-  | "tool"
-  | "retriever"
-  | "embedding"
-  | "prompt"
-  | "parser";
+  "llm" | "chain" | "tool" | "retriever" | "embedding" | "prompt" | "parser";
 export type ScoreType = number | boolean | null;
 export type ValueType = number | boolean | string | object | null;
 export type DataType = "kv" | "llm" | "chat";
@@ -219,7 +213,7 @@ export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
   session_name?: string;
-  address?: Address;
+  address?: Lrn;
 }
 
 export interface RunUpdate {
@@ -239,7 +233,7 @@ export interface RunUpdate {
   events?: KVMap[];
   session_id?: string;
   session_name?: string;
-  address?: Address;
+  address?: Lrn;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 
@@ -544,10 +538,7 @@ export interface ListCommitsResponse {
 }
 
 export type PromptSortField =
-  | "num_downloads"
-  | "num_views"
-  | "updated_at"
-  | "num_likes";
+  "num_downloads" | "num_views" | "updated_at" | "num_likes";
 
 export interface LikePromptResponse {
   likes: number;

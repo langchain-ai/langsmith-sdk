@@ -50,6 +50,7 @@ from langsmith._internal import _aiter as aitertools
 from langsmith._runtime_overrides import (
     _aio_to_thread_override_active as _runtime_override_active,
 )
+from langsmith.address import AddressLike
 from langsmith.env import _runtime_env
 from langsmith.run_trees import WriteReplica
 
@@ -173,7 +174,7 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
-    address: Optional[str] = None,
+    address: Optional[AddressLike] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
@@ -192,7 +193,7 @@ def tracing_context(
 
     Args:
         project_name: The name of the project to log the run to.
-        address: (beta) An address string, e.g. from `langsmith.address.agent`, to log the
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN string, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         tags: The tags to add to the run.
@@ -205,7 +206,7 @@ def tracing_context(
         enabled: Whether tracing is enabled.
 
             Defaults to `None`, meaning it will use the current context value or environment variables.
-        replicas: A sequence of `WriteReplica` dictionaries or address strings
+        replicas: A sequence of `WriteReplica` dictionaries or addresses
             to send runs to.
 
             Example: `[{"api_url": "https://api.example.com", "auth": {"api_key": "key"}, "project_name": "proj"}]`
@@ -284,7 +285,7 @@ def ensure_traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    address: Optional[str] = None,
+    address: Optional[AddressLike] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -339,7 +340,7 @@ class LangSmithExtra(TypedDict, total=False):
     client: Optional[ls_client.Client]
     """Optional LangSmith client."""
     replicas: Optional[Sequence[Union[WriteReplica, str]]]
-    """Optional write replicas (or address strings) for the run and its descendants."""
+    """Optional write replicas (or addresses) for the run and its descendants."""
     # Optional callback function to be called if the run succeeds and before it is sent.
     _on_success: Optional[Callable[[run_trees.RunTree], None]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
@@ -401,7 +402,7 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
-    address: Optional[str] = None,
+    address: Optional[AddressLike] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
@@ -447,7 +448,7 @@ def traceable(
         project_name: The name of the project to log the run to.
 
             Defaults to `None`, which will use the default project.
-        address: (beta) An address string, e.g. from `langsmith.address.agent`, to log the
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN string, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         process_inputs: Custom serialization / processing function for inputs.
@@ -1055,7 +1056,7 @@ class trace:
         run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
         inputs: Initial input data for the run.
         project_name: Project name to associate the run with.
-        address: (beta) An address string, e.g. from `langsmith.address.agent`, to log the
+        address: (beta) An `Address` such as `ls.Agent(id, env)`, or its LRN string, to log the
             run to instead of a project. Cannot be combined with a project in
             the same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
         parent: Parent run.
@@ -1119,7 +1120,7 @@ class trace:
         inputs: Optional[dict] = None,
         extra: Optional[dict] = None,
         project_name: Optional[str] = None,
-        address: Optional[str] = None,
+        address: Optional[AddressLike] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
         ] = None,

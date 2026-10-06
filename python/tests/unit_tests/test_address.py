@@ -1,4 +1,4 @@
-"""Addressing runs to an address string instead of a project."""
+"""Addressing runs to an `Address` instead of a project."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from unittest import mock
 import pytest
 
 import langsmith as ls
-from langsmith import address as ls_address
 from langsmith import utils as ls_utils
 from langsmith._internal import _agent_addressing, _context
 from langsmith._internal._uuid import uuid7_deterministic
@@ -22,8 +21,9 @@ from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree, _Baggage
 from langsmith.schemas import FeedbackCreate
 
-SUPPORT = ls.address.agent("support", "production")
-STAGING = ls.address.agent("support", "staging")
+SUPPORT_AGENT = ls.Agent("support", "production")
+SUPPORT = SUPPORT_AGENT.lrn()
+STAGING = ls.Agent("support", "staging").lrn()
 UNTRACED = "LangSmith is not tracing this call"
 
 
@@ -71,6 +71,19 @@ def _root() -> tuple:
     return _destination(get_current_run_tree())
 
 
+def _agent(agent_id: str, environment: str) -> str:
+    return ls.Agent(agent_id, environment).lrn()
+
+
+def _parse(value: Any) -> str:
+    return ls.Agent.parse(value).lrn()
+
+
+def _from_env() -> Optional[str]:
+    agent = ls.Agent.from_env()
+    return None if agent is None else agent.lrn()
+
+
 # -- The handle ---------------------------------------------------------------
 
 
@@ -81,7 +94,7 @@ class TestConstructors:
 
     @pytest.mark.parametrize("agent_id", ["a", "a" * 63, "support-v2"])
     def test_valid_agent_ids(self, agent_id: str) -> None:
-        assert ls_address.agent(agent_id, "local") == (
+        assert _agent(agent_id, "local") == (
             f"lrn:agents/{agent_id}/environments/local"
         )
 
@@ -99,28 +112,25 @@ class TestConstructors:
     )
     def test_invalid_agent_ids(self, agent_id: str, error: str) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match=error):
-            ls_address.agent(agent_id, "production")
+            _agent(agent_id, "production")
 
     @pytest.mark.parametrize("environment", ["", "prod", "qa", "production/x"])
     def test_invalid_environments(self, environment: str) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="environment must be"):
-            ls_address.agent("support", environment)
+            _agent("support", environment)
 
     @pytest.mark.parametrize(
         "environment", ["local", "development", "staging", "production"]
     )
     def test_environments_are_lowercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
-            assert (
-                ls_address.agent("a", given)
-                == f"lrn:agents/a/environments/{environment}"
-            )
-            assert ls_address.parse(f"lrn:agents/a/environments/{given}") == (
+            assert _agent("a", given) == f"lrn:agents/a/environments/{environment}"
+            assert _parse(f"lrn:agents/a/environments/{given}") == (
                 f"lrn:agents/a/environments/{environment}"
             )
 
     def test_parse_round_trips(self) -> None:
-        assert ls_address.parse(SUPPORT) == SUPPORT
+        assert _parse(SUPPORT) == SUPPORT
 
     @pytest.mark.parametrize(
         "value",
@@ -141,10 +151,10 @@ class TestConstructors:
     )
     def test_parse_rejects_anything_else(self, value: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
-            ls_address.parse(value)
+            _parse(value)
 
     def test_from_env_with_nothing_set(self) -> None:
-        assert ls_address.from_env() is None
+        assert _from_env() is None
 
     def test_from_env_with_both_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_env(
@@ -152,7 +162,7 @@ class TestConstructors:
             LANGSMITH_AGENT_ID="support",
             LANGSMITH_AGENT_ENVIRONMENT="Staging",
         )
-        assert ls_address.from_env() == STAGING
+        assert _from_env() == STAGING
 
     @pytest.mark.parametrize(
         ("env", "match"),
@@ -178,15 +188,21 @@ class TestConstructors:
     ) -> None:
         _set_env(monkeypatch, **env)
         with pytest.raises(EnvAddressError, match=match):
-            ls_address.from_env()
+            _from_env()
 
     def test_there_is_no_address_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_env(monkeypatch, LANGSMITH_ADDRESS=SUPPORT)
-        assert ls_address.from_env() is None
+        assert _from_env() is None
 
-    def test_the_old_handle_api_is_gone(self) -> None:
-        assert not callable(ls.address)
-        assert not hasattr(ls_address, "with_agent_environment")
+    def test_agent_is_an_address(self) -> None:
+        assert isinstance(SUPPORT_AGENT, ls.Address)
+        assert not isinstance(SUPPORT, ls.Address)
+        assert str(SUPPORT_AGENT) == SUPPORT
+        assert ls.Agent(id="support", env="PRODUCTION") == SUPPORT_AGENT
+
+    def test_agent_is_immutable(self) -> None:
+        with pytest.raises(AttributeError):
+            SUPPORT_AGENT.env = "staging"  # type: ignore[misc]
 
     @pytest.mark.parametrize("value", ["support", 42])
     def test_entry_points_reject_a_malformed_string(self, value: Any) -> None:
@@ -199,6 +215,74 @@ class TestConstructors:
             traceable(address=value)
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
             RunTree(name="r", address=value)
+
+
+class _Custom:
+    """Another `Address` implementation: only `lrn()` is required."""
+
+    def __init__(self, lrn: str) -> None:
+        self._lrn = lrn
+
+    def lrn(self) -> str:
+        return self._lrn
+
+
+class TestAddressObjectsAtEntryPoints:
+    """An `Address` is converted to its LRN once at the entry point."""
+
+    def test_tracing_context(self, client: Client) -> None:
+        with ls.tracing_context(enabled=True, client=client, address=SUPPORT_AGENT):
+            assert _root() == (None, SUPPORT)
+
+    def test_traceable(self, client: Client) -> None:
+        f = traceable(address=SUPPORT_AGENT)(_root.__wrapped__)
+        with ls.tracing_context(enabled=True, client=client):
+            assert f() == (None, SUPPORT)
+
+    def test_langsmith_extra(self, client: Client) -> None:
+        with ls.tracing_context(enabled=True, client=client):
+            assert _root(langsmith_extra={"address": SUPPORT_AGENT}) == (
+                None,
+                SUPPORT,
+            )
+
+    def test_trace(self, client: Client) -> None:
+        with ls.tracing_context(enabled=True, client=client):
+            with trace("r", client=client, address=SUPPORT_AGENT) as run:
+                assert _destination(run) == (None, SUPPORT)
+
+    def test_configure(self) -> None:
+        ls.configure(address=SUPPORT_AGENT)
+        assert _context._GLOBAL_ADDRESS == SUPPORT
+
+    def test_run_tree_carries_the_lrn(self) -> None:
+        assert RunTree(name="r", address=SUPPORT_AGENT).address == SUPPORT
+
+    def test_replica_objects(self) -> None:
+        assert _agent_addressing.normalize_replicas([SUPPORT_AGENT]) == [
+            {"address": SUPPORT}
+        ]
+        assert _agent_addressing.normalize_replicas([{"address": SUPPORT_AGENT}]) == [
+            {"address": SUPPORT}
+        ]
+
+    def test_wire_carries_the_lrn_string(self) -> None:
+        payload = RunTree(name="r", address=SUPPORT_AGENT)._get_dicts_safe()
+        _agent_addressing.apply_to_payload(payload)
+        assert payload["address"] == SUPPORT
+
+    def test_any_implementation_is_accepted(self) -> None:
+        custom = _Custom("lrn:agents/support/environments/Staging")
+        assert isinstance(custom, ls.Address)
+        assert RunTree(name="r", address=custom).address == STAGING
+
+    def test_an_implementation_must_render_a_valid_lrn(self) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
+            RunTree(name="r", address=_Custom("experiments/e"))
+
+    def test_an_object_that_is_not_an_address_is_rejected(self) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
+            RunTree(name="r", address=object())  # type: ignore[arg-type]
 
 
 class TestStringsAtEntryPoints:

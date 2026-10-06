@@ -87,7 +87,7 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type Address, EnvAddressError } from "./address.js";
+import { type Address, EnvAddressError, type Lrn } from "./address.js";
 import {
   applyToPayload,
   checkAddress,
@@ -543,7 +543,7 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: Address | Lrn;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -615,7 +615,7 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
         /** The run to provide feedback on. */
         runId: string;
         /** (beta) The address the run was sent to, e.g. `runTree.address`. */
-        address: Address;
+        address: Address | Lrn;
         sessionId?: never;
         projectId?: never;
       }
@@ -1087,8 +1087,7 @@ export class Client implements LangSmithTracingClientInterface {
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
   private hideMetadata?:
-    | boolean
-    | ((metadata: KVMap) => KVMap | Promise<KVMap>);
+    boolean | ((metadata: KVMap) => KVMap | Promise<KVMap>);
 
   private anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
 
@@ -3283,7 +3282,7 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      if (!run.session_id && (run as { address?: Address }).address) {
+      if (!run.session_id && (run as { address?: Lrn }).address) {
         throw new Error("Addressed runs have no URL until read back.");
       }
       let sessionId: string;
@@ -3765,8 +3764,7 @@ export class Client implements LangSmithTracingClientInterface {
       for (const raw of runs) {
         const run = _normalizeRunTimestamps(raw);
         const tid = (run as unknown as Record<string, unknown>).thread_id as
-          | string
-          | undefined;
+          string | undefined;
         if (tid) {
           const list = threadsMap.get(tid) ?? [];
           list.push(run);
@@ -5572,7 +5570,7 @@ export class Client implements LangSmithTracingClientInterface {
       runId?: string | null;
       sessionId?: string;
       projectId?: string;
-      address?: Address;
+      address?: Address | Lrn;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
@@ -5892,9 +5890,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   async _logEvaluationFeedback(
     evaluatorResponse:
-      | EvaluationResult
-      | EvaluationResult[]
-      | EvaluationResults,
+      EvaluationResult | EvaluationResult[] | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
     sessionId?: string,
@@ -5940,9 +5936,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async logEvaluationFeedback(params: {
     evaluatorResponse:
-      | EvaluationResult
-      | EvaluationResult[]
-      | EvaluationResults;
+      EvaluationResult | EvaluationResult[] | EvaluationResults;
     run: Run;
     projectId: string;
     sourceInfo?: { [key: string]: any };
@@ -5950,9 +5944,7 @@ export class Client implements LangSmithTracingClientInterface {
   /** @deprecated Pass all params within an object and populate projectId. */
   public async logEvaluationFeedback(
     evaluatorResponse:
-      | EvaluationResult
-      | EvaluationResult[]
-      | EvaluationResults,
+      EvaluationResult | EvaluationResult[] | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
     sessionId?: string,
@@ -5964,9 +5956,7 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults
       | {
           evaluatorResponse:
-            | EvaluationResult
-            | EvaluationResult[]
-            | EvaluationResults;
+            EvaluationResult | EvaluationResult[] | EvaluationResults;
           run: Run;
           projectId: string;
           sourceInfo?: { [key: string]: any };

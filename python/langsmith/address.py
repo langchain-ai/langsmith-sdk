@@ -5,46 +5,59 @@
     without it rejects the runs, so tracing is lost rather than falling back
     to a project. This API may change without notice.
 
-An address is a plain string, `lrn:agents/{id}/environments/{environment}`. The
-constructors here validate one and return it as an `Address`; anywhere an
-address is accepted, any `str` is validated the same way. The environment is
-one of `local`, `development`, `staging` or `production`, and is always
-rendered lowercase.
+An `Address` is anything that names a destination for runs and can render
+itself as an LRN, a string like `lrn:agents/{id}/environments/{environment}`.
+`Agent` is the implementation that names an agent's environment; others can
+follow without changing the tracing API. The environment is one of `local`,
+`development`, `staging` or `production`, and is always rendered lowercase.
+
+Anywhere an address is accepted, an `Address` or an LRN string is. It is
+validated once at that entry point, and only its LRN is carried from there on
+and sent in the `address` field of the payload.
 
 Example:
     ```python
     import langsmith as ls
 
-    support = ls.address.agent("customer-support", "production")
+    support = ls.Agent(id="customer-support", env="production")
 
 
     @ls.traceable(address=support)
     def handle(order): ...
 
 
-    with ls.tracing_context(
-        address="lrn:agents/customer-support/environments/staging"
-    ):
+    with ls.tracing_context(address=ls.Agent("customer-support", "staging")):
         handle(order)
     ```
 """
 
 from __future__ import annotations
 
+import dataclasses
 import re
-from typing import NewType, Optional
+from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 from langsmith import utils
 
-__all__ = ["Address", "agent", "from_env", "parse"]
-
-Address = NewType("Address", str)
-"""(beta) A validated address string."""
+__all__ = ["Address", "AddressLike", "Agent", "EnvAddressError"]
 
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _ENVIRONMENTS = ("local", "development", "staging", "production")
-_ADDRESS_PATTERN = re.compile(r"lrn:agents/([^/]*)/environments/([^/]*)")
+_LRN_PATTERN = re.compile(r"lrn:agents/([^/]*)/environments/([^/]*)")
+
+
+@runtime_checkable
+class Address(Protocol):
+    """(beta) A destination that runs can be addressed to."""
+
+    def lrn(self) -> str:
+        """Return this address as an LRN string."""
+        ...
+
+
+AddressLike = Union[Address, str]
+"""(beta) An `Address`, or the LRN string of one."""
 
 
 class EnvAddressError(utils.LangSmithUserError):
@@ -59,79 +72,114 @@ class EnvAddressError(utils.LangSmithUserError):
     """
 
 
-def agent(agent_id: str, agent_environment: str) -> Address:
-    """(beta) Build the address of an agent's environment.
+@dataclasses.dataclass(frozen=True)
+class Agent:
+    """(beta) The address of an agent's environment.
 
     Args:
-        agent_id: The agent's ID: 1 to 63 lowercase ASCII letters, digits or
+        id: The agent's ID: 1 to 63 lowercase ASCII letters, digits or
             hyphens, starting with a letter and ending with a letter or digit.
             The server creates the agent on first use.
-        agent_environment: One of `local`, `development`, `staging` or
-            `production`, in any case.
+        env: One of `local`, `development`, `staging` or `production`, in any
+            case.
 
     Raises:
         LangSmithUserError: If a value is invalid.
     """
-    if not isinstance(agent_id, str) or not _AGENT_ID_PATTERN.fullmatch(agent_id):
-        raise utils.LangSmithUserError(
-            "Address agent id must be 1 to 63 lowercase ASCII letters, digits, "
-            "or hyphens, start with a letter, and end with a letter or digit, "
-            f"got {agent_id!r}. Use an id such as 'support-agent'."
-        )
-    environment = (
-        agent_environment.lower() if isinstance(agent_environment, str) else None
-    )
-    if environment not in _ENVIRONMENTS:
-        raise utils.LangSmithUserError(
-            f"Address environment must be one of {', '.join(_ENVIRONMENTS)}, "
-            f"got {agent_environment!r}."
-        )
-    return Address(f"lrn:agents/{agent_id}/environments/{environment}")
+
+    id: str
+    env: str
+
+    def __post_init__(self) -> None:
+        """Validate the fields and lowercase the environment."""
+        if not isinstance(self.id, str) or not _AGENT_ID_PATTERN.fullmatch(self.id):
+            raise utils.LangSmithUserError(
+                "Address agent id must be 1 to 63 lowercase ASCII letters, digits, "
+                "or hyphens, start with a letter, and end with a letter or digit, "
+                f"got {self.id!r}. Use an id such as 'support-agent'."
+            )
+        env = self.env.lower() if isinstance(self.env, str) else None
+        if env not in _ENVIRONMENTS:
+            raise utils.LangSmithUserError(
+                f"Address environment must be one of {', '.join(_ENVIRONMENTS)}, "
+                f"got {self.env!r}."
+            )
+        object.__setattr__(self, "env", env)
+
+    def lrn(self) -> str:
+        """Return `lrn:agents/{id}/environments/{env}`."""
+        return f"lrn:agents/{self.id}/environments/{self.env}"
+
+    def __str__(self) -> str:
+        """Return the LRN."""
+        return self.lrn()
+
+    @classmethod
+    def parse(cls, lrn: str) -> Agent:
+        """Build from an agent LRN, lowercasing its environment.
+
+        Raises:
+            LangSmithUserError: If `lrn` is not a valid agent LRN.
+        """
+        match = _LRN_PATTERN.fullmatch(lrn) if isinstance(lrn, str) else None
+        if match is None:
+            raise utils.LangSmithUserError(
+                "An address must be an `Address` or a string like "
+                f"'lrn:agents/{{id}}/environments/{{environment}}', got {lrn!r}."
+            )
+        return cls(*match.groups())
+
+    @classmethod
+    def from_env(cls) -> Optional[Agent]:
+        """Read the agent named by the `LANGSMITH_AGENT_*` env vars.
+
+        Reads `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`, and
+        returns `None` if neither is set.
+
+        Raises:
+            EnvAddressError: If only one is set, or a value is invalid.
+        """
+        values = env_values()
+        if not any(values.values()):
+            return None
+        missing = [name for name, value in values.items() if not value]
+        try:
+            if missing:
+                raise utils.LangSmithUserError(
+                    f"An address needs {' and '.join(missing)} as well."
+                )
+            return cls(*values.values())  # type: ignore[arg-type]
+        except utils.LangSmithUserError as e:
+            present = ", ".join(
+                f"{name}={value!r}" for name, value in values.items() if value
+            )
+            raise EnvAddressError(
+                f"The LANGSMITH_AGENT_* env vars can't address a run ({present}): {e}"
+            ) from e
 
 
-def parse(address: str) -> Address:
-    """(beta) Validate an address string, lowercasing its environment.
+def to_lrn(address: Any) -> str:
+    """Validate an `Address` or LRN string and return its normalized LRN.
 
-    Only agent addresses, `lrn:agents/{id}/environments/{environment}`, exist.
+    The one place an address becomes the string the SDK carries and sends.
 
     Raises:
-        LangSmithUserError: If `address` is not a valid agent address.
+        LangSmithUserError: If `address` is not a valid address.
     """
-    match = _ADDRESS_PATTERN.fullmatch(address) if isinstance(address, str) else None
-    if match is None:
-        raise utils.LangSmithUserError(
-            "An address must be a string like "
-            f"'lrn:agents/{{id}}/environments/{{environment}}', got {address!r}."
-        )
-    return agent(*match.groups())
+    lrn = address
+    if not isinstance(address, str) and isinstance(address, Address):
+        lrn = address.lrn()
+    return Agent.parse(lrn).lrn()
 
 
-def from_env() -> Optional[Address]:
-    """(beta) Read the address named by the `LANGSMITH_AGENT_*` env vars.
-
-    Reads `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`, and returns
-    `None` if neither is set.
+def lrn_from_env() -> Optional[str]:
+    """Return the LRN named by the `LANGSMITH_AGENT_*` env vars, if any.
 
     Raises:
         EnvAddressError: If only one is set, or a value is invalid.
     """
-    values = env_values()
-    if not any(values.values()):
-        return None
-    missing = [name for name, value in values.items() if not value]
-    try:
-        if missing:
-            raise utils.LangSmithUserError(
-                f"An address needs {' and '.join(missing)} as well."
-            )
-        return agent(*values.values())  # type: ignore[arg-type]
-    except utils.LangSmithUserError as e:
-        present = ", ".join(
-            f"{name}={value!r}" for name, value in values.items() if value
-        )
-        raise EnvAddressError(
-            f"The LANGSMITH_AGENT_* env vars can't address a run ({present}): {e}"
-        ) from e
+    agent = Agent.from_env()
+    return None if agent is None else agent.lrn()
 
 
 def env_values() -> dict[str, Optional[str]]:
