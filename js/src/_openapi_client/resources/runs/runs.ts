@@ -290,6 +290,13 @@ export interface Run {
   prompt_tokens?: number;
 
   /**
+   * `query_metadata` describes this query result, including `sem_filter_score` when
+   * a semantic filter is used. Returned automatically by run queries, or null when
+   * unavailable.
+   */
+  query_metadata?: unknown | null;
+
+  /**
    * `reference_dataset_id` is the dataset UUID for the reference example, if any.
    */
   reference_dataset_id?: string;

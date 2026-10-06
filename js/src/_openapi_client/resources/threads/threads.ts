@@ -209,6 +209,13 @@ export interface Thread {
   num_errored_turns?: number;
 
   /**
+   * `query_metadata` describes why this thread matched the query, including
+   * `sem_filter_score` when a semantic filter is used. Returned automatically, or
+   * null when unavailable.
+   */
+  query_metadata?: unknown | null;
+
+  /**
    * `start_time` is a reference start time for this row (RFC3339 date-time), such as
    * for sorting.
    */
