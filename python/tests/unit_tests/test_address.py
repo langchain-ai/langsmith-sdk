@@ -200,6 +200,13 @@ class TestConstructors:
         assert str(SUPPORT) == SUPPORT_LRN
         assert ls.Agent(id="support", env="PRODUCTION") == SUPPORT
 
+    def test_agent_renders_the_api_address(self) -> None:
+        assert SUPPORT.to_agent_address() == {
+            "kind": "AGENT",
+            "id": "support",
+            "environment": "PRODUCTION",
+        }
+
     def test_agent_is_immutable(self) -> None:
         with pytest.raises(AttributeError):
             SUPPORT.env = "staging"  # type: ignore[misc]

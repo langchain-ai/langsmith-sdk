@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast, runtime_checkable
 
 from langsmith import utils
+
+if TYPE_CHECKING:
+    from langsmith._openapi_client.types.session_resolve_params import AgentAddress
 
 __all__ = ["Address", "Agent", "EnvAddressError"]
 
@@ -105,6 +108,13 @@ class Agent:
     def lrn(self) -> str:
         """Return `lrn:agents/{id}/environments/{env}`."""
         return f"lrn:agents/{self.id}/environments/{self.env}"
+
+    def to_agent_address(self) -> AgentAddress:
+        """Return this agent as the `AgentAddress` the v2 API endpoints take."""
+        return cast(
+            "AgentAddress",
+            {"kind": "AGENT", "id": self.id, "environment": self.env.upper()},
+        )
 
     def __str__(self) -> str:
         """Return the LRN."""
