@@ -370,12 +370,14 @@ const getTracingRunTree = <Args extends unknown[]>(
   runTree: RunTree,
   inputs: Args,
   getInvocationParams:
-    ((...args: Args) => InvocationParamsSchema | undefined) | undefined,
+    | ((...args: Args) => InvocationParamsSchema | undefined)
+    | undefined,
   processInputs: (
     inputs: Readonly<ProcessInputs<Args>>,
   ) => KVMap | Promise<KVMap>,
   extractAttachments:
-    ((...args: Args) => [Attachments | undefined, KVMap]) | undefined,
+    | ((...args: Args) => [Attachments | undefined, KVMap])
+    | undefined,
 ): RunTree | ContextPlaceholder => {
   if (!isEnvTracingEnabled(runTree.tracingEnabled)) {
     return { tracingEnabled: runTree.tracingEnabled };

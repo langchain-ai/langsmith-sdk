@@ -1086,7 +1086,8 @@ export class Client implements LangSmithTracingClientInterface {
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
   private hideMetadata?:
-    boolean | ((metadata: KVMap) => KVMap | Promise<KVMap>);
+    | boolean
+    | ((metadata: KVMap) => KVMap | Promise<KVMap>);
 
   private anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
 
@@ -3765,7 +3766,8 @@ export class Client implements LangSmithTracingClientInterface {
       for (const raw of runs) {
         const run = _normalizeRunTimestamps(raw);
         const tid = (run as unknown as Record<string, unknown>).thread_id as
-          string | undefined;
+          | string
+          | undefined;
         if (tid) {
           const list = threadsMap.get(tid) ?? [];
           list.push(run);
@@ -5893,7 +5895,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   async _logEvaluationFeedback(
     evaluatorResponse:
-      EvaluationResult | EvaluationResult[] | EvaluationResults,
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
     sessionId?: string,
@@ -5939,7 +5943,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async logEvaluationFeedback(params: {
     evaluatorResponse:
-      EvaluationResult | EvaluationResult[] | EvaluationResults;
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults;
     run: Run;
     projectId: string;
     sourceInfo?: { [key: string]: any };
@@ -5947,7 +5953,9 @@ export class Client implements LangSmithTracingClientInterface {
   /** @deprecated Pass all params within an object and populate projectId. */
   public async logEvaluationFeedback(
     evaluatorResponse:
-      EvaluationResult | EvaluationResult[] | EvaluationResults,
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any },
     sessionId?: string,
@@ -5959,7 +5967,9 @@ export class Client implements LangSmithTracingClientInterface {
       | EvaluationResults
       | {
           evaluatorResponse:
-            EvaluationResult | EvaluationResult[] | EvaluationResults;
+            | EvaluationResult
+            | EvaluationResult[]
+            | EvaluationResults;
           run: Run;
           projectId: string;
           sourceInfo?: { [key: string]: any };

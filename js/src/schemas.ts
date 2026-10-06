@@ -46,7 +46,13 @@ export interface TracerSessionResult extends TracerSession {
 export type KVMap = Record<string, any>;
 // DEPRECATED: Use a raw string instead.
 export type RunType =
-  "llm" | "chain" | "tool" | "retriever" | "embedding" | "prompt" | "parser";
+  | "llm"
+  | "chain"
+  | "tool"
+  | "retriever"
+  | "embedding"
+  | "prompt"
+  | "parser";
 export type ScoreType = number | boolean | null;
 export type ValueType = number | boolean | string | object | null;
 export type DataType = "kv" | "llm" | "chat";
@@ -538,7 +544,10 @@ export interface ListCommitsResponse {
 }
 
 export type PromptSortField =
-  "num_downloads" | "num_views" | "updated_at" | "num_likes";
+  | "num_downloads"
+  | "num_views"
+  | "updated_at"
+  | "num_likes";
 
 export interface LikePromptResponse {
   likes: number;

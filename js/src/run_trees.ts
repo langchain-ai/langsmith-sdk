@@ -1112,7 +1112,8 @@ export class RunTree implements BaseRun {
   ): RunTree {
     // We only handle the callback manager case for now
     const callbackManager = parentConfig?.callbacks as
-      CallbackManagerLike | undefined;
+      | CallbackManagerLike
+      | undefined;
     let parentRun: RunTree | undefined;
     let projectName: string | undefined;
     let client: Client | undefined;
