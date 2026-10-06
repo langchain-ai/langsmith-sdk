@@ -32,6 +32,7 @@ export class OnlineEvaluators extends APIResource {
 
   /**
    * Update an existing evaluator's name, LLM configuration, or code configuration.
+   * Returns 409 when a code evaluator build is ENQUEUED or BUILDING.
    */
   update(
     evaluatorID: string,
@@ -57,10 +58,12 @@ export class OnlineEvaluators extends APIResource {
   }
 
   /**
-   * Delete an evaluator. When delete_run_rules is true, all run rules referencing
-   * this evaluator are deleted first (same tenant). Associated llm_evaluators and
-   * code_evaluators rows are removed by foreign-key cascade when the evaluator row
-   * is deleted.
+   * Delete an evaluator. Returns 409 when a code evaluator build is ENQUEUED or
+   * BUILDING, or when run rules still reference the evaluator and delete_run_rules
+   * is false. When delete_run_rules is true, all run rules referencing this
+   * evaluator are deleted first (same tenant) if the build is not in flight.
+   * Associated llm_evaluators and code_evaluators rows are removed by foreign-key
+   * cascade when the evaluator row is deleted.
    */
   delete(
     evaluatorID: string,
@@ -119,12 +122,36 @@ export interface BulkDeleteEvaluatorsResponse {
 }
 
 export interface CreateOnlineCodeEvaluatorRequest {
+  advanced_features_enabled?: boolean;
+
   code?: string;
+
+  dependencies?: string | null;
 
   /**
    * Default: "python"
    */
   language?: string;
+
+  managed_code_evaluator_key?: 'voice_metrics';
+
+  managed_code_evaluator_settings?: {
+    [key: string]: CreateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
+  };
+
+  /**
+   * RequireAttachments opts the evaluator into selecting/presigning run attachments
+   * (s3_urls) at evaluation time. Default false.
+   */
+  require_attachments?: boolean;
+}
+
+export namespace CreateOnlineCodeEvaluatorRequest {
+  export interface ManagedCodeEvaluatorSettings {
+    is_enabled?: boolean;
+
+    key_name?: string;
+  }
 }
 
 export interface CreateOnlineEvaluatorRequest {
@@ -163,7 +190,15 @@ export interface GetOnlineEvaluatorSpendResponse {
 }
 
 export interface OnlineCodeEvaluator {
+  advanced_features_enabled?: boolean;
+
   code?: string;
+
+  dependencies?: string;
+
+  evaluator_build_error?: string;
+
+  evaluator_build_status?: 'ENQUEUED' | 'BUILDING' | 'READY' | 'FAILED';
 
   evaluator_id?: string;
 
@@ -171,6 +206,24 @@ export interface OnlineCodeEvaluator {
    * Default: "python"
    */
   language?: string;
+
+  managed_code_evaluator_key?: 'voice_metrics';
+
+  managed_code_evaluator_settings?: { [key: string]: OnlineCodeEvaluator.ManagedCodeEvaluatorSettings };
+
+  /**
+   * RequireAttachments opts the evaluator into selecting/presigning run attachments
+   * (s3_urls) at evaluation time. Default false.
+   */
+  require_attachments?: boolean;
+}
+
+export namespace OnlineCodeEvaluator {
+  export interface ManagedCodeEvaluatorSettings {
+    is_enabled?: boolean;
+
+    key_name?: string;
+  }
 }
 
 export interface OnlineEvaluator {
@@ -317,9 +370,31 @@ export interface OnlineSpendLimit {
 }
 
 export interface UpdateOnlineCodeEvaluatorRequest {
+  advanced_features_enabled?: boolean;
+
   code?: string;
 
+  dependencies?: string | null;
+
   language?: string;
+
+  managed_code_evaluator_settings?: {
+    [key: string]: UpdateOnlineCodeEvaluatorRequest.ManagedCodeEvaluatorSettings;
+  };
+
+  /**
+   * RequireAttachments is fetch-time config: updating it does not rebuild the
+   * sandbox snapshot.
+   */
+  require_attachments?: boolean;
+}
+
+export namespace UpdateOnlineCodeEvaluatorRequest {
+  export interface ManagedCodeEvaluatorSettings {
+    is_enabled?: boolean;
+
+    key_name?: string;
+  }
 }
 
 export interface UpdateOnlineEvaluatorRequest {
@@ -370,6 +445,11 @@ export interface OnlineEvaluatorUpdateParams {
 }
 
 export interface OnlineEvaluatorListParams extends OffsetPaginationOnlineEvaluatorsParams {
+  /**
+   * Filter to evaluators attached to the agent's environments or tagged datasets
+   */
+  agent_id?: string;
+
   /**
    * Filter by feedback key
    */

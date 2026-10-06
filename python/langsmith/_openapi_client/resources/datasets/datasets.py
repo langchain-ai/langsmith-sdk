@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from .examples import (
+    ExamplesResource,
+    AsyncExamplesResource,
+    ExamplesResourceWithRawResponse,
+    AsyncExamplesResourceWithRawResponse,
+    ExamplesResourceWithStreamingResponse,
+    AsyncExamplesResourceWithStreamingResponse,
+)
 from ..._compat import cached_property
 from ..._resource import SyncAPIResource, AsyncAPIResource
 from .experiment_runs import (
@@ -18,6 +26,10 @@ __all__ = ["DatasetsResource", "AsyncDatasetsResource"]
 
 class DatasetsResource(SyncAPIResource):
     @cached_property
+    def examples(self) -> ExamplesResource:
+        return ExamplesResource(self._client)
+
+    @cached_property
     def experiment_runs(self) -> ExperimentRunsResource:
         return ExperimentRunsResource(self._client)
 
@@ -26,6 +38,8 @@ class DatasetsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return DatasetsResourceWithRawResponse(self)
 
@@ -33,11 +47,17 @@ class DatasetsResource(SyncAPIResource):
     def with_streaming_response(self) -> DatasetsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return DatasetsResourceWithStreamingResponse(self)
 
 
 class AsyncDatasetsResource(AsyncAPIResource):
+    @cached_property
+    def examples(self) -> AsyncExamplesResource:
+        return AsyncExamplesResource(self._client)
+
     @cached_property
     def experiment_runs(self) -> AsyncExperimentRunsResource:
         return AsyncExperimentRunsResource(self._client)
@@ -47,6 +67,8 @@ class AsyncDatasetsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncDatasetsResourceWithRawResponse(self)
 
@@ -54,6 +76,8 @@ class AsyncDatasetsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncDatasetsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncDatasetsResourceWithStreamingResponse(self)
 
@@ -61,6 +85,10 @@ class AsyncDatasetsResource(AsyncAPIResource):
 class DatasetsResourceWithRawResponse:
     def __init__(self, datasets: DatasetsResource) -> None:
         self._datasets = datasets
+
+    @cached_property
+    def examples(self) -> ExamplesResourceWithRawResponse:
+        return ExamplesResourceWithRawResponse(self._datasets.examples)
 
     @cached_property
     def experiment_runs(self) -> ExperimentRunsResourceWithRawResponse:
@@ -72,6 +100,10 @@ class AsyncDatasetsResourceWithRawResponse:
         self._datasets = datasets
 
     @cached_property
+    def examples(self) -> AsyncExamplesResourceWithRawResponse:
+        return AsyncExamplesResourceWithRawResponse(self._datasets.examples)
+
+    @cached_property
     def experiment_runs(self) -> AsyncExperimentRunsResourceWithRawResponse:
         return AsyncExperimentRunsResourceWithRawResponse(self._datasets.experiment_runs)
 
@@ -81,6 +113,10 @@ class DatasetsResourceWithStreamingResponse:
         self._datasets = datasets
 
     @cached_property
+    def examples(self) -> ExamplesResourceWithStreamingResponse:
+        return ExamplesResourceWithStreamingResponse(self._datasets.examples)
+
+    @cached_property
     def experiment_runs(self) -> ExperimentRunsResourceWithStreamingResponse:
         return ExperimentRunsResourceWithStreamingResponse(self._datasets.experiment_runs)
 
@@ -88,6 +124,10 @@ class DatasetsResourceWithStreamingResponse:
 class AsyncDatasetsResourceWithStreamingResponse:
     def __init__(self, datasets: AsyncDatasetsResource) -> None:
         self._datasets = datasets
+
+    @cached_property
+    def examples(self) -> AsyncExamplesResourceWithStreamingResponse:
+        return AsyncExamplesResourceWithStreamingResponse(self._datasets.examples)
 
     @cached_property
     def experiment_runs(self) -> AsyncExperimentRunsResourceWithStreamingResponse:

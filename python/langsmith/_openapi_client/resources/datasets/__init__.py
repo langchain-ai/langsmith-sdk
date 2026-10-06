@@ -8,6 +8,14 @@ from .datasets import (
     DatasetsResourceWithStreamingResponse,
     AsyncDatasetsResourceWithStreamingResponse,
 )
+from .examples import (
+    ExamplesResource,
+    AsyncExamplesResource,
+    ExamplesResourceWithRawResponse,
+    AsyncExamplesResourceWithRawResponse,
+    ExamplesResourceWithStreamingResponse,
+    AsyncExamplesResourceWithStreamingResponse,
+)
 from .experiment_runs import (
     ExperimentRunsResource,
     AsyncExperimentRunsResource,
@@ -18,6 +26,12 @@ from .experiment_runs import (
 )
 
 __all__ = [
+    "ExamplesResource",
+    "AsyncExamplesResource",
+    "ExamplesResourceWithRawResponse",
+    "AsyncExamplesResourceWithRawResponse",
+    "ExamplesResourceWithStreamingResponse",
+    "AsyncExamplesResourceWithStreamingResponse",
     "ExperimentRunsResource",
     "AsyncExperimentRunsResource",
     "ExperimentRunsResourceWithRawResponse",

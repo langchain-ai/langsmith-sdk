@@ -10,6 +10,9 @@ __all__ = ["OnlineEvaluatorListParams"]
 
 
 class OnlineEvaluatorListParams(TypedDict, total=False):
+    agent_id: str
+    """Filter to evaluators attached to the agent's environments or tagged datasets"""
+
     feedback_key: str
     """Filter by feedback key"""
 
