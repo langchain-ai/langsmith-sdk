@@ -40,7 +40,7 @@ import {
 } from "./utils/asserts.js";
 import { __version__ } from "./index.js";
 import { ensureAddress } from "./address.js";
-import { firstNamed, rejectConflicting } from "./utils/agent_addressing.js";
+import { firstNamed, rejectConflicting } from "./utils/addressing.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";

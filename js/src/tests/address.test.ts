@@ -16,7 +16,7 @@ import {
   applyToPayload,
   firstNamed,
   resolveFromEnv,
-} from "../utils/agent_addressing.js";
+} from "../utils/addressing.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
 import { mockClient } from "./utils/mock_client.js";
 

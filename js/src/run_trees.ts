@@ -32,7 +32,7 @@ import {
   logUntraced,
   rejectConflicting,
   resolveFromEnv,
-} from "./utils/agent_addressing.js";
+} from "./utils/addressing.js";
 import {
   type Address,
   EnvAddressError,

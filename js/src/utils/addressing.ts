@@ -92,7 +92,7 @@ export function applyToPayload(
   const namedProject =
     payload.session_id != null || payload.session_name != null;
   if (!address && !update && !namedProject) {
-    address = resolveFromEnv()[1];
+    address = Agent.fromEnv();
   }
   if (!address) {
     return;

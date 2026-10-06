@@ -94,7 +94,7 @@ import {
   rejectConflicting,
   resolveFromEnv,
   warnOnEnv,
-} from "./utils/agent_addressing.js";
+} from "./utils/addressing.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
