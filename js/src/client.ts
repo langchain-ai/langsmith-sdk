@@ -87,7 +87,7 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type Address, EnvAddressError, ensureAddress } from "./address.js";
+import { type Agent, EnvAddressError, ensureAgent } from "./address.js";
 import {
   applyToPayload,
   logUntraced,
@@ -542,7 +542,7 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: Agent;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -614,7 +614,7 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
         /** The run to provide feedback on. */
         runId: string;
         /** (beta) The address the run was sent to, e.g. `runTree.address`. */
-        address: Address;
+        address: Agent;
         sessionId?: never;
         projectId?: never;
       }
@@ -2547,7 +2547,7 @@ export class Client implements LangSmithTracingClientInterface {
       ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
-    const address = ensureAddress(run.address);
+    const address = ensureAgent(run.address);
     // `RunTree.postRun` passes a built run body, carrying the wire `session_name`.
     const bodySessionName = (run as RunCreate).session_name;
     rejectConflicting(run.project_name ?? bodySessionName, address);
@@ -3152,7 +3152,7 @@ export class Client implements LangSmithTracingClientInterface {
       run.events = this._filterNewTokenEvents(run.events);
     }
     // Fail on a bad address now; the queued path validates again when built.
-    ensureAddress(run.address);
+    ensureAgent(run.address);
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
@@ -3283,7 +3283,7 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      if (!run.session_id && (run as { address?: Address }).address) {
+      if (!run.session_id && (run as { address?: Agent }).address) {
         throw new Error("Addressed runs have no URL until read back.");
       }
       let sessionId: string;
@@ -5571,11 +5571,11 @@ export class Client implements LangSmithTracingClientInterface {
       runId?: string | null;
       sessionId?: string;
       projectId?: string;
-      address?: Address;
+      address?: Agent;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
-    const address = ensureAddress(rawAddress);
+    const address = ensureAgent(rawAddress);
     rejectConflicting(sessionId ?? projectId, address);
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");

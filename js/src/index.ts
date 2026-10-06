@@ -18,7 +18,10 @@ export { RunTree, type RunTreeConfig, type WriteReplica } from "./run_trees.js";
 
 export {
   Agent,
+  Experiment,
+  Evaluator,
   type Address,
+  type ApiAddress,
   type Environment,
   EnvAddressError,
 } from "./address.js";

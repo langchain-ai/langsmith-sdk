@@ -2,14 +2,10 @@
  * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  *
- * An `Address` is anything that names a destination for runs; `Agent` is the
- * implementation that names an agent's environment, with its environment always
- * lowercase. Others can follow without changing the tracing API.
- *
- * Anywhere an address is accepted, only an `Address` is. It is checked once at
- * that entry point and carried as is: the SDK never needs to know what kind of
- * address it holds. The backend's identifier for it stays private to the SDK
- * and appears only on the wire.
+ * An `Address` names a tracing project held by a feature: an `Agent`, an
+ * `Experiment` or the workspace's `Evaluator`s. Any of them can be resolved to
+ * its project. Only an `Agent` can receive traces, and ingestion rejects the
+ * others at its entry points.
  *
  * @example
  * ```ts
@@ -30,13 +26,21 @@ export type Environment = "local" | "development" | "staging" | "production";
  */
 export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
 
-/** (beta) A destination that runs can be addressed to. */
+/** The backend's form of an address, as the resolve endpoint takes it. */
+export type ApiAddress = {
+  kind: "AGENT" | "EXPERIMENT" | "EVALUATOR";
+  id?: string;
+  environment?: string;
+};
+
+/** (beta) A feature that holds traces in a tracing project. */
 export interface Address {
-  /** @internal The wire identifier; not part of the public surface. */
-  _toLrn(): Lrn;
-  /** @internal The address as flat string fields for trace headers. */
-  _toFields(): Record<string, string>;
+  /** The address in the backend's form. */
+  toApiAddress(): ApiAddress;
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
 const AGENT_ID_PATTERN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -99,6 +103,14 @@ export class Agent implements Address {
     Object.freeze(this);
   }
 
+  toApiAddress(): ApiAddress {
+    return {
+      kind: "AGENT",
+      id: this.id,
+      environment: this.env.toUpperCase(),
+    };
+  }
+
   /** @internal */
   _toLrn(): Lrn {
     return `lrn:agents/${this.id}/environments/${this.env}`;
@@ -138,31 +150,67 @@ export class Agent implements Address {
   }
 }
 
-function isAddress(value: unknown): value is Address {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Address)._toLrn === "function" &&
-    typeof (value as Address)._toFields === "function"
-  );
+/** (beta) The address of an experiment's tracing project. */
+export class Experiment implements Address {
+  /** Always lowercase. */
+  readonly id: string;
+
+  /**
+   * @param id The experiment's UUID.
+   * @throws If `id` is not a UUID.
+   */
+  constructor(id: string) {
+    if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
+      throw new Error(
+        `Experiment id must be a UUID, got ${JSON.stringify(id)}.`,
+      );
+    }
+    this.id = id.toLowerCase();
+    Object.freeze(this);
+  }
+
+  toApiAddress(): ApiAddress {
+    return { kind: "EXPERIMENT", id: this.id };
+  }
+}
+
+/** (beta) The address of the workspace's shared evaluators project. */
+export class Evaluator implements Address {
+  constructor() {
+    Object.freeze(this);
+  }
+
+  toApiAddress(): ApiAddress {
+    return { kind: "EVALUATOR" };
+  }
 }
 
 /**
- * @internal The entry-point guard: `value` must be an `Address` (or absent),
- * and is returned as is. Strings are rejected.
- * @throws If `value` is not an address.
+ * @internal The ingestion entry-point guard: `value` must be an `Agent` (or
+ * absent), and is returned as is. Other addresses and strings are rejected.
+ * @throws If `value` is not an `Agent`.
  */
-export function ensureAddress(value: unknown): Address | undefined {
+export function ensureAgent(value: unknown): Agent | undefined {
   if (value == null) {
     return undefined;
   }
-  if (!isAddress(value)) {
+  if (value instanceof Agent) {
+    return value;
+  }
+  if (
+    typeof value === "object" &&
+    typeof (value as Address).toApiAddress === "function"
+  ) {
     throw new Error(
-      "address must be an Address such as `new Agent(id, env)`, got " +
-        `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
+      `Only an Agent can receive traces, got ${
+        (value as object).constructor?.name ?? "an unknown address"
+      }.`,
     );
   }
-  return value;
+  throw new Error(
+    "address must be an Agent such as `new Agent(id, env)`, got " +
+      `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
+  );
 }
 
 /**
@@ -173,7 +221,7 @@ export function ensureAddress(value: unknown): Address | undefined {
  */
 export function addressFromFields(
   fields: Record<string, unknown>,
-): Address | undefined {
+): Agent | undefined {
   const { agent_id: id, agent_environment: env } = fields;
   if (id == null && env == null) {
     return undefined;

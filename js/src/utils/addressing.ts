@@ -1,10 +1,4 @@
-import {
-  type Address,
-  Agent,
-  EnvAddressError,
-  ensureAddress,
-  envNames,
-} from "../address.js";
+import { Agent, EnvAddressError, ensureAgent, envNames } from "../address.js";
 import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
@@ -12,7 +6,7 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, Address | undefined];
+export type Tier = [string | undefined, Agent | undefined];
 
 export function rejectConflicting(project: unknown, address: unknown): void {
   if (project && address) {
@@ -83,11 +77,11 @@ export function warnOnEnv(): void {
  * @throws {EnvAddressError} If the env names half an address.
  */
 export function applyToPayload(
-  run: { address?: Address; session_id?: string; session_name?: string },
+  run: { address?: Agent; session_id?: string; session_name?: string },
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  let address = ensureAddress(payload.address);
+  let address = ensureAgent(payload.address);
   delete payload.address;
   const namedProject =
     payload.session_id != null || payload.session_name != null;

@@ -34,10 +34,10 @@ import {
   resolveFromEnv,
 } from "./utils/addressing.js";
 import {
-  type Address,
+  type Agent,
   EnvAddressError,
   addressFromFields,
-  ensureAddress,
+  ensureAgent,
 } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
@@ -95,7 +95,7 @@ export interface RunTreeConfig {
   id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: Agent;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
@@ -175,7 +175,7 @@ export type WriteReplica = {
   workspaceId?: string;
   projectName?: string;
   /** (beta) Send the replica to this address instead of a project. */
-  address?: Address;
+  address?: Agent;
   /** Whether this replica keeps the original run IDs. */
   primary?: boolean;
   updates?: KVMap | undefined;
@@ -203,7 +203,7 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
 const ADDRESS_ENTRY_PREFIX = "langsmith-agent-";
 
 /** Rebuilds an untrusted header address; `undefined` if absent or unusable. */
-function addressFromHeader(fields: unknown): Address | undefined {
+function addressFromHeader(fields: unknown): Agent | undefined {
   if (fields == null) {
     return undefined;
   }
@@ -240,13 +240,13 @@ class Baggage {
   tags: string[] | undefined;
   project_name: string | undefined;
   replicas: Replica[] | undefined;
-  address: Address | undefined;
+  address: Agent | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
     replicas: Replica[] | undefined,
-    address?: Address,
+    address?: Agent,
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -340,7 +340,7 @@ export class RunTree implements BaseRun {
   /** Unset for a run sent to an `address`. */
   project_name?: string;
   /** (beta) Set instead of `project_name` for an addressed run. */
-  address?: Address;
+  address?: Agent;
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs: RunTree[];
@@ -446,7 +446,7 @@ export class RunTree implements BaseRun {
 
   /** Falls back to the env; a bad env leaves the run untraced. */
   private _resolveAddressing(config: RunTreeConfig): void {
-    const address = ensureAddress(config.address);
+    const address = ensureAgent(config.address);
     const project = config.project_name || undefined;
     rejectConflicting(project, address);
     if (project || address) {
@@ -726,8 +726,8 @@ export class RunTree implements BaseRun {
   /** A replica naming neither inherits the run tree's destination. */
   private _replicaAddressing(
     replica: WriteReplica,
-  ): [string | undefined, Address | undefined] {
-    const address = ensureAddress(replica.address);
+  ): [string | undefined, Agent | undefined] {
+    const address = ensureAgent(replica.address);
     if (replica.projectName != null) {
       rejectConflicting(replica.projectName, address);
       return [replica.projectName, undefined];
@@ -740,7 +740,7 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(params: {
     projectName?: string;
-    address?: Address;
+    address?: Agent;
     primary?: boolean;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -1414,7 +1414,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
             updates: replica[1],
           };
         }
-        const address = ensureAddress(replica.address);
+        const address = ensureAgent(replica.address);
         return address ? { ...replica, address } : replica;
       })
     : _getWriteReplicasFromEnv();
