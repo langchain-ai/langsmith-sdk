@@ -28,11 +28,3 @@ For security reasons, maintainers do **not** authorize GitHub Actions to run on 
 4. Run CI and obtain the usual review on the replacement PR. Do not approve workflows on the original PR or weaken CI security settings. Link the replacement from the original PR; close the original as superseded once the replacement is merged.
 
 If the contributor adds commits later, review and cherry-pick those explicitly as well; do not automatically sync unreviewed updates.
-
-## Auto-generated OpenAPI client
-
-The directories `python/langsmith/_openapi_client/` and `js/src/_openapi_client/` are **auto-generated** from the LangSmith OpenAPI spec via [Stainless](https://www.stainlessapi.com/). Do not edit files in these directories manually — your changes will be overwritten on the next sync.
-
-Updates are applied automatically by the [`stlc_sync_python_and_js_sdks`](https://github.com/langchain-ai/langchainplus/actions/workflows/stlc_sync_python_and_js_sdks.yml) workflow in `langchain-ai/langchainplus`, which opens PRs from the `sync/langsmith-api` branch. A CI check ([`protect-openapi-client.yml`](.github/workflows/protect-openapi-client.yml)) blocks any PR that touches these directories from a source other than that workflow.
-
-For the full end-to-end process — how the spec is generated, how the sync PRs are produced, and how to review and land them — see [Releasing the SDKs](https://github.com/langchain-ai/langchainplus/tree/main/smith-sdks#releasing-the-sdks) in `langchain-ai/langchainplus` (internal).
