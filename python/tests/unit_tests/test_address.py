@@ -169,7 +169,7 @@ class TestConstructors:
         assert ls.Agent(id="support", env="PRODUCTION") == SUPPORT
 
     def test_agent_renders_the_api_address(self) -> None:
-        assert SUPPORT.to_agent_address() == {
+        assert SUPPORT.to_api_address() == {
             "kind": "AGENT",
             "id": "support",
             "environment": "PRODUCTION",
@@ -192,17 +192,45 @@ class TestConstructors:
             RunTree(name="r", address=value)
 
 
-class _Custom:
-    """Another `Address` implementation, which the SDK must not narrow."""
+EXPERIMENT = ls.Experiment("0190C3D4-0000-7000-8000-0000000000B1")
+EVALUATOR = ls.Evaluator()
 
-    def __init__(self, lrn: str) -> None:
-        self._value = lrn
 
-    def _lrn(self) -> str:
-        return self._value
+class TestOtherAddresses:
+    """Addresses of other features name a project for the query APIs only."""
 
-    def _to_fields(self) -> dict[str, str]:
-        return {"agent_id": "custom", "agent_environment": "local"}
+    def test_the_api_addresses(self) -> None:
+        assert EXPERIMENT.to_api_address() == {
+            "kind": "EXPERIMENT",
+            "id": "0190c3d4-0000-7000-8000-0000000000b1",
+        }
+        assert EVALUATOR.to_api_address() == {"kind": "EVALUATOR"}
+
+    @pytest.mark.parametrize("value", ["", "x", "0190c3d4", 42])
+    def test_an_experiment_id_must_be_a_uuid(self, value: Any) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="UUID"):
+            ls.Experiment(value)
+
+    def test_they_are_addresses(self) -> None:
+        for address in (SUPPORT, EXPERIMENT, EVALUATOR):
+            assert isinstance(address, ls.Address)
+
+    @pytest.mark.parametrize("address", [EXPERIMENT, EVALUATOR], ids=["exp", "eval"])
+    def test_only_an_agent_can_receive_traces(self, address: Any) -> None:
+        match = "Only an `Agent` can receive traces"
+        with pytest.raises(ls_utils.LangSmithUserError, match=match):
+            with ls.tracing_context(address=address):
+                pass
+        with pytest.raises(ls_utils.LangSmithUserError, match=match):
+            ls.configure(address=address)
+        with pytest.raises(ls_utils.LangSmithUserError, match=match):
+            traceable(address=address)
+        with pytest.raises(ls_utils.LangSmithUserError, match=match):
+            RunTree(name="r", address=address)
+        with pytest.raises(ls_utils.LangSmithUserError, match=match):
+            _addressing.normalize_replicas([address])
+        with pytest.raises(ls_utils.LangSmithUserError, match=match):
+            _addressing.apply_to_payload({"id": "x", "address": address})
 
 
 class TestAddressObjectsAtEntryPoints:
@@ -252,19 +280,6 @@ class TestAddressObjectsAtEntryPoints:
         payload = RunTree(name="r", address=SUPPORT)._get_dicts_safe()
         _addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT_LRN
-
-    def test_any_implementation_is_carried_as_is(self) -> None:
-        custom = _Custom("lrn:agents/custom/environments/local")
-        assert isinstance(custom, ls.Address)
-        assert RunTree(name="r", address=custom).address is custom
-
-    def test_an_implementation_gives_its_own_wire_and_header_forms(self) -> None:
-        custom = _Custom("lrn:agents/custom/environments/local")
-        payload = RunTree(name="r", address=custom)._get_dicts_safe()
-        _addressing.apply_to_payload(payload)
-        assert payload["address"] == "lrn:agents/custom/environments/local"
-        baggage = RunTree(name="r", address=custom).to_headers()["baggage"]
-        assert "langsmith-agent-id=custom" in baggage
 
     def test_an_object_that_is_not_an_address_is_rejected(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):

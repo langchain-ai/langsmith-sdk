@@ -23,7 +23,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
-from langsmith.address import Address
+from langsmith.address import Agent
 from langsmith.client import (
     ID_TYPE,
     RUN_TYPE_T,
@@ -73,7 +73,7 @@ class WriteReplica(TypedDict, total=False):
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
-    address: Optional[Address]
+    address: Optional[Agent]
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -107,7 +107,7 @@ class _PayloadKey(NamedTuple):
     project_name: Optional[str]
     updates: Optional[dict]
     primary: Optional[bool]
-    address: Optional[Address] = None
+    address: Optional[Agent] = None
 
 
 class _ReplicaGroup(NamedTuple):
@@ -261,7 +261,7 @@ def configure(
     project_name: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
-    address: Optional[Address] = _SENTINEL,
+    address: Optional[Agent] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -298,7 +298,7 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (beta) An `Address` such as `ls.Agent(id, env)`, to send traces
+        address: (beta) An `Agent`, such as `ls.Agent(id, env)`, to send traces
             to instead of a project. Mutually exclusive with `project_name`.
 
             Pass `None` to explicitly clear it.
@@ -876,7 +876,7 @@ class RunTree(ls_schemas.RunBase):
         updates: Optional[dict] = None,
         *,
         primary: Optional[bool] = None,
-        address: Optional[Address] = None,
+        address: Optional[Agent] = None,
     ) -> dict:
         """Rewrites ids/dotted_order for a given target with optional updates."""
         run_dict = self._get_dicts_safe()
@@ -950,7 +950,7 @@ class RunTree(ls_schemas.RunBase):
 
     def _replica_addressing(
         self, replica: WriteReplica
-    ) -> tuple[Optional[str], Optional[Address]]:
+    ) -> tuple[Optional[str], Optional[Agent]]:
         """Resolve one replica's `(project_name, address)`.
 
         Same precedence as everywhere else, applied per replica: the replica's
@@ -1404,7 +1404,7 @@ class _Baggage:
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
-        address: Optional[Address] = None,
+        address: Optional[Agent] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -1518,7 +1518,7 @@ class _Baggage:
         return ",".join(items)
 
 
-def _address_from_replica_header(value: Any) -> Optional[Address]:
+def _address_from_replica_header(value: Any) -> Optional[Agent]:
     """Build a replica's address from the fields of a header's replicas."""
     if value is None:
         return None
@@ -1528,7 +1528,7 @@ def _address_from_replica_header(value: Any) -> Optional[Address]:
     return _address_from_fields(value)
 
 
-def _address_from_fields(fields: Mapping[str, Any]) -> Optional[Address]:
+def _address_from_fields(fields: Mapping[str, Any]) -> Optional[Agent]:
     """Build an address from untrusted header fields, or `None` if unusable."""
     try:
         return _address.from_fields(fields)

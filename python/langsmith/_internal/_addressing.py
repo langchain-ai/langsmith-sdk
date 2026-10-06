@@ -42,17 +42,17 @@ from langsmith.address import EnvAddressError
 _LOGGER = logging.getLogger(__name__)
 
 
-def check_address(address: Any) -> Optional[_address.Address]:
-    """Return `address` if it is an `Address`, or `None` if it is `None`.
+def check_address(address: Any) -> Optional[_address.Agent]:
+    """Return `address` if it is an `Agent`, or `None` if it is `None`.
 
     Raises:
-        utils.LangSmithUserError: If `address` is not an `Address`.
+        utils.LangSmithUserError: If `address` is not an `Agent`.
     """
-    return None if address is None else _address.ensure_address(address)
+    return None if address is None else _address.ensure_agent(address)
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
-    """Put a bare `Address` replica in an `address` key, and check the rest."""
+    """Put a bare `Agent` replica in an `address` key, and check the rest."""
     if replicas is None:
         return None
     normalized = []
@@ -80,11 +80,11 @@ def warn_is_beta() -> None:
     )
 
 
-Tier = tuple[Optional[str], Optional[_address.Address]]
+Tier = tuple[Optional[str], Optional[_address.Agent]]
 """One precedence level: the `(project, address)` it names, either may be unset."""
 
 
-def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[_address.Address]]:
+def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[_address.Agent]]:
     """Settle a run's single destination, as `(project, address)`.
 
     `tiers` are the levels named in code, highest precedence first; the env
@@ -130,7 +130,7 @@ def first_named(*tiers: Tier) -> Tier:
 
 
 def _both_at_one_level(
-    project: str, address: _address.Address, where: str
+    project: str, address: _address.Agent, where: str
 ) -> utils.LangSmithUserError:
     return utils.LangSmithUserError(
         f"A project ({project!r}) and an address ({address!r}) are both set "
@@ -204,7 +204,7 @@ def reject_conflicting(
     *,
     project: Optional[Any] = None,
     session_id: Optional[Any] = None,
-    address: Optional[_address.Address] = None,
+    address: Optional[_address.Agent] = None,
 ) -> None:
     """Reject a call that names both a project and an address.
 

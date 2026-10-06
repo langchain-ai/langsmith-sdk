@@ -1,17 +1,16 @@
-"""Addresses that name where runs are sent.
+"""Addresses that name features that hold traces in a tracing project.
 
 !!! warning "Beta"
-    Addressing runs to an address is enabled per workspace. A workspace
-    without it rejects the runs, so tracing is lost rather than falling back
-    to a project. This API may change without notice.
+    Addressing runs to an agent is enabled per workspace. A workspace without
+    it rejects the runs, so tracing is lost rather than falling back to a
+    project. This API may change without notice.
 
-An `Address` names a destination for runs. `Agent` is the implementation
-that names an agent's environment; others can follow without changing the
-tracing API. The environment is one of `local`, `development`, `staging` or
+An `Address` names the tracing project of a feature: an `Agent`'s environment,
+an `Experiment`, or the workspace's `Evaluator` traces. Query APIs resolve an
+address to its project (`client.sessions.resolve`). Only an `Agent` can be sent
+traces, so tracing entry points take an `Agent`, and anything else is rejected.
+The environment of an agent is one of `local`, `development`, `staging` or
 `production`, and is always lowercase.
-
-Anywhere an address is accepted, an `Address` is; it is validated once at that
-entry point.
 
 Example:
     ```python
@@ -33,15 +32,18 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import uuid
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional, Protocol, cast, runtime_checkable
 
 from langsmith import utils
 
 if TYPE_CHECKING:
-    from langsmith._openapi_client.types.session_resolve_params import AgentAddress
+    from langsmith._openapi_client.types.session_resolve_params import (
+        ResolveAddress,
+    )
 
-__all__ = ["Address", "Agent", "EnvAddressError"]
+__all__ = ["Address", "Agent", "Evaluator", "EnvAddressError", "Experiment"]
 
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
@@ -52,14 +54,10 @@ FIELD_NAMES = ("agent_id", "agent_environment")
 
 @runtime_checkable
 class Address(Protocol):
-    """(beta) A destination that runs can be addressed to."""
+    """(beta) Names the tracing project of a feature, such as an agent."""
 
-    def _lrn(self) -> str:
-        """Return the identifier the backend takes. Wire format only."""
-        ...
-
-    def _to_fields(self) -> dict[str, str]:
-        """Return the address as flat string fields, for trace headers."""
+    def to_api_address(self) -> ResolveAddress:
+        """Return the address as the query APIs take it."""
         ...
 
 
@@ -117,10 +115,10 @@ class Agent:
         """Return `agent_id` and `agent_environment`."""
         return {"agent_id": self.id, "agent_environment": self.env}
 
-    def to_agent_address(self) -> AgentAddress:
-        """Return this agent as the `AgentAddress` the v2 API endpoints take."""
+    def to_api_address(self) -> ResolveAddress:
+        """Return this agent as the address the query APIs take."""
         return cast(
-            "AgentAddress",
+            "ResolveAddress",
             {"kind": "AGENT", "id": self.id, "environment": self.env.upper()},
         )
 
@@ -153,25 +151,70 @@ class Agent:
             ) from e
 
 
-def ensure_address(address: Any) -> Address:
-    """Return `address` if it is an `Address`.
+@dataclasses.dataclass(frozen=True)
+class Experiment:
+    """(beta) The tracing project of an experiment, by its id.
 
-    The one place an address is checked; the SDK then carries it as is, and
-    only asks it for its wire forms where they are needed. A string is not an
-    address.
+    Query APIs take it; it cannot be sent traces.
+
+    Args:
+        id: The experiment's UUID.
 
     Raises:
-        LangSmithUserError: If `address` is not an `Address`.
+        LangSmithUserError: If `id` is not a UUID.
     """
-    if isinstance(address, str) or not isinstance(address, Address):
+
+    id: str
+
+    def __post_init__(self) -> None:
+        """Validate the id and lowercase it."""
+        try:
+            value = str(uuid.UUID(str(self.id)))
+        except ValueError:
+            raise utils.LangSmithUserError(
+                f"An experiment id must be a UUID, got {self.id!r}."
+            ) from None
+        object.__setattr__(self, "id", value)
+
+    def to_api_address(self) -> ResolveAddress:
+        """Return this experiment as the address the query APIs take."""
+        return cast("ResolveAddress", {"kind": "EXPERIMENT", "id": self.id})
+
+
+@dataclasses.dataclass(frozen=True)
+class Evaluator:
+    """(beta) The tracing project of the workspace's evaluators.
+
+    Evaluator traces share one project per workspace. Query APIs take it; it
+    cannot be sent traces.
+    """
+
+    def to_api_address(self) -> ResolveAddress:
+        """Return the address the query APIs take."""
+        return cast("ResolveAddress", {"kind": "EVALUATOR"})
+
+
+def ensure_agent(address: Any) -> Agent:
+    """Return `address` if it is an `Agent`: the only address that takes traces.
+
+    The one place an address given to a tracing entry point is checked; the SDK
+    then carries it as is. A string is not an address.
+
+    Raises:
+        LangSmithUserError: If `address` is not an `Agent`.
+    """
+    if isinstance(address, Agent):
+        return address
+    if isinstance(address, Address) and not isinstance(address, str):
         raise utils.LangSmithUserError(
-            "An address must be an `Address` such as `ls.Agent(id, env)`, "
-            f"got {address!r}."
+            f"Only an `Agent` can receive traces, got {address!r}."
         )
-    return address
+    raise utils.LangSmithUserError(
+        f"An address must be an `Agent` such as `ls.Agent(id, env)`, got {address!r}."
+    )
 
 
-def from_fields(fields: Mapping[str, Any]) -> Optional[Address]:
+def from_fields(fields: Mapping[str, Any]) -> Optional[Agent]:
     """Rebuild an address from the fields `_to_fields` produced, if it has any.
 
     Raises:
