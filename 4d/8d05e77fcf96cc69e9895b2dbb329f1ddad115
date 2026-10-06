@@ -1,0 +1,57 @@
+js/src/traceable.ts
+  s_f37c3e6c74d99c::t_04a832ff5052a4 42
+  s_f37c3e6c74d99c::t_78c164a19635f2 826-827
+  s_f37c3e6c74d99c::t_4acbdab56a2d74 762
+  s_f37c3e6c74d99c::t_ec92140865af04 43
+js/src/address.ts
+  s_f37c3e6c74d99c::t_72d52ffedb7d3e 9-12,37-38,107-111,145-146,153,165-184
+  s_f37c3e6c74d99c::t_ff9ebe9e2612a1 151-152,155-157
+js/src/utils/agent_addressing.ts
+  s_f37c3e6c74d99c::t_72d52ffedb7d3e 5,15
+  s_f37c3e6c74d99c::t_fec87b7fa05152 90
+  s_f37c3e6c74d99c::t_948429d66e77a2 21
+  s_f37c3e6c74d99c::t_8ec1b039269b8c 95
+js/src/client.ts
+  s_f37c3e6c74d99c::t_b6ba1c91ebb815 3155
+  s_f37c3e6c74d99c::t_316050b11064b4 2550
+  s_f37c3e6c74d99c::t_5b968c671f512f 5578
+  s_f37c3e6c74d99c::t_9099cf268af6f2 90
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_975fb0a3d9a7e1 1417
+  s_f37c3e6c74d99c::t_ecbebb52c0398c 298
+  s_f37c3e6c74d99c::t_d77f702b044f56 202-203,205-207,211-212,214
+  s_f37c3e6c74d99c::t_a10738a185000e 274-277
+  s_f37c3e6c74d99c::t_90a50296283514 743
+  s_f37c3e6c74d99c::t_c2d01789a100d4 318-322
+  s_f37c3e6c74d99c::t_6cf3ad3e07893e 287
+  s_f37c3e6c74d99c::t_053c8bc38a301a 36-41
+  s_f37c3e6c74d99c::t_d6901e6e532b05 343
+  s_f37c3e6c74d99c::t_2e058007af9872 729-730
+  s_f37c3e6c74d99c::t_99ede263283923 449
+  s_f37c3e6c74d99c::t_a53d1d373c523f 264
+  s_f37c3e6c74d99c::t_3fc5cbe595d545 243,249
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_e07777e0e1747d 592-595,599-601,603,605-607,610-618,621,625,629,632,636-638
+  s_f37c3e6c74d99c::t_368eb73d7e5785 186,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d8d05e77fcf96cc69e9895b2dbb329f1ddad115",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
