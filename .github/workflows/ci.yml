@@ -890,4 +890,4 @@ jobs:
               *Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
               *Environments:* beta, v16-ch-only, v16-dual, v16-smithdb-only
 
-              <@U0AKDLKCV3J> please investigate the issue and explain simply what happens, add a TLDR at the end of your answer where you go straight to the point to explain to a non-focused reader with ADHD. If the root cause is flaky tests, mention it. Open a fix PR when confidence is high. Tag <!subteam^S0AJWD08V88> in your answer.
+              <@U0AKDLKCV3J> please investigate the issue and explain simply what happens, add a TLDR at the end of your answer where you go straight to the point to explain to a non-focused reader with ADHD. If the root cause is flaky tests, mention it. Open a fix PR when confidence is high. Tag <@U0BSQM2BQJ3> in your answer.
