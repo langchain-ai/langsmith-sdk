@@ -5625,7 +5625,7 @@ export class Client implements LangSmithTracingClientInterface {
       return feedback as Feedback;
     }
     const body = JSON.stringify(
-      address ? { ...feedback, address: address.toLrn() } : feedback,
+      address ? { ...feedback, address: address._toLrn() } : feedback,
     );
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {

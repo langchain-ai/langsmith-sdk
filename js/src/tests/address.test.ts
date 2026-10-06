@@ -27,6 +27,10 @@ const SUPPORT_AGENT = new Agent("customer-support", "production");
 const STAGING_AGENT = new Agent("customer-support", "staging");
 const SUPPORT_STR = "lrn:agents/customer-support/environments/production";
 const STAGING_STR = "lrn:agents/customer-support/environments/staging";
+const SUPPORT_WIRE = {
+  agent_id: "customer-support",
+  agent_environment: "production",
+};
 
 const ENV_KEYS = [
   "LANGSMITH_AGENT_ID",
@@ -83,78 +87,52 @@ describe("address", () => {
 
   test("an agent is an immutable address", () => {
     const address: Address = SUPPORT_AGENT;
-    expect(address.toLrn()).toBe(SUPPORT_STR);
-    expect(String(SUPPORT_AGENT)).toBe(SUPPORT_STR);
+    expect(address).toBe(SUPPORT_AGENT);
     expect(SUPPORT_AGENT.id).toBe("customer-support");
+    expect(SUPPORT_AGENT.env).toBe("production");
     expect(new Agent("customer-support", "PRODUCTION")).toEqual(SUPPORT_AGENT);
     expect(() => {
       (SUPPORT_AGENT as any).env = "staging";
     }).toThrow();
   });
 
-  test("agent builds a lowercase string", () => {
-    expect(SUPPORT_AGENT.toLrn()).toBe(SUPPORT_STR);
-    expect(new Agent("a", "STAGING").toLrn()).toBe(
-      "lrn:agents/a/environments/staging",
-    );
+  test("the environment is lowercased", () => {
+    expect(new Agent("a", "STAGING").env).toBe("staging");
     for (const env of ["local", "development", "staging", "production"]) {
-      expect(new Agent("a", env).toLrn()).toBe(
-        `lrn:agents/a/environments/${env}`,
-      );
+      expect(new Agent("a", env).env).toBe(env);
     }
   });
 
   test("agent rejects invalid values", () => {
     for (const id of ["", "a".repeat(64), "Support", "1a", "a-", "a_b"]) {
-      expect(() => new Agent(id, "production").toLrn()).toThrow(
-        /1 to 63 lowercase/,
-      );
+      expect(() => new Agent(id, "production")).toThrow(/1 to 63 lowercase/);
     }
     for (const id of ["a", "a".repeat(63), "support-v2"]) {
-      expect(new Agent(id, "production").toLrn()).toBe(
-        `lrn:agents/${id}/environments/production`,
-      );
+      expect(new Agent(id, "production").id).toBe(id);
     }
     for (const env of ["", "prod", "e"]) {
-      expect(() => new Agent("a", env).toLrn()).toThrow(/must be one of/);
+      expect(() => new Agent("a", env)).toThrow(/must be one of/);
     }
     expect(() => new Agent("a", undefined as any)).toThrow();
   });
 
-  test("parse validates and lowercases the environment", () => {
-    expect(Agent.parse(SUPPORT_STR).toLrn()).toBe(SUPPORT_STR);
-    expect(Agent.parse("lrn:agents/a/environments/Production").toLrn()).toBe(
-      "lrn:agents/a/environments/production",
+  test("the LRN is not public", () => {
+    // @ts-expect-error parse is internal
+    expect(Agent.parse).toBeUndefined();
+    const rendered: string = String(SUPPORT_AGENT);
+    expect(rendered).not.toContain("lrn:");
+    expect(Object.keys(SUPPORT_AGENT).sort()).toEqual(["env", "id"]);
+    expect(JSON.stringify(SUPPORT_AGENT)).not.toContain("lrn");
+    // Errors don't render an LRN either.
+    expect(() => new RunTree({ name: "r", address: jsCaller("x") })).toThrow(
+      /^(?!.*lrn:)/,
     );
-    for (const bad of [
-      "",
-      "support",
-      "lrn:agents/a",
-      "lrn:agents/a/environments/",
-      "lrn:agents//environments/production",
-      "lrn:agents/a/environments/production/x",
-      "lrn:agents/a/environments/production\n",
-      "projects/a/environments/production",
-      "agents/a/environments/production",
-      "lrn:agents/Bad/environments/production",
-      "lrn:agents/a/environments/prod",
-    ]) {
-      expect(() => Agent.parse(bad).toLrn()).toThrow();
-    }
-    expect(() => Agent.parse({} as any).toLrn()).toThrow(
-      /must be a string like/,
-    );
-  });
-
-  test("round-trips through agent and parse", () => {
-    const built = new Agent("a-b", "Local").toLrn();
-    expect(Agent.parse(built).toLrn()).toBe(built);
   });
 });
 
 describe("fromEnv", () => {
   test("is undefined when nothing is set", () => {
-    expect(Agent.fromEnv()?.toLrn()).toBeUndefined();
+    expect(Agent.fromEnv()).toBeUndefined();
   });
 
   test("half an address or an invalid value throws", () => {
@@ -174,12 +152,12 @@ describe("fromEnv", () => {
   test("reads both vars, case-insensitively for the environment", () => {
     process.env.LANGSMITH_AGENT_ID = "customer-support";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "Production";
-    expect(Agent.fromEnv()?.toLrn()).toBe(SUPPORT_STR);
+    expect(Agent.fromEnv()).toEqual(SUPPORT_AGENT);
   });
 
   test("there is no LANGSMITH_ADDRESS env var", () => {
     process.env.LANGSMITH_ADDRESS = SUPPORT_STR;
-    expect(Agent.fromEnv()?.toLrn()).toBeUndefined();
+    expect(Agent.fromEnv()).toBeUndefined();
     expect(resolveFromEnv()).toEqual(["default", undefined]);
   });
 });
@@ -209,7 +187,7 @@ describe("RunTree", () => {
     const run = new RunTree({
       name: "r",
       address: jsCaller({
-        toLrn: () => "lrn:agents/customer-support/environments/PRODUCTION",
+        _toLrn: () => "lrn:agents/customer-support/environments/PRODUCTION",
       }),
     });
     expect(run.address).toBeInstanceOf(Agent);
@@ -273,7 +251,7 @@ describe("RunTree", () => {
     expect(body.id).toBe(run.id);
   });
 
-  test("an addressed replica gets its own ids, seeded by the LRN", async () => {
+  test("an addressed replica gets its own ids, seeded by the address", async () => {
     const { client, callSpy } = mockClient();
     const run = new RunTree({
       name: "r",
@@ -301,12 +279,13 @@ describe("RunTree", () => {
 });
 
 describe("baggage", () => {
-  test("round-trips the address as one langsmith-address LRN entry", () => {
+  test("round-trips the address as agent id and environment entries", () => {
     const parent = new RunTree({ name: "p", address: SUPPORT_AGENT });
     const { baggage } = parent.toHeaders();
     expect(baggage).toBe(
-      `langsmith-address=${encodeURIComponent(SUPPORT_STR)}`,
+      "langsmith-agent-id=customer-support,langsmith-agent-environment=production",
     );
+    expect(baggage).not.toContain("lrn");
     const child = RunTree.fromHeaders(parent.toHeaders(), {
       project_name: "caller",
     })!;
@@ -326,27 +305,40 @@ describe("baggage", () => {
 
   test("a bad value is ignored without being logged", () => {
     const warn = console.warn as jest.Mock;
-    for (const value of [
-      "not-an-address",
-      '{"agent_id":"a"}',
-      "lrn:agents/a/environments/nope",
-      "",
+    for (const [id, env] of [
+      ["Bad", "production"],
+      ["a", "nope"],
+      ["", "production"],
     ]) {
       warn.mockClear();
       const child = RunTree.fromHeaders(
-        headersWith(`langsmith-address=${encodeURIComponent(value)}`),
+        headersWith(
+          `langsmith-agent-id=${encodeURIComponent(id)},` +
+            `langsmith-agent-environment=${encodeURIComponent(env)}`,
+        ),
       )!;
       expect(child.address).toBeUndefined();
-      expect(JSON.stringify(warn.mock.calls)).not.toContain(value || "\0");
+      expect(warn).toHaveBeenCalled();
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(env);
+    }
+  });
+
+  test("half an agent is ignored", () => {
+    for (const half of [
+      "langsmith-agent-id=customer-support",
+      "langsmith-agent-environment=production",
+    ]) {
+      (console.warn as jest.Mock).mockClear();
+      const child = RunTree.fromHeaders(headersWith(half))!;
+      expect(child.address).toBeUndefined();
+      expect(console.warn).toHaveBeenCalledTimes(1);
     }
   });
 
   test("a header address is normalised", () => {
     const child = RunTree.fromHeaders(
       headersWith(
-        `langsmith-address=${encodeURIComponent(
-          "lrn:agents/customer-support/environments/STAGING",
-        )}`,
+        "langsmith-agent-id=customer-support,langsmith-agent-environment=STAGING",
       ),
     )!;
     expect(child.address).toEqual(STAGING_AGENT);
@@ -357,9 +349,10 @@ describe("baggage", () => {
       headersWith(
         `langsmith-replicas=${encodeURIComponent(
           JSON.stringify([
-            { address: SUPPORT_STR, apiKey: "leak" },
-            { address: "half" },
-            { address: SUPPORT_STR, projectName: "p" },
+            { address: SUPPORT_WIRE, apiKey: "leak" },
+            { address: { agent_id: "a" } },
+            { address: SUPPORT_STR },
+            { address: SUPPORT_WIRE, projectName: "p" },
           ]),
         )}`,
       ),
@@ -381,7 +374,9 @@ describe("traceable", () => {
     ).toThrow(/not both/);
     expect(() =>
       traceable(async () => "ok", {
-        address: jsCaller({ toLrn: () => "lrn:agents/Bad/environments/local" }),
+        address: jsCaller({
+          _toLrn: () => "lrn:agents/Bad/environments/local",
+        }),
       }),
     ).toThrow(/1 to 63 lowercase/);
   });
@@ -605,7 +600,7 @@ describe("address types", () => {
 describe("Address objects", () => {
   class Custom implements Address {
     constructor(private readonly lrn: string) {}
-    toLrn(): any {
+    _toLrn(): any {
       return this.lrn;
     }
   }
@@ -637,9 +632,10 @@ describe("Address objects", () => {
   });
 
   test("an implementation must render a valid LRN", () => {
-    expect(
-      () => new RunTree({ name: "r", address: new Custom("experiments/e") }),
-    ).toThrow(/string like/);
+    const err = () =>
+      new RunTree({ name: "r", address: new Custom("experiments/e") });
+    expect(err).toThrow(/not a valid agent address/);
+    expect(err).toThrow(/^(?!.*experiments\/e)/);
     expect(() => new RunTree({ name: "r", address: {} as any })).toThrow(
       /address must be an Address/,
     );

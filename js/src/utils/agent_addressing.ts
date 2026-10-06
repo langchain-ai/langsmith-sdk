@@ -19,11 +19,16 @@ export function checkAddress(address: unknown): Agent | undefined {
   return address == null ? undefined : checkedAddress(address);
 }
 
+function describe(address: unknown): string {
+  const { id, env } = address as { id?: unknown; env?: unknown };
+  return id !== undefined ? `${String(id)}/${String(env)}` : typeof address;
+}
+
 export function rejectConflicting(project: unknown, address: unknown): void {
   if (project && address) {
     throw new Error(
       `A run is sent to a project (${JSON.stringify(project)}) or to an ` +
-        `address (${String(address)}), not both.`,
+        `address (${describe(address)}), not both.`,
     );
   }
 }
@@ -82,7 +87,7 @@ export function warnOnEnv(): void {
 }
 
 /**
- * Put the run's address in its payload field, as its LRN string, the only place it becomes one.
+ * Put the run's address in its payload field, in its wire form.
  * Without one, a create naming no project takes the env address.
  *
  * @throws {EnvAddressError} If the env names half an address.
@@ -106,7 +111,7 @@ export function applyToPayload(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  payload.address = address.toLrn();
+  payload.address = address._toLrn();
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;

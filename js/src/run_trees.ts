@@ -34,12 +34,7 @@ import {
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/agent_addressing.js";
-import {
-  type Address,
-  type Agent,
-  EnvAddressError,
-  addressFromLrn,
-} from "./address.js";
+import { type Address, Agent, EnvAddressError } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -200,16 +195,20 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "address",
 ]);
 
-// The address's LRN, URL-encoded.
-const LANGSMITH_ADDRESS = "langsmith-address";
+// The address travels as its agent id and environment, URL-encoded.
+const LANGSMITH_AGENT_ID = "langsmith-agent-id";
+const LANGSMITH_AGENT_ENVIRONMENT = "langsmith-agent-environment";
 
-/** Validates an untrusted header address; `undefined` if unusable. */
-function addressFromHeader(value: unknown): Agent | undefined {
-  if (value == null) {
+/** Validates an untrusted header agent; `undefined` if absent or unusable. */
+function agentFromHeader(id: unknown, env: unknown): Agent | undefined {
+  if (id == null && env == null) {
     return undefined;
   }
   try {
-    return addressFromLrn(value as string);
+    if (id == null || env == null) {
+      throw new Error("half an agent");
+    }
+    return new Agent(id as string, env as string);
   } catch {
     // Values are untrusted, so not logged.
     console.warn("Ignoring an unusable address in a `baggage` header.");
@@ -259,7 +258,8 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
-    let address: Agent | undefined;
+    let agentId: string | undefined;
+    let agentEnv: string | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -269,8 +269,10 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
-      } else if (key === LANGSMITH_ADDRESS) {
-        address = addressFromHeader(value);
+      } else if (key === LANGSMITH_AGENT_ID) {
+        agentId = value;
+      } else if (key === LANGSMITH_AGENT_ENVIRONMENT) {
+        agentEnv = value;
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
         replicas = parsed.flatMap((replica): Replica[] => {
@@ -280,7 +282,14 @@ class Baggage {
           const filtered = filterReplicaForHeaders(replica);
           const raw = (filtered as Record<string, unknown>).address;
           delete (filtered as Record<string, unknown>).address;
-          const address = addressFromHeader(raw);
+          const parts = (raw ?? {}) as Record<string, unknown>;
+          const address =
+            raw == null
+              ? undefined
+              : agentFromHeader(
+                  parts.agent_id ?? null,
+                  parts.agent_environment,
+                );
           // A project wins over an address; a replica with an invalid
           // address and no project is dropped.
           if (filtered.projectName || raw == null) {
@@ -291,6 +300,7 @@ class Baggage {
       }
     }
 
+    const address = agentFromHeader(agentId, agentEnv);
     return new Baggage(metadata, tags, project_name, replicas, address);
   }
 
@@ -311,7 +321,8 @@ class Baggage {
     }
     if (this.address) {
       items.push(
-        `${LANGSMITH_ADDRESS}=${encodeURIComponent(this.address.toLrn())}`,
+        `${LANGSMITH_AGENT_ID}=${encodeURIComponent(this.address.id)}`,
+        `${LANGSMITH_AGENT_ENVIRONMENT}=${encodeURIComponent(this.address.env)}`,
       );
     }
 
@@ -762,7 +773,7 @@ export class RunTree implements BaseRun {
       primary === undefined &&
       !this.replicas?.some((r) => r.primary === true) &&
       projectName === this.project_name &&
-      address?.toLrn() === this.address?.toLrn()
+      address?._toLrn() === this.address?._toLrn()
     ) {
       return {
         ...baseRun,
@@ -770,7 +781,7 @@ export class RunTree implements BaseRun {
         address,
       };
     }
-    const seed = projectName ?? address?.toLrn() ?? "agent//";
+    const seed = projectName ?? address?._toLrn() ?? "agent//";
 
     // Apply reroot logic before ID remapping
     if (reroot) {

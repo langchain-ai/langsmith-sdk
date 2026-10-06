@@ -2,16 +2,13 @@
  * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  *
- * An `Address` is anything that names a destination for runs and can render
- * itself as an LRN, a string like `lrn:agents/{id}/environments/{environment}`.
- * `Agent` is the implementation that names an agent's environment; others can
- * follow without changing the tracing API. The environment is always rendered
- * lowercase.
+ * An `Address` is anything that names a destination for runs; `Agent` is the
+ * implementation that names an agent's environment, with its environment always
+ * lowercase. Others can follow without changing the tracing API.
  *
- * Anywhere an address is accepted, only an `Address` is; an LRN string is
- * rejected. It is validated once at that entry point and carried as an `Agent`
- * from there on. Its LRN appears only on the wire: the `address` field of the
- * payload and the `langsmith-address` baggage header.
+ * Anywhere an address is accepted, only an `Address` is. It is validated once
+ * at that entry point and carried as an `Agent` from there on. The backend's
+ * identifier for it stays private to the SDK and appears only on the wire.
  *
  * @example
  * ```ts
@@ -27,16 +24,15 @@ import { getEnvironmentVariable } from "./utils/env.js";
 export type Environment = "local" | "development" | "staging" | "production";
 
 /**
- * An LRN string, `lrn:agents/{id}/environments/{environment}`, typed as
- * a template literal so a literal is checked at compile time.
+ * @internal The wire identifier, `lrn:agents/{id}/environments/{environment}`,
+ * typed as a template literal so a literal is checked at compile time.
  */
-/** @internal */
 export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
 
 /** (beta) A destination that runs can be addressed to. */
 export interface Address {
-  /** This address as an LRN string. */
-  toLrn(): Lrn;
+  /** @internal The wire identifier; not part of the public surface. */
+  _toLrn(): Lrn;
 }
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
@@ -101,27 +97,9 @@ export class Agent implements Address {
     Object.freeze(this);
   }
 
-  toLrn(): Lrn {
+  /** @internal */
+  _toLrn(): Lrn {
     return `lrn:agents/${this.id}/environments/${this.env}`;
-  }
-
-  toString(): string {
-    return this.toLrn();
-  }
-
-  /**
-   * Build from an agent LRN, lowercasing its environment.
-   * @throws If `lrn` is not a valid agent LRN.
-   */
-  static parse(lrn: string): Agent {
-    const match = typeof lrn === "string" ? LRN_PATTERN.exec(lrn) : null;
-    if (!match) {
-      throw new Error(
-        "An LRN must be a string like " +
-          `"lrn:agents/{id}/environments/{environment}", got ${JSON.stringify(lrn)}.`,
-      );
-    }
-    return new Agent(match[1], match[2]);
   }
 
   /**
@@ -157,14 +135,25 @@ function isAddress(value: unknown): value is Address {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as Address).toLrn === "function"
+    typeof (value as Address)._toLrn === "function"
   );
 }
 
 /**
+ * @internal Build an `Agent` from a wire LRN, lowercasing its environment.
+ * @throws If `lrn` is not a valid agent LRN.
+ */
+export function agentFromLrn(lrn: unknown): Agent {
+  const match = typeof lrn === "string" ? LRN_PATTERN.exec(lrn) : null;
+  if (!match) {
+    throw new Error("The address is not a valid agent address.");
+  }
+  return new Agent(match[1], match[2]);
+}
+
+/**
  * @internal Validate an `Address` and return it as a normalized `Agent`: frozen,
- * with a lowercase environment. Strings are rejected; the LRN only goes on the
- * wire.
+ * with a lowercase environment. Strings are rejected.
  * @throws If `value` is not a valid address.
  */
 export function checkedAddress(value: unknown): Agent {
@@ -174,12 +163,8 @@ export function checkedAddress(value: unknown): Agent {
         `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
     );
   }
-  return Agent.parse(value.toLrn());
-}
-
-/** @internal Parse an LRN from the wire, such as a header, into an `Agent`. */
-export function addressFromLrn(lrn: string): Agent {
-  return Agent.parse(lrn);
+  // A custom Address renders an LRN; read it back as an Agent.
+  return agentFromLrn(value._toLrn());
 }
 
 /** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */
