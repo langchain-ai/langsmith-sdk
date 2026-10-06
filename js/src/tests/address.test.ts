@@ -9,6 +9,7 @@ import {
   test,
 } from "@jest/globals";
 import * as langsmith from "../index.js";
+import { Client } from "../index.js";
 import {
   Agent,
   Evaluator,
@@ -615,13 +616,48 @@ describe("Client", () => {
     ).rejects.toThrow(/not both/);
   });
 
-  test("applyToPayload writes the LRN string and rejects a string", () => {
+  test("applyToPayload writes the LRN string and keeps it when applied again", () => {
     const payload: any = {
       address: new Agent("customer-support", "PRODUCTION"),
     };
     applyToPayload(payload);
     expect(payload).toEqual({ address: SUPPORT_STR });
-    expect(() => applyToPayload(payload)).toThrow(/address must be an Agent/);
+    // A queued run is applied again when its batch is sent.
+    applyToPayload(payload);
+    expect(payload).toEqual({ address: SUPPORT_STR });
+    expect(() => applyToPayload({ address: 42 } as any)).toThrow(
+      /address must be an Agent/,
+    );
+  });
+
+  test("a run with an address survives the auto-batch queue", async () => {
+    const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: () => Promise.resolve(""),
+      json: () => Promise.resolve({}),
+    } as Response);
+    const client = new Client({
+      apiKey: "MOCK",
+      autoBatchTracing: true,
+      fetchImplementation: callSpy,
+    });
+    const run = new RunTree({ name: "r", address: SUPPORT_AGENT, client });
+    await run.postRun();
+    await run.end({ ok: true });
+    await run.patchRun();
+    await client.awaitPendingTraceBatches();
+    const sent = (
+      await Promise.all(
+        callSpy.mock.calls.map(async ([, init]) =>
+          init?.body == null
+            ? ""
+            : await new Response(init.body as BodyInit).text(),
+        ),
+      )
+    ).join("\n");
+    expect(sent).toContain(SUPPORT_STR);
   });
 
   test("batchIngestRuns sends the address to POST /runs/batch", async () => {
