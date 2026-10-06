@@ -20,7 +20,6 @@ export {
   Agent,
   type Address,
   type Environment,
-  type Lrn,
   EnvAddressError,
 } from "./address.js";
 

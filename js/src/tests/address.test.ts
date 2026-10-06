@@ -9,7 +9,7 @@ import {
   test,
 } from "@jest/globals";
 import * as langsmith from "../index.js";
-import { Agent, type Address, type Lrn, EnvAddressError } from "../address.js";
+import { Agent, type Address, EnvAddressError } from "../address.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import {
@@ -21,10 +21,10 @@ import { _resetWarnedMessages } from "../utils/warn.js";
 import { mockClient } from "./utils/mock_client.js";
 
 // What a JS caller can pass; the SDK validates it at runtime.
-const jsCaller = (value: string) => value as Lrn;
+const jsCaller = (value: unknown) => value as Address;
 
 const SUPPORT_AGENT = new Agent("customer-support", "production");
-const SUPPORT: Lrn = SUPPORT_AGENT.toLrn();
+const STAGING_AGENT = new Agent("customer-support", "staging");
 const SUPPORT_STR = "lrn:agents/customer-support/environments/production";
 const STAGING_STR = "lrn:agents/customer-support/environments/staging";
 
@@ -93,7 +93,7 @@ describe("address", () => {
   });
 
   test("agent builds a lowercase string", () => {
-    expect(SUPPORT).toBe(SUPPORT_STR);
+    expect(SUPPORT_AGENT.toLrn()).toBe(SUPPORT_STR);
     expect(new Agent("a", "STAGING").toLrn()).toBe(
       "lrn:agents/a/environments/staging",
     );
@@ -142,7 +142,7 @@ describe("address", () => {
       expect(() => Agent.parse(bad).toLrn()).toThrow();
     }
     expect(() => Agent.parse({} as any).toLrn()).toThrow(
-      /must be an `Address` or a string/,
+      /must be a string like/,
     );
   });
 
@@ -186,11 +186,11 @@ describe("fromEnv", () => {
 
 describe("precedence", () => {
   test("the first level naming anything wins; both at one level throws", () => {
-    expect(firstNamed([undefined, SUPPORT], ["p", undefined])).toEqual([
+    expect(firstNamed([undefined, SUPPORT_AGENT], ["p", undefined])).toEqual([
       undefined,
-      SUPPORT,
+      SUPPORT_AGENT,
     ]);
-    expect(() => firstNamed(["p", SUPPORT])).toThrow(/not both/);
+    expect(() => firstNamed(["p", SUPPORT_AGENT])).toThrow(/not both/);
   });
 
   test("the env names an address, a project, or an error", () => {
@@ -198,44 +198,44 @@ describe("precedence", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "staging";
-    expect(resolveFromEnv()[1]).toBe("lrn:agents/a/environments/staging");
+    expect(resolveFromEnv()[1]).toEqual(new Agent("a", "staging"));
     process.env.LANGSMITH_PROJECT = "p";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
   });
 });
 
 describe("RunTree", () => {
-  test("accepts and normalises a plain string", () => {
+  test("carries a normalized Agent, not a string", () => {
     const run = new RunTree({
       name: "r",
-      address: jsCaller("lrn:agents/customer-support/environments/PRODUCTION"),
+      address: jsCaller({
+        toLrn: () => "lrn:agents/customer-support/environments/PRODUCTION",
+      }),
     });
-    expect(run.address).toBe(SUPPORT_STR);
+    expect(run.address).toBeInstanceOf(Agent);
+    expect(run.address).toEqual(SUPPORT_AGENT);
+    expect(Object.isFrozen(run.address)).toBe(true);
   });
 
-  test("rejects a malformed or non-agent string", () => {
-    expect(
-      () => new RunTree({ name: "r", address: jsCaller("support") }),
-    ).toThrow(/string like/);
-    expect(
-      () =>
-        new RunTree({
-          name: "r",
-          address: jsCaller("projects/a/environments/staging"),
-        }),
-    ).toThrow();
+  test("rejects a string, even a valid LRN", () => {
+    for (const bad of [SUPPORT_STR, "support"]) {
+      expect(() => new RunTree({ name: "r", address: jsCaller(bad) })).toThrow(
+        /address must be an Address such as `new Agent\(id, env\)`/,
+      );
+    }
   });
 
   test("naming both throws", () => {
     expect(
-      () => new RunTree({ name: "r", address: SUPPORT, project_name: "p" }),
+      () =>
+        new RunTree({ name: "r", address: SUPPORT_AGENT, project_name: "p" }),
     ).toThrow(/not both/);
   });
 
   test("a child joins its parent's address", () => {
-    const parent = new RunTree({ name: "p", address: SUPPORT_STR });
+    const parent = new RunTree({ name: "p", address: SUPPORT_AGENT });
     const child = parent.createChild({ name: "c", project_name: "other" });
-    expect(child.address).toBe(SUPPORT_STR);
+    expect(child.address).toEqual(SUPPORT_AGENT);
     expect(child.project_name).toBeUndefined();
   });
 
@@ -246,11 +246,11 @@ describe("RunTree", () => {
     ).toBe(false);
   });
 
-  test("posts one lowercase address string without a project", async () => {
+  test("posts the LRN string on the wire without a project", async () => {
     const { client, callSpy } = mockClient();
     await new RunTree({
       name: "r",
-      address: jsCaller("lrn:agents/customer-support/environments/Production"),
+      address: new Agent("customer-support", "Production"),
       client,
     }).postRun();
     const [body] = await postedRuns(callSpy, client);
@@ -264,42 +264,36 @@ describe("RunTree", () => {
     const { client, callSpy } = mockClient();
     const run = new RunTree({
       name: "r",
-      address: SUPPORT,
+      address: SUPPORT_AGENT,
       client,
-      replicas: [
-        {
-          address: jsCaller(
-            "lrn:agents/customer-support/environments/PRODUCTION",
-          ),
-        },
-      ],
+      replicas: [{ address: new Agent("customer-support", "PRODUCTION") }],
     });
     await run.postRun();
     const [body] = await postedRuns(callSpy, client);
     expect(body.id).toBe(run.id);
   });
 
-  test("an addressed replica gets its own ids, seeded by the address", async () => {
+  test("an addressed replica gets its own ids, seeded by the LRN", async () => {
     const { client, callSpy } = mockClient();
     const run = new RunTree({
       name: "r",
       project_name: "p",
       client,
-      replicas: [{ projectName: "p" }, { address: SUPPORT_STR }],
+      replicas: [{ projectName: "p" }, { address: SUPPORT_AGENT }],
     });
     await run.postRun();
     const [toProject, toAddress] = await postedRuns(callSpy, client);
     expect(toProject.session_name).toBe("p");
     expect(toAddress.address).toBe(SUPPORT_STR);
     expect(toAddress.id).not.toBe(toProject.id);
-    // Same ids as a replica seeded by the same string.
+    // Same ids as a replica seeded by the same address.
     const remapped = (run as any)._remapForProject({
-      address: SUPPORT_STR,
+      address: SUPPORT_AGENT,
       primary: false,
     });
     expect(remapped.id).toBe(toAddress.id);
     const other = (run as any)._remapForProject({
-      address: STAGING_STR,
+      address: STAGING_AGENT,
       primary: false,
     });
     expect(other.id).not.toBe(toAddress.id);
@@ -307,8 +301,8 @@ describe("RunTree", () => {
 });
 
 describe("baggage", () => {
-  test("round-trips the address as one langsmith-address entry", () => {
-    const parent = new RunTree({ name: "p", address: SUPPORT });
+  test("round-trips the address as one langsmith-address LRN entry", () => {
+    const parent = new RunTree({ name: "p", address: SUPPORT_AGENT });
     const { baggage } = parent.toHeaders();
     expect(baggage).toBe(
       `langsmith-address=${encodeURIComponent(SUPPORT_STR)}`,
@@ -316,14 +310,14 @@ describe("baggage", () => {
     const child = RunTree.fromHeaders(parent.toHeaders(), {
       project_name: "caller",
     })!;
-    expect(child.address).toBe(SUPPORT_STR);
+    expect(child.address).toEqual(SUPPORT_AGENT);
     expect(child.project_name).toBeUndefined();
   });
 
   test("a header naming both is rejected", () => {
     const { baggage } = new RunTree({
       name: "p",
-      address: SUPPORT,
+      address: SUPPORT_AGENT,
     }).toHeaders();
     expect(
       RunTree.fromHeaders(headersWith(`${baggage},langsmith-project=p`)),
@@ -355,7 +349,7 @@ describe("baggage", () => {
         )}`,
       ),
     )!;
-    expect(child.address).toBe(STAGING_STR);
+    expect(child.address).toEqual(STAGING_AGENT);
   });
 
   test("header replicas keep only safe fields; bad addresses are dropped", () => {
@@ -371,7 +365,7 @@ describe("baggage", () => {
       ),
     )!;
     expect(child.replicas).toEqual([
-      { address: SUPPORT_STR },
+      { address: SUPPORT_AGENT },
       { projectName: "p" },
     ]);
   });
@@ -380,21 +374,30 @@ describe("baggage", () => {
 describe("traceable", () => {
   test("a bad decorator address throws at wrap time", () => {
     expect(() =>
-      traceable(async () => "ok", { address: SUPPORT, project_name: "p" }),
+      traceable(async () => "ok", {
+        address: SUPPORT_AGENT,
+        project_name: "p",
+      }),
     ).toThrow(/not both/);
     expect(() =>
       traceable(async () => "ok", {
-        address: "lrn:agents/Bad/environments/production",
+        address: jsCaller({ toLrn: () => "lrn:agents/Bad/environments/local" }),
       }),
     ).toThrow(/1 to 63 lowercase/);
   });
 
-  test("a plain string is accepted and posted", async () => {
+  test("a string address is rejected at wrap time", () => {
+    expect(() =>
+      traceable(async () => "ok", { address: jsCaller(SUPPORT_STR) }),
+    ).toThrow(/address must be an Address/);
+  });
+
+  test("an Address is posted as its LRN", async () => {
     const { client, callSpy } = mockClient();
     const fn = traceable(async () => "ok", {
       client,
       tracingEnabled: true,
-      address: jsCaller("lrn:agents/customer-support/environments/Staging"),
+      address: new Agent("customer-support", "Staging"),
     });
     await fn();
     const [body] = await postedRuns(callSpy, client);
@@ -406,7 +409,7 @@ describe("traceable", () => {
     const fn = traceable(async (_input: string) => "ok", {
       client,
       tracingEnabled: true,
-      address: SUPPORT,
+      address: SUPPORT_AGENT,
       argsConfigPath: [1],
     });
     await (fn as any)("x", { project_name: "runtime" });
@@ -423,9 +426,21 @@ describe("traceable", () => {
       project_name: "p",
       argsConfigPath: [1],
     });
-    await (fn as any)("x", { address: "lrn:agents/a/environments/LOCAL" });
+    await (fn as any)("x", { address: new Agent("a", "LOCAL") });
     const [body] = await postedRuns(callSpy, client);
     expect(body.address).toBe("lrn:agents/a/environments/local");
+  });
+
+  test("a runtime string address is rejected", async () => {
+    const { client } = mockClient();
+    const fn = traceable(async (_input: string) => "ok", {
+      client,
+      tracingEnabled: true,
+      argsConfigPath: [1],
+    });
+    await expect(async () =>
+      (fn as any)("x", { address: "lrn:agents/a/environments/local" }),
+    ).rejects.toThrow(/address must be an Address/);
   });
 });
 
@@ -446,16 +461,18 @@ describe("Client", () => {
     expect(body.address).toBe(SUPPORT_STR);
   });
 
-  test("createRun rejects a malformed address", async () => {
+  test("createRun rejects a string address", async () => {
     const { client } = mockClient();
-    await expect(
-      client.createRun({
-        name: "r",
-        inputs: {},
-        run_type: "chain",
-        address: jsCaller("nope"),
-      }),
-    ).rejects.toThrow(/string like/);
+    for (const bad of [SUPPORT_STR, "nope"]) {
+      await expect(
+        client.createRun({
+          name: "r",
+          inputs: {},
+          run_type: "chain",
+          address: jsCaller(bad),
+        }),
+      ).rejects.toThrow(/address must be an Address/);
+    }
   });
 
   test("createRun rejects a session_name beside an address", async () => {
@@ -467,25 +484,23 @@ describe("Client", () => {
         inputs: {},
         run_type: "chain",
         session_name: "p",
-        address: SUPPORT,
+        address: SUPPORT_AGENT,
       } as Parameters<typeof client.createRun>[0]),
     ).rejects.toThrow(/not both/);
   });
 
-  test("applying a payload twice is idempotent", () => {
-    process.env.LANGSMITH_AGENT_ID = "a";
-    process.env.LANGSMITH_AGENT_ENVIRONMENT = "local";
+  test("applyToPayload writes the LRN string and rejects a string", () => {
     const payload: any = {
-      address: "lrn:agents/customer-support/environments/PRODUCTION",
+      address: new Agent("customer-support", "PRODUCTION"),
     };
     applyToPayload(payload);
-    applyToPayload(payload);
     expect(payload).toEqual({ address: SUPPORT_STR });
+    expect(() => applyToPayload(payload)).toThrow(/address must be an Address/);
   });
 
   test("batchIngestRuns sends the address to POST /runs/batch", async () => {
     const { client, callSpy } = mockClient();
-    const run = new RunTree({ name: "r", address: SUPPORT, client });
+    const run = new RunTree({ name: "r", address: SUPPORT_AGENT, client });
     await client.batchIngestRuns({ runCreates: [run.toJSON()] });
     const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
       String(url).endsWith("/runs/batch"),
@@ -496,12 +511,12 @@ describe("Client", () => {
     expect(post[0]).not.toHaveProperty("session_name");
   });
 
-  test("createFeedback sends one lowercase address string", async () => {
+  test("createFeedback sends the Address as an LRN string", async () => {
     const { client, callSpy } = mockClient();
     await client.createFeedback({
       runId: "00000000-0000-0000-0000-000000000001",
       key: "k",
-      address: jsCaller("lrn:agents/customer-support/environments/PRODUCTION"),
+      address: new Agent("customer-support", "PRODUCTION"),
     });
     const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
       String(url).endsWith("/feedback"),
@@ -511,21 +526,23 @@ describe("Client", () => {
     expect(body).not.toHaveProperty("agent_id");
   });
 
-  test("createFeedback rejects a malformed address", async () => {
+  test("createFeedback rejects a string address", async () => {
     const { client } = mockClient();
-    await expect(
-      client.createFeedback({
-        runId: "00000000-0000-0000-0000-000000000001",
-        key: "k",
-        address: jsCaller("nope"),
-      }),
-    ).rejects.toThrow(/string like/);
+    for (const bad of [SUPPORT_STR, "nope"]) {
+      await expect(
+        client.createFeedback({
+          runId: "00000000-0000-0000-0000-000000000001",
+          key: "k",
+          address: jsCaller(bad),
+        }),
+      ).rejects.toThrow(/address must be an Address/);
+    }
   });
 
-  test("a direct updateRun sends the address string", async () => {
+  test("a direct updateRun sends the LRN string", async () => {
     const { client, callSpy } = mockClient();
     await client.updateRun("00000000-0000-0000-0000-000000000001", {
-      address: jsCaller("lrn:agents/customer-support/environments/STAGING"),
+      address: new Agent("customer-support", "STAGING"),
     });
     const [, init] = callSpy.mock.calls.find(
       ([, init]: [string, any]) => init?.method === "PATCH",
@@ -534,73 +551,68 @@ describe("Client", () => {
     expect(body.address).toBe(STAGING_STR);
     expect(body).not.toHaveProperty("agent_id");
   });
+
+  test("updateRun rejects a string address", async () => {
+    const { client } = mockClient();
+    await expect(
+      client.updateRun("00000000-0000-0000-0000-000000000001", {
+        address: jsCaller(SUPPORT_STR),
+      }),
+    ).rejects.toThrow(/address must be an Address/);
+  });
 });
 
 // Compile-time checks: `tsc` fails if a `@ts-expect-error` stops erroring.
 describe("address types", () => {
-  test("literals, parse and agent results are accepted", () => {
-    const dynamic: string = SUPPORT_STR;
-    const literal = new RunTree({
-      name: "r",
-      address: "lrn:agents/support-bot/environments/production",
-    });
-    const parsed = new RunTree({
-      name: "r",
-      address: Agent.parse(dynamic).toLrn(),
-    });
-    const built = new RunTree({
-      name: "r",
-      address: new Agent("support-bot", dynamic.slice(-10)).toLrn(),
-    });
-    expect(literal.address).toBe(
-      "lrn:agents/support-bot/environments/production",
-    );
-    expect(parsed.address).toBe(SUPPORT_STR);
-    expect(built.address).toBe(
-      "lrn:agents/support-bot/environments/production",
-    );
-    const traced = traceable(async () => 1, { address: SUPPORT });
+  test("an Address is accepted", () => {
+    const run = new RunTree({ name: "r", address: SUPPORT_AGENT });
+    expect(run.address).toEqual(SUPPORT_AGENT);
+    const traced = traceable(async () => 1, { address: SUPPORT_AGENT });
     expect(typeof traced).toBe("function");
   });
 
-  test("a wrong environment, collection or dynamic string is rejected", () => {
+  test("a string is rejected", () => {
     const dynamic: string = SUPPORT_STR;
     const rejected = (build: () => unknown) => expect(build).toBeDefined(); // never called; only type-checked
     rejected(() => {
-      // @ts-expect-error unknown environment
-      traceable(async () => 1, { address: "lrn:agents/x/environments/prod" });
-      // @ts-expect-error wrong collection
-      traceable(async () => 1, { address: "projects/x" });
-      // @ts-expect-error a dynamic string must go through Agent.parse
+      // @ts-expect-error an LRN literal is not an Address
+      traceable(async () => 1, { address: "lrn:agents/x/environments/local" });
+      // @ts-expect-error a dynamic string is not an Address
       traceable(async () => 1, { address: dynamic });
-      // @ts-expect-error unknown environment
-      new RunTree({ name: "r", address: "lrn:agents/x/environments/prod" });
-      // @ts-expect-error wrong collection
-      new RunTree({ name: "r", address: "projects/x" });
-      // @ts-expect-error a dynamic string must go through Agent.parse
+      // @ts-expect-error an LRN literal is not an Address
+      new RunTree({ name: "r", address: "lrn:agents/x/environments/local" });
+      // @ts-expect-error a dynamic string is not an Address
       new RunTree({ name: "r", address: dynamic });
-      // @ts-expect-error a replica takes an Address or LRN too
+      // @ts-expect-error a replica takes an Address
       new RunTree({ name: "r", replicas: [{ address: dynamic }] });
       const { client } = mockClient();
-      // @ts-expect-error createRun takes an Address or LRN
+      // @ts-expect-error createRun takes an Address
       client.createRun({ name: "r", run_type: "chain", address: dynamic });
-      // @ts-expect-error createFeedback takes an Address or LRN
+      // @ts-expect-error createFeedback takes an Address
       client.createFeedback({ runId: "r", key: "k", address: dynamic });
+      // @ts-expect-error updateRun takes an Address
+      client.updateRun("r", { address: dynamic });
     });
+  });
+
+  test("Lrn is not exported from the package", () => {
+    // @ts-expect-error Lrn is internal
+    type _NoLrn = langsmith.Lrn;
+    expect("Lrn" in langsmith).toBe(false);
   });
 });
 
 describe("Address objects", () => {
   class Custom implements Address {
     constructor(private readonly lrn: string) {}
-    toLrn(): Lrn {
-      return this.lrn as Lrn;
+    toLrn(): any {
+      return this.lrn;
     }
   }
 
-  test("a run tree carries the LRN of an Address", () => {
-    expect(new RunTree({ name: "r", address: SUPPORT_AGENT }).address).toBe(
-      SUPPORT_STR,
+  test("a run tree carries an Agent for an Address", () => {
+    expect(new RunTree({ name: "r", address: SUPPORT_AGENT }).address).toEqual(
+      SUPPORT_AGENT,
     );
   });
 
@@ -608,9 +620,20 @@ describe("Address objects", () => {
     const custom = new Custom(
       "lrn:agents/customer-support/environments/STAGING",
     );
-    expect(new RunTree({ name: "r", address: custom }).address).toBe(
-      STAGING_STR,
-    );
+    const { address } = new RunTree({ name: "r", address: custom });
+    expect(address).toBeInstanceOf(Agent);
+    expect(address).toEqual(STAGING_AGENT);
+  });
+
+  test("a custom implementation is posted as its LRN", async () => {
+    const { client, callSpy } = mockClient();
+    await new RunTree({
+      name: "r",
+      address: new Custom(SUPPORT_STR),
+      client,
+    }).postRun();
+    const [body] = await postedRuns(callSpy, client);
+    expect(body.address).toBe(SUPPORT_STR);
   });
 
   test("an implementation must render a valid LRN", () => {
@@ -618,7 +641,7 @@ describe("Address objects", () => {
       () => new RunTree({ name: "r", address: new Custom("experiments/e") }),
     ).toThrow(/string like/);
     expect(() => new RunTree({ name: "r", address: {} as any })).toThrow(
-      /string like/,
+      /address must be an Address/,
     );
   });
 
@@ -627,19 +650,16 @@ describe("Address objects", () => {
       name: "r",
       replicas: [{ address: SUPPORT_AGENT }],
     });
-    expect(tree.replicas?.[0]).toMatchObject({ address: SUPPORT_STR });
+    expect(tree.replicas?.[0]).toMatchObject({ address: SUPPORT_AGENT });
   });
 
-  test("createFeedback sends the LRN string of an Address", async () => {
-    const { client, callSpy } = mockClient();
-    await client.createFeedback({
-      runId: "00000000-0000-0000-0000-000000000001",
-      key: "k",
-      address: SUPPORT_AGENT,
-    });
-    const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
-      String(url).endsWith("/feedback"),
-    );
-    expect(JSON.parse(init.body).address).toBe(SUPPORT_STR);
+  test("a replica string address is rejected", () => {
+    expect(
+      () =>
+        new RunTree({
+          name: "r",
+          replicas: [{ address: jsCaller(SUPPORT_STR) }],
+        }),
+    ).toThrow(/address must be an Address/);
   });
 });

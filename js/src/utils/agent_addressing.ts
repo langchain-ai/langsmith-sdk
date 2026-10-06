@@ -1,9 +1,9 @@
 import {
+  type Address,
+  Agent,
   EnvAddressError,
-  type Lrn,
+  checkedAddress,
   envNames,
-  lrnFromEnv,
-  toLrn,
 } from "../address.js";
 import {
   getEnvironmentVariable,
@@ -12,18 +12,18 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, Lrn | undefined];
+export type Tier = [string | undefined, Agent | undefined];
 
-/** The LRN of an `Address` or LRN string, validated at an entry point; the SDK carries the result. */
-export function checkAddress(address: unknown): Lrn | undefined {
-  return address == null ? undefined : toLrn(address);
+/** The `Address` validated at an entry point as an `Agent`; the SDK carries the result. */
+export function checkAddress(address: unknown): Agent | undefined {
+  return address == null ? undefined : checkedAddress(address);
 }
 
 export function rejectConflicting(project: unknown, address: unknown): void {
   if (project && address) {
     throw new Error(
       `A run is sent to a project (${JSON.stringify(project)}) or to an ` +
-        `address (${JSON.stringify(address)}), not both.`,
+        `address (${String(address)}), not both.`,
     );
   }
 }
@@ -53,7 +53,7 @@ function getEnvProject(): string | undefined {
  */
 export function resolveFromEnv(): Tier {
   const project = getEnvProject();
-  const address = lrnFromEnv();
+  const address = Agent.fromEnv();
   if (project && address) {
     throw new EnvAddressError(
       "LANGSMITH_AGENT_* and a project are both set in the environment.",
@@ -82,13 +82,13 @@ export function warnOnEnv(): void {
 }
 
 /**
- * Put the run's address in its payload field, as one lowercase string.
+ * Put the run's address in its payload field, as its LRN string, the only place it becomes one.
  * Without one, a create naming no project takes the env address.
  *
  * @throws {EnvAddressError} If the env names half an address.
  */
 export function applyToPayload(
-  run: { address?: Lrn; session_id?: string; session_name?: string },
+  run: { address?: Address; session_id?: string; session_name?: string },
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
@@ -97,7 +97,7 @@ export function applyToPayload(
   const namedProject =
     payload.session_id != null || payload.session_name != null;
   if (!address && !update && !namedProject) {
-    address = lrnFromEnv();
+    address = Agent.fromEnv();
   }
   if (!address) {
     return;
@@ -106,7 +106,7 @@ export function applyToPayload(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  payload.address = address;
+  payload.address = address.toLrn();
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;

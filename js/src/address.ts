@@ -8,9 +8,10 @@
  * follow without changing the tracing API. The environment is always rendered
  * lowercase.
  *
- * Anywhere an address is accepted, an `Address` or an LRN string is. It is
- * validated once at that entry point, and only its LRN is carried from there on
- * and sent in the `address` field of the payload.
+ * Anywhere an address is accepted, only an `Address` is; an LRN string is
+ * rejected. It is validated once at that entry point and carried as an `Agent`
+ * from there on. Its LRN appears only on the wire: the `address` field of the
+ * payload and the `langsmith-address` baggage header.
  *
  * @example
  * ```ts
@@ -18,7 +19,6 @@
  *
  * const support = new Agent("customer-support", "production");
  * const handle = traceable(fn, { address: support });
- * // or an LRN literal: { address: "lrn:agents/customer-support/environments/staging" }
  * ```
  */
 import { getEnvironmentVariable } from "./utils/env.js";
@@ -27,9 +27,10 @@ import { getEnvironmentVariable } from "./utils/env.js";
 export type Environment = "local" | "development" | "staging" | "production";
 
 /**
- * (beta) An LRN string, `lrn:agents/{id}/environments/{environment}`, typed as
+ * An LRN string, `lrn:agents/{id}/environments/{environment}`, typed as
  * a template literal so a literal is checked at compile time.
  */
+/** @internal */
 export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
 
 /** (beta) A destination that runs can be addressed to. */
@@ -116,7 +117,7 @@ export class Agent implements Address {
     const match = typeof lrn === "string" ? LRN_PATTERN.exec(lrn) : null;
     if (!match) {
       throw new Error(
-        "An address must be an `Address` or a string like " +
+        "An LRN must be a string like " +
           `"lrn:agents/{id}/environments/{environment}", got ${JSON.stringify(lrn)}.`,
       );
     }
@@ -161,22 +162,24 @@ function isAddress(value: unknown): value is Address {
 }
 
 /**
- * @internal Validate an `Address` or LRN string and return its normalized LRN.
- * The one place an address becomes the string the SDK carries and sends.
+ * @internal Validate an `Address` and return it as a normalized `Agent`: frozen,
+ * with a lowercase environment. Strings are rejected; the LRN only goes on the
+ * wire.
  * @throws If `value` is not a valid address.
  */
-export function toLrn(value: unknown): Lrn {
-  return Agent.parse(
-    isAddress(value) ? value.toLrn() : (value as string),
-  ).toLrn();
+export function checkedAddress(value: unknown): Agent {
+  if (!isAddress(value)) {
+    throw new Error(
+      "address must be an Address such as `new Agent(id, env)`, got " +
+        `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
+    );
+  }
+  return Agent.parse(value.toLrn());
 }
 
-/**
- * @internal The LRN named by the `LANGSMITH_AGENT_*` env vars, if any.
- * @throws {EnvAddressError} If only one is set, or a value is invalid.
- */
-export function lrnFromEnv(): Lrn | undefined {
-  return Agent.fromEnv()?.toLrn();
+/** @internal Parse an LRN from the wire, such as a header, into an `Agent`. */
+export function addressFromLrn(lrn: string): Agent {
+  return Agent.parse(lrn);
 }
 
 /** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */
