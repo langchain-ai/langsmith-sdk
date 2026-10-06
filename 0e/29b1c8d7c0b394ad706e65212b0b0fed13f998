@@ -1,0 +1,25 @@
+python/langsmith/_openapi_client/types/session_resolve_params.py
+  s_f37c3e6c74d99c::t_a0a9546f73e36e 5,7,9,12-13
+python/langsmith/_openapi_client/types/__init__.py
+  s_f37c3e6c74d99c::t_a0a9546f73e36e 27
+python/langsmith/_openapi_client/resources/sessions.py
+  s_f37c3e6c74d99c::t_a0a9546f73e36e 18,47,105
+python/langsmith/_openapi_client/types/agent_address_param.py
+  s_f37c3e6c74d99c::t_a0a9546f73e36e 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e29b1c8d7c0b394ad706e65212b0b0fed13f998",
+  "prompts": {},
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
