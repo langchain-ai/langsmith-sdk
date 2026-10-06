@@ -1,0 +1,45 @@
+js/src/schemas.ts
+  s_f37c3e6c74d99c::t_bfd72c302628e2 1
+  s_f37c3e6c74d99c::t_1211603a3b32c4 216,236
+js/src/address.ts
+  s_f37c3e6c74d99c::t_bfd72c302628e2 5-8,29-36,38-39,42-44,106-113,153-185,189-191,193,197-203,205-207,210-213,224
+js/src/traceable.ts
+  s_f37c3e6c74d99c::t_bfd72c302628e2 42,762,826-827
+js/src/utils/addressing.ts
+  s_f37c3e6c74d99c::t_1211603a3b32c4 9,80
+  s_f37c3e6c74d99c::t_bfd72c302628e2 84
+  s_f37c3e6c74d99c::t_ebaeb3baa160be 1
+js/src/index.ts
+  s_f37c3e6c74d99c::t_ddea4691eb8920 21-22,24
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_bfd72c302628e2 37,40,449,730,1417
+  s_f37c3e6c74d99c::t_1211603a3b32c4 98,178,206,243,249,343,729,743
+js/src/client.ts
+  s_f37c3e6c74d99c::t_bfd72c302628e2 90,2550,3155,5578
+  s_f37c3e6c74d99c::t_1211603a3b32c4 545,617,3286,5574
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_0b9ed4dd6cb7fe 263,265,267,269
+  s_f37c3e6c74d99c::t_0e4c9d906cade2 12-18,30,125-133,140-141,150-211,217,221-262,264,266,268,270-273,339,518,569,600,624,664,687
+  s_f37c3e6c74d99c::t_e32bf4b27cafd6 212-216,218-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf6d608bcd31d05a6a6f0b6806833aa268f1f0b8",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
