@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _agent_addressing, _profiles
+from langsmith._internal import _addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
     HUB,
@@ -213,7 +213,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
-        _agent_addressing.warn_on_env()
+        _addressing.warn_on_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -622,11 +622,11 @@ class AsyncClient:
             project. It may change without notice.
         """
         if kwargs.get("address") is not None:
-            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project; `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body.
-        _agent_addressing.reject_conflicting(
+        _addressing.reject_conflicting(
             project=project_name, address=kwargs.get("address")
         )
         if (
@@ -639,12 +639,12 @@ class AsyncClient:
             # A `session_name=None` in `kwargs` would override the result below.
             kwargs.pop("session_name", None)
             try:
-                session_name, kwargs["address"] = _agent_addressing.resolve(
+                session_name, kwargs["address"] = _addressing.resolve(
                     (project_name, kwargs.get("address"))
                 )
-            except _agent_addressing.EnvAddressError as e:
+            except _addressing.EnvAddressError as e:
                 # Dropped, not raised: tracing must not break the caller.
-                _agent_addressing.log_untraced(e)
+                _addressing.log_untraced(e)
                 return
         run_create = {
             "name": name,
@@ -655,7 +655,7 @@ class AsyncClient:
             "revision_id": revision_id,
             **kwargs,
         }
-        _agent_addressing.apply_to_payload(run_create)
+        _addressing.apply_to_payload(run_create)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )
@@ -678,7 +678,7 @@ class AsyncClient:
                     before. It may change without notice.
         """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
-        _agent_addressing.apply_to_payload(data, update=True)
+        _addressing.apply_to_payload(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
             f"/runs/{ls_client._as_uuid(run_id)}",
@@ -1237,8 +1237,8 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
-        address = _agent_addressing.check_address(address)
-        _agent_addressing.reject_conflicting(
+        address = _addressing.check_address(address)
+        _addressing.reject_conflicting(
             project=project_id, session_id=session_id, address=address
         )
         run_id = run_id or trace_id

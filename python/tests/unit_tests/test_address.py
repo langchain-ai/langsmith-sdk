@@ -13,7 +13,7 @@ import pytest
 
 import langsmith as ls
 from langsmith import utils as ls_utils
-from langsmith._internal import _agent_addressing, _context
+from langsmith._internal import _addressing, _context
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.address import EnvAddressError
 from langsmith.client import Client
@@ -48,7 +48,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> Any:
 def _clear_caches() -> None:
     ls_utils.get_env_var.cache_clear()
     ls_utils.get_tracer_project.cache_clear()
-    _agent_addressing._log_untraced_once.cache_clear()
+    _addressing._log_untraced_once.cache_clear()
 
 
 def _set_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
@@ -74,10 +74,6 @@ def _root() -> tuple:
 
 def _agent(agent_id: str, environment: str) -> str:
     return ls.Agent(agent_id, environment)._lrn()
-
-
-def _parse(value: Any) -> str:
-    return ls.Agent._from_lrn(value)._lrn()
 
 
 def _from_env() -> Optional[str]:
@@ -124,34 +120,7 @@ class TestConstructors:
     )
     def test_environments_are_lowercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
-            assert _agent("a", given) == f"lrn:agents/a/environments/{environment}"
-            assert _parse(f"lrn:agents/a/environments/{given}") == (
-                f"lrn:agents/a/environments/{environment}"
-            )
-
-    def test_parse_round_trips(self) -> None:
-        assert _parse(SUPPORT_LRN) == SUPPORT_LRN
-
-    @pytest.mark.parametrize(
-        "value",
-        [
-            "support",
-            "",
-            "lrn:agents/support",
-            "lrn:agents/support/environments/",
-            "lrn:agents/Support/environments/production",
-            "lrn:agents/support/environments/prod",
-            "lrn:agents/support/environments/production/extra",
-            "experiments/e/environments/production",
-            " lrn:agents/support/environments/production",
-            "agents/support/environments/production",
-            "lrn:agents/support/environments/production\n",
-            42,
-        ],
-    )
-    def test_parse_rejects_anything_else(self, value: Any) -> None:
-        with pytest.raises(ls_utils.LangSmithUserError):
-            _parse(value)
+            assert ls.Agent("a", given).env == environment
 
     def test_from_env_with_nothing_set(self) -> None:
         assert _from_env() is None
@@ -224,13 +193,16 @@ class TestConstructors:
 
 
 class _Custom:
-    """Another `Address` implementation."""
+    """Another `Address` implementation, which the SDK must not narrow."""
 
     def __init__(self, lrn: str) -> None:
         self._value = lrn
 
     def _lrn(self) -> str:
         return self._value
+
+    def _to_fields(self) -> dict[str, str]:
+        return {"agent_id": "custom", "agent_environment": "local"}
 
 
 class TestAddressObjectsAtEntryPoints:
@@ -265,30 +237,34 @@ class TestAddressObjectsAtEntryPoints:
         assert RunTree(name="r", address=SUPPORT).address == SUPPORT
 
     def test_replica_objects(self) -> None:
-        assert _agent_addressing.normalize_replicas([SUPPORT]) == [{"address": SUPPORT}]
-        assert _agent_addressing.normalize_replicas([{"address": SUPPORT}]) == [
+        assert _addressing.normalize_replicas([SUPPORT]) == [{"address": SUPPORT}]
+        assert _addressing.normalize_replicas([{"address": SUPPORT}]) == [
             {"address": SUPPORT}
         ]
 
     def test_a_replica_must_be_an_address(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
-            _agent_addressing.normalize_replicas([SUPPORT_LRN])
+            _addressing.normalize_replicas([SUPPORT_LRN])
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
-            _agent_addressing.normalize_replicas([{"address": SUPPORT_LRN}])
+            _addressing.normalize_replicas([{"address": SUPPORT_LRN}])
 
     def test_wire_carries_the_lrn_string(self) -> None:
         payload = RunTree(name="r", address=SUPPORT)._get_dicts_safe()
-        _agent_addressing.apply_to_payload(payload)
+        _addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT_LRN
 
-    def test_any_implementation_is_accepted(self) -> None:
-        custom = _Custom("lrn:agents/support/environments/Staging")
+    def test_any_implementation_is_carried_as_is(self) -> None:
+        custom = _Custom("lrn:agents/custom/environments/local")
         assert isinstance(custom, ls.Address)
-        assert RunTree(name="r", address=custom).address == STAGING
+        assert RunTree(name="r", address=custom).address is custom
 
-    def test_an_implementation_must_render_a_valid_lrn(self) -> None:
-        with pytest.raises(ls_utils.LangSmithUserError, match="LRN"):
-            RunTree(name="r", address=_Custom("experiments/e"))
+    def test_an_implementation_gives_its_own_wire_and_header_forms(self) -> None:
+        custom = _Custom("lrn:agents/custom/environments/local")
+        payload = RunTree(name="r", address=custom)._get_dicts_safe()
+        _addressing.apply_to_payload(payload)
+        assert payload["address"] == "lrn:agents/custom/environments/local"
+        baggage = RunTree(name="r", address=custom).to_headers()["baggage"]
+        assert "langsmith-agent-id=custom" in baggage
 
     def test_an_object_that_is_not_an_address_is_rejected(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
@@ -390,9 +366,7 @@ class TestPrecedence:
             with pytest.raises(ls_utils.LangSmithUserError):
                 call()
 
-    @pytest.mark.parametrize(
-        "settle", [_agent_addressing.resolve, _agent_addressing.first_named]
-    )
+    @pytest.mark.parametrize("settle", [_addressing.resolve, _addressing.first_named])
     def test_the_level_naming_both_is_reported(self, settle: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="precedence level 2"):
             settle((None, None), ("p", SUPPORT))
@@ -526,7 +500,7 @@ def test_client_warns_about_an_unusable_env(
     _set_env(monkeypatch, **env)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        _agent_addressing.warn_on_env()
+        _addressing.warn_on_env()
     messages = [str(w.message) for w in caught]
     if warning is None:
         assert messages == []
@@ -663,7 +637,7 @@ class TestReplicas:
 class TestWire:
     def test_a_run_payload_carries_one_lowercase_string(self) -> None:
         payload = RunTree(name="r", address=SUPPORT)._get_dicts_safe()
-        _agent_addressing.apply_to_payload(payload)
+        _addressing.apply_to_payload(payload)
         assert payload["address"] == "lrn:agents/support/environments/production"
         assert "agent_id" not in payload
         assert "agent_environment" not in payload
@@ -678,17 +652,17 @@ class TestWire:
         payload = client._run_transform(run, update=update)
         assert payload["address"] == SUPPORT_LRN
 
-    def test_a_payload_address_is_normalized_once(self) -> None:
-        payload = {"id": "x", "address": "lrn:agents/support/environments/Production"}
-        _agent_addressing.apply_to_payload(payload)
+    def test_a_payload_address_object_is_rendered_once(self) -> None:
+        payload = {"id": "x", "address": ls.Agent("support", "Production")}
+        _addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT_LRN
 
     def test_applying_to_a_payload_twice_is_a_no_op(self) -> None:
         """A retried batch re-sends the caller's dicts, already applied."""
         payload = {"id": "x", "address": SUPPORT}
-        _agent_addressing.apply_to_payload(payload)
+        _addressing.apply_to_payload(payload)
         applied = dict(payload)
-        _agent_addressing.apply_to_payload(payload)
+        _addressing.apply_to_payload(payload)
         assert payload == applied
 
     def test_retrying_the_same_batch_keeps_the_address(self, client: Client) -> None:
@@ -697,13 +671,13 @@ class TestWire:
         second = client._run_transform(run, copy=False)["address"]
         assert first == second == SUPPORT_LRN
 
-    def test_a_malformed_payload_address_raises(self) -> None:
-        with pytest.raises(ls_utils.LangSmithUserError, match="LRN"):
-            _agent_addressing.apply_to_payload({"id": "x", "address": "support"})
+    def test_a_payload_address_must_be_an_address_or_wire_data(self) -> None:
+        with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
+            _addressing.apply_to_payload({"id": "x", "address": 42})
 
     def test_a_project_payload_is_untouched(self) -> None:
         payload = {"name": "r", "session_name": "p"}
-        _agent_addressing.apply_to_payload(payload)
+        _addressing.apply_to_payload(payload)
         assert payload == {"name": "r", "session_name": "p"}
 
     def test_the_env_fills_in_an_unaddressed_post(
@@ -715,7 +689,7 @@ class TestWire:
             LANGSMITH_AGENT_ENVIRONMENT="Staging",
         )
         payload: dict = {"id": "x", "session_name": None}
-        _agent_addressing.apply_to_payload(payload)
+        _addressing.apply_to_payload(payload)
         assert payload == {"id": "x", "address": STAGING_LRN}
 
     def test_an_update_does_not_read_the_env(
@@ -727,7 +701,7 @@ class TestWire:
             LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
         payload: dict = {"id": "x"}
-        _agent_addressing.apply_to_payload(payload, update=True)
+        _addressing.apply_to_payload(payload, update=True)
         assert "address" not in payload
 
     def _feedback(self, address: Any) -> FeedbackCreate:

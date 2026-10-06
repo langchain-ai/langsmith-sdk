@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional, Protocol, cast, runtime_checkable
 
 from langsmith import utils
@@ -45,7 +46,8 @@ __all__ = ["Address", "Agent", "EnvAddressError"]
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _ENVIRONMENTS = ("local", "development", "staging", "production")
-_LRN_PATTERN = re.compile(r"lrn:agents/([^/]*)/environments/([^/]*)")
+# The flat fields an address travels in through trace headers.
+FIELD_NAMES = ("agent_id", "agent_environment")
 
 
 @runtime_checkable
@@ -54,6 +56,10 @@ class Address(Protocol):
 
     def _lrn(self) -> str:
         """Return the identifier the backend takes. Wire format only."""
+        ...
+
+    def _to_fields(self) -> dict[str, str]:
+        """Return the address as flat string fields, for trace headers."""
         ...
 
 
@@ -107,27 +113,16 @@ class Agent:
         """Return `lrn:agents/{id}/environments/{env}`. Wire format only."""
         return f"lrn:agents/{self.id}/environments/{self.env}"
 
+    def _to_fields(self) -> dict[str, str]:
+        """Return `agent_id` and `agent_environment`."""
+        return {"agent_id": self.id, "agent_environment": self.env}
+
     def to_agent_address(self) -> AgentAddress:
         """Return this agent as the `AgentAddress` the v2 API endpoints take."""
         return cast(
             "AgentAddress",
             {"kind": "AGENT", "id": self.id, "environment": self.env.upper()},
         )
-
-    @classmethod
-    def _from_lrn(cls, lrn: str) -> Agent:
-        """Build from an agent LRN read off the wire, lowercasing its environment.
-
-        Raises:
-            LangSmithUserError: If `lrn` is not a valid agent LRN.
-        """
-        match = _LRN_PATTERN.fullmatch(lrn) if isinstance(lrn, str) else None
-        if match is None:
-            raise utils.LangSmithUserError(
-                "Expected an LRN like "
-                f"'lrn:agents/{{id}}/environments/{{environment}}', got {lrn!r}."
-            )
-        return cls(*match.groups())
 
     @classmethod
     def from_env(cls) -> Optional[Agent]:
@@ -158,25 +153,33 @@ class Agent:
             ) from e
 
 
-def check(address: Any) -> Agent:
-    """Validate an `Address` and return it as an `Agent`.
+def ensure_address(address: Any) -> Address:
+    """Return `address` if it is an `Address`.
 
-    The one place an address is checked and normalized; the SDK carries the
-    result; the backend identifier is only produced where it goes on the wire.
-    A string is not an address.
+    The one place an address is checked; the SDK then carries it as is, and
+    only asks it for its wire forms where they are needed. A string is not an
+    address.
 
     Raises:
-        LangSmithUserError: If `address` is not an `Address` that renders a
-            valid agent LRN.
+        LangSmithUserError: If `address` is not an `Address`.
     """
-    if isinstance(address, Agent):
-        return address
     if isinstance(address, str) or not isinstance(address, Address):
         raise utils.LangSmithUserError(
             "An address must be an `Address` such as `ls.Agent(id, env)`, "
             f"got {address!r}."
         )
-    return Agent._from_lrn(address._lrn())
+    return address
+
+
+def from_fields(fields: Mapping[str, Any]) -> Optional[Address]:
+    """Rebuild an address from the fields `_to_fields` produced, if it has any.
+
+    Raises:
+        LangSmithUserError: If the fields are half an address, or invalid.
+    """
+    if not any(fields.get(name) is not None for name in FIELD_NAMES):
+        return None
+    return Agent(fields.get("agent_id"), fields.get("agent_environment"))  # type: ignore[arg-type]
 
 
 def env_values() -> dict[str, Optional[str]]:

@@ -45,7 +45,7 @@ from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
-from langsmith._internal import _agent_addressing
+from langsmith._internal import _addressing
 from langsmith._internal import _aiter as aitertools
 from langsmith._runtime_overrides import (
     _aio_to_thread_override_active as _runtime_override_active,
@@ -219,8 +219,8 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
-    address = _agent_addressing.check_address(address)
-    replicas = _agent_addressing.normalize_replicas(replicas)
+    address = _addressing.check_address(address)
+    replicas = _addressing.normalize_replicas(replicas)
     current_context = get_tracing_context()
     if project_name is not None and address == current_context.get("address"):
         # Restoring a snapshot, not naming a second destination:
@@ -229,7 +229,7 @@ def tracing_context(
         # arrives here looking exactly like typing both. The project named here
         # wins, as it does over any other ambient address.
         address = None
-    _agent_addressing.reject_conflicting(project=project_name, address=address)
+    _addressing.reject_conflicting(project=project_name, address=address)
     parent_run = (
         _get_parent_run(
             {"parent": parent or kwargs.get("parent_run"), "replicas": replicas}
@@ -638,7 +638,7 @@ def traceable(
         tags=kwargs.pop("tags", None),
         client=kwargs.pop("client", None),
         project_name=kwargs.pop("project_name", None),
-        address=_agent_addressing.check_address(kwargs.pop("address", None)),
+        address=_addressing.check_address(kwargs.pop("address", None)),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         process_chunk=kwargs.pop("process_chunk", None),
@@ -647,7 +647,7 @@ def traceable(
         enabled=enabled,
         exceptions_to_handle=kwargs.pop("exceptions_to_handle", None),
     )
-    _agent_addressing.reject_conflicting(
+    _addressing.reject_conflicting(
         project=container_input["project_name"], address=container_input["address"]
     )
     outputs_processor = kwargs.pop("process_outputs", None)
@@ -1149,8 +1149,8 @@ class trace:
         self.inputs = inputs
         self.attachments = attachments
         self.extra = extra
-        self.address = _agent_addressing.check_address(address)
-        _agent_addressing.reject_conflicting(project=project_name, address=self.address)
+        self.address = _addressing.check_address(address)
+        _addressing.reject_conflicting(project=project_name, address=self.address)
         self.project_name = project_name
         self.parent = parent
         # The run tree is deprecated. Keeping for backwards compat.
@@ -1203,11 +1203,11 @@ class trace:
                 project_name_, address_ = _get_addressing(
                     self.project_name, self.address, parent_run_
                 )
-        except _agent_addressing.EnvAddressError as e:
+        except _addressing.EnvAddressError as e:
             # A bad environment must not break the block it would have traced:
             # the run tree is built but never sent.
             if enabled:
-                _agent_addressing.log_untraced(e)
+                _addressing.log_untraced(e)
             self._untraced = True
             enabled = False
             parent_run_ = None
@@ -1388,10 +1388,10 @@ def _get_addressing(
     tiers = list(_addressing_tiers(project_name, address))
     if parent is not None:
         tiers.insert(2, (parent.session_name, parent.address))
-    return _agent_addressing.resolve(*tiers)
+    return _addressing.resolve(*tiers)
 
 
-def _address_kwargs(tier: _agent_addressing.Tier) -> dict[str, Any]:
+def _address_kwargs(tier: _addressing.Tier) -> dict[str, Any]:
     """Render one level's `(project, address)` as `RunTree` keyword arguments."""
     project, address = tier
     if project:
@@ -1401,7 +1401,7 @@ def _address_kwargs(tier: _agent_addressing.Tier) -> dict[str, Any]:
 
 def _addressing_tiers(
     project_name: Optional[str] = None, address: Optional[Address] = None
-) -> tuple[_agent_addressing.Tier, ...]:
+) -> tuple[_addressing.Tier, ...]:
     """Return the levels named in code, highest first, without the env vars.
 
     The argument, a context variable, the current run tree, then
@@ -1667,7 +1667,7 @@ def _get_parent_run(
         # used for `project_name`: what nothing settles, the `RunTree`
         # validator resolves from the environment. A header's own destination
         # outranks it. Resolved only here, the one case that needs it.
-        named = _agent_addressing.first_named(
+        named = _addressing.first_named(
             *_addressing_tiers(
                 langsmith_extra.get("project_name"), langsmith_extra.get("address")
             )
@@ -1727,7 +1727,7 @@ def _resolve_traceable_addressing(
     outranks an address on the decorator or in the env. `resolve` consults the
     env vars as the last level.
     """
-    return _agent_addressing.resolve(
+    return _addressing.resolve(
         # 1 · tracing_context
         (_context._PROJECT_NAME.get(), _context._ADDRESS.get()),
         # 2 · the parent run, e.g. from distributed-tracing headers
@@ -1763,16 +1763,16 @@ def _setup_run(
     outer_project = _context._PROJECT_NAME.get()
     langsmith_extra = LangSmithExtra(**(langsmith_extra or {}))
     if langsmith_extra.get("address") is not None:
-        langsmith_extra["address"] = _agent_addressing.check_address(
+        langsmith_extra["address"] = _addressing.check_address(
             langsmith_extra["address"]
         )
     if "replicas" in langsmith_extra:
-        langsmith_extra["replicas"] = _agent_addressing.normalize_replicas(
+        langsmith_extra["replicas"] = _addressing.normalize_replicas(
             langsmith_extra["replicas"]
         )
     name = langsmith_extra.get("name") or container_input.get("name")
     client_ = langsmith_extra.get("client", client) or _context._CLIENT.get()
-    _agent_addressing.reject_conflicting(
+    _addressing.reject_conflicting(
         project=langsmith_extra.get("project_name"),
         address=langsmith_extra.get("address"),
     )
@@ -1781,12 +1781,12 @@ def _setup_run(
     enabled = container_input.get("enabled")
     selected_project: Optional[str] = None
     selected_address: Optional[Address] = None
-    env_error: Optional[_agent_addressing.EnvAddressError] = None
+    env_error: Optional[_addressing.EnvAddressError] = None
     try:
         parent_run_ = _get_parent_run(
             {**langsmith_extra, "client": client_}, kwargs.get("config")
         )
-    except _agent_addressing.EnvAddressError as e:
+    except _addressing.EnvAddressError as e:
         parent_run_, env_error = None, e
     # Determine if tracing should be enabled for this function:
     # - enabled=False: never trace
@@ -1807,11 +1807,11 @@ def _setup_run(
             selected_project, selected_address = _resolve_traceable_addressing(
                 parent_run_, langsmith_extra, container_input
             )
-        except _agent_addressing.EnvAddressError as e:
+        except _addressing.EnvAddressError as e:
             env_error = e
     if tracing and env_error is not None:
         # A bad environment must not break the call it would have traced.
-        _agent_addressing.log_untraced(env_error)
+        _addressing.log_untraced(env_error)
         tracing = False
     if not tracing:
         utils.log_once(

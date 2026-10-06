@@ -42,13 +42,13 @@ from langsmith.address import EnvAddressError
 _LOGGER = logging.getLogger(__name__)
 
 
-def check_address(address: Any) -> Optional[_address.Agent]:
-    """Return `address` validated as an `Agent`, or `None` if it is `None`.
+def check_address(address: Any) -> Optional[_address.Address]:
+    """Return `address` if it is an `Address`, or `None` if it is `None`.
 
     Raises:
-        utils.LangSmithUserError: If `address` is not a valid `Address`.
+        utils.LangSmithUserError: If `address` is not an `Address`.
     """
-    return None if address is None else _address.check(address)
+    return None if address is None else _address.ensure_address(address)
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
@@ -235,26 +235,21 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     address from the post that established it, and one naming nothing is
     resolved by run id.
     """
-    address = _from_payload(payload.pop("address", None))
+    address = payload.pop("address", None)
+    # A string is wire data already applied: a retried batch re-sends it.
+    wire = address if isinstance(address, str) else None
+    address = None if wire is not None else check_address(address)
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
-    if address is None and not (update or named_project):
+    if wire is None and address is None and not (update or named_project):
         address = _address.Agent.from_env()
-    if address is None:
+    if address is not None:
+        wire = address._lrn()
+    if wire is None:
         return
     warn_is_beta()
-    payload["address"] = address._lrn()
+    payload["address"] = wire
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)
-
-
-def _from_payload(value: Any) -> Optional[_address.Agent]:
-    """Read a payload's `address`: an `Address`, or the LRN of one already applied.
-
-    A retried batch re-sends the caller's dicts, already in wire form.
-    """
-    if isinstance(value, str):
-        return _address.Agent._from_lrn(value)
-    return check_address(value)

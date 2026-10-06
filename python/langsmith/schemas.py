@@ -696,7 +696,7 @@ class FeedbackCreate(FeedbackBase):
     @classmethod
     def _check_address(cls, value: Any) -> Any:
         # Imported here: `address` imports `utils`, which imports this module.
-        from langsmith._internal._agent_addressing import check_address
+        from langsmith._internal._addressing import check_address
 
         return check_address(value)
 

@@ -69,7 +69,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import (
-    _agent_addressing,
+    _addressing,
     _orjson,
     _profiles,
     _v2_migration_utils,
@@ -1352,7 +1352,7 @@ class Client:
                 self.api_url,
                 _api_url_source(api_url, env_api_url, profile_config.api_url),
             )
-        _agent_addressing.warn_on_env()
+        _addressing.warn_on_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -2494,7 +2494,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
-        _agent_addressing.apply_to_payload(run_create, update=update)
+        _addressing.apply_to_payload(run_create, update=update)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
@@ -2644,13 +2644,13 @@ class Client:
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
         if kwargs.get("address") is not None:
-            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body -- `RunTree.post` sends the
         # tree's fields that way -- where a project beside an agent means the
         # two were meant to travel together for the endpoint to refuse.
-        _agent_addressing.reject_conflicting(
+        _addressing.reject_conflicting(
             project=project_name, address=kwargs.get("address")
         )
         if project_name:
@@ -2665,12 +2665,12 @@ class Client:
             # bad env is caught, rather than in `_run_transform`.
             kwargs.pop("session_name", None)
             try:
-                project_name, kwargs["address"] = _agent_addressing.resolve(
+                project_name, kwargs["address"] = _addressing.resolve(
                     (None, kwargs.get("address"))
                 )
-            except _agent_addressing.EnvAddressError as e:
+            except _addressing.EnvAddressError as e:
                 # Dropped, not raised: tracing must not break the caller.
-                _agent_addressing.log_untraced(e)
+                _addressing.log_untraced(e)
                 return
         run_create = {
             **kwargs,
@@ -3921,7 +3921,7 @@ class Client:
             "_replica_auths", None
         )
         if kwargs.get("address") is not None:
-            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3936,7 +3936,7 @@ class Client:
             "address": kwargs.pop("address", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
-        _agent_addressing.apply_to_payload(data, update=True)
+        _addressing.apply_to_payload(data, update=True)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:
@@ -4929,7 +4929,7 @@ class Client:
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
-        _agent_addressing.reject_url(
+        _addressing.reject_url(
             getattr(run, "session_id", None), getattr(run, "address", None)
         )
         if session_id := getattr(run, "session_id", None):
@@ -8446,8 +8446,8 @@ class Client:
             )
             ```
         """
-        address = _agent_addressing.check_address(address)
-        _agent_addressing.reject_conflicting(
+        address = _addressing.check_address(address)
+        _addressing.reject_conflicting(
             project=project_id, session_id=session_id, address=address
         )
         run_id = run_id or trace_id
