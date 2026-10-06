@@ -73,16 +73,16 @@ def _root() -> tuple:
 
 
 def _agent(agent_id: str, environment: str) -> str:
-    return ls.Agent(agent_id, environment).lrn()
+    return ls.Agent(agent_id, environment)._lrn()
 
 
 def _parse(value: Any) -> str:
-    return ls.Agent.parse(value).lrn()
+    return ls.Agent._from_lrn(value)._lrn()
 
 
 def _from_env() -> Optional[str]:
     agent = ls.Agent.from_env()
-    return None if agent is None else agent.lrn()
+    return None if agent is None else agent._lrn()
 
 
 # -- The handle ---------------------------------------------------------------
@@ -90,7 +90,7 @@ def _from_env() -> Optional[str]:
 
 class TestConstructors:
     def test_agent_renders_its_lrn(self) -> None:
-        assert SUPPORT.lrn() == SUPPORT_LRN
+        assert SUPPORT._lrn() == SUPPORT_LRN
 
     @pytest.mark.parametrize("agent_id", ["a", "a" * 63, "support-v2"])
     def test_valid_agent_ids(self, agent_id: str) -> None:
@@ -197,7 +197,6 @@ class TestConstructors:
     def test_agent_is_an_address(self) -> None:
         assert isinstance(SUPPORT, ls.Address)
         assert not isinstance(SUPPORT_LRN, ls.Address)
-        assert str(SUPPORT) == SUPPORT_LRN
         assert ls.Agent(id="support", env="PRODUCTION") == SUPPORT
 
     def test_agent_renders_the_api_address(self) -> None:
@@ -225,13 +224,13 @@ class TestConstructors:
 
 
 class _Custom:
-    """Another `Address` implementation: only `lrn()` is required."""
+    """Another `Address` implementation."""
 
     def __init__(self, lrn: str) -> None:
-        self._lrn = lrn
+        self._value = lrn
 
-    def lrn(self) -> str:
-        return self._lrn
+    def _lrn(self) -> str:
+        return self._value
 
 
 class TestAddressObjectsAtEntryPoints:
@@ -574,7 +573,10 @@ class TestPropagation:
         headers = RunTree(
             name="up", address=SUPPORT, tags=["t"], extra={"metadata": {"k": "v"}}
         ).to_headers()
-        assert "langsmith-address=" in headers["baggage"]
+        baggage = headers["baggage"]
+        assert "langsmith-agent-id=support" in baggage
+        assert "langsmith-agent-environment=production" in baggage
+        assert "lrn" not in baggage
         child = RunTree.from_headers(headers)
         assert child is not None
         assert _destination(child) == (None, SUPPORT)
@@ -607,25 +609,31 @@ class TestPropagation:
         both = {**project, "baggage": f"{project['baggage']},{address['baggage']}"}
         assert RunTree.from_headers(both) is None
 
-    def test_a_malformed_header_address_is_ignored(self) -> None:
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "langsmith-agent-id=support",
+            "langsmith-agent-environment=production",
+            "langsmith-agent-id=Bad_Id,langsmith-agent-environment=local",
+            "langsmith-agent-id=support,langsmith-agent-environment=prod",
+            "langsmith-agent-id=,langsmith-agent-environment=",
+        ],
+    )
+    def test_a_malformed_header_address_is_ignored(self, bad: str) -> None:
         headers = RunTree(name="up", project_name="upstream").to_headers()
-        for bad in ("support", "lrn:agents/Bad_Id/environments/local", "%7B%7D", ""):
-            bad_headers = {
-                **headers,
-                "baggage": f"{headers['baggage']},langsmith-address={bad}",
-            }
-            child = RunTree.from_headers(bad_headers)
-            assert child is not None
-            assert _destination(child) == ("upstream", None)
-
-    def test_the_baggage_carries_one_lowercase_string(self) -> None:
-        headers = RunTree(name="up", address=SUPPORT).to_headers()
-        assert "langsmith-address=lrn:agents/support/environments/production" in (
-            headers["baggage"].replace("%2F", "/").replace("%3A", ":")
+        child = RunTree.from_headers(
+            {**headers, "baggage": f"{headers['baggage']},{bad}"}
         )
+        assert child is not None
+        assert _destination(child) == ("upstream", None)
 
     def test_a_header_replica_with_an_address_round_trips(self) -> None:
-        replicas = [{"address": STAGING_LRN}, {"address": "bad"}, {"project_name": "p"}]
+        replicas = [
+            {"address": {"agent_id": "support", "agent_environment": "Staging"}},
+            {"address": "bad"},
+            {"address": {"agent_id": "support"}},
+            {"project_name": "p"},
+        ]
         quoted = urllib.parse.quote(json.dumps(replicas))
         parsed = _Baggage.from_header(f"langsmith-replicas={quoted}")
         assert parsed.replicas == [{"address": STAGING}, {"project_name": "p"}]

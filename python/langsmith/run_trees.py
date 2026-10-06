@@ -208,8 +208,9 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
-# The address string, URL-encoded.
-LANGSMITH_ADDRESS = sys.intern(f"{LANGSMITH_PREFIX}address")
+# The address, as its agent id and environment, URL-encoded.
+LANGSMITH_AGENT_ID = sys.intern(f"{LANGSMITH_PREFIX}agent-id")
+LANGSMITH_AGENT_ENVIRONMENT = sys.intern(f"{LANGSMITH_PREFIX}agent-environment")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -890,7 +891,7 @@ class RunTree(ls_schemas.RunBase):
         seed = (
             project_name
             if project_name is not None
-            else (address.lrn() if address is not None else "agent//")
+            else (address._lrn() if address is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -1420,7 +1421,8 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        address: Optional[Agent] = None
+        agent_id: Optional[str] = None
+        agent_environment: Optional[str] = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1431,8 +1433,10 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
-                elif key == LANGSMITH_ADDRESS:
-                    address = _address_from_header(urllib.parse.unquote(value))
+                elif key == LANGSMITH_AGENT_ID:
+                    agent_id = urllib.parse.unquote(value)
+                elif key == LANGSMITH_AGENT_ENVIRONMENT:
+                    agent_environment = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1456,7 +1460,7 @@ class _Baggage:
                             # A replica has to name a destination, but either
                             # mode counts. A malformed address is dropped here
                             # rather than raising downstream.
-                            replica_address = _address_from_header(
+                            replica_address = _address_from_replica_header(
                                 cast(dict, filtered_replica).pop("address", None)
                             )
                             if filtered_replica.get("project_name"):
@@ -1481,7 +1485,7 @@ class _Baggage:
             tags=tags,
             project_name=project_name,
             replicas=replicas,
-            address=address,
+            address=_address_from_header(agent_id, agent_environment),
         )
 
     @classmethod
@@ -1511,21 +1515,38 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         if self.address is not None:
+            items.append(f"{LANGSMITH_AGENT_ID}={urllib.parse.quote(self.address.id)}")
             items.append(
-                f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address.lrn())}"
+                f"{LANGSMITH_AGENT_ENVIRONMENT}={urllib.parse.quote(self.address.env)}"
             )
         return ",".join(items)
 
 
-def _address_from_header(value: Any) -> Optional[Agent]:
-    """Build an address from untrusted header input, or `None` if it is unusable."""
+def _address_from_replica_header(value: Any) -> Optional[Agent]:
+    """Build a replica's address from a header's `{agent_id, agent_environment}`."""
     if value is None:
         return None
+    if not isinstance(value, dict):
+        _warn_unusable()
+        return None
+    return _address_from_header(value.get("agent_id"), value.get("agent_environment"))
+
+
+def _warn_unusable() -> None:
+    # The value is untrusted, so it is not logged.
+    logger.warning("Ignoring an unusable address in a `baggage` header.")
+
+
+def _address_from_header(agent_id: Any, agent_environment: Any) -> Optional[Agent]:
+    """Build an address from untrusted header input, or `None` if it is unusable."""
+    if agent_id is None and agent_environment is None:
+        return None
     try:
-        return _address.Agent.parse(value)
+        if agent_id is None or agent_environment is None:
+            raise utils.LangSmithUserError("An address needs both an id and an env.")
+        return _address.Agent(agent_id, agent_environment)
     except utils.LangSmithUserError:
-        # The value is untrusted, so it is not logged.
-        logger.warning("Ignoring an unusable address in a `baggage` header.")
+        _warn_unusable()
         return None
 
 

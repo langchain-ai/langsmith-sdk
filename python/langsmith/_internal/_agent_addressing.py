@@ -133,7 +133,7 @@ def _both_at_one_level(
     project: str, address: _address.Address, where: str
 ) -> utils.LangSmithUserError:
     return utils.LangSmithUserError(
-        f"A project ({project!r}) and an address ({address.lrn()!r}) are both set "
+        f"A project ({project!r}) and an address ({address!r}) are both set "
         f"{where}, so neither outranks the other. Set only one there, or set "
         "the one you want at a higher-precedence level."
     )
@@ -177,7 +177,7 @@ def warn_on_env() -> None:
         return
     warnings.warn(
         f"The address from LANGSMITH_AGENT_ID and LANGSMITH_AGENT_ENVIRONMENT "
-        f"({address.lrn()!r}) and a configured "
+        f"({address!r}) and a configured "
         f"project ({project!r}) are both set in the environment, so calls that name "
         "no destination in code are not traced. Unset one of them.",
         utils.LangSmithWarning,
@@ -220,7 +220,7 @@ def reject_conflicting(
     if named_project is not None and address is not None:
         raise utils.LangSmithUserError(
             f"A run is addressed by project ({named_project!r}) or by address "
-            f"({address.lrn()!r}), not both."
+            f"({address!r}), not both."
         )
 
 
@@ -244,7 +244,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     if address is None:
         return
     warn_is_beta()
-    payload["address"] = address.lrn()
+    payload["address"] = address._lrn()
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)
@@ -256,5 +256,5 @@ def _from_payload(value: Any) -> Optional[_address.Agent]:
     A retried batch re-sends the caller's dicts, already in wire form.
     """
     if isinstance(value, str):
-        return _address.Agent.parse(value)
+        return _address.Agent._from_lrn(value)
     return check_address(value)

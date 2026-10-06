@@ -5,15 +5,13 @@
     without it rejects the runs, so tracing is lost rather than falling back
     to a project. This API may change without notice.
 
-An `Address` is anything that names a destination for runs and can render
-itself as an LRN, a string like `lrn:agents/{id}/environments/{environment}`.
-`Agent` is the implementation that names an agent's environment; others can
-follow without changing the tracing API. The environment is one of `local`,
-`development`, `staging` or `production`, and is always rendered lowercase.
+An `Address` names a destination for runs. `Agent` is the implementation
+that names an agent's environment; others can follow without changing the
+tracing API. The environment is one of `local`, `development`, `staging` or
+`production`, and is always lowercase.
 
 Anywhere an address is accepted, an `Address` is; it is validated once at that
-entry point. The LRN is only the wire format: it is what is sent in the
-`address` field of a payload and in trace headers, and is never taken as input.
+entry point.
 
 Example:
     ```python
@@ -54,8 +52,8 @@ _LRN_PATTERN = re.compile(r"lrn:agents/([^/]*)/environments/([^/]*)")
 class Address(Protocol):
     """(beta) A destination that runs can be addressed to."""
 
-    def lrn(self) -> str:
-        """Return this address as an LRN string."""
+    def _lrn(self) -> str:
+        """Return the identifier the backend takes. Wire format only."""
         ...
 
 
@@ -105,8 +103,8 @@ class Agent:
             )
         object.__setattr__(self, "env", env)
 
-    def lrn(self) -> str:
-        """Return `lrn:agents/{id}/environments/{env}`."""
+    def _lrn(self) -> str:
+        """Return `lrn:agents/{id}/environments/{env}`. Wire format only."""
         return f"lrn:agents/{self.id}/environments/{self.env}"
 
     def to_agent_address(self) -> AgentAddress:
@@ -116,12 +114,8 @@ class Agent:
             {"kind": "AGENT", "id": self.id, "environment": self.env.upper()},
         )
 
-    def __str__(self) -> str:
-        """Return the LRN."""
-        return self.lrn()
-
     @classmethod
-    def parse(cls, lrn: str) -> Agent:
+    def _from_lrn(cls, lrn: str) -> Agent:
         """Build from an agent LRN read off the wire, lowercasing its environment.
 
         Raises:
@@ -168,8 +162,8 @@ def check(address: Any) -> Agent:
     """Validate an `Address` and return it as an `Agent`.
 
     The one place an address is checked and normalized; the SDK carries the
-    result, and renders its LRN only where it goes on the wire. An LRN string
-    is not an address.
+    result; the backend identifier is only produced where it goes on the wire.
+    A string is not an address.
 
     Raises:
         LangSmithUserError: If `address` is not an `Address` that renders a
@@ -182,7 +176,7 @@ def check(address: Any) -> Agent:
             "An address must be an `Address` such as `ls.Agent(id, env)`, "
             f"got {address!r}."
         )
-    return Agent.parse(address.lrn())
+    return Agent._from_lrn(address._lrn())
 
 
 def env_values() -> dict[str, Optional[str]]:

@@ -704,7 +704,7 @@ class FeedbackCreate(FeedbackBase):
         """Dump the feedback, including its address."""
         dumped = super().model_dump(**kwargs)
         if self.address is not None:
-            dumped["address"] = self.address.lrn()
+            dumped["address"] = self.address._lrn()
         return dumped
 
 
