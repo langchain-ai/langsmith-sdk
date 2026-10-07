@@ -91,9 +91,11 @@ jobs:
   # Fails a PR touching a language folder once that SDK moved to its own repo.
   # FROZEN is empty until switch day: set it to "js" on the js switch day,
   # "js python" on the python switch day. Required through the CI Success gate.
+  # Add the `skip-freeze-guard` label to a PR to bypass it (a revert, a hotfix
+  # that has to ship from here). The job is skipped, which the gate accepts.
   freeze-guard:
     name: Freeze Guard
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-freeze-guard')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -123,7 +125,7 @@ jobs:
             esac
             hits=$(printf '%s\n' "$files" | grep -E "^$dir/" || true)
             if [ -n "$hits" ]; then
-              echo "::error::$dir/ moved to https://github.com/langchain-ai/$repo, open this PR there instead."
+              echo "::error::$dir/ moved to https://github.com/langchain-ai/$repo, open this PR there instead. Add the skip-freeze-guard label if it really has to land here."
               printf '%s\n' "$hits"
               status=1
             fi
