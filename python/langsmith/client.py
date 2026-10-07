@@ -4893,6 +4893,7 @@ class Client:
         run: ls_schemas.RunBase,
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
+        address: Optional[AgentAddress] = None,
     ) -> str:
         """Get the URL for a run.
 
@@ -4910,13 +4911,24 @@ class Client:
             run (RunBase): The run.
             project_name (Optional[str]): The name of the project.
             project_id (Optional[Union[UUID, str]]): The ID of the project.
+            address (Optional[AgentAddress]): (beta) The `AgentAddress` the run was sent to,
+                for a run that names no project. It is resolved to its project
+                with one request, which needs LangSmith 0.18 or later. A run
+                that carries its own `address` does not need it.
 
         Returns:
             str: The URL for the run.
         """
         return self._construct_run_url(
-            run=run, project_name=project_name, project_id=project_id
+            run=run, project_name=project_name, project_id=project_id, address=address
         )
+
+    def _resolve_address(self, address: AgentAddress) -> uuid.UUID:
+        """Return the ID of the project an address names, with one request."""
+        response = self._get_langsmith_api_sync().sessions.resolve(
+            **address.to_api_address()
+        )
+        return _as_uuid(response.session_id, "session_id")
 
     def _construct_run_url(
         self,
@@ -4924,14 +4936,18 @@ class Client:
         run: ls_schemas.RunBase,
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
+        address: Optional[AgentAddress] = None,
     ) -> str:
         """Build a run's UI URL locally, without calling the backend.
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
-        _addressing.reject_url(
-            getattr(run, "session_id", None), getattr(run, "address", None)
+        address = _addressing.check_address(address)
+        _addressing.reject_conflicting(
+            project=project_name, session_id=project_id, address=address
         )
+        if address is None:
+            address = _addressing.check_address(getattr(run, "address", None))
         if session_id := getattr(run, "session_id", None):
             pass
         elif session_name := getattr(run, "session_name", None):
@@ -4940,6 +4956,8 @@ class Client:
             session_id = project_id
         elif project_name is not None:
             session_id = self.read_project(project_name=project_name).id
+        elif address is not None:
+            session_id = self._resolve_address(address)
         else:
             project_name = ls_utils.get_tracer_project()
             session_id = self.read_project(project_name=project_name).id

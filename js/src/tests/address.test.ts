@@ -858,3 +858,84 @@ describe("client.sessions", () => {
     });
   });
 });
+
+describe("run URL", () => {
+  const PROJECT = "0190c3d4-0000-7000-8000-0000000000b1";
+  const TENANT = "0190c3d4-0000-7000-8000-0000000000a1";
+
+  const requestUrl = (input: Parameters<typeof fetch>[0]) =>
+    new URL(String(input instanceof Request ? input.url : input));
+
+  function urlClient() {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) => {
+        const body = requestUrl(input).pathname.endsWith(
+          "/sessions/resolutions",
+        )
+          ? { session_id: PROJECT }
+          : [{ id: PROJECT, tenant_id: TENANT }];
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+    const client = new Client({
+      apiKey: "MOCK",
+      autoBatchTracing: false,
+      fetchImplementation: fetchMock,
+    });
+    return { client, fetchMock };
+  }
+
+  const urlOf = (client: Client, runId: string) =>
+    `${client.getHostUrl()}/o/${TENANT}/projects/p/${PROJECT}/r/${runId}?poll=true`;
+
+  test("an addressed run resolves its address", async () => {
+    const { client, fetchMock } = urlClient();
+    const run = new RunTree({ name: "r", address: SUPPORT_AGENT, client });
+    expect(await client.getRunUrl({ run: run as any })).toBe(
+      urlOf(client, run.id),
+    );
+    const resolved = fetchMock.mock.calls
+      .map(([input]) => requestUrl(input))
+      .find((url) => url.pathname.endsWith("/sessions/resolutions"));
+    expect(Object.fromEntries(resolved!.searchParams)).toEqual({
+      kind: "AGENT",
+      id: "customer-support",
+      environment: "PRODUCTION",
+    });
+  });
+
+  test("a run without an address takes one as an argument", async () => {
+    const { client, fetchMock } = urlClient();
+    const run = { id: "0190c3d4-0000-7000-8000-0000000000c1" } as any;
+    expect(await client.getRunUrl({ run, address: STAGING_AGENT })).toBe(
+      urlOf(client, run.id),
+    );
+    const resolved = fetchMock.mock.calls
+      .map(([input]) => requestUrl(input))
+      .find((url) => url.pathname.endsWith("/sessions/resolutions"));
+    expect(resolved!.searchParams.get("environment")).toBe("STAGING");
+  });
+
+  test("a project beside an address is rejected", async () => {
+    const { client } = urlClient();
+    const run = { id: "0190c3d4-0000-7000-8000-0000000000c1" } as any;
+    await expect(
+      client.getRunUrl({
+        run,
+        projectOpts: { projectName: "p" },
+        address: SUPPORT_AGENT,
+      }),
+    ).rejects.toThrow(/not both/);
+  });
+
+  test("a string address is rejected", async () => {
+    const { client } = urlClient();
+    const run = { id: "0190c3d4-0000-7000-8000-0000000000c1" } as any;
+    await expect(
+      client.getRunUrl({ run, address: jsCaller(SUPPORT_STR) }),
+    ).rejects.toThrow(/address must be an AgentAddress/);
+  });
+});

@@ -3282,10 +3282,17 @@ export class Client implements LangSmithTracingClientInterface {
     runId,
     run,
     projectOpts,
+    address: rawAddress,
   }: {
     runId?: string;
     run?: Run;
     projectOpts?: ProjectOptions;
+    /**
+     * (beta) The agent the run was sent to, for a run that names no project.
+     * It is resolved to its project with one request, which needs LangSmith
+     * 0.18 or later. A run that carries its own `address` does not need it.
+     */
+    address?: AgentAddress;
   }): Promise<string> {
     warnOnce(
       "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
@@ -3294,9 +3301,14 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      if (!run.session_id && (run as { address?: AgentAddress }).address) {
-        throw new Error("Addressed runs have no URL until read back.");
-      }
+      const argumentAddress = ensureAgent(rawAddress);
+      rejectConflicting(
+        projectOpts?.projectName ?? projectOpts?.projectId,
+        argumentAddress,
+      );
+      const address =
+        argumentAddress ??
+        ensureAgent((run as { address?: AgentAddress }).address);
       let sessionId: string;
       if (run.session_id) {
         sessionId = run.session_id;
@@ -3306,6 +3318,8 @@ export class Client implements LangSmithTracingClientInterface {
         ).id;
       } else if (projectOpts?.projectId) {
         sessionId = projectOpts?.projectId;
+      } else if (address) {
+        sessionId = await this._resolveAddress(address);
       } else {
         const project = await this.readProject({
           projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
@@ -3328,6 +3342,15 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide either runId or run");
     }
+  }
+
+  /** The ID of the project an address names, with one request. */
+  private async _resolveAddress(address: AgentAddress): Promise<string> {
+    const { session_id: sessionId } = await this.sessions.resolve(
+      address.toApiAddress(),
+    );
+    assertUuid(sessionId);
+    return sessionId;
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
