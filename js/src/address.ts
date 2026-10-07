@@ -76,17 +76,17 @@ export class Agent implements Address {
   readonly id: string;
 
   /** Always lowercase. */
-  readonly env: Environment;
+  readonly environment: Environment;
 
   /**
    * @param id 1 to 63 lowercase ASCII letters, digits or hyphens, starting
    *   with a letter and ending with a letter or digit. The server creates the
    *   agent on first use.
-   * @param env One of `local`, `development`, `staging` or `production`, in
+   * @param environment One of `local`, `development`, `staging` or `production`, in
    *   any case.
    * @throws If a value is invalid.
    */
-  constructor(id: string, env: Environment | (string & {})) {
+  constructor(id: string, environment: Environment | (string & {})) {
     if (typeof id !== "string" || !AGENT_ID_PATTERN.test(id)) {
       throw new Error(
         "Address agent id must be 1 to 63 lowercase ASCII letters, digits, or " +
@@ -94,15 +94,16 @@ export class Agent implements Address {
           `${JSON.stringify(id)}. Use an id such as "support-agent".`,
       );
     }
-    const environment = typeof env === "string" ? env.toLowerCase() : undefined;
-    if (environment === undefined || !ENVIRONMENTS.includes(environment)) {
+    const normalized =
+      typeof environment === "string" ? environment.toLowerCase() : undefined;
+    if (normalized === undefined || !ENVIRONMENTS.includes(normalized)) {
       throw new Error(
         `Address environment must be one of ${ENVIRONMENTS.join(", ")}, got ` +
-          `${JSON.stringify(env)}.`,
+          `${JSON.stringify(environment)}.`,
       );
     }
     this.id = id;
-    this.env = environment as Environment;
+    this.environment = normalized as Environment;
     Object.freeze(this);
   }
 
@@ -110,13 +111,13 @@ export class Agent implements Address {
     return {
       kind: "AGENT",
       id: this.id,
-      environment: this.env.toUpperCase(),
+      environment: this.environment.toUpperCase(),
     };
   }
 
   /** @internal */
   _toLrn(): Lrn {
-    return `lrn:agents/${this.id}/environments/${this.env}`;
+    return `lrn:agents/${this.id}/environments/${this.environment}`;
   }
 
   /**
@@ -219,7 +220,7 @@ export function ensureAgent(value: unknown): Agent | undefined {
     );
   }
   throw new Error(
-    "address must be an Agent such as `new Agent(id, env)`, got " +
+    "address must be an Agent such as `new Agent(id, environment)`, got " +
       `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
   );
 }

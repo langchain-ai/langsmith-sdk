@@ -120,7 +120,7 @@ class TestConstructors:
     )
     def test_environments_are_lowercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
-            assert ls.Agent("a", given).env == environment
+            assert ls.Agent("a", given).environment == environment
 
     def test_from_env_with_nothing_set(self) -> None:
         assert _from_env() is None
@@ -166,7 +166,7 @@ class TestConstructors:
     def test_agent_is_an_address(self) -> None:
         assert isinstance(SUPPORT, ls.Address)
         assert not isinstance(SUPPORT_LRN, ls.Address)
-        assert ls.Agent(id="support", env="PRODUCTION") == SUPPORT
+        assert ls.Agent(id="support", environment="PRODUCTION") == SUPPORT
 
     def test_agent_renders_the_api_address(self) -> None:
         assert SUPPORT.to_api_address() == {
@@ -177,7 +177,7 @@ class TestConstructors:
 
     def test_agent_is_immutable(self) -> None:
         with pytest.raises(AttributeError):
-            SUPPORT.env = "staging"  # type: ignore[misc]
+            SUPPORT.environment = "staging"  # type: ignore[misc]
 
     @pytest.mark.parametrize("value", ["support", SUPPORT_LRN, 42, object()])
     def test_entry_points_reject_anything_but_an_address(self, value: Any) -> None:

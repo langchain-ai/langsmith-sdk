@@ -16,7 +16,7 @@ Example:
     ```python
     import langsmith as ls
 
-    support = ls.Agent(id="customer-support", env="production")
+    support = ls.Agent(id="customer-support", environment="production")
 
 
     @ls.traceable(address=support)
@@ -96,7 +96,7 @@ class Agent:
         id: The agent's ID: 1 to 63 lowercase ASCII letters, digits or
             hyphens, starting with a letter and ending with a letter or digit.
             The server creates the agent on first use.
-        env: One of `local`, `development`, `staging` or `production`, in any
+        environment: One of `local`, `development`, `staging` or `production`, in any
             case.
 
     Raises:
@@ -104,7 +104,7 @@ class Agent:
     """
 
     id: str
-    env: str
+    environment: str
 
     def __post_init__(self) -> None:
         """Validate the fields and lowercase the environment."""
@@ -114,17 +114,19 @@ class Agent:
                 "or hyphens, start with a letter, and end with a letter or digit, "
                 f"got {self.id!r}. Use an id such as 'support-agent'."
             )
-        env = self.env.lower() if isinstance(self.env, str) else None
-        if env not in _ENVIRONMENTS:
+        environment = (
+            self.environment.lower() if isinstance(self.environment, str) else None
+        )
+        if environment not in _ENVIRONMENTS:
             raise utils.LangSmithUserError(
                 f"Address environment must be one of {', '.join(_ENVIRONMENTS)}, "
-                f"got {self.env!r}."
+                f"got {self.environment!r}."
             )
-        object.__setattr__(self, "env", env)
+        object.__setattr__(self, "environment", environment)
 
     def _lrn(self) -> str:
-        """Return `lrn:agents/{id}/environments/{env}`. Wire format only."""
-        return f"lrn:agents/{self.id}/environments/{self.env}"
+        """Return `lrn:agents/{id}/environments/{environment}`. Wire format only."""
+        return f"lrn:agents/{self.id}/environments/{self.environment}"
 
     @classmethod
     def _from_lrn(cls, value: Any) -> Agent:
@@ -145,7 +147,7 @@ class Agent:
         """Return this agent as the address the query APIs take."""
         return cast(
             "ApiAddress",
-            {"kind": "AGENT", "id": self.id, "environment": self.env.upper()},
+            {"kind": "AGENT", "id": self.id, "environment": self.environment.upper()},
         )
 
     @classmethod
@@ -235,7 +237,8 @@ def ensure_agent(address: Any) -> Agent:
             f"Only an `Agent` can receive traces, got {address!r}."
         )
     raise utils.LangSmithUserError(
-        f"An address must be an `Agent` such as `ls.Agent(id, env)`, got {address!r}."
+        "An address must be an `Agent` such as `ls.Agent(id, environment)`, "
+        f"got {address!r}."
     )
 
 

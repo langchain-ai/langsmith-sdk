@@ -96,17 +96,17 @@ describe("address", () => {
     const address: Address = SUPPORT_AGENT;
     expect(address).toBe(SUPPORT_AGENT);
     expect(SUPPORT_AGENT.id).toBe("customer-support");
-    expect(SUPPORT_AGENT.env).toBe("production");
+    expect(SUPPORT_AGENT.environment).toBe("production");
     expect(new Agent("customer-support", "PRODUCTION")).toEqual(SUPPORT_AGENT);
     expect(() => {
-      (SUPPORT_AGENT as any).env = "staging";
+      (SUPPORT_AGENT as any).environment = "staging";
     }).toThrow();
   });
 
   test("the environment is lowercased", () => {
-    expect(new Agent("a", "STAGING").env).toBe("staging");
+    expect(new Agent("a", "STAGING").environment).toBe("staging");
     for (const env of ["local", "development", "staging", "production"]) {
-      expect(new Agent("a", env).env).toBe(env);
+      expect(new Agent("a", env).environment).toBe(env);
     }
   });
 
@@ -137,7 +137,7 @@ describe("address", () => {
     expect(Agent.parse).toBeUndefined();
     const rendered: string = String(SUPPORT_AGENT);
     expect(rendered).not.toContain("lrn:");
-    expect(Object.keys(SUPPORT_AGENT).sort()).toEqual(["env", "id"]);
+    expect(Object.keys(SUPPORT_AGENT).sort()).toEqual(["environment", "id"]);
     // @ts-expect-error the LRN is not part of Address
     expect((SUPPORT_AGENT as Address)._toLrn).toBeDefined();
     expect(JSON.stringify(SUPPORT_AGENT)).not.toContain("lrn");
@@ -337,7 +337,7 @@ describe("RunTree", () => {
   test("rejects a string, even a valid LRN", () => {
     for (const bad of [SUPPORT_STR, "support"]) {
       expect(() => new RunTree({ name: "r", address: jsCaller(bad) })).toThrow(
-        /address must be an Agent such as `new Agent\(id, env\)`/,
+        /address must be an Agent such as `new Agent\(id, environment\)`/,
       );
     }
   });
