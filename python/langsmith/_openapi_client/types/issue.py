@@ -57,6 +57,17 @@ class EvidenceSeriesMetricDefinitionDenominator(BaseModel):
             "prompt_cost",
             "completion_cost",
             "feedback_score",
+            "prompt_token_details.cache_creation",
+            "prompt_token_details.cache_read",
+            "prompt_token_details.ephemeral_1h_input_tokens",
+            "prompt_token_details.ephemeral_5m_input_tokens",
+            "prompt_token_details.audio",
+            "prompt_token_details.image",
+            "prompt_token_details.video",
+            "completion_token_details.reasoning",
+            "completion_token_details.audio",
+            "completion_token_details.image",
+            "completion_token_details.video",
         ]
     ] = None
 
@@ -101,6 +112,17 @@ class EvidenceSeriesMetricDefinitionNumerator(BaseModel):
             "prompt_cost",
             "completion_cost",
             "feedback_score",
+            "prompt_token_details.cache_creation",
+            "prompt_token_details.cache_read",
+            "prompt_token_details.ephemeral_1h_input_tokens",
+            "prompt_token_details.ephemeral_5m_input_tokens",
+            "prompt_token_details.audio",
+            "prompt_token_details.image",
+            "prompt_token_details.video",
+            "completion_token_details.reasoning",
+            "completion_token_details.audio",
+            "completion_token_details.image",
+            "completion_token_details.video",
         ]
     ] = None
 
@@ -145,6 +167,17 @@ class EvidenceSeriesMetricDefinition(BaseModel):
             "prompt_cost",
             "completion_cost",
             "feedback_score",
+            "prompt_token_details.cache_creation",
+            "prompt_token_details.cache_read",
+            "prompt_token_details.ephemeral_1h_input_tokens",
+            "prompt_token_details.ephemeral_5m_input_tokens",
+            "prompt_token_details.audio",
+            "prompt_token_details.image",
+            "prompt_token_details.video",
+            "completion_token_details.reasoning",
+            "completion_token_details.audio",
+            "completion_token_details.image",
+            "completion_token_details.video",
         ]
     ] = None
 
