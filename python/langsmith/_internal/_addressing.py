@@ -186,21 +186,6 @@ def warn_on_env() -> None:
     )
 
 
-def reject_url(session_id: Optional[Any], address: Optional[Any]) -> None:
-    """Refuse to build a run URL the SDK cannot know.
-
-    A run URL is keyed on the project id, and the endpoint resolves an address
-    to its project without telling the SDK which.
-    """
-    if session_id is not None or address is None:
-        return
-    raise utils.LangSmithUserError(
-        "No run URL is available for an addressed run yet. The endpoint "
-        "resolves the address to its project, so only it knows the project this "
-        "run is in. Read the run back and build the URL from its `session_id`."
-    )
-
-
 def reject_conflicting(
     *,
     project: Optional[Any] = None,
