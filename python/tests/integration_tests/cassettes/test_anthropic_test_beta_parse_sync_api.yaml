@@ -1,0 +1,87 @@
+interactions:
+- request:
+    body: '{"max_tokens":1024,"messages":[{"role":"user","content":"Alice and Bob
+      are going to a science fair on Friday."}],"model":"claude-haiku-4-5-20251001","output_config":{"format":{"schema":{"type":"object","title":"CalendarEvent","properties":{"name":{"type":"string","title":"Name"},"date":{"type":"string","title":"Date"},"participants":{"type":"array","title":"Participants","items":{"type":"string"}}},"additionalProperties":false,"required":["name","date","participants"]},"type":"json_schema"}}}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      anthropic-beta:
+      - structured-outputs-2025-12-15
+      connection:
+      - keep-alive
+      content-length:
+      - '497'
+      content-type:
+      - application/json
+      host:
+      - gateway.smith.langchain.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-helper:
+      - beta.messages.parse
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 0.120.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.13.15
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/messages?beta=true
+  response:
+    body:
+      string: '{"error":"Forbidden"}
+
+        '
+    headers:
+      access-control-allow-credentials:
+      - 'true'
+      access-control-allow-headers:
+      - '*'
+      access-control-allow-methods:
+      - '*'
+      access-control-allow-origin:
+      - ''
+      access-control-expose-headers:
+      - '*'
+      access-control-max-age:
+      - '600'
+      alt-svc:
+      - h3=":443"; ma=2592000
+      content-length:
+      - '22'
+      content-security-policy:
+      - frame-ancestors 'self'; object-src 'none'
+      content-type:
+      - application/json
+      date:
+      - Wed, 07 Oct 2026 12:47:10 GMT
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      timing-allow-origin:
+      - ''
+      vary:
+      - Origin
+      via:
+      - 1.1 google
+      x-content-type-options:
+      - nosniff
+      x-datadog-trace-id:
+      - 8709f9ae4febcd95a7d4100b3541096d
+    status:
+      code: 403
+      message: Forbidden
+version: 1
