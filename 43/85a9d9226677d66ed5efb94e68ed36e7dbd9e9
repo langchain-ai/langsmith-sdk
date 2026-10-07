@@ -1,0 +1,33 @@
+python/langsmith/_internal/_context.py
+  s_c849eb4dd0e538::t_421d23a0b615ed 15-18
+python/langsmith/client.py
+  s_c849eb4dd0e538::t_421d23a0b615ed 1291-1293,2418-2453,2499,2638-2648,2650,3904-3905,3907-3908
+python/langsmith/run_trees.py
+  s_c849eb4dd0e538::t_d7fd154c011b68 923
+  s_c849eb4dd0e538::t_421d23a0b615ed 68-75,97,100-102,106,109-110,121-123,365-394,411,415-419,506,829,833-834,836,838-843,845-851,861-862,868,872,878,887,901-902,909-922,932-934,938,941-942,957-964,972-976,1036-1043,1051-1055,1067-1068,1094-1095
+  s_c849eb4dd0e538::t_fcde2983592e2b 395-396
+python/langsmith/utils.py
+  s_c849eb4dd0e538::t_421d23a0b615ed 492-519
+python/langsmith/async_client.py
+  s_c849eb4dd0e538::t_421d23a0b615ed 215,612-622,628,632,644
+python/langsmith/run_helpers.py
+  s_c849eb4dd0e538::t_4f0c7bb33e7dac 1678
+  s_c849eb4dd0e538::t_421d23a0b615ed 91-92,157-158,177-178,192-196,238-239,1163-1165,1186-1188,1206-1207,1321-1339,1341-1348,1665,1674-1677,1679-1691,1789-1790,1822-1825
+  s_c849eb4dd0e538::t_0276cbedda72b2 1340,1349-1350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4385a9d9226677d66ed5efb94e68ed36e7dbd9e9",
+  "prompts": {},
+  "sessions": {
+    "s_c849eb4dd0e538": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8765c25-fb1f-4465-a790-ed0986da2072",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

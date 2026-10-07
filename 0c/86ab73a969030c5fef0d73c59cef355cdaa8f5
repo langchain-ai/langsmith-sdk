@@ -1,0 +1,20 @@
+examples/target_addressing.py
+  s_e0e0b0aad1dc60::t_c344517082e529 42,102,109,150
+  s_e0e0b0aad1dc60::t_5133070af3bfb4 1-41,43-101,103-108,110-149,151-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0c86ab73a969030c5fef0d73c59cef355cdaa8f5",
+  "prompts": {},
+  "sessions": {
+    "s_e0e0b0aad1dc60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac46cf5e-9692-47f8-ba2d-dfef73ba4247",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

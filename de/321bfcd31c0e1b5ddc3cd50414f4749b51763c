@@ -1,0 +1,26 @@
+python/langsmith/_openapi_client/_client.py
+  h_53e10026eac609 47,56,159-164,445-450,669-674,754-759,839-844,924-929
+python/langsmith/_openapi_client/resources/__init__.py
+  h_53e10026eac609 67-74,121-126
+python/langsmith/_openapi_client/resources/sessions.py
+  h_53e10026eac609 1-172
+python/langsmith/_openapi_client/types/__init__.py
+  h_53e10026eac609 40,46-47
+python/langsmith/_openapi_client/types/session_resolve_params.py
+  h_53e10026eac609 1-24
+python/langsmith/_openapi_client/types/session_resolve_response.py
+  h_53e10026eac609 1-33
+python/langsmith/_openapi_client/types/session_sortable_columns.py
+  h_53e10026eac609 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de321bfcd31c0e1b5ddc3cd50414f4749b51763c",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+js/src/address.ts
+  s_1494656ad43aad::t_32370593b61163 2-3,6-10,12-15,24,42-43,45,59-63,67-70,73,75,80-84,93,95-100,105-107,112,118,126
+  s_1494656ad43aad::t_ec1e91fc3abc59 76-79
+js/src/utils/agent_addressing.ts
+  s_1494656ad43aad::t_4c388676fc6675 8-9,12-13,15,18-24,27,29-30,47-48,50-53,55,58,65,67,71-72,74-75,81-83,97,100,103-106
+js/src/schemas.ts
+  s_1494656ad43aad::t_25d34b77ec7aa9 222,243
+js/src/traceable.ts
+  s_1494656ad43aad::t_25d34b77ec7aa9 42,824,826
+js/src/client.ts
+  s_1494656ad43aad::t_db3e3e1686acb7 90,547,2558
+  s_1494656ad43aad::t_25d34b77ec7aa9 96,545,619,2560,2562-2563,2565-2566,3285-3287,5586
+js/src/run_trees.ts
+  s_1494656ad43aad::t_9f7711d73edc6a 35,37,93,173,198,201-206,208-210,219-221,278,280,282-285,293-295,297-302,348,350,455,466,734,780,1217,1221
+  s_1494656ad43aad::t_ec1e91fc3abc59 214-217
+js/src/tests/address.test.ts
+  s_1494656ad43aad::t_ec1e91fc3abc59 127-129,166-169
+  s_1494656ad43aad::t_db4e8c3b338553 14-18,26-29,42,49-50,71-74,76-78,80,89-90,94,97-104,106-107,125-126,132,134,136,140,142,147-148,150,155-156,161,170-172,175-179,182-192,218,220,227-228,232,242,245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8f64ff9db90eb81cb25d37a986b7fd0eb98a8365",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

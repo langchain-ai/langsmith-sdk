@@ -1,0 +1,31 @@
+python/tests/integration_tests/agent_addressing/test_traceable.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 12,26,102
+python/tests/integration_tests/agent_addressing/conftest.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 22,210-217,259
+python/tests/integration_tests/agent_addressing/test_rollout_disabled.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 15,88,102-103,124
+python/tests/integration_tests/agent_addressing/test_create_feedback.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 15,53,66,77,85,106,145
+python/tests/integration_tests/agent_addressing/test_multipart_ingest.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 19,38
+python/tests/integration_tests/agent_addressing/test_create_update_run.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 15,56
+python/tests/integration_tests/agent_addressing/test_evaluate.py
+  s_2afb2c73f80664::t_7575a5a8be33f3 14,86,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e15696b2ee42f49390392e5054c44e946f69d6fb",
+  "prompts": {},
+  "sessions": {
+    "s_2afb2c73f80664": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b9063c5-a772-4ad6-8ab6-c1c1ce8d8bb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+examples/agent_addresses/python/experiment_traces.py
+  s_286aef046a3fdf::t_2418267fa47385 42
+examples/agent_addresses/python/query_agent_traces.py
+  s_286aef046a3fdf::t_2418267fa47385 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "767517398bee9a510f8c31927cb0f77add50e73b",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_286aef046a3fdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c104a349-66c8-4e04-88bd-c446a445b362",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

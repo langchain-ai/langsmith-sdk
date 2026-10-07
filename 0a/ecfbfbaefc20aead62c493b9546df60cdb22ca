@@ -1,0 +1,33 @@
+python/tests/integration_tests/agent_addressing/conftest.py
+  s_2afb2c73f80664::t_f445cea0adf5f1 37
+python/tests/integration_tests/agent_addressing/inventory.md
+  s_2afb2c73f80664::t_53b1d7aac27a20 21
+python/tests/integration_tests/agent_addressing/test_create_feedback.py
+  s_2afb2c73f80664::t_fa2eade4341d32 94
+python/tests/integration_tests/agent_addressing/test_create_update_run.py
+  s_2afb2c73f80664::t_0d688220d2fc55 30-33,40-43,53,69,123,213
+python/tests/integration_tests/agent_addressing/test_evaluate.py
+  s_2afb2c73f80664::t_a07253a096a854 24
+python/tests/integration_tests/agent_addressing/test_multipart_ingest.py
+  s_2afb2c73f80664::t_acdedae91f3808 32-35,47-50
+python/tests/integration_tests/agent_addressing/test_rollout_disabled.py
+  s_2afb2c73f80664::t_b84ec4270c2d9b 77
+python/tests/integration_tests/agent_addressing/test_traceable.py
+  s_2afb2c73f80664::t_0c863122a8d5e9 25-28,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0aecfbfbaefc20aead62c493b9546df60cdb22ca",
+  "prompts": {},
+  "sessions": {
+    "s_2afb2c73f80664": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b9063c5-a772-4ad6-8ab6-c1c1ce8d8bb9",
+        "model": "unknown"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

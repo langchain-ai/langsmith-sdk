@@ -1,0 +1,34 @@
+examples/target_addressing/1_tracing_context.py
+  s_2afb2c73f80664::t_60cc169b9c1268 9
+examples/target_addressing/6_env_vars.py
+  s_2afb2c73f80664::t_60cc169b9c1268 3,6-8
+examples/target_addressing/3_langsmith_extra.py
+  s_2afb2c73f80664::t_60cc169b9c1268 9-10
+examples/target_addressing/4_traceable.py
+  s_2afb2c73f80664::t_60cc169b9c1268 5,25
+examples/target_addressing/2_distributed_parent.py
+  s_2afb2c73f80664::t_60cc169b9c1268 9
+  s_2afb2c73f80664::t_f16524edaa24cc 10-11
+examples/target_addressing/7_inheritance.py
+  s_2afb2c73f80664::t_60cc169b9c1268 6,18
+examples/target_addressing/8_replicas.py
+  s_2afb2c73f80664::t_60cc169b9c1268 5,17
+examples/target_addressing/5_configure.py
+  s_2afb2c73f80664::t_60cc169b9c1268 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92e0fc46a12b609728b83309839741a565c9d04d",
+  "prompts": {},
+  "sessions": {
+    "s_2afb2c73f80664": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b9063c5-a772-4ad6-8ab6-c1c1ce8d8bb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+python/bench/cases.py
+  s_4a3c3c3e05975a::t_568cc6ed085cbf 13
+  h_f1ecc43c8f43eb 53-57
+python/bench/hybrid_tracing.py
+  s_4a3c3c3e05975a::t_72a96d755be5cb 1-18,66
+  s_4a3c3c3e05975a::t_fef3ad7629ecc3 19-65
+python/tests/unit_tests/test_background_thread.py
+  s_4a3c3c3e05975a::t_c6fb8a40dedf1b 6,12-16,27-28,30,47,49,51
+  s_4a3c3c3e05975a::t_a37d8c2b180329 3,8-11,17-26,29,31-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2fdcb48402ec782e3984da04210259ff7b854d25",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_4a3c3c3e05975a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f990b69f-4d70-489e-959d-dbaab9723553",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

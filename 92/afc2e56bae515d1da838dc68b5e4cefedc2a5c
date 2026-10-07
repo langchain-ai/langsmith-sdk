@@ -1,0 +1,18 @@
+python/langsmith/integrations/claude_agent_sdk/_transcripts.py
+  h_b47ec433af8c62 149-152,165-167,171-174,176-182
+python/langsmith/integrations/claude_agent_sdk/_usage.py
+  h_b47ec433af8c62 146
+python/tests/unit_tests/wrappers/test_claude_agent_sdk_hooks.py
+  h_b47ec433af8c62 1035-1081
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92afc2e56bae515d1da838dc68b5e4cefedc2a5c",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+js/src/run_trees.ts
+  s_c849eb4dd0e538::t_12b9a5406a53b2 24
+js/src/index.ts
+  s_c849eb4dd0e538::t_12b9a5406a53b2 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b4869f553e4b35d35157b44650d0085344d68d54",
+  "prompts": {},
+  "sessions": {
+    "s_c849eb4dd0e538": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8765c25-fb1f-4465-a790-ed0986da2072",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

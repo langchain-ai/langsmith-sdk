@@ -1,0 +1,21 @@
+python/langsmith/integrations/livekit/processor.py
+  s_65de7377b035fe::t_dff72919afb1f7 589-590,618-623
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_65de7377b035fe::t_dff72919afb1f7 1797-1802,1868-1869,1892-1896
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "66b795a7a1873eb6af765bb607c30efeef176e8c",
+  "prompts": {},
+  "sessions": {
+    "s_65de7377b035fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a724-c4c2-7c13-9072-18868fe18cde",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

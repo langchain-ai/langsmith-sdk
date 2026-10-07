@@ -1,0 +1,25 @@
+js/src/client.ts
+  s_1494656ad43aad::t_7b41fc97bd6284 545,619
+js/src/address.ts
+  s_1494656ad43aad::t_7b41fc97bd6284 2,58,63,68,76,96-99,118,140
+js/src/run_trees.ts
+  s_1494656ad43aad::t_7b41fc97bd6284 93,173,350
+js/src/schemas.ts
+  s_1494656ad43aad::t_7b41fc97bd6284 222,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b1346c23dcf6f87e2dea76793a67baf5cfd70ee3",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

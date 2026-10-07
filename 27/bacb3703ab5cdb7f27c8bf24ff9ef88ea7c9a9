@@ -1,0 +1,24 @@
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_7c6c1ec6516216::t_82f4847c310a09 245-247,249,273
+  s_7c6c1ec6516216::t_1fa837f0715c2b 274
+python/tests/unit_tests/wrappers/test_deepgram_voice.py
+  s_7c6c1ec6516216::t_82f4847c310a09 522,524,587-589,591,595,598,720-721
+python/langsmith/_internal/voice/session.py
+  s_7c6c1ec6516216::t_82f4847c310a09 107-111,131-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "27bacb3703ab5cdb7f27c8bf24ff9ef88ea7c9a9",
+  "prompts": {},
+  "sessions": {
+    "s_7c6c1ec6516216": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f397-7c54-7e60-94ca-e59239f2de85",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

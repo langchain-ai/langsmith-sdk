@@ -1,0 +1,14 @@
+python/langsmith/_internal/_orjson.py
+  h_f1ecc43c8f43eb 65,67-68,70-71,76-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1a68a8e8a4d6940de670b54cb598356fa5c9fc92",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

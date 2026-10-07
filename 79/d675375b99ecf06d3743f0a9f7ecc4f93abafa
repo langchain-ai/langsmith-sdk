@@ -1,0 +1,35 @@
+js/src/client.ts
+  s_f37c3e6c74d99c::t_4d6c5cb971a068 5628
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_a9fa1b43122bbd 37
+  s_f37c3e6c74d99c::t_1ca8c22a6714df 198-200,202-204,208-211,261-262,272-275,286,303,776,784
+  s_f37c3e6c74d99c::t_afcb7fa37ef453 285,287-288,324-325
+  s_f37c3e6c74d99c::t_d18323f39583df 289-292
+js/src/utils/agent_addressing.ts
+  s_f37c3e6c74d99c::t_4d6c5cb971a068 22-26,31,90,114
+js/src/address.ts
+  s_f37c3e6c74d99c::t_4d6c5cb971a068 5-7,9-11,27-28,34-35,100-101,138,142-153,156,166-167
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_d18323f39583df 30-33,90,92,99-100,102,108,111,114,119-128,135,155,160,190,254,282,286,288,308-311,315-318,321-334,341,352-355,377-379,603,635-638
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79d675375b99ecf06d3743f0a9f7ecc4f93abafa",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

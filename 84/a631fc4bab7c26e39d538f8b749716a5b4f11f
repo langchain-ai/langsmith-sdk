@@ -1,0 +1,65 @@
+js/src/utils/agent_addressing.ts
+  s_f37c3e6c74d99c::t_1fb6a4ec3a3670 91
+  s_f37c3e6c74d99c::t_4b2ffda7a8fb08 3,5-6,15,17-19,56,100
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_4b2ffda7a8fb08 37,94,174,202,207,236,242,257,329,715,729,1101
+js/src/traceable.ts
+  s_f37c3e6c74d99c::t_1fb6a4ec3a3670 376,381,830
+js/src/client.ts
+  s_f37c3e6c74d99c::t_72efdaadeeafa0 618
+  s_f37c3e6c74d99c::t_4b2ffda7a8fb08 90,546,1090,3285,3767,5573,5893,5939,5947,5959
+js/src/index.ts
+  s_f37c3e6c74d99c::t_4b2ffda7a8fb08 20,23
+python/langsmith/client.py
+  s_f37c3e6c74d99c::t_c7672c1cbfb8e0 135
+  s_f37c3e6c74d99c::t_8095a014925461 2587-2588,8312
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_1a8d3b8df74c53 12,24,26-27,81-92,97,101-103,109,114,119,121,125-126,142,144-146,150-151,157,162-163,166,168,171,177,182,219,458,522,547-550,553,574,580,582,585,587,592-644
+  s_f37c3e6c74d99c::t_78bb9e796a3c41 645
+python/langsmith/async_client.py
+  s_f37c3e6c74d99c::t_c7672c1cbfb8e0 53
+  s_f37c3e6c74d99c::t_8095a014925461 1185
+python/langsmith/address.py
+  s_f37c3e6c74d99c::t_0a0ff9cdac3693 8-16,22,29,36,38,42,47-60,75-77,80,83-84,89-93,95-113,115-164,167,169-172,175-176,181-182
+  s_f37c3e6c74d99c::t_e8512c6b24076b 94,114
+python/langsmith/run_trees.py
+  s_f37c3e6c74d99c::t_c7672c1cbfb8e0 26
+  s_f37c3e6c74d99c::t_0a0ff9cdac3693 1524
+  s_f37c3e6c74d99c::t_e3489d18678e5c 76,261
+  s_f37c3e6c74d99c::t_e8512c6b24076b 298-299
+  s_f37c3e6c74d99c::t_49217d919c9f68 343,346,356,361-362,960
+python/langsmith/run_helpers.py
+  s_f37c3e6c74d99c::t_c7672c1cbfb8e0 53
+  s_f37c3e6c74d99c::t_8095a014925461 209,343
+  s_f37c3e6c74d99c::t_e3489d18678e5c 177,196,288,405,451,1059,1123
+js/src/schemas.ts
+  s_f37c3e6c74d99c::t_4b2ffda7a8fb08 1,49,216,236,541
+python/langsmith/__init__.py
+  s_f37c3e6c74d99c::t_df40cd36ba4be6 129-130,132,265
+  s_f37c3e6c74d99c::t_8095a014925461 24
+python/langsmith/_internal/_agent_addressing.py
+  s_f37c3e6c74d99c::t_df40cd36ba4be6 59
+  s_f37c3e6c74d99c::t_0a0ff9cdac3693 9,45,50,107,164,242
+python/tests/unit_tests/test_address.py
+  s_f37c3e6c74d99c::t_6c3c9d0a94f282 1,24-26,74-86,97,115,120,127-128,133,154,157,165,191,195-201,203-205,220-285
+  s_f37c3e6c74d99c::t_e9fdd303408221 286-287
+js/src/address.ts
+  s_f37c3e6c74d99c::t_3b373add970452 5-13,17,19,21,29-39,49,62-67,69-104,106-151,153-160,164-166,168,175,178-179
+  s_f37c3e6c74d99c::t_4b2ffda7a8fb08 169-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84a631fc4bab7c26e39d538f8b749716a5b4f11f",
+  "prompts": {},
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

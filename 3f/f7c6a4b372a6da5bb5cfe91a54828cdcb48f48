@@ -1,0 +1,33 @@
+python/langsmith/_internal/voice/session.py
+  s_7c6c1ec6516216::t_5645bfc2a992a6 109-111,135-137
+python/tests/unit_tests/wrappers/test_voice_session.py
+  s_7c6c1ec6516216::t_92132781ca7e4d 215,218-219
+  s_7c6c1ec6516216::t_d39ed849dee62e 255-257
+  s_7c6c1ec6516216::t_5645bfc2a992a6 214,217,220,222-225,227-241,243-254
+python/langsmith/integrations/deepgram_voice/_connection.py
+  s_7c6c1ec6516216::t_5645bfc2a992a6 18-19,356
+python/pyproject.toml
+  s_7c6c1ec6516216::t_5645bfc2a992a6 93-95,180
+python/tests/unit_tests/wrappers/test_deepgram_voice.py
+  s_7c6c1ec6516216::t_5645bfc2a992a6 167,175
+python/langsmith/integrations/deepgram_voice/__init__.py
+  s_7c6c1ec6516216::t_5645bfc2a992a6 1-4
+python/uv.lock
+  s_7c6c1ec6516216::t_e05dcf4848fb3a 14,946-961,1012,1713-1715,1785,1846,1890,1903,2271-2272,2605-2609,2621-2622,2808-2812,3108-3109,3128,3243-3244,3246-3264,3688-3689,4040,4214-4215,4402,4479,4603
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3ff7c6a4b372a6da5bb5cfe91a54828cdcb48f48",
+  "prompts": {},
+  "sessions": {
+    "s_7c6c1ec6516216": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f397-7c54-7e60-94ca-e59239f2de85",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

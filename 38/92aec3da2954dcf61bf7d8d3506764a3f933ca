@@ -1,0 +1,61 @@
+python/langsmith/utils.py
+  s_c849eb4dd0e538::t_ba506a6a6d8eee 466,469-471,475,479-480,482-483,485,489
+python/langsmith/run_trees.py
+  s_c849eb4dd0e538::t_9b7a5582280a97 371,374-376
+  s_c849eb4dd0e538::t_d7fcb81f363edd 713
+python/langsmith/client.py
+  s_c849eb4dd0e538::t_a35d5c5eb7fe7c 2461-2462,2466-2469,2471
+js/src/tests/run_trees.test.ts
+  s_c849eb4dd0e538::t_91e3e817b3d1ad 761-762
+python/langsmith/async_client.py
+  s_c849eb4dd0e538::t_c308de25afcd18 621,625-627,629
+js/src/schemas.ts
+  s_c849eb4dd0e538::t_e56bc9ab1a5eb3 222-223
+python/tests/unit_tests/test_env.py
+  s_c849eb4dd0e538::t_ad0eb21ede2e20 138-162
+python/langsmith/schemas.py
+  s_c849eb4dd0e538::t_5b6d956823d81e 562
+js/src/client.ts
+  s_c849eb4dd0e538::t_d3b304a2186331 540
+  s_c849eb4dd0e538::t_2cb8aef74d88ae 94
+  s_c849eb4dd0e538::t_034ff8982dda39 2496,2498-2499
+js/src/utils/env.ts
+  s_c849eb4dd0e538::t_d229f137a1832a 112-118
+python/tests/unit_tests/test_client.py
+  s_c849eb4dd0e538::t_9f303dab48bcf9 1206-1207
+  s_c849eb4dd0e538::t_4925e2282a1779 1177-1178
+  s_c849eb4dd0e538::t_ebfaa438cb3b85 1199
+js/src/run_trees.ts
+  s_c849eb4dd0e538::t_1a637bff968a3b 94,98,100,102
+  s_c849eb4dd0e538::t_9bf9375c09549e 458
+  s_c849eb4dd0e538::t_156efadb5ccdfb 298
+  s_c849eb4dd0e538::t_6a61eb156d5636 26
+  s_c849eb4dd0e538::t_7100ba5a24fbe3 421
+  s_c849eb4dd0e538::t_417a6147e97f4b 589
+js/src/tests/client.test.ts
+  s_c849eb4dd0e538::t_b5e53078967521 1030-1048
+js/src/utils/project.ts
+  s_c849eb4dd0e538::t_6c82642956454f 15-16,22,26,29-30,33-34
+python/tests/unit_tests/test_utils.py
+  s_c849eb4dd0e538::t_b7fcfeb262320c 96,98-99,103,106-107,110-111,114,117-125,127,129
+js/src/index.ts
+  s_c849eb4dd0e538::t_b5b9636b7c6037 23
+python/langsmith/env/_runtime_env.py
+  s_c849eb4dd0e538::t_880d322cb518fc 193-199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3892aec3da2954dcf61bf7d8d3506764a3f933ca",
+  "prompts": {},
+  "sessions": {
+    "s_c849eb4dd0e538": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8765c25-fb1f-4465-a790-ed0986da2072",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+python/langsmith/run_trees.py
+  s_286aef046a3fdf::t_a8d1c46e76443f 296
+python/langsmith/client.py
+  s_286aef046a3fdf::t_a8d1c46e76443f 2595
+python/langsmith/address.py
+  s_286aef046a3fdf::t_a8d1c46e76443f 19,99,107,117-120,123,125,128-129,150
+  s_286aef046a3fdf::t_88401db1f1b6d4 240-241
+js/src/tests/address.test.ts
+  s_286aef046a3fdf::t_a8d1c46e76443f 99,102,107,109,140,340
+python/tests/unit_tests/test_address.py
+  s_286aef046a3fdf::t_a8d1c46e76443f 123,180
+  s_286aef046a3fdf::t_e64a8be0467627 169
+python/langsmith/run_helpers.py
+  s_286aef046a3fdf::t_a8d1c46e76443f 196,451,1059
+js/src/address.ts
+  s_286aef046a3fdf::t_a8d1c46e76443f 79,85,89,97-99,102,106,114,120,223
+python/langsmith/_internal/_addressing.py
+  s_286aef046a3fdf::t_a8d1c46e76443f 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "112f072070e37396eff1305b1c89bac6fb4dfd02",
+  "prompts": {},
+  "sessions": {
+    "s_286aef046a3fdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c104a349-66c8-4e04-88bd-c446a445b362",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+js/src/experimental/otel/exporter.ts
+  h_b47ec433af8c62 80-81,107-109
+js/src/tests/otel_exporter.test.ts
+  h_b47ec433af8c62 28-42
+python/langsmith/_internal/otel/_otel_client.py
+  h_b47ec433af8c62 58-59,85-89
+python/tests/unit_tests/test_otel_exporter.py
+  h_b47ec433af8c62 525-536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2948e3b6d0ab5f1a8d3bb0b124ec1394b07c0659",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

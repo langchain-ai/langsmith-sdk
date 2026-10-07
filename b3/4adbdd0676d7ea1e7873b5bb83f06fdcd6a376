@@ -1,0 +1,32 @@
+python/langsmith/__init__.py
+  h_f1ecc43c8f43eb 42,190-194,259
+python/langsmith/_internal/_orjson.py
+  h_f1ecc43c8f43eb 6,22-23,30,54-62,103
+python/langsmith/_internal/_secret.py
+  h_f1ecc43c8f43eb 1-58
+python/langsmith/_internal/_serde.py
+  h_f1ecc43c8f43eb 18-19,35-39,172-180,225-230,232-233
+python/langsmith/anonymizer.py
+  h_f1ecc43c8f43eb 7-8,49-54
+python/langsmith/secret/__init__.py
+  h_f1ecc43c8f43eb 1-161
+python/tests/unit_tests/secret/test_secret_integration.py
+  h_f1ecc43c8f43eb 1-191
+python/tests/unit_tests/secret/test_secret_pydantic.py
+  h_f1ecc43c8f43eb 1-80
+python/tests/unit_tests/secret/test_secret_serde.py
+  h_f1ecc43c8f43eb 1-346
+python/tests/unit_tests/secret/test_secret_type.py
+  h_f1ecc43c8f43eb 1-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b34adbdd0676d7ea1e7873b5bb83f06fdcd6a376",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

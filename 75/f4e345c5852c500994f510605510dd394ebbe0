@@ -1,0 +1,48 @@
+js/src/tests/address.test.ts
+  s_1494656ad43aad::t_af44615ab9a497 3-10
+  s_1494656ad43aad::t_409981c9471a6b 1-2,11-59,67-246,250-482
+  s_1494656ad43aad::t_708e17b7696e2a 60-66
+  s_1494656ad43aad::t_4fd7fa1f70af49 247-249
+js/src/utils/agent_addressing.ts
+  s_1494656ad43aad::t_af44615ab9a497 10-13
+  s_1494656ad43aad::t_3cbfcf1ed3ebce 200,203
+  s_1494656ad43aad::t_934a87a9178b04 1-9,14-199,201-202,204-221
+js/src/address.ts
+  s_1494656ad43aad::t_9906ce1effa624 1-27,30,40-252
+  s_1494656ad43aad::t_89acb32b0b0996 28-29,31-39
+js/src/schemas.ts
+  s_1494656ad43aad::t_b933023daf5837 1-2,222-223,243-244
+js/src/index.ts
+  s_1494656ad43aad::t_94c61cf13eaab7 19-25
+js/src/traceable.ts
+  s_1494656ad43aad::t_73bc29a27c50f5 767-770
+  s_1494656ad43aad::t_94c61cf13eaab7 42-46,780,828,830-836
+js/src/run_trees.ts
+  s_1494656ad43aad::t_9710f67119ba97 1184-1185,1252-1271,1289,1469-1472
+  s_1494656ad43aad::t_3cbfcf1ed3ebce 312
+  s_1494656ad43aad::t_4c62be62fa184c 31-38,94-99,178-179,193,196-197,202,205-251,273,279,285,294,304-309,311,314,316-319,324,342-348,365-372,433,476-507,560,562,692
+  s_1494656ad43aad::t_810be9b8476961 763-783,785-786,798,811-815,819,822-824,849,867,907,915,930,955,967-976,978-979,1035-1045,1047-1048,1067,1109
+  s_1494656ad43aad::t_af44615ab9a497 920,941
+js/src/client.ts
+  s_1494656ad43aad::t_90777fa183e840 5593
+  s_1494656ad43aad::t_e31038cb01cece 90-100,1507,1928,1932,1936,1939,2541-2545,2548-2566,2643,2788,3173-3174,3301,5583-5588,5592,5600-5602,5642-5644
+  s_1494656ad43aad::t_b933023daf5837 547-554,620-632,639
+js/src/utils/env.ts
+  s_1494656ad43aad::t_90777fa183e840 124-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "75f4e345c5852c500994f510605510dd394ebbe0",
+  "prompts": {},
+  "sessions": {
+    "s_1494656ad43aad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb0992ca-19b0-48fd-84f5-9f4442218fb1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

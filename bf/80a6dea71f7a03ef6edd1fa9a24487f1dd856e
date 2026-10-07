@@ -1,0 +1,51 @@
+python/tests/integration_tests/agent_addressing/README.md
+  s_2afb2c73f80664::t_409579335c921d 1-66
+python/tests/integration_tests/agent_addressing/test_rollout_disabled.py
+  s_2afb2c73f80664::t_409579335c921d 1-75,78-135
+  s_e34e3cf6ab512e::t_e9d1f83a8b16da 76-77
+python/tests/integration_tests/agent_addressing/test_create_update_run.py
+  s_2afb2c73f80664::t_409579335c921d 1-28,30-35,37-45,48-68,70-77,79-134,137-224,227-246
+  s_e34e3cf6ab512e::t_a045ad77c5756c 29,36,46-47,69,78,135-136,225-226
+python/tests/integration_tests/agent_addressing/test_evaluate.py
+  s_2afb2c73f80664::t_484602b8871698 22-25
+  s_2afb2c73f80664::t_409579335c921d 1-21,26-108
+python/tests/integration_tests/agent_addressing/conftest.py
+  s_2afb2c73f80664::t_409579335c921d 1-35,38-595,598-644
+  s_e34e3cf6ab512e::t_3bb5b8b77f3bc6 36-37,596-597
+python/tests/integration_tests/agent_addressing/test_create_feedback.py
+  s_2afb2c73f80664::t_409579335c921d 1-101,104-157
+  s_e34e3cf6ab512e::t_27b53353718e4e 102-103
+python/tests/integration_tests/agent_addressing/test_traceable.py
+  s_2afb2c73f80664::t_409579335c921d 1-23,25-32,34-42,44-102,104-188
+  s_e34e3cf6ab512e::t_e377fd92bce1aa 24,33,43,103
+python/tests/integration_tests/agent_addressing/inventory.md
+  s_2afb2c73f80664::t_409579335c921d 1-20,23-160,162-164
+  s_e34e3cf6ab512e::t_14d71e3fba0756 21-22,161
+python/tests/integration_tests/agent_addressing/test_multipart_ingest.py
+  s_2afb2c73f80664::t_409579335c921d 1-30,32-42,44-83
+  s_e34e3cf6ab512e::t_1f65aa8a6ec871 31,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf80a6dea71f7a03ef6edd1fa9a24487f1dd856e",
+  "prompts": {},
+  "sessions": {
+    "s_2afb2c73f80664": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b9063c5-a772-4ad6-8ab6-c1c1ce8d8bb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    },
+    "s_e34e3cf6ab512e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13cd2270-98e4-4cad-ba80-f9b6eec65a11",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

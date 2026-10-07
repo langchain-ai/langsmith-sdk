@@ -1,0 +1,21 @@
+python/.bumpversion.cfg
+  s_65de7377b035fe::t_a6b67ee1faae10 2
+python/langsmith/__init__.py
+  s_65de7377b035fe::t_a6b67ee1faae10 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b7d4078ac5374a11b93e02a56bb647f77ba9be48",
+  "prompts": {},
+  "sessions": {
+    "s_65de7377b035fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a724-c4c2-7c13-9072-18868fe18cde",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

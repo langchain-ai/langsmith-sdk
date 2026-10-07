@@ -1,0 +1,16 @@
+python/.bumpversion.cfg
+  h_f1ecc43c8f43eb 2
+python/langsmith/__init__.py
+  h_f1ecc43c8f43eb 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5d0ec43e24292f590b97e31e966f576643657abc",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

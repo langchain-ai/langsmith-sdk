@@ -1,0 +1,20 @@
+js/src/tests/wrapped_openai.int.test.ts
+  s_03e2ce5f4f9e9f::t_f427954cffad39 451-456,462-469
+  s_03e2ce5f4f9e9f::t_21cba35123cbc5 3,442-450,457-461,470-484,487-495,518,536,585-588,590-601
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bd61eb109c6847d594486ba560cbd5d7e385038e",
+  "prompts": {},
+  "sessions": {
+    "s_03e2ce5f4f9e9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "438f4ddc-4245-40c5-baf3-a78d45bf610f",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

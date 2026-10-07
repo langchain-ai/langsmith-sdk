@@ -1,0 +1,16 @@
+js/package.json
+  h_b47ec433af8c62 3
+js/src/index.ts
+  h_b47ec433af8c62 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5199fb67a98a6e49058325bf50b8065c1b02de40",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+python/tests/unit_tests/secret/test_secret_integration.py
+  s_a7892c28e33842::t_d7965fc762b1e8 36,38-48,133-144
+python/langsmith/secret.py
+  h_f1ecc43c8f43eb 23-25,137
+  s_9d798f94fcb60d::t_e954bf8b635cab 85-86,90-93
+  h_f1ecc43c8f43eb 138-141
+python/tests/unit_tests/secret/test_secret_type.py
+  s_9d798f94fcb60d::t_2d74601bc2133a 6,9,36,77-85
+  s_a7892c28e33842::t_8c7745de39fd95 128,167
+python/tests/unit_tests/secret/test_secret_serde.py
+  s_9d798f94fcb60d::t_2d74601bc2133a 173-174,181,183-187
+  s_9d798f94fcb60d::t_d3b0b1bdd0fb8b 58-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "030762ea4117385b0a6617bfb03cb382ec063567",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_9d798f94fcb60d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4d01e5-b817-4e2b-80b3-cb47b4623147",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    },
+    "s_a7892c28e33842": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1cac4247-96bc-45c6-bc90-36f7562bed66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

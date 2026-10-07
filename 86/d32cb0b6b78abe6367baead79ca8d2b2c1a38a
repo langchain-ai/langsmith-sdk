@@ -1,0 +1,55 @@
+python/langsmith/run_helpers.py
+  s_e0e0b0aad1dc60::t_d43d8387eecded 93,158,229-230,232,234,239-241,260,666,676,1184-1185,1187,1237,1259,1277,1579
+  s_e0e0b0aad1dc60::t_71b4f47fd7a6df 1762,1764-1766,1768,1776-1780,1879,1913
+  s_e0e0b0aad1dc60::t_784c31f4e31c67 1392-1394,1397-1398,1400,1404-1405,1419-1422,1678-1679,1687,1696,1748,1758
+python/langsmith/_internal/_agent_addressing.py
+  s_e0e0b0aad1dc60::t_e854d249db903e 126
+  s_e0e0b0aad1dc60::t_ff054402f806e6 1,3-6,12,20-23,25-27,30-31,33,35,39,41,43,45,49,51,53-56,59-60,62-63,65-75,79-81,84-87,92-103,106-109,112,114,118,120-122,124,127,129,131-133,142,146,152,155-156,158,161-163,171,173,175-178,181,184,186-187,192,194-196,199-200,202-203,207-209,212,216-222
+python/langsmith/async_client.py
+  s_e0e0b0aad1dc60::t_60a4f1a91faa92 630,639-640
+  s_e0e0b0aad1dc60::t_e667dc06d10a50 1243-1250,1258-1263,1322
+python/langsmith/client.py
+  s_e0e0b0aad1dc60::t_e667dc06d10a50 8440-8447,8455-8460,8526
+  s_e0e0b0aad1dc60::t_8fd8ddbe1cfd25 2647,2659-2660,3925,4916
+python/langsmith/evaluation/_runner.py
+  s_e0e0b0aad1dc60::t_a9fe974b7638ea 1263-1264,1266
+python/langsmith/_internal/_context.py
+  s_e0e0b0aad1dc60::t_1a4b2698a270bf 8,14
+  s_e0e0b0aad1dc60::t_ab691f1c64e69c 17-18,47
+python/langsmith/schemas.py
+  s_e0e0b0aad1dc60::t_f6f7b60d2690c4 717-725
+python/langsmith/run_trees.py
+  s_e0e0b0aad1dc60::t_831a7d1e1c87c0 66-69,76,78,80,114,127,217-219,308-313,355-367,370,381-383,419,428,437-441,446,475-476,479-481,483-484
+  s_e0e0b0aad1dc60::t_2f429a72e91c3a 1545
+  s_e0e0b0aad1dc60::t_b86fa024bc37e4 828,838-847,853-856,910,917,921,925,936,975,984-985,991,993-997,1007,1014,1034,1046,1111,1123,1135,1161,1189
+  s_e0e0b0aad1dc60::t_2be5d441165b12 1355-1356,1369-1370,1376-1380,1401,1423,1430,1440-1441,1452-1455,1457,1459-1461,1483-1485,1487-1489,1493,1495-1498,1514,1543-1544,1546-1547,1550,1555-1565,1700
+  s_e0e0b0aad1dc60::t_d841ae080624ba 1486
+python/langsmith/_target.py
+  s_e0e0b0aad1dc60::t_e854d249db903e 149,151
+  s_e0e0b0aad1dc60::t_d502b351b8a491 8-12,33,45-48,55-56,59,61-63,67-75,77,79-83,85-123,125-128,130-132,134-143,145-148,152-157,164,166,212-217,219-220
+  s_e0e0b0aad1dc60::t_90be978b74b739 223,230,233,235
+  s_e0e0b0aad1dc60::t_2f429a72e91c3a 165
+  s_e0e0b0aad1dc60::t_2d94f0da3236be 84,133,150
+  s_e0e0b0aad1dc60::t_173bdee69727a5 129
+python/langsmith/_internal/_operations.py
+  s_e0e0b0aad1dc60::t_244128ed5fd922 190
+  s_e0e0b0aad1dc60::t_2f429a72e91c3a 16
+python/langsmith/env/_runtime_env.py
+  s_e0e0b0aad1dc60::t_c4870b47eb59a1 203-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "86d32cb0b6b78abe6367baead79ca8d2b2c1a38a",
+  "prompts": {},
+  "sessions": {
+    "s_e0e0b0aad1dc60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac46cf5e-9692-47f8-ba2d-dfef73ba4247",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

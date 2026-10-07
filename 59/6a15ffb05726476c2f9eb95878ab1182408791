@@ -1,0 +1,58 @@
+examples/agent_addresses/typescript/create_run.ts
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-25
+js/src/utils/addressing.ts
+  s_f37c3e6c74d99c::t_64e18f3dd12281 84-87,91,94-97,104
+examples/agent_addresses/README.md
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-31
+examples/agent_addresses/typescript/traceable.ts
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-16
+examples/agent_addresses/python/env_vars.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-23
+examples/agent_addresses/typescript/run_tree.ts
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-19
+examples/agent_addresses/python/configure.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-18
+examples/agent_addresses/python/run_tree.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-20
+examples/agent_addresses/python/create_run.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-28
+examples/agent_addresses/python/trace_context_manager.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-18
+examples/agent_addresses/python/query_agent_traces.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-27
+examples/agent_addresses/python/experiment_traces.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-50
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_c788ac812627a2 658
+  s_f37c3e6c74d99c::t_be61372a5196e8 633-645
+  s_f37c3e6c74d99c::t_b5e6eb3c9116cb 619,625-632,646-650,660
+  s_f37c3e6c74d99c::t_152b5251e23eca 12
+  s_f37c3e6c74d99c::t_1af2243a9eacd2 651-657,659
+examples/agent_addresses/python/tracing_context.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-18
+examples/agent_addresses/python/langsmith_extra.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-17
+examples/agent_addresses/python/traceable.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "596a15ffb05726476c2f9eb95878ab1182408791",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

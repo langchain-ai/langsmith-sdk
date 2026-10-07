@@ -1,0 +1,48 @@
+python/tests/unit_tests/test_run_trees.py
+  s_2afb2c73f80664::t_da965672fda6c7 860-861,872-873,891-892,903,918,930-931,943,979,1007-1008
+python/langsmith/run_trees.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 309
+python/langsmith/async_client.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 1229
+python/langsmith/run_helpers.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 201,203,473,475,1087,1089
+python/tests/unit_tests/test_env.py
+  s_2afb2c73f80664::t_da965672fda6c7 143-144
+python/langsmith/_target.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 102,133,150,216,220
+python/langsmith/client.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 2587,2592,8382
+python/tests/unit_tests/test_utils.py
+  s_2afb2c73f80664::t_5f14d061260685 99-100,108,120
+  s_2afb2c73f80664::t_da965672fda6c7 126,707-708
+python/langsmith/schemas.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 664
+python/tests/unit_tests/test_client.py
+  s_2afb2c73f80664::t_da965672fda6c7 8110-8111,8131-8132,8214-8215,8258,8262,8281-8282,8335-8336,8348-8349,8358,8370-8371,8392-8393,8417-8418,8442-8443,8446,8456-8457,8473-8474,8492-8493,8564,8602,8639,8676
+python/langsmith/_internal/_agent_addressing.py
+  s_2afb2c73f80664::t_0abc835a40d6ff 131,142,144,178
+  s_2afb2c73f80664::t_da965672fda6c7 121
+python/langsmith/utils.py
+  s_2afb2c73f80664::t_da965672fda6c7 466,487
+  s_2afb2c73f80664::t_0abc835a40d6ff 476,483,496,504
+python/tests/unit_tests/test_run_helpers.py
+  s_2afb2c73f80664::t_da965672fda6c7 2755-2756,2765-2766,2784-2785,2818-2819,2831-2832,3038-3039,3108,3132,3155
+python/langsmith/env/_runtime_env.py
+  s_2afb2c73f80664::t_0fb60e9684fea3 203-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d80df65bd53dded2182660a6e611078ffb976808",
+  "prompts": {},
+  "sessions": {
+    "s_2afb2c73f80664": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b9063c5-a772-4ad6-8ab6-c1c1ce8d8bb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,81 @@
+python/tests/unit_tests/secret/test_secret_integration.py
+  h_f1ecc43c8f43eb 1-3,4-35,37,49-132,145-183
+  s_a7892c28e33842::t_83f7be83e81c03 184-185,186-197
+  s_a7892c28e33842::t_d28d13eda5a2eb 201
+  s_a7892c28e33842::t_fdbf914c60d18b 198-200,202-205
+  s_a7892c28e33842::t_d7965fc762b1e8 36,38-48,133-144
+python/tests/unit_tests/secret/test_secret_serde.py
+  h_f1ecc43c8f43eb 1-11,12-57,64-73,74-147,182,189-284,285-294,295-298,299-333,335-343,345-355
+  s_a7892c28e33842::t_75f718fb1c04f1 148-164,166-172,175-180,182,188
+  s_a7892c28e33842::t_1d5e78f740e872 334,344
+  s_9d798f94fcb60d::t_2d74601bc2133a 173-174,181,183-187
+  s_9d798f94fcb60d::t_d3b0b1bdd0fb8b 58-63
+python/langsmith/_internal/_orjson.py
+  h_f1ecc43c8f43eb 6,23,30,55,63,65-66,68-69,74-78,99
+  s_a7892c28e33842::t_71453db8db0ca2 22,54,79-80
+python/langsmith/secret.py
+  h_f1ecc43c8f43eb 2,10-13,15-16,18-22,23-25,26-83,94-136,137,138-141,142,143,146
+  s_a7892c28e33842::t_2e21c4242552dd 87-89
+  s_a7892c28e33842::t_75f718fb1c04f1 84
+  s_a7892c28e33842::t_d19a7fddd36cb2 1-14,15-16,17-22,26-84,87-89,94-136,142-189
+  s_9d798f94fcb60d::t_e954bf8b635cab 85-86,90-93
+python/tests/unit_tests/secret/test_secret_type.py
+  h_f1ecc43c8f43eb 1-5,7-8,10-35,37-73,74,75-76,86-127,129-166,168-178
+  s_9d798f94fcb60d::t_2d74601bc2133a 6,9,36,77-85
+  s_a7892c28e33842::t_8c7745de39fd95 128,167
+python/langsmith/_internal/_serde.py
+  h_f1ecc43c8f43eb 41,178-179,224,228-229
+  s_a7892c28e33842::t_0b51c2f41061bd 24,288
+  s_a7892c28e33842::t_f9fde5e2c074ed 294
+  s_a7892c28e33842::t_f652ccc75ae4e0 234-236
+  s_a7892c28e33842::t_1d5e78f740e872 19
+  s_a7892c28e33842::t_45c3c179547be1 18,20-23,40,174-177,225-226,289
+python/langsmith/__init__.py
+  h_f1ecc43c8f43eb 42,190-194,259
+python/langsmith/anonymizer.py
+  h_f1ecc43c8f43eb 7-8,51
+  s_a7892c28e33842::t_69aec55d091812 49-50
+python/langsmith/client.py
+  s_a7892c28e33842::t_d35fe21d7b7268 5780
+python/langsmith/_internal/otel/_attribute_utils.py
+  s_a7892c28e33842::t_b2d7bf5230da4a 18
+  s_a7892c28e33842::t_4b1144778d9301 19,21-22
+  s_a7892c28e33842::t_de27b1253096b7 8,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2504b9bbd8d0b1e0fcd0480965a0a2529bd5ae52",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_78dd0e6625b31a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6326abd8-c9df-4a19-8bb3-09c924a6d444",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    },
+    "s_9d798f94fcb60d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4d01e5-b817-4e2b-80b3-cb47b4623147",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    },
+    "s_a7892c28e33842": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1cac4247-96bc-45c6-bc90-36f7562bed66",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

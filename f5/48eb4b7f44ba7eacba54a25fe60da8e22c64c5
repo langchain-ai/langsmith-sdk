@@ -1,0 +1,27 @@
+python/langsmith/secret.py
+  s_9c6ed76b9a3c89::t_c77e8ca99b787a 80-84,112-125
+  s_9c6ed76b9a3c89::t_2110fe7e0a90d0 126
+python/tests/unit_tests/secret/test_secret_type.py
+  s_9c6ed76b9a3c89::t_bcca08f45ab5cb 133-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f548eb4b7f44ba7eacba54a25fe60da8e22c64c5",
+  "prompts": {},
+  "humans": {
+    "h_f1ecc43c8f43eb": {
+      "author": "Emil Filipov <emil@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_9c6ed76b9a3c89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f1de4b7-5a2d-4139-b4e0-e4f09228a52f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Emil Filipov <emil@langchain.dev>"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+js/src/tests/wrapped_openai.int.test.ts
+  h_b47ec433af8c62 689,700,717,728-734,757
+js/src/tests/wrapped_openai.test.ts
+  h_b47ec433af8c62 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ff4bdfd080675cc759fc13153036d878ec9b1a94",
+  "prompts": {},
+  "humans": {
+    "h_b47ec433af8c62": {
+      "author": "Emil F <emil@langchain.dev>"
+    }
+  }
+}

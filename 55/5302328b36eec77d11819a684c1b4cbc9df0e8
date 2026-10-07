@@ -1,0 +1,36 @@
+examples/addressing/3_langsmith_extra.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-20
+examples/addressing/1_tracing_context.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-23
+examples/addressing/5_configure.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-16
+examples/addressing/6_env_vars.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-24
+examples/addressing/4_traceable.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-26
+examples/addressing/7_inheritance.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-27
+examples/addressing/2_distributed_parent.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-29
+examples/addressing/8_replicas.py
+  s_2afb2c73f80664::t_a3ac5c99668b8a 1-23
+examples/addressing/README.md
+  s_2afb2c73f80664::t_98e1b673375be9 1
+  s_2afb2c73f80664::t_a3ac5c99668b8a 2-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "555302328b36eec77d11819a684c1b4cbc9df0e8",
+  "prompts": {},
+  "sessions": {
+    "s_2afb2c73f80664": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b9063c5-a772-4ad6-8ab6-c1c1ce8d8bb9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

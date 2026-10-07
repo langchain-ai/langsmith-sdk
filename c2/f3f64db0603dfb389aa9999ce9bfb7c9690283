@@ -1,0 +1,28 @@
+python/langsmith/integrations/livekit/processor.py
+  s_444d53b020acdc::t_d75e7c17e06d32 40-41,47,578,587,594-604,607,609-617,638-644,669-670,758,761,764
+python/langsmith/integrations/livekit/_helpers.py
+  s_444d53b020acdc::t_3a349036196849 12,35-152
+  s_444d53b020acdc::t_244c0020e3e2a4 153-154
+python/tests/unit_tests/wrappers/test_livekit.py
+  s_444d53b020acdc::t_93bc21530bb3ad 1634-1636,1733-1738,1741-1754,1756-1762,1764-1769,1772-1774,1787-1794,1797-1799,1801-1825,1836-1854,1856-1859,1864-1866,1870-1876,1878-1880,1886,1890-1903,1912-1954,1956-1958,1960-1984
+  s_444d53b020acdc::t_e1282e563c2b92 1638-1642
+  s_444d53b020acdc::t_0362d57f3973ac 1867-1869,1887-1889
+  s_444d53b020acdc::t_e56071f3c14c7e 24,1604-1633,1637,1643-1732,1739-1740,1755,1763,1770-1771,1775-1786,1795-1796,1800,1826-1835,1855,1860-1863,1877,1881-1885,1904-1911,1955,1959
+  s_444d53b020acdc::t_da82989d779fe2 1985-1986
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c2f3f64db0603dfb389aa9999ce9bfb7c9690283",
+  "prompts": {},
+  "sessions": {
+    "s_444d53b020acdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a086fa-a41a-79c3-85f4-b83b1f42d4a2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Caroline di Vittorio <43390382+carolinedivittorio@users.noreply.github.com>"
+    }
+  }
+}

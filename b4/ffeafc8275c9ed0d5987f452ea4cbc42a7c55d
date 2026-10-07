@@ -1,0 +1,33 @@
+python/tests/unit_tests/test_async_client.py
+  s_330ba5a6e1cef8::t_8a528d3bb5c202 64-122
+python/langsmith/utils.py
+  s_330ba5a6e1cef8::t_db95e324c10b70 121-130
+python/langsmith/client.py
+  s_330ba5a6e1cef8::t_9201f7dfa0cd21 1360-1362
+  s_330ba5a6e1cef8::t_2ed28ed45aff3d 1963-2002
+  s_330ba5a6e1cef8::t_5564cf8d26a96b 743-774
+python/README.md
+  s_330ba5a6e1cef8::t_a23e482cdcd083 282-297,304,306-312,315
+  s_330ba5a6e1cef8::t_75d97f730bbb17 316
+python/tests/unit_tests/test_client.py
+  s_330ba5a6e1cef8::t_19b8f5ee0016b3 245-333
+python/langsmith/async_client.py
+  s_330ba5a6e1cef8::t_c08e03d8dfcd89 1838-1877
+  s_330ba5a6e1cef8::t_bc0e5984a7d473 245-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b4ffeafc8275c9ed0d5987f452ea4cbc42a7c55d",
+  "prompts": {},
+  "sessions": {
+    "s_330ba5a6e1cef8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "09e51a5b-3de7-466f-bfdd-20a55ef7ff86",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Zhen Li <zhen@langchain.dev>"
+    }
+  }
+}
