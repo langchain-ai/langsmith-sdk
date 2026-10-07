@@ -95,6 +95,9 @@ jobs:
     name: Freeze Guard
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     env:
       FROZEN: ""
       GH_TOKEN: ${{ github.token }}
@@ -106,7 +109,11 @@ jobs:
             echo "No folder frozen."
             exit 0
           fi
-          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          # Paginated files API: no size limit like `gh pr diff`, and a rename
+          # lists both its old and new path so moving files out of a frozen
+          # folder is caught too.
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
           status=0
           for dir in $FROZEN; do
             case "$dir" in
