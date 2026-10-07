@@ -1,0 +1,42 @@
+python/langsmith/address.py
+  s_f37c3e6c74d99c::t_49a0e8c663f99d 37,39,41,43-50,59-66,71,130,133,191,193,204,206
+examples/agent_addresses/python/query_agent_traces.py
+  s_f37c3e6c74d99c::t_f09a523078a809 16
+python/langsmith/client.py
+  s_f37c3e6c74d99c::t_49a0e8c663f99d 1712
+examples/agent_addresses/python/experiment_traces.py
+  s_f37c3e6c74d99c::t_f09a523078a809 42
+python/langsmith/schemas.py
+  s_f37c3e6c74d99c::t_a1b7b36b47abf8 12,35-38,567-568,698-699
+python/langsmith/_openapi_client/resources/sessions.py
+  s_f37c3e6c74d99c::t_bb795d34bee8cf 5-6,9,48-50,58,60-65,68-73,83,86-97,126-128,136,138-143,146-151,161,164-175
+python/langsmith/_openapi_client/types/run.py
+  s_f37c3e6c74d99c::t_196be04d07dae2 309-315
+python/langsmith/_openapi_client/types/session_resolve_params.py
+  s_f37c3e6c74d99c::t_ffbaf0937dd023 7,12,15-17,21
+python/langsmith/_openapi_client/types/thread.py
+  s_f37c3e6c74d99c::t_afe55ecd6cce9c 156-162
+python/langsmith/_openapi_client/types/trace.py
+  s_f37c3e6c74d99c::t_c3e6ba820083ac 13-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea62b022c5be6a9a7f0fe041a5ae2838ac5b1734",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
