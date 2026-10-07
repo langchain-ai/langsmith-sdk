@@ -86,6 +86,53 @@ jobs:
               - '.github/**'
 
   # ============================================================================
+  # Freeze Guard
+  # ============================================================================
+  # Fails a PR touching a language folder once that SDK moved to its own repo.
+  # FROZEN is empty until switch day: set it to "js" on the js switch day,
+  # "js python" on the python switch day. Required through the CI Success gate.
+  # Add the `skip-freeze-guard` label to a PR to bypass it (a revert, a hotfix
+  # that has to ship from here). The job is skipped, which the gate accepts.
+  freeze-guard:
+    name: Freeze Guard
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-freeze-guard')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      FROZEN: ""
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Fail if the PR touches a frozen folder
+        run: |
+          if [ -z "$FROZEN" ]; then
+            echo "No folder frozen."
+            exit 0
+          fi
+          # Paginated files API: no size limit like `gh pr diff`, and a rename
+          # lists both its old and new path so moving files out of a frozen
+          # folder is caught too.
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
+          status=0
+          for dir in $FROZEN; do
+            case "$dir" in
+              js) repo=langsmith-javascript ;;
+              python) repo=langsmith-python ;;
+              *) repo="langsmith-$dir" ;;
+            esac
+            hits=$(printf '%s\n' "$files" | grep -E "^$dir/" || true)
+            if [ -n "$hits" ]; then
+              echo "::error::$dir/ moved to https://github.com/langchain-ai/$repo, open this PR there instead. Add the skip-freeze-guard label if it really has to land here."
+              printf '%s\n' "$hits"
+              status=1
+            fi
+          done
+          exit $status
+
+  # ============================================================================
   # Python CI
   # ============================================================================
   python-lint:
@@ -819,6 +866,7 @@ jobs:
     name: "CI Success"
     needs:
       - changes
+      - freeze-guard
       # Python
       - python-lint
       - python-test
