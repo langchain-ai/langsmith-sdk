@@ -330,7 +330,7 @@ class LangSmithExtra(TypedDict, total=False):
     project_name: Optional[str]
     """Optional name of the project."""
     address: Optional[Agent]
-    """(beta) An address string to log the run to, instead of a project."""
+    """(beta) An `Agent` to log the run to, instead of a project."""
     metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
     tags: Optional[list[str]]

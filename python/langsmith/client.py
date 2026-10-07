@@ -1708,7 +1708,7 @@ class Client:
 
     @property
     def sessions(self) -> AsyncSessionsResource:
-        """Access the sessions resource (resolve an address to its project)."""
+        """(beta) Access the sessions resource (resolve an address to its project)."""
         _check_backend_version(self.info.version, min_version="0.18.0")
         return self._get_langsmith_api().sessions
 

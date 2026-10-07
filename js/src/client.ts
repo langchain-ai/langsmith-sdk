@@ -5573,6 +5573,7 @@ export class Client implements LangSmithTracingClientInterface {
       runId?: string | null;
       sessionId?: string;
       projectId?: string;
+      /** (beta) Send the feedback to this agent instead of a project. */
       address?: Agent;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams

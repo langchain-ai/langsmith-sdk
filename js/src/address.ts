@@ -26,7 +26,7 @@ export type Environment = "local" | "development" | "staging" | "production";
  */
 export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
 
-/** The backend's form of an address, as the resolve endpoint takes it. */
+/** (beta) The backend's form of an address, as the resolve endpoint takes it. */
 export type ApiAddress = {
   kind: "AGENT" | "EXPERIMENT" | "EVALUATOR";
   id?: string;
@@ -56,7 +56,7 @@ const LRN_PATTERN = /^lrn:agents\/([^/]+)\/environments\/([^/]+)$/;
 
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
 
-/** The `LANGSMITH_AGENT_*` / project env vars name half an address, or both. */
+/** (beta) The `LANGSMITH_AGENT_*` / project env vars name half an address, or both. */
 export class EnvAddressError extends Error {
   constructor(message: string) {
     super(message);

@@ -60,7 +60,7 @@ _LRN_PATTERN = re.compile(r"lrn:agents/([^/]+)/environments/([^/]+)")
 
 
 class ApiAddress(TypedDict, total=False):
-    """An address as the query APIs take it, such as `client.sessions.resolve`."""
+    """(beta) An address as `client.sessions.resolve` takes it."""
 
     kind: Required[Literal["AGENT", "EXPERIMENT", "EVALUATOR"]]
     id: str
@@ -77,7 +77,7 @@ class Address(Protocol):
 
 
 class EnvAddressError(utils.LangSmithUserError):
-    """The `LANGSMITH_AGENT_*` / project env vars can't address a run.
+    """(beta) The `LANGSMITH_AGENT_*` / project env vars can't address a run.
 
     Raised for half an address, an invalid one, or an address beside a project.
     Tracing entry points (`@traceable`, `trace`, `tracing_context`,

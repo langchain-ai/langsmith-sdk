@@ -698,6 +698,7 @@ class FeedbackCreate(FeedbackBase):
     # `Any`, not `Agent`: pydantic needs the type at class creation, and importing
     # `address` here is circular. The validator below checks it.
     address: Optional[Any] = Field(default=None, exclude=True)
+    """(beta) The `Agent` to send the feedback to, instead of a project."""
 
     @field_validator("address")
     @classmethod
