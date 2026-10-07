@@ -36,14 +36,14 @@ from .issue_retrieve_params import IssueRetrieveParams as IssueRetrieveParams
 from .online_code_evaluator import OnlineCodeEvaluator as OnlineCodeEvaluator
 from .online_evaluator_type import OnlineEvaluatorType as OnlineEvaluatorType
 from .sandbox_list_response import SandboxListResponse as SandboxListResponse
+from .project_resolve_params import ProjectResolveParams as ProjectResolveParams
 from .run_retrieve_v2_params import RunRetrieveV2Params as RunRetrieveV2Params
-from .session_resolve_params import SessionResolveParams as SessionResolveParams
 from .snapshot_list_response import SnapshotListResponse as SnapshotListResponse
 from .sort_by_dataset_column import SortByDatasetColumn as SortByDatasetColumn
 from .trace_list_runs_params import TraceListRunsParams as TraceListRunsParams
 from .annotation_queue_schema import AnnotationQueueSchema as AnnotationQueueSchema
 from .sandbox_status_response import SandboxStatusResponse as SandboxStatusResponse
-from .session_resolve_response import SessionResolveResponse as SessionResolveResponse
+from .project_resolve_response import ProjectResolveResponse as ProjectResolveResponse
 from .session_sortable_columns import SessionSortableColumns as SessionSortableColumns
 from .trace_list_runs_response import TraceListRunsResponse as TraceListRunsResponse
 from .online_evaluator_run_rule import OnlineEvaluatorRunRule as OnlineEvaluatorRunRule

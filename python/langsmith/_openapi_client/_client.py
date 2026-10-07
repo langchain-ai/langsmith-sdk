@@ -44,7 +44,7 @@ if TYPE_CHECKING:
         traces,
         threads,
         datasets,
-        sessions,
+        projects,
         sandboxes,
         product_feedback,
         annotation_queues,
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from .resources.info import InfoResource, AsyncInfoResource
     from .resources.issues import IssuesResource, AsyncIssuesResource
     from .resources.traces import TracesResource, AsyncTracesResource
-    from .resources.sessions import SessionsResource, AsyncSessionsResource
+    from .resources.projects import ProjectsResource, AsyncProjectsResource
     from .resources.runs.runs import RunsResource, AsyncRunsResource
     from .resources.fleet.fleet import FleetResource, AsyncFleetResource
     from .resources.public.public import PublicResource, AsyncPublicResource
@@ -157,10 +157,10 @@ class Langsmith(SyncAPIClient):
         return FleetResource(self)
 
     @cached_property
-    def sessions(self) -> SessionsResource:
-        from .resources.sessions import SessionsResource
+    def projects(self) -> ProjectsResource:
+        from .resources.projects import ProjectsResource
 
-        return SessionsResource(self)
+        return ProjectsResource(self)
 
     @cached_property
     def datasets(self) -> DatasetsResource:
@@ -443,10 +443,10 @@ class AsyncLangsmith(AsyncAPIClient):
         return AsyncFleetResource(self)
 
     @cached_property
-    def sessions(self) -> AsyncSessionsResource:
-        from .resources.sessions import AsyncSessionsResource
+    def projects(self) -> AsyncProjectsResource:
+        from .resources.projects import AsyncProjectsResource
 
-        return AsyncSessionsResource(self)
+        return AsyncProjectsResource(self)
 
     @cached_property
     def datasets(self) -> AsyncDatasetsResource:
@@ -667,10 +667,10 @@ class LangsmithWithRawResponse:
         return FleetResourceWithRawResponse(self._client.fleet)
 
     @cached_property
-    def sessions(self) -> sessions.SessionsResourceWithRawResponse:
-        from .resources.sessions import SessionsResourceWithRawResponse
+    def projects(self) -> projects.ProjectsResourceWithRawResponse:
+        from .resources.projects import ProjectsResourceWithRawResponse
 
-        return SessionsResourceWithRawResponse(self._client.sessions)
+        return ProjectsResourceWithRawResponse(self._client.projects)
 
     @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithRawResponse:
@@ -752,10 +752,10 @@ class AsyncLangsmithWithRawResponse:
         return AsyncFleetResourceWithRawResponse(self._client.fleet)
 
     @cached_property
-    def sessions(self) -> sessions.AsyncSessionsResourceWithRawResponse:
-        from .resources.sessions import AsyncSessionsResourceWithRawResponse
+    def projects(self) -> projects.AsyncProjectsResourceWithRawResponse:
+        from .resources.projects import AsyncProjectsResourceWithRawResponse
 
-        return AsyncSessionsResourceWithRawResponse(self._client.sessions)
+        return AsyncProjectsResourceWithRawResponse(self._client.projects)
 
     @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithRawResponse:
@@ -837,10 +837,10 @@ class LangsmithWithStreamedResponse:
         return FleetResourceWithStreamingResponse(self._client.fleet)
 
     @cached_property
-    def sessions(self) -> sessions.SessionsResourceWithStreamingResponse:
-        from .resources.sessions import SessionsResourceWithStreamingResponse
+    def projects(self) -> projects.ProjectsResourceWithStreamingResponse:
+        from .resources.projects import ProjectsResourceWithStreamingResponse
 
-        return SessionsResourceWithStreamingResponse(self._client.sessions)
+        return ProjectsResourceWithStreamingResponse(self._client.projects)
 
     @cached_property
     def datasets(self) -> datasets.DatasetsResourceWithStreamingResponse:
@@ -922,10 +922,10 @@ class AsyncLangsmithWithStreamedResponse:
         return AsyncFleetResourceWithStreamingResponse(self._client.fleet)
 
     @cached_property
-    def sessions(self) -> sessions.AsyncSessionsResourceWithStreamingResponse:
-        from .resources.sessions import AsyncSessionsResourceWithStreamingResponse
+    def projects(self) -> projects.AsyncProjectsResourceWithStreamingResponse:
+        from .resources.projects import AsyncProjectsResourceWithStreamingResponse
 
-        return AsyncSessionsResourceWithStreamingResponse(self._client.sessions)
+        return AsyncProjectsResourceWithStreamingResponse(self._client.projects)
 
     @cached_property
     def datasets(self) -> datasets.AsyncDatasetsResourceWithStreamingResponse:

@@ -13,7 +13,7 @@ agent = ls.Agent("checkout", "production")
 
 
 async def main() -> None:
-    project = await client.sessions.resolve(**agent.to_api_address())
+    project = await client.projects.resolve(**agent.to_api_address())
 
     async for run in client.runs.query_v2(
         project_ids=[str(project.session_id)],

@@ -39,7 +39,7 @@ experiment = client.read_project(project_name=results.experiment_name)
 
 async def main() -> None:
     address = ls.Experiment(str(experiment.id)).to_api_address()
-    project = await client.sessions.resolve(**address)
+    project = await client.projects.resolve(**address)
 
     async for run in client.runs.query_v2(
         project_ids=[str(project.session_id)], is_root=True, selects=["ID", "NAME"]

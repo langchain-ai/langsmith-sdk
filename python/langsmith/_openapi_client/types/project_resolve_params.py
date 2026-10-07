@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing_extensions import Literal, Required, TypedDict
 
-__all__ = ["SessionResolveParams"]
+__all__ = ["ProjectResolveParams"]
 
 
-class SessionResolveParams(TypedDict, total=False):
+class ProjectResolveParams(TypedDict, total=False):
     kind: Required[Literal["AGENT", "EXPERIMENT", "EVALUATOR"]]
     """The kind of address."""
 
