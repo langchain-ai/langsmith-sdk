@@ -418,13 +418,12 @@ describe("RunTree", () => {
 });
 
 describe("baggage", () => {
-  test("round-trips the address as agent id and environment entries", () => {
+  test("round-trips the address as one entry", () => {
     const parent = new RunTree({ name: "p", address: SUPPORT_AGENT });
     const { baggage } = parent.toHeaders();
     expect(baggage).toBe(
-      "langsmith-agent-id=customer-support,langsmith-agent-environment=production",
+      `langsmith-address=${encodeURIComponent(SUPPORT_STR)}`,
     );
-    expect(baggage).not.toContain("lrn");
     const child = RunTree.fromHeaders(parent.toHeaders(), {
       project_name: "caller",
     })!;
@@ -444,40 +443,44 @@ describe("baggage", () => {
 
   test("a bad value is ignored without being logged", () => {
     const warn = console.warn as jest.Mock;
-    for (const [id, env] of [
-      ["Bad", "production"],
-      ["a", "nope"],
-      ["", "production"],
+    for (const bad of [
+      "support",
+      "",
+      "lrn:agents/Bad/environments/production",
+      "lrn:agents/a/environments/nope",
+      "lrn:agents//environments/production",
+      "lrn:agents/a/environments/",
+      "lrn:agents/a/b/environments/local",
+      "lrn:agents/a/environments/local/extra",
+      "lrn:agents/a/environments/local\n",
     ]) {
       warn.mockClear();
       const child = RunTree.fromHeaders(
-        headersWith(
-          `langsmith-agent-id=${encodeURIComponent(id)},` +
-            `langsmith-agent-environment=${encodeURIComponent(env)}`,
-        ),
+        headersWith(`langsmith-address=${encodeURIComponent(bad)}`),
       )!;
       expect(child.address).toBeUndefined();
-      expect(warn).toHaveBeenCalled();
-      expect(JSON.stringify(warn.mock.calls)).not.toContain(env);
+      expect(warn).toHaveBeenCalledTimes(1);
+      if (bad) {
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(bad);
+      }
     }
   });
 
-  test("half an agent is ignored", () => {
-    for (const half of [
-      "langsmith-agent-id=customer-support",
-      "langsmith-agent-environment=production",
-    ]) {
-      (console.warn as jest.Mock).mockClear();
-      const child = RunTree.fromHeaders(headersWith(half))!;
-      expect(child.address).toBeUndefined();
-      expect(console.warn).toHaveBeenCalledTimes(1);
-    }
+  test("the fields of an earlier format are not read", () => {
+    const child = RunTree.fromHeaders(
+      headersWith(
+        "langsmith-agent-id=customer-support,langsmith-agent-environment=production",
+      ),
+    )!;
+    expect(child.address).toBeUndefined();
   });
 
   test("a header address is normalised", () => {
     const child = RunTree.fromHeaders(
       headersWith(
-        "langsmith-agent-id=customer-support,langsmith-agent-environment=STAGING",
+        `langsmith-address=${encodeURIComponent(
+          "lrn:agents/customer-support/environments/STAGING",
+        )}`,
       ),
     )!;
     expect(child.address).toEqual(STAGING_AGENT);
@@ -488,10 +491,11 @@ describe("baggage", () => {
       headersWith(
         `langsmith-replicas=${encodeURIComponent(
           JSON.stringify([
-            { address: SUPPORT_WIRE, apiKey: "leak" },
+            { address: SUPPORT_STR, apiKey: "leak" },
             { address: { agent_id: "a" } },
-            { address: SUPPORT_STR },
-            { address: SUPPORT_WIRE, projectName: "p" },
+            // The fields of an earlier format are not read.
+            { address: SUPPORT_WIRE },
+            { address: SUPPORT_STR, projectName: "p" },
           ]),
         )}`,
       ),

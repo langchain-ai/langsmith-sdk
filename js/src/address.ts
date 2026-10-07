@@ -51,6 +51,9 @@ const ENVIRONMENTS: string[] = [
   "production",
 ];
 
+// The wire form of an agent address. The parts are validated by `Agent`.
+const LRN_PATTERN = /^lrn:agents\/([^/]+)\/environments\/([^/]+)$/;
+
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
 
 /** The `LANGSMITH_AGENT_*` / project env vars name half an address, or both. */
@@ -116,9 +119,17 @@ export class Agent implements Address {
     return `lrn:agents/${this.id}/environments/${this.env}`;
   }
 
-  /** @internal */
-  _toFields(): Record<string, string> {
-    return { agent_id: this.id, agent_environment: this.env };
+  /**
+   * @internal Parse an LRN read from the wire, such as a `baggage` header. The
+   * value is untrusted, so it is not echoed in the error.
+   * @throws If `value` is not an agent LRN, or names an invalid id or environment.
+   */
+  static _fromLrn(value: unknown): Agent {
+    const match = typeof value === "string" ? LRN_PATTERN.exec(value) : null;
+    if (match === null) {
+      throw new Error("Not an agent address.");
+    }
+    return new Agent(match[1], match[2]);
   }
 
   /**
@@ -211,25 +222,6 @@ export function ensureAgent(value: unknown): Agent | undefined {
     "address must be an Agent such as `new Agent(id, env)`, got " +
       `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
   );
-}
-
-/**
- * @internal Rebuild an address from its header fields; only the fields it
- * knows are read.
- * @returns `undefined` if there are no fields.
- * @throws If the fields are half-present or invalid.
- */
-export function addressFromFields(
-  fields: Record<string, unknown>,
-): Agent | undefined {
-  const { agent_id: id, agent_environment: env } = fields;
-  if (id == null && env == null) {
-    return undefined;
-  }
-  if (id == null || env == null) {
-    throw new Error("The address fields are incomplete.");
-  }
-  return new Agent(id as string, env as string);
 }
 
 /** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */

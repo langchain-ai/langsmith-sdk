@@ -18,7 +18,6 @@ from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 import langsmith._internal._context as _context
-from langsmith import address as _address
 from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _addressing, _v2_migration_utils
@@ -208,11 +207,7 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
-# The address, as its agent id and environment, URL-encoded.
-_ADDRESS_HEADERS = {
-    sys.intern(f"{LANGSMITH_PREFIX}{name.replace('_', '-')}"): name
-    for name in _address.FIELD_NAMES
-}
+LANGSMITH_ADDRESS = sys.intern(f"{LANGSMITH_PREFIX}address")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
@@ -1421,7 +1416,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        address_fields: dict[str, str] = {}
+        address: Optional[Agent] = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1432,8 +1427,8 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
-                elif key in _ADDRESS_HEADERS:
-                    address_fields[_ADDRESS_HEADERS[key]] = urllib.parse.unquote(value)
+                elif key == LANGSMITH_ADDRESS:
+                    address = _address_from_header(urllib.parse.unquote(value))
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
@@ -1457,8 +1452,13 @@ class _Baggage:
                             # A replica has to name a destination, but either
                             # mode counts. A malformed address is dropped here
                             # rather than raising downstream.
-                            replica_address = _address_from_replica_header(
-                                cast(dict, filtered_replica).pop("address", None)
+                            raw_address = cast(dict, filtered_replica).pop(
+                                "address", None
+                            )
+                            replica_address = (
+                                None
+                                if raw_address is None
+                                else _address_from_header(raw_address)
                             )
                             if filtered_replica.get("project_name"):
                                 # Naming both would raise once resolved, and a
@@ -1482,7 +1482,7 @@ class _Baggage:
             tags=tags,
             project_name=project_name,
             replicas=replicas,
-            address=_address_from_fields(address_fields),
+            address=address,
         )
 
     @classmethod
@@ -1512,26 +1512,16 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         if self.address is not None:
-            for name, value in self.address._to_fields().items():
-                header = f"{LANGSMITH_PREFIX}{name.replace('_', '-')}"
-                items.append(f"{header}={urllib.parse.quote(value)}")
+            items.append(
+                f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address._lrn())}"
+            )
         return ",".join(items)
 
 
-def _address_from_replica_header(value: Any) -> Optional[Agent]:
-    """Build a replica's address from the fields of a header's replicas."""
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        logger.warning("Ignoring an unusable address in a `baggage` header.")
-        return None
-    return _address_from_fields(value)
-
-
-def _address_from_fields(fields: Mapping[str, Any]) -> Optional[Agent]:
-    """Build an address from untrusted header fields, or `None` if unusable."""
+def _address_from_header(value: Any) -> Optional[Agent]:
+    """Build an address from an untrusted header value, or `None` if unusable."""
     try:
-        return _address.from_fields(fields)
+        return Agent._from_lrn(value)
     except utils.LangSmithUserError:
         # The value is untrusted, so it is not logged.
         logger.warning("Ignoring an unusable address in a `baggage` header.")

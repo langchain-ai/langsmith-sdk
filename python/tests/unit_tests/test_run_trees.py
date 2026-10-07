@@ -888,10 +888,7 @@ class TestBaggageAgentAddressing:
                 {
                     # Without a destination the replica is dropped before the
                     # credential check below can run.
-                    "address": {
-                        "agent_id": "replica-agent",
-                        "agent_environment": "Staging",
-                    },
+                    "address": "lrn:agents/replica-agent/environments/staging",
                     "api_key": "secret",
                     "api_url": "http://x",
                 }

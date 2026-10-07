@@ -33,7 +33,6 @@ from __future__ import annotations
 import dataclasses
 import re
 import uuid
-from collections.abc import Mapping
 from typing import Any, Optional, Protocol, cast, runtime_checkable
 
 from typing_extensions import Literal, Required, TypedDict
@@ -52,8 +51,8 @@ __all__ = [
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _ENVIRONMENTS = ("local", "development", "staging", "production")
-# The flat fields an address travels in through trace headers.
-FIELD_NAMES = ("agent_id", "agent_environment")
+# The wire form of an agent address. The parts are validated by `Agent`.
+_LRN_PATTERN = re.compile(r"lrn:agents/([^/]+)/environments/([^/]+)")
 
 
 class ApiAddress(TypedDict, total=False):
@@ -123,9 +122,20 @@ class Agent:
         """Return `lrn:agents/{id}/environments/{env}`. Wire format only."""
         return f"lrn:agents/{self.id}/environments/{self.env}"
 
-    def _to_fields(self) -> dict[str, str]:
-        """Return `agent_id` and `agent_environment`."""
-        return {"agent_id": self.id, "agent_environment": self.env}
+    @classmethod
+    def _from_lrn(cls, value: Any) -> Agent:
+        """Parse an LRN read from the wire, such as a `baggage` header.
+
+        The value is untrusted, so it is not echoed in the error.
+
+        Raises:
+            LangSmithUserError: If `value` is not an agent LRN, or names an
+                invalid id or environment.
+        """
+        match = _LRN_PATTERN.fullmatch(value) if isinstance(value, str) else None
+        if match is None:
+            raise utils.LangSmithUserError("Not an agent address.")
+        return cls(*match.groups())
 
     def to_api_address(self) -> ApiAddress:
         """Return this agent as the address the query APIs take."""
@@ -224,17 +234,6 @@ def ensure_agent(address: Any) -> Agent:
     raise utils.LangSmithUserError(
         f"An address must be an `Agent` such as `ls.Agent(id, env)`, got {address!r}."
     )
-
-
-def from_fields(fields: Mapping[str, Any]) -> Optional[Agent]:
-    """Rebuild an address from the fields `_to_fields` produced, if it has any.
-
-    Raises:
-        LangSmithUserError: If the fields are half an address, or invalid.
-    """
-    if not any(fields.get(name) is not None for name in FIELD_NAMES):
-        return None
-    return Agent(fields.get("agent_id"), fields.get("agent_environment"))  # type: ignore[arg-type]
 
 
 def env_values() -> dict[str, Optional[str]]:

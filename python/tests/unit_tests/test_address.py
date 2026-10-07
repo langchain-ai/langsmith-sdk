@@ -563,9 +563,8 @@ class TestPropagation:
             name="up", address=SUPPORT, tags=["t"], extra={"metadata": {"k": "v"}}
         ).to_headers()
         baggage = headers["baggage"]
-        assert "langsmith-agent-id=support" in baggage
-        assert "langsmith-agent-environment=production" in baggage
-        assert "lrn" not in baggage
+        assert f"langsmith-address={urllib.parse.quote(SUPPORT_LRN)}" in baggage
+        assert "langsmith-agent" not in baggage
         child = RunTree.from_headers(headers)
         assert child is not None
         assert _destination(child) == (None, SUPPORT)
@@ -601,11 +600,16 @@ class TestPropagation:
     @pytest.mark.parametrize(
         "bad",
         [
-            "langsmith-agent-id=support",
-            "langsmith-agent-environment=production",
-            "langsmith-agent-id=Bad_Id,langsmith-agent-environment=local",
-            "langsmith-agent-id=support,langsmith-agent-environment=prod",
-            "langsmith-agent-id=,langsmith-agent-environment=",
+            "langsmith-address=support",
+            "langsmith-address=",
+            "langsmith-address=lrn%3Aagents/Bad_Id/environments/local",
+            "langsmith-address=lrn%3Aagents/support/environments/prod",
+            "langsmith-address=lrn%3Aagents/support/environments/",
+            "langsmith-address=lrn%3Aagents/a/b/environments/local",
+            "langsmith-address=lrn%3Aagents/support/environments/local/extra",
+            "langsmith-address=lrn%3Aagents/support/environments/local%0A",
+            # The flat fields an earlier format used are not read.
+            "langsmith-agent-id=support,langsmith-agent-environment=production",
         ],
     )
     def test_a_malformed_header_address_is_ignored(self, bad: str) -> None:
@@ -618,9 +622,10 @@ class TestPropagation:
 
     def test_a_header_replica_with_an_address_round_trips(self) -> None:
         replicas = [
-            {"address": {"agent_id": "support", "agent_environment": "Staging"}},
+            {"address": STAGING_LRN},
             {"address": "bad"},
-            {"address": {"agent_id": "support"}},
+            # The fields an earlier format used are not read.
+            {"address": {"agent_id": "support", "agent_environment": "staging"}},
             {"project_name": "p"},
         ]
         quoted = urllib.parse.quote(json.dumps(replicas))

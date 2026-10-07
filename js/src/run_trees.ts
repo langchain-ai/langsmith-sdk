@@ -33,12 +33,7 @@ import {
   rejectConflicting,
   resolveFromEnv,
 } from "./utils/addressing.js";
-import {
-  type Agent,
-  EnvAddressError,
-  addressFromFields,
-  ensureAgent,
-} from "./address.js";
+import { Agent, EnvAddressError, ensureAgent } from "./address.js";
 
 const TIMESTAMP_LENGTH = 36;
 // DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
@@ -199,19 +194,10 @@ const HEADER_SAFE_REPLICA_FIELDS = new Set([
   "address",
 ]);
 
-// The address travels as one `langsmith-agent-*` entry per field, URL-encoded.
-const ADDRESS_ENTRY_PREFIX = "langsmith-agent-";
-
-/** Rebuilds an untrusted header address; `undefined` if absent or unusable. */
-function addressFromHeader(fields: unknown): Agent | undefined {
-  if (fields == null) {
-    return undefined;
-  }
+/** Rebuilds an untrusted header address; `undefined` if unusable. */
+function addressFromHeader(value: unknown): Agent | undefined {
   try {
-    if (typeof fields !== "object" || Array.isArray(fields)) {
-      throw new Error("not address fields");
-    }
-    return addressFromFields(fields as Record<string, unknown>);
+    return Agent._fromLrn(value);
   } catch {
     // Values are untrusted, so not logged.
     console.warn("Ignoring an unusable address in a `baggage` header.");
@@ -261,7 +247,7 @@ class Baggage {
     let tags: string[] = [];
     let project_name: string | undefined;
     let replicas: Replica[] | undefined;
-    let addressFields: Record<string, string> | undefined;
+    let address: Agent | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -271,10 +257,8 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
-      } else if (key.startsWith(ADDRESS_ENTRY_PREFIX)) {
-        addressFields ??= {};
-        addressFields[key.slice("langsmith-".length).replace(/-/g, "_")] =
-          value;
+      } else if (key === "langsmith-address") {
+        address = addressFromHeader(value);
       } else if (key === "langsmith-replicas") {
         const parsed = JSON.parse(value) as (ProjectReplica | WriteReplica)[];
         replicas = parsed.flatMap((replica): Replica[] => {
@@ -284,18 +268,19 @@ class Baggage {
           const filtered = filterReplicaForHeaders(replica);
           const raw = (filtered as Record<string, unknown>).address;
           delete (filtered as Record<string, unknown>).address;
-          const address = addressFromHeader(raw);
           // A project wins over an address; a replica with an invalid
           // address and no project is dropped.
           if (filtered.projectName || raw == null) {
             return [filtered];
           }
-          return address ? [{ ...filtered, address }] : [];
+          const replicaAddress = addressFromHeader(raw);
+          return replicaAddress
+            ? [{ ...filtered, address: replicaAddress }]
+            : [];
         });
       }
     }
 
-    const address = addressFromHeader(addressFields);
     return new Baggage(metadata, tags, project_name, replicas, address);
   }
 
@@ -315,11 +300,9 @@ class Baggage {
       items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
     }
     if (this.address) {
-      for (const [key, value] of Object.entries(this.address._toFields())) {
-        items.push(
-          `langsmith-${key.replace(/_/g, "-")}=${encodeURIComponent(value)}`,
-        );
-      }
+      items.push(
+        `langsmith-address=${encodeURIComponent(this.address._toLrn())}`,
+      );
     }
 
     return items.join(",");
