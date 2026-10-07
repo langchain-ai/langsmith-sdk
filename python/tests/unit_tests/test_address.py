@@ -206,7 +206,19 @@ class TestOtherAddresses:
         }
         assert EVALUATOR.to_api_address() == {"kind": "EVALUATOR"}
 
-    @pytest.mark.parametrize("value", ["", "x", "0190c3d4", 42])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "x",
+            "0190c3d4",
+            42,
+            # Spellings of a UUID that the JS SDK does not take either.
+            "0190c3d400007000800000000000b1aa",
+            "{0190c3d4-0000-7000-8000-0000000000b1}",
+            "urn:uuid:0190c3d4-0000-7000-8000-0000000000b1",
+        ],
+    )
     def test_an_experiment_id_must_be_a_uuid(self, value: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="UUID"):
             ls.Experiment(value)
@@ -662,6 +674,29 @@ class TestWire:
         assert "agent_id" not in payload
         assert "agent_environment" not in payload
         assert "session_name" not in payload
+
+    def test_a_wire_address_is_checked_and_kept(self) -> None:
+        """A retried batch re-sends an address it already applied."""
+        payload = {"address": "lrn:agents/support/environments/PRODUCTION"}
+        _addressing.apply_to_payload(payload)
+        assert payload["address"] == SUPPORT_LRN
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "support",
+            "",
+            "lrn:agents/Bad_Id/environments/local",
+            "lrn:agents/support/environments/prod",
+            "lrn:agents/a/b/environments/local",
+        ],
+    )
+    def test_a_malformed_wire_address_is_rejected(self, bad: str) -> None:
+        """It is caught here, rather than failing the whole batch in the backend."""
+        with pytest.raises(ls_utils.LangSmithUserError, match="not a valid") as error:
+            _addressing.apply_to_payload({"address": bad})
+        if bad:
+            assert bad not in str(error.value)
 
     @pytest.mark.parametrize("update", [False, True])
     def test_a_run_tree_keeps_its_address_on_the_batch_path(

@@ -634,6 +634,35 @@ describe("Client", () => {
     );
   });
 
+  test("applyToPayload checks a wire address and keeps it canonical", () => {
+    const payload: any = {
+      address: "lrn:agents/customer-support/environments/PRODUCTION",
+    };
+    applyToPayload(payload);
+    expect(payload).toEqual({ address: SUPPORT_STR });
+  });
+
+  test("applyToPayload rejects a malformed wire address without echoing it", () => {
+    for (const bad of [
+      "support",
+      "",
+      "lrn:agents/Bad_Id/environments/local",
+      "lrn:agents/support/environments/prod",
+      "lrn:agents/a/b/environments/local",
+    ]) {
+      let message = "";
+      try {
+        applyToPayload({ address: bad } as any);
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message).toMatch(/not a valid agent address/);
+      if (bad) {
+        expect(message).not.toContain(bad);
+      }
+    }
+  });
+
   test("a run with an address survives the auto-batch queue", async () => {
     const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
       ok: true,

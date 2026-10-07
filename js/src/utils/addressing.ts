@@ -81,27 +81,33 @@ export function applyToPayload(
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  // A string is wire data already applied: a queued run is applied again when
-  // its batch is sent.
-  let wire = typeof payload.address === "string" ? payload.address : undefined;
-  let address = wire === undefined ? ensureAgent(payload.address) : undefined;
+  let address: Agent | undefined;
+  if (typeof payload.address === "string") {
+    // Wire data already applied: a queued run is applied again when its batch
+    // is sent. It is parsed again, so a malformed one cannot fail the whole
+    // batch in the backend.
+    try {
+      address = Agent._fromLrn(payload.address);
+    } catch {
+      throw new Error("The run's `address` is not a valid agent address.");
+    }
+  } else {
+    address = ensureAgent(payload.address);
+  }
   delete payload.address;
   const namedProject =
     payload.session_id != null || payload.session_name != null;
-  if (wire === undefined && !address && !update && !namedProject) {
+  if (!address && !update && !namedProject) {
     address = Agent.fromEnv();
   }
-  if (address) {
-    wire = address._toLrn();
-  }
-  if (wire === undefined) {
+  if (!address) {
     return;
   }
   warnOnce(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  payload.address = wire;
+  payload.address = address._toLrn();
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;

@@ -7,7 +7,7 @@
 
 An `Address` names the tracing project of a feature: an `Agent`'s environment,
 an `Experiment`, or the workspace's `Evaluator` traces. Query APIs resolve an
-address to its project (`client.sessions.resolve`). Only an `Agent` can be sent
+address to its project (`client.sessions.resolve`). Only an `Agent` can receive
 traces, so tracing entry points take an `Agent`, and anything else is rejected.
 The environment of an agent is one of `local`, `development`, `staging` or
 `production`, and is always lowercase.
@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import uuid
 from typing import Any, Optional, Protocol, cast, runtime_checkable
 
 from typing_extensions import Literal, Required, TypedDict
@@ -51,6 +50,11 @@ __all__ = [
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _ENVIRONMENTS = ("local", "development", "staging", "production")
+# The canonical, hyphenated UUID. Other spellings of one are not accepted, so the
+# Python and JS SDKs take the same experiment ids.
+_UUID_PATTERN = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
+)
 # The wire form of an agent address. The parts are validated by `Agent`.
 _LRN_PATTERN = re.compile(r"lrn:agents/([^/]+)/environments/([^/]+)")
 
@@ -190,13 +194,12 @@ class Experiment:
 
     def __post_init__(self) -> None:
         """Validate the id and lowercase it."""
-        try:
-            value = str(uuid.UUID(str(self.id)))
-        except ValueError:
+        if not isinstance(self.id, str) or not _UUID_PATTERN.fullmatch(self.id):
             raise utils.LangSmithUserError(
-                f"An experiment id must be a UUID, got {self.id!r}."
-            ) from None
-        object.__setattr__(self, "id", value)
+                "An experiment id must be a UUID with hyphens, such as "
+                f"'0190c3d4-0000-7000-8000-0000000000b1', got {self.id!r}."
+            )
+        object.__setattr__(self, "id", self.id.lower())
 
     def to_api_address(self) -> ApiAddress:
         """Return this experiment as the address the query APIs take."""
