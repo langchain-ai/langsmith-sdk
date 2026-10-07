@@ -24,7 +24,6 @@ body:
     id: runtime-language
     attributes:
       label: Language
-      description: ""
       options:
         - label: "Python"
         - label: "JavaScript/TypeScript"
