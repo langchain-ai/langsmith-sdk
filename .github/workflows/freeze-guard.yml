@@ -28,7 +28,8 @@ jobs:
             echo "No folder frozen."
             exit 0
           fi
-          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
           status=0
           for dir in $FROZEN; do
             case "$dir" in
