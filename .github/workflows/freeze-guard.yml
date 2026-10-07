@@ -1,0 +1,46 @@
+name: Freeze guard
+
+# Blocks PRs touching a language folder once that SDK moved to its own repo.
+# FROZEN is empty until switch day. Set it to "js" on the js switch day,
+# "js python" on the python switch day.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  FROZEN: ""
+
+jobs:
+  freeze-guard:
+    name: freeze guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if the PR touches a frozen folder
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$FROZEN" ]; then
+            echo "No folder frozen."
+            exit 0
+          fi
+          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          status=0
+          for dir in $FROZEN; do
+            case "$dir" in
+              js) repo=langsmith-javascript ;;
+              python) repo=langsmith-python ;;
+              *) repo="langsmith-$dir" ;;
+            esac
+            hits=$(printf '%s\n' "$files" | grep -E "^$dir/" || true)
+            if [ -n "$hits" ]; then
+              echo "::error::$dir/ moved to https://github.com/langchain-ai/$repo, open this PR there instead."
+              printf '%s\n' "$hits"
+              status=1
+            fi
+          done
+          exit $status
