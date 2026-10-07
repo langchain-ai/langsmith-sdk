@@ -34,16 +34,20 @@ import dataclasses
 import re
 import uuid
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Optional, Protocol, cast, runtime_checkable
+from typing import Any, Optional, Protocol, cast, runtime_checkable
+
+from typing_extensions import Literal, Required, TypedDict
 
 from langsmith import utils
 
-if TYPE_CHECKING:
-    from langsmith._openapi_client.types.session_resolve_params import (
-        ResolveAddress,
-    )
-
-__all__ = ["Address", "Agent", "Evaluator", "EnvAddressError", "Experiment"]
+__all__ = [
+    "Address",
+    "Agent",
+    "ApiAddress",
+    "Evaluator",
+    "EnvAddressError",
+    "Experiment",
+]
 
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
 _AGENT_ID_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
@@ -52,11 +56,19 @@ _ENVIRONMENTS = ("local", "development", "staging", "production")
 FIELD_NAMES = ("agent_id", "agent_environment")
 
 
+class ApiAddress(TypedDict, total=False):
+    """An address as the query APIs take it, such as `client.sessions.resolve`."""
+
+    kind: Required[Literal["AGENT", "EXPERIMENT", "EVALUATOR"]]
+    id: str
+    environment: Literal["LOCAL", "DEVELOPMENT", "STAGING", "PRODUCTION"]
+
+
 @runtime_checkable
 class Address(Protocol):
     """(beta) Names the tracing project of a feature, such as an agent."""
 
-    def to_api_address(self) -> ResolveAddress:
+    def to_api_address(self) -> ApiAddress:
         """Return the address as the query APIs take it."""
         ...
 
@@ -115,10 +127,10 @@ class Agent:
         """Return `agent_id` and `agent_environment`."""
         return {"agent_id": self.id, "agent_environment": self.env}
 
-    def to_api_address(self) -> ResolveAddress:
+    def to_api_address(self) -> ApiAddress:
         """Return this agent as the address the query APIs take."""
         return cast(
-            "ResolveAddress",
+            "ApiAddress",
             {"kind": "AGENT", "id": self.id, "environment": self.env.upper()},
         )
 
@@ -176,9 +188,9 @@ class Experiment:
             ) from None
         object.__setattr__(self, "id", value)
 
-    def to_api_address(self) -> ResolveAddress:
+    def to_api_address(self) -> ApiAddress:
         """Return this experiment as the address the query APIs take."""
-        return cast("ResolveAddress", {"kind": "EXPERIMENT", "id": self.id})
+        return cast("ApiAddress", {"kind": "EXPERIMENT", "id": self.id})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,9 +201,9 @@ class Evaluator:
     cannot be sent traces.
     """
 
-    def to_api_address(self) -> ResolveAddress:
+    def to_api_address(self) -> ApiAddress:
         """Return the address the query APIs take."""
-        return cast("ResolveAddress", {"kind": "EVALUATOR"})
+        return cast("ApiAddress", {"kind": "EVALUATOR"})
 
 
 def ensure_agent(address: Any) -> Agent:
