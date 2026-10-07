@@ -1,0 +1,28 @@
+js/src/utils/env.ts
+  s_ed93bec60c786b::t_618a0c80b80c28 128-129,135-138
+  s_ed93bec60c786b::t_9e1df29bfd8230 139-140
+python/langsmith/env/_runtime_env.py
+  s_ed93bec60c786b::t_90d7f5cee0c27d 207-210
+python/tests/unit_tests/test_env.py
+  s_ed93bec60c786b::t_0c238c65873cee 141-160
+  s_ed93bec60c786b::t_7b28bbd72b1a2e 140
+js/src/tests/client.test.ts
+  s_ed93bec60c786b::t_169ff56a1ebbc8 1125-1158
+  s_ed93bec60c786b::t_3f32807a9c7af1 1159-1164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d076b0b8985ff5a8676553ce05cf8c83b92e54b6",
+  "prompts": {},
+  "sessions": {
+    "s_ed93bec60c786b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5cb8e7b4-56ff-475c-99a0-6353ae834dab",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Bagatur Askaryan <baskaryan@gmail.com>"
+    }
+  }
+}
