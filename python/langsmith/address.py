@@ -7,7 +7,7 @@
 
 An `Address` names the tracing project of a feature: an `Agent`'s environment,
 an `Experiment`, or the workspace's `Evaluator` traces. Query APIs resolve an
-address to its project (`client.projects.resolve`). Only an `Agent` can be sent
+address to its project (`client.sessions.resolve`). Only an `Agent` can be sent
 traces, so tracing entry points take an `Agent`, and anything else is rejected.
 The environment of an agent is one of `local`, `development`, `staging` or
 `production`, and is always lowercase.
@@ -57,7 +57,7 @@ FIELD_NAMES = ("agent_id", "agent_environment")
 
 
 class ApiAddress(TypedDict, total=False):
-    """An address as the query APIs take it, such as `client.projects.resolve`."""
+    """An address as the query APIs take it, such as `client.sessions.resolve`."""
 
     kind: Required[Literal["AGENT", "EXPERIMENT", "EVALUATOR"]]
     id: str

@@ -355,7 +355,6 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.online_evaluators import (
         AsyncOnlineEvaluatorsResource as AsyncEvaluatorsResource,
     )
-    from langsmith._openapi_client.resources.projects import AsyncProjectsResource
     from langsmith._openapi_client.resources.public.public import (
         AsyncPublicResource,
     )
@@ -363,6 +362,7 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
     from langsmith._openapi_client.types.run import Run as V2Run
@@ -1707,10 +1707,10 @@ class Client:
         return self._get_langsmith_api().traces
 
     @property
-    def projects(self) -> AsyncProjectsResource:
-        """Access the projects resource (resolve an address to its project)."""
+    def sessions(self) -> AsyncSessionsResource:
+        """Access the sessions resource (resolve an address to its project)."""
         _check_backend_version(self.info.version, min_version="0.18.0")
-        return self._get_langsmith_api().projects
+        return self._get_langsmith_api().sessions
 
     @property
     def public(self) -> AsyncPublicResource:

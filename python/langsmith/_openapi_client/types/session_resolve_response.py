@@ -2,9 +2,9 @@
 
 from .._models import BaseModel
 
-__all__ = ["ProjectResolveResponse"]
+__all__ = ["SessionResolveResponse"]
 
 
-class ProjectResolveResponse(BaseModel):
+class SessionResolveResponse(BaseModel):
     session_id: str
     """`session_id` is the tracing project (session) the address names."""
