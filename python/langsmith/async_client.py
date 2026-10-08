@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _profiles
+from langsmith._internal import _addressing, _profiles
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._hub import (
     HUB,
@@ -50,6 +50,7 @@ from langsmith._internal._v2_migration_utils import (
     _v2_run_to_schema,
     get_query_backend,
 )
+from langsmith.address import AgentAddress
 from langsmith.prompt_cache import AsyncPromptCache, async_prompt_cache_singleton
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,7 @@ class AsyncClient:
                 - `False`: Disable caching (equivalent to `disable_prompt_cache=True`)
                 - `AsyncCache(...)`/`AsyncPromptCache(...)`: Use a custom cache instance
         """
+        _addressing.warn_on_env()
         self._retry_config = retry_config or {"max_retries": 3}
         self._custom_headers = headers or {}
         env_api_url = ls_client._get_langsmith_env_var_uncached("ENDPOINT")
@@ -240,7 +242,11 @@ class AsyncClient:
             else env_workspace_id or profile_config.workspace_id
         )
         api_key = ls_utils.get_api_key(api_key_)
+        api_url_source = ls_client._api_url_source(
+            api_url, env_api_url, profile_config.api_url
+        )
         api_url = ls_utils.get_api_url(api_url_)
+        logger.debug("LangSmith API URL %s resolved from %s", api_url, api_url_source)
         self._workspace_id = ls_utils.get_workspace_id(workspace_id_)
         self._profile_auth = None
         self._profile_auth_headers = {}
@@ -607,16 +613,49 @@ class AsyncClient:
         revision_id: Optional[ls_client.ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
-        """Create a run."""
+        """Create a run.
+
+        !!! warning "Experimental"
+            `address` sends the run to an address instead of a project. It is
+            in beta and enabled per workspace; a workspace without it rejects
+            the run, so the trace is lost rather than falling back to a
+            project. It may change without notice.
+        """
+        if kwargs.get("address") is not None:
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
+        # Only `project_name`, this method's own parameter, counts as a caller
+        # naming a project; `session_name` and `session_id` arrive in `kwargs`
+        # as part of an already-resolved run body.
+        _addressing.reject_conflicting(
+            project=project_name, address=kwargs.get("address")
+        )
+        if (
+            kwargs.get("session_name") is not None
+            or kwargs.get("session_id") is not None
+        ):
+            # Already addressed by an incoming run body; leave it alone.
+            session_name = project_name
+        else:
+            # A `session_name=None` in `kwargs` would override the result below.
+            kwargs.pop("session_name", None)
+            try:
+                session_name, kwargs["address"] = _addressing.resolve(
+                    (project_name, kwargs.get("address"))
+                )
+            except _addressing.EnvAddressError as e:
+                # Dropped, not raised: tracing must not break the caller.
+                _addressing.log_untraced(e)
+                return
         run_create = {
             "name": name,
             "id": kwargs.get("id") or uuid.uuid4(),
             "inputs": inputs,
             "run_type": run_type,
-            "session_name": project_name or ls_utils.get_tracer_project(),
+            "session_name": session_name,
             "revision_id": revision_id,
             **kwargs,
         }
+        _addressing.apply_to_payload(run_create)
         await self._arequest_with_retries(
             "POST", "/runs", content=ls_client._dumps_json(run_create)
         )
@@ -626,8 +665,20 @@ class AsyncClient:
         run_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Update a run."""
+        """Update a run.
+
+        Args:
+            run_id: The run to update.
+            **kwargs: The fields to update, and `address`.
+
+                !!! warning "Experimental"
+                    `address` is in beta. It sends the patch to an address,
+                    and must match the post it belongs to: an update that
+                    names none is resolved by run id, as every update was
+                    before. It may change without notice.
+        """
         data = {**kwargs, "id": ls_client._as_uuid(run_id)}
+        _addressing.apply_to_payload(data, update=True)
         await self._arequest_with_retries(
             "PATCH",
             f"/runs/{ls_client._as_uuid(run_id)}",
@@ -637,7 +688,7 @@ class AsyncClient:
     @_deprecated(
         "read_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.retrieve() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
         "#runs-retrieve for the migration guide."
     )
     async def read_run(
@@ -685,7 +736,7 @@ class AsyncClient:
     @_deprecated(
         "list_runs() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs"
         "#runs-query for the migration guide."
     )
     async def list_runs(
@@ -861,7 +912,7 @@ class AsyncClient:
     @_deprecated(
         "share_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.share.create() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     async def share_run(
@@ -910,7 +961,7 @@ class AsyncClient:
     @_deprecated(
         "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
         'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
@@ -1131,9 +1182,17 @@ class AsyncClient:
         start_time: Optional[datetime.datetime] = None,
         comment: Optional[str] = None,
         extend_trace_retention: bool = True,
+        address: Optional[AgentAddress] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
+
+        !!! warning "Experimental"
+            `address` is in beta. It is enabled per workspace; a
+            workspace without it rejects the feedback, so it is lost rather
+            than falling back to a project. The address must already exist --
+            unlike run ingestion, a feedback part never creates one. It may
+            change without notice.
 
         Args:
             run_id: The ID of the run to provide feedback for. At least one of
@@ -1165,6 +1224,11 @@ class AsyncClient:
             comment: A comment about this feedback.
             extend_trace_retention: If false, create the feedback without
                 extending the trace's retention tier.
+            address: The address to attach this feedback to, instead of a
+                project. Pass whatever the run being described was traced to.
+                Cannot be combined with `session_id` / `project_id`, and is
+                never read from the env vars: feedback follows its run, not
+                the ambient environment.
             **kwargs: Additional deprecated keyword arguments.
 
         Returns:
@@ -1173,6 +1237,10 @@ class AsyncClient:
         Raises:
             httpx.HTTPStatusError: If the API request fails.
         """  # noqa: E501
+        address = _addressing.check_address(address)
+        _addressing.reject_conflicting(
+            project=project_id, session_id=session_id, address=address
+        )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -1180,7 +1248,9 @@ class AsyncClient:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None:
+        if run_id is not None and session_id is None and address is None:
+            # An address locates the project directly, so it satisfies the same
+            # requirement this gate exists for.
             ls_client._check_feedback_session_id(await self.info())
         if kwargs:
             warnings.warn(
@@ -1235,6 +1305,7 @@ class AsyncClient:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=session_id_,
+            address=address,
             start_time=start_time,
             comparative_experiment_id=ls_client._ensure_uuid(
                 comparative_experiment_id, accept_null=True

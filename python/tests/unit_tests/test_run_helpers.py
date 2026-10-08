@@ -32,6 +32,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._internal._multipart import RewindableMultipartBody
 from langsmith.run_helpers import (
     _attachment_args_cache,
     _cached_attachment_args,
@@ -85,8 +86,8 @@ def _get_multipart_data(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, byt
     datas = []
     for call_ in mock_calls:
         data = call_.kwargs.get("data")
-        if isinstance(data, MultipartEncoder):
-            fields = data.fields
+        if isinstance(data, (MultipartEncoder, RewindableMultipartBody)):
+            fields = data.fields if isinstance(data, MultipartEncoder) else data.parts
             for key, value in fields:
                 if isinstance(value, tuple):
                     _, file_content, content_type, _ = value
@@ -2745,3 +2746,18 @@ def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str
     assert seen["nested_replicas"] == replicas
     # No reroot: the downstream root still points at the real upstream run id.
     assert seen["parent_run_id"] == upstream.id
+
+
+def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_project.cache_clear()

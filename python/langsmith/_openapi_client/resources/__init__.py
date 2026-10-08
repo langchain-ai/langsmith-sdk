@@ -16,6 +16,14 @@ from .runs import (
     RunsResourceWithStreamingResponse,
     AsyncRunsResourceWithStreamingResponse,
 )
+from .fleet import (
+    FleetResource,
+    AsyncFleetResource,
+    FleetResourceWithRawResponse,
+    AsyncFleetResourceWithRawResponse,
+    FleetResourceWithStreamingResponse,
+    AsyncFleetResourceWithStreamingResponse,
+)
 from .issues import (
     IssuesResource,
     AsyncIssuesResource,
@@ -56,6 +64,14 @@ from .datasets import (
     DatasetsResourceWithStreamingResponse,
     AsyncDatasetsResourceWithStreamingResponse,
 )
+from .sessions import (
+    SessionsResource,
+    AsyncSessionsResource,
+    SessionsResourceWithRawResponse,
+    AsyncSessionsResourceWithRawResponse,
+    SessionsResourceWithStreamingResponse,
+    AsyncSessionsResourceWithStreamingResponse,
+)
 from .sandboxes import (
     SandboxesResource,
     AsyncSandboxesResource,
@@ -63,6 +79,14 @@ from .sandboxes import (
     AsyncSandboxesResourceWithRawResponse,
     SandboxesResourceWithStreamingResponse,
     AsyncSandboxesResourceWithStreamingResponse,
+)
+from .product_feedback import (
+    ProductFeedbackResource,
+    AsyncProductFeedbackResource,
+    ProductFeedbackResourceWithRawResponse,
+    AsyncProductFeedbackResourceWithRawResponse,
+    ProductFeedbackResourceWithStreamingResponse,
+    AsyncProductFeedbackResourceWithStreamingResponse,
 )
 from .annotation_queues import (
     AnnotationQueuesResource,
@@ -82,6 +106,24 @@ from .online_evaluators import (
 )
 
 __all__ = [
+    "ProductFeedbackResource",
+    "AsyncProductFeedbackResource",
+    "ProductFeedbackResourceWithRawResponse",
+    "AsyncProductFeedbackResourceWithRawResponse",
+    "ProductFeedbackResourceWithStreamingResponse",
+    "AsyncProductFeedbackResourceWithStreamingResponse",
+    "FleetResource",
+    "AsyncFleetResource",
+    "FleetResourceWithRawResponse",
+    "AsyncFleetResourceWithRawResponse",
+    "FleetResourceWithStreamingResponse",
+    "AsyncFleetResourceWithStreamingResponse",
+    "SessionsResource",
+    "AsyncSessionsResource",
+    "SessionsResourceWithRawResponse",
+    "AsyncSessionsResourceWithRawResponse",
+    "SessionsResourceWithStreamingResponse",
+    "AsyncSessionsResourceWithStreamingResponse",
     "DatasetsResource",
     "AsyncDatasetsResource",
     "DatasetsResourceWithRawResponse",

@@ -2,6 +2,7 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../../core/resource.js';
+import * as SessionsAPI from '../sessions.js';
 import * as ShareAPI from './share.js';
 import { Share, ShareCreateParams, ShareCreateResponse, ShareDeleteParams } from './share.js';
 import { APIPromise } from '../../core/api-promise.js';
@@ -215,6 +216,13 @@ export interface Run {
   latency_seconds?: number;
 
   /**
+   * `ls_user_id` identifies the LangSmith user whose credential traced the run. It
+   * is absent for runs traced with a service-account API key, which has no
+   * associated user.
+   */
+  ls_user_id?: string;
+
+  /**
    * `manifest` is the serialized configuration of the traced component (for example
    * the model parameters, prompt template, or pipeline definition), when recorded.
    */
@@ -281,6 +289,13 @@ export interface Run {
    * `prompt_tokens` is the prompt-side token count.
    */
   prompt_tokens?: number;
+
+  /**
+   * `query_metadata` describes this query result, including `sem_filter_score` when
+   * a semantic filter is used. Returned automatically by run queries, or null when
+   * unavailable.
+   */
+  query_metadata?: unknown | null;
 
   /**
    * `reference_dataset_id` is the dataset UUID for the reference example, if any.
@@ -503,6 +518,14 @@ export namespace Run {
 export interface RunIngest {
   id?: string;
 
+  /**
+   * Beta. Addresses the run to an Agent environment in place of session_id or
+   * session_name, as lrn:agents/{id}/environments/{environment}. The environment is
+   * case-insensitive. Only workspaces enabled for Agent addressing accept it; others
+   * get a 403.
+   */
+  address?: string;
+
   dotted_order?: string;
 
   end_time?: string;
@@ -707,7 +730,8 @@ export type RunSelectField =
   | 'IS_IN_DATASET'
   | 'LAST_QUEUED_AT'
   | 'SHARE_URL'
-  | 'FEEDBACK_STATS';
+  | 'FEEDBACK_STATS'
+  | 'LS_USER_ID';
 
 /**
  * Query params for run stats.
@@ -733,7 +757,7 @@ export interface RunStatsQueryParams {
   /**
    * Group by param for run stats.
    */
-  group_by?: RunStatsQueryParams.GroupBy | null;
+  group_by?: SessionsAPI.RunStatsGroupBy | null;
 
   groups?: Array<string | null> | null;
 
@@ -810,19 +834,6 @@ export interface RunStatsQueryParams {
   use_experimental_search?: boolean;
 }
 
-export namespace RunStatsQueryParams {
-  /**
-   * Group by param for run stats.
-   */
-  export interface GroupBy {
-    attribute: 'name' | 'run_type' | 'tag' | 'metadata';
-
-    max_groups?: number;
-
-    path?: string | null;
-  }
-}
-
 export type RunType = 'TOOL' | 'CHAIN' | 'LLM' | 'RETRIEVER' | 'EMBEDDING' | 'PROMPT' | 'PARSER';
 
 /**
@@ -834,7 +845,11 @@ export type RunTypeEnum = 'tool' | 'chain' | 'llm' | 'retriever' | 'embedding' |
  * Enum for run data source types.
  */
 export type RunsFilterDataSourceTypeEnum =
-  'current' | 'historical' | 'lite' | 'root_lite' | 'runs_feedbacks_rmt_wide';
+  | 'current'
+  | 'historical'
+  | 'lite'
+  | 'root_lite'
+  | 'runs_feedbacks_rmt_wide';
 
 export interface RunGetURLResponse {
   url?: string;
@@ -958,7 +973,7 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }
@@ -1020,6 +1035,7 @@ export interface RunRetrieveV2Params {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**
@@ -1091,6 +1107,7 @@ export interface RunRetrieveParams {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**
@@ -1206,7 +1223,7 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json
+   * Header param: application/json or text/event-stream
    */
   Accept?: string;
 }

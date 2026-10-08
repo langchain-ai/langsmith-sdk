@@ -83,10 +83,25 @@ import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
 import { AnnotationQueues } from "./_openapi_client/resources/annotation-queues/annotation-queues.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
+import { Sessions } from "./_openapi_client/resources/sessions.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
+import {
+  type Address,
+  type AgentAddress,
+  EnvAddressError,
+  ensureAddress,
+  ensureAgent,
+} from "./address.js";
+import {
+  applyToPayload,
+  logUntraced,
+  rejectConflicting,
+  resolveFromEnv,
+  warnOnEnv,
+} from "./utils/addressing.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
@@ -506,6 +521,7 @@ interface FeedbackUpdate {
 
 type DefaultClientConfig = {
   apiUrl: string;
+  apiUrlSource: string;
   apiKey?: string;
   webUrl?: string;
   hideInputs?: boolean;
@@ -532,6 +548,8 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  /** (beta) Send the run to this address instead of a project. */
+  address?: AgentAddress;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -597,12 +615,22 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
         /** The session (project) ID of the run. */
         sessionId: string;
         projectId?: never;
+        address?: never;
+      }
+    | {
+        /** The run to provide feedback on. */
+        runId: string;
+        /** (beta) The address the run was sent to, e.g. `runTree.address`. */
+        address: AgentAddress;
+        sessionId?: never;
+        projectId?: never;
       }
     | {
         runId?: null;
         /** The project (or experiment) to provide feedback on. */
         projectId: string;
         sessionId?: never;
+        address?: never;
       }
   );
 
@@ -678,10 +706,34 @@ export interface ListThreadsItem extends Thread {
   runs: Run[];
 }
 
+/** Index creates by id (last wins); warns when one id goes to two projects. */
+function indexRunCreatesById(creates: RunCreate[]): Record<string, RunCreate> {
+  const byId: Record<string, RunCreate> = {};
+  for (const run of creates) {
+    if (!run.id) {
+      continue;
+    }
+    const previous = byId[run.id];
+    if (previous !== undefined && previous.session_name !== run.session_name) {
+      console.warn(
+        `LangSmith run ${run.id} was queued for two projects with the same id ` +
+          `(${JSON.stringify(previous.session_name)} and ` +
+          `${JSON.stringify(run.session_name)}); only one of the projects will ` +
+          "keep the run. This usually means two write replicas both keep the " +
+          "original run ids, for example a replica marked `primary` plus one " +
+          "for the run's own project.",
+      );
+    }
+    byId[run.id] = run;
+  }
+  return byId;
+}
+
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
   cachedEnvVars?: Record<string, string>,
   omitTracedRuntimeInfo?: boolean,
+  tracingSampleRate?: number,
 ): T {
   if (omitTracedRuntimeInfo) {
     return run;
@@ -706,6 +758,9 @@ export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
           }
         : {}),
       ...metadata,
+      ...(tracingSampleRate !== undefined
+        ? { ls_tracing_sample_rate: tracingSampleRate }
+        : {}),
     },
   };
   return run;
@@ -1401,6 +1456,11 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Trace batch concurrency must be positive.");
     }
     this.debug = config.debug ?? this.debug;
+    if (this.debug) {
+      const source =
+        config.apiUrl != null ? "apiUrl option" : defaultConfig.apiUrlSource;
+      console.log(`LangSmith API URL ${this.apiUrl} resolved from ${source}`);
+    }
     this.fetchImplementation = config.fetchImplementation;
 
     // Failed trace dump configuration
@@ -1461,6 +1521,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
+    warnOnEnv();
 
     // Initialize prompt cache
     // Handle backwards compatibility for deprecated `cache` parameter
@@ -1500,6 +1561,12 @@ export class Client implements LangSmithTracingClientInterface {
     const envWorkspaceId = getLangSmithEnvironmentVariable("WORKSPACE_ID");
     const envAuthSet = hasValue(envApiKey);
     const apiUrl = envApiUrl ?? profileConfig.apiUrl ?? DEFAULT_API_URL;
+    const apiUrlSource =
+      envApiUrl != null
+        ? "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
+        : profileConfig.apiUrl != null
+          ? "profile config"
+          : "built-in default";
     const workspaceId = envWorkspaceId ?? profileConfig.workspaceId;
     const hideInputs =
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
@@ -1509,6 +1576,7 @@ export class Client implements LangSmithTracingClientInterface {
       getLangSmithEnvironmentVariable("HIDE_METADATA") === "true";
     return {
       apiUrl: apiUrl,
+      apiUrlSource,
       apiKey: envApiKey,
       webUrl: undefined,
       hideInputs: hideInputs,
@@ -1786,6 +1854,15 @@ export class Client implements LangSmithTracingClientInterface {
     return this.openAPIClient.traces;
   }
 
+  /**
+   * (beta) Access the sessions resource, which resolves an address to the
+   * project its traces go to: `client.sessions.resolve(address.toApiAddress())`.
+   */
+  public get sessions(): Sessions {
+    this._checkStainlessVersion("0.18.0");
+    return this.openAPIClient.sessions;
+  }
+
   /** Access the public shared-run resource. */
   public get public(): Public {
     this._checkStainlessVersion("0.16.0");
@@ -1874,14 +1951,18 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async prepareRunCreateOrUpdateInputs(
     run: RunUpdate,
+    options: { update: true },
   ): Promise<RunUpdate>;
   private async prepareRunCreateOrUpdateInputs(
     run: RunCreate,
+    options?: { update?: false },
   ): Promise<RunCreate>;
   private async prepareRunCreateOrUpdateInputs(
     run: RunCreate | RunUpdate,
+    options?: { update?: boolean },
   ): Promise<RunCreate | RunUpdate> {
     const runParams = { ...run };
+    applyToPayload(runParams, { update: options?.update ?? false });
     if (runParams.inputs !== undefined) {
       runParams.inputs = await this.processInputs(runParams.inputs);
     }
@@ -2305,6 +2386,7 @@ export class Client implements LangSmithTracingClientInterface {
       run,
       this.cachedLSEnvVarsForMetadata,
       this.omitTracedRuntimeInfo,
+      this.tracingSampleRate,
     );
     if (this.omitTracedRuntimeInfo) {
       return merged;
@@ -2319,6 +2401,7 @@ export class Client implements LangSmithTracingClientInterface {
       item.item as RunCreate,
       this.cachedLSEnvVarsForMetadata,
       this.omitTracedRuntimeInfo,
+      this.tracingSampleRate,
     );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
@@ -2481,8 +2564,23 @@ export class Client implements LangSmithTracingClientInterface {
       ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
+    const address = ensureAgent(run.address);
+    // `RunTree.postRun` passes a built run body, carrying the wire `session_name`.
+    const bodySessionName = (run as RunCreate).session_name;
+    rejectConflicting(run.project_name ?? bodySessionName, address);
     const session_name = run.project_name;
     delete run.project_name;
+    if (!session_name && bodySessionName == null && !address) {
+      try {
+        run.address = resolveFromEnv()[1];
+      } catch (e) {
+        if (!(e instanceof EnvAddressError)) {
+          throw e;
+        }
+        logUntraced(e);
+        return;
+      }
+    }
 
     const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
@@ -2559,21 +2657,13 @@ export class Client implements LangSmithTracingClientInterface {
     );
     let preparedUpdateParams = await Promise.all(
       runUpdates?.map((update) =>
-        this.prepareRunCreateOrUpdateInputs(update),
+        this.prepareRunCreateOrUpdateInputs(update, { update: true }),
       ) ?? [],
     );
 
+    // Index even without updates: the collision warning must see creates-only batches.
+    const createById = indexRunCreatesById(preparedCreateParams);
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
-      const createById = preparedCreateParams.reduce(
-        (params: Record<string, RunCreate>, run) => {
-          if (!run.id) {
-            return params;
-          }
-          params[run.id] = run;
-          return params;
-        },
-        {},
-      );
       const standaloneUpdates = [];
       for (const updateParam of preparedUpdateParams) {
         if (updateParam.id !== undefined && createById[updateParam.id]) {
@@ -2704,7 +2794,7 @@ export class Client implements LangSmithTracingClientInterface {
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
       preparedUpdateParams.push(
-        await this.prepareRunCreateOrUpdateInputs(update),
+        await this.prepareRunCreateOrUpdateInputs(update, { update: true }),
       );
     }
 
@@ -2730,17 +2820,8 @@ export class Client implements LangSmithTracingClientInterface {
       );
     }
     // combine post and patch dicts where possible
+    const createById = indexRunCreatesById(preparedCreateParams);
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
-      const createById = preparedCreateParams.reduce(
-        (params: Record<string, RunCreate>, run) => {
-          if (!run.id) {
-            return params;
-          }
-          params[run.id] = run;
-          return params;
-        },
-        {},
-      );
       const standaloneUpdates = [];
       for (const updateParam of preparedUpdateParams) {
         if (updateParam.id !== undefined && createById[updateParam.id]) {
@@ -3087,6 +3168,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.events) {
       run.events = this._filterNewTokenEvents(run.events);
     }
+    // Fail on a bad address now; the queued path validates again when built.
+    ensureAgent(run.address);
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
@@ -3137,8 +3220,17 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.workspaceId !== undefined) {
       headers["x-tenant-id"] = options.workspaceId;
     }
+    const wireRun = { ...run };
+    applyToPayload(wireRun, { update: true });
     const body = serializePayloadForTracing(
-      run,
+      wireRun.extra
+        ? mergeRuntimeEnvIntoRun(
+            wireRun,
+            this.cachedLSEnvVarsForMetadata,
+            this.omitTracedRuntimeInfo,
+            this.tracingSampleRate,
+          )
+        : wireRun,
       `Serializing payload to update run with id: ${runId}`,
     );
     await this.caller.call(async () => {
@@ -3196,10 +3288,19 @@ export class Client implements LangSmithTracingClientInterface {
     runId,
     run,
     projectOpts,
+    address: rawAddress,
   }: {
     runId?: string;
     run?: Run;
     projectOpts?: ProjectOptions;
+    /**
+     * (beta) An address that names the run's project, such as the
+     * `AgentAddress` the run was sent to or an `ExperimentAddress`, for a run
+     * that names no project. It is resolved to its project with one request,
+     * which needs LangSmith 0.18 or later. It must name the project the run is
+     * in. A run that carries its own `address` does not need it.
+     */
+    address?: Address;
   }): Promise<string> {
     warnOnce(
       "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
@@ -3208,6 +3309,14 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
+      const argumentAddress = ensureAddress(rawAddress);
+      rejectConflicting(
+        projectOpts?.projectName ?? projectOpts?.projectId,
+        argumentAddress,
+      );
+      const address =
+        argumentAddress ??
+        ensureAgent((run as { address?: AgentAddress }).address);
       let sessionId: string;
       if (run.session_id) {
         sessionId = run.session_id;
@@ -3217,6 +3326,8 @@ export class Client implements LangSmithTracingClientInterface {
         ).id;
       } else if (projectOpts?.projectId) {
         sessionId = projectOpts?.projectId;
+      } else if (address) {
+        sessionId = await this._resolveAddress(address);
       } else {
         const project = await this.readProject({
           projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
@@ -3239,6 +3350,15 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide either runId or run");
     }
+  }
+
+  /** The ID of the project an address names, with one request. */
+  private async _resolveAddress(address: Address): Promise<string> {
+    const { session_id: sessionId } = await this.sessions.resolve(
+      address.toApiAddress(),
+    );
+    assertUuid(sessionId);
+    return sessionId;
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
@@ -5057,7 +5177,7 @@ export class Client implements LangSmithTracingClientInterface {
       example.attachments = Object.entries(attachment_urls).reduce(
         (acc, [key, value]) => {
           acc[key.slice("attachment.".length)] = {
-            presigned_url: value.presigned_url,
+            presigned_url: new URL(value.presigned_url, this.apiUrl).href,
             mime_type: value.mime_type,
           };
           return acc;
@@ -5155,7 +5275,7 @@ export class Client implements LangSmithTracingClientInterface {
           example.attachments = Object.entries(attachment_urls).reduce(
             (acc, [key, value]) => {
               acc[key.slice("attachment.".length)] = {
-                presigned_url: value.presigned_url,
+                presigned_url: new URL(value.presigned_url, this.apiUrl).href,
                 mime_type: value.mime_type || undefined,
               };
               return acc;
@@ -5489,16 +5609,25 @@ export class Client implements LangSmithTracingClientInterface {
       sessionId,
       startTime,
       extendTraceRetention,
+      address: rawAddress,
+    }: CreateFeedbackOptions & {
+      runId?: string | null;
+      sessionId?: string;
+      projectId?: string;
+      /** (beta) Send the feedback to this agent instead of a project. */
+      address?: AgentAddress;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
+    const address = ensureAgent(rawAddress);
+    rejectConflicting(sessionId ?? projectId, address);
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
     }
     if (runId && projectId) {
       throw new Error("Only one of runId or projectId can be provided");
     }
-    if (runId && sessionId === undefined) {
+    if (runId && sessionId === undefined && !address) {
       await this._checkFeedbackSessionId();
     }
     const feedback_source: feedback_source = {
@@ -5538,7 +5667,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (samplingId != null && !this._shouldSample(samplingId)) {
       return feedback as Feedback;
     }
-    const body = JSON.stringify(feedback);
+    const body = JSON.stringify(
+      address ? { ...feedback, address: address._toLrn() } : feedback,
+    );
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
       const res = await this._fetch(url, {

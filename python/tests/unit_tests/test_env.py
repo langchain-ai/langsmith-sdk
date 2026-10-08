@@ -135,3 +135,47 @@ def test_env_var_metadata_excludes_signing_secrets(
     assert secret_var not in metadata
     assert metadata["LANGSMITH_LANGGRAPH_API_VARIANT"] == "local"
     assert metadata["revision_id"] == "abc123"
+
+
+@pytest.mark.parametrize(
+    "env, expected",
+    [
+        ({"LANGSMITH_REVISION_ID": "new"}, "new"),
+        ({"LANGCHAIN_REVISION_ID": "legacy"}, "legacy"),
+        ({"LANGSMITH_REVISION_ID": "new", "LANGCHAIN_REVISION_ID": "legacy"}, "new"),
+        ({"LANGSMITH_REVISION_ID": "", "LANGCHAIN_REVISION_ID": "legacy"}, "legacy"),
+    ],
+)
+def test_env_var_metadata_revision_id(
+    monkeypatch: pytest.MonkeyPatch, env: dict, expected: str
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    get_langchain_env_var_metadata.cache_clear()
+    metadata = get_langchain_env_var_metadata()
+    assert metadata["revision_id"] == expected
+    assert "LANGSMITH_REVISION_ID" not in metadata
+    assert "LANGCHAIN_REVISION_ID" not in metadata
+
+
+@pytest.mark.parametrize(
+    "agent_var",
+    [
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGSMITH_AGENT_ID",
+    ],
+)
+def test_env_var_metadata_excludes_agent_addressing(
+    monkeypatch: pytest.MonkeyPatch, agent_var: str
+) -> None:
+    """Agent addressing is a first-class run field, so keep it out of metadata.
+
+    Neither name matches the sensitive-substring filter, so they only stay out
+    of metadata while they're listed explicitly in the exclusion set.
+    """
+    monkeypatch.setenv(agent_var, "some-value")
+    monkeypatch.setenv("LANGSMITH_LANGGRAPH_API_VARIANT", "local")
+    get_langchain_env_var_metadata.cache_clear()
+    metadata = get_langchain_env_var_metadata()
+    assert agent_var not in metadata
+    assert metadata["LANGSMITH_LANGGRAPH_API_VARIANT"] == "local"

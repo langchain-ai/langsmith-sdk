@@ -39,6 +39,8 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { __version__ } from "./index.js";
+import { ensureAgent } from "./address.js";
+import { firstNamed, rejectConflicting } from "./utils/addressing.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
@@ -759,6 +761,9 @@ export function traceable<Func extends (...args: any[]) => any>(
     ...runTreeConfig
   } = config ?? {};
 
+  runTreeConfig.address = ensureAgent(runTreeConfig.address);
+  rejectConflicting(runTreeConfig.project_name, runTreeConfig.address);
+
   const processInputsFn = processInputs ?? ((x) => x);
   const processOutputsFn = processOutputs ?? ((x) => x);
   const extractAttachmentsFn =
@@ -768,8 +773,8 @@ export function traceable<Func extends (...args: any[]) => any>(
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ) => {
     let ensuredConfig: RunTreeConfig;
+    let runtimeConfig: Partial<RunTreeConfig> | undefined;
     try {
-      let runtimeConfig: Partial<RunTreeConfig> | undefined;
       if (argsConfigPath) {
         const [index, path] = argsConfigPath;
         if (index === args.length - 1 && !path) {
@@ -816,7 +821,13 @@ export function traceable<Func extends (...args: any[]) => any>(
         name: wrappedFunc.name || "<lambda>",
         ...runTreeConfig,
       };
+      runtimeConfig = undefined;
     }
+    // Runtime config outranks decorator config, whichever mode each names.
+    [ensuredConfig.project_name, ensuredConfig.address] = firstNamed(
+      [runtimeConfig?.project_name, ensureAgent(runtimeConfig?.address)],
+      [runTreeConfig.project_name, ensureAgent(runTreeConfig.address)],
+    );
 
     let runEndedPromiseResolver: () => void;
     const runEndedPromise = new Promise<void>((resolve) => {
@@ -1005,11 +1016,33 @@ export function traceable<Func extends (...args: any[]) => any>(
           async start(controller) {
             // eslint-disable-next-line no-constant-condition
             while (true) {
-              const result = await (snapshot
-                ? snapshot(() =>
-                    otel_context.with(capturedOtelContext, () => reader.read()),
-                  )
-                : otel_context.with(capturedOtelContext, () => reader.read()));
+              let result: ReadableStreamReadResult<unknown>;
+              try {
+                result = await (snapshot
+                  ? snapshot(() =>
+                      otel_context.with(capturedOtelContext, () =>
+                        reader.read(),
+                      ),
+                    )
+                  : otel_context.with(capturedOtelContext, () =>
+                      reader.read(),
+                    ));
+              } catch (e) {
+                // The source stream errored: end the run with the error and the
+                // chunks received so far instead of leaving it pending.
+                finished = true;
+                await currentRunTree?.end(undefined, String(e));
+                await handleRunOutputs({
+                  runTree: currentRunTree,
+                  rawOutputs: await handleChunks(chunks),
+                  processOutputsFn,
+                  on_end,
+                  postRunPromise,
+                  deferredInputs,
+                  skipChildPromiseDelay: true,
+                });
+                throw e;
+              }
               if (result.done) {
                 finished = true;
                 await handleRunOutputs({

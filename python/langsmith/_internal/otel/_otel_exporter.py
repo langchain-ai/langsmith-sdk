@@ -64,6 +64,7 @@ def _import_otel_exporter():
 
 logger = logging.getLogger(__name__)
 
+
 # OpenTelemetry GenAI semconv attribute names
 GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
 GEN_AI_SYSTEM = "gen_ai.system"
@@ -87,6 +88,9 @@ GEN_AI_SERIALIZED_NAME = "gen_ai.serialized.name"
 GEN_AI_SERIALIZED_SIGNATURE = "gen_ai.serialized.signature"
 GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc"
 GEN_AI_RESPONSE_ID = "gen_ai.response.id"
+GEN_AI_TOOL_NAME = "gen_ai.tool.name"
+GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions"
 GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier"
 GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
 GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
@@ -588,6 +592,14 @@ class OTELExporter:
         # Set metadata and tags if available
         extra = run_info.get("extra", {})
         metadata = extra.get("metadata", {})
+        if run_info.get("run_type") == "tool":
+            tool_name = run_info.get("name")
+            if tool_name:
+                span.set_attribute(GEN_AI_TOOL_NAME, str(tool_name))
+            tool_call_id = extra.get("tool_call_id") or metadata.get("tool_call_id")
+            if tool_call_id is not None:
+                span.set_attribute(GEN_AI_TOOL_CALL_ID, str(tool_call_id))
+
         for key, value in metadata.items():
             if value is not None:
                 safe = otel_safe_attribute_value(value)
@@ -663,12 +675,16 @@ class OTELExporter:
         setattr(span, "_gen_ai_system", system)
 
     def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
-        """Set invocation parameters on the span.
+        """Process the invocation parameters associated with the span.
 
         Args:
             span: The span to set attributes on.
             run_info: The deserialized run info.
         """
+        invocation_params = (run_info.get("extra") or {}).get("invocation_params") or {}
+        tools = invocation_params.get("tools")
+        if tools and (tool_definitions := otel_safe_attribute_value(tools)):
+            span.set_attribute(GEN_AI_TOOL_DEFINITIONS, tool_definitions)
         if not (run_info.get("extra") and run_info["extra"].get("metadata")):
             return
 
@@ -703,17 +719,13 @@ class OTELExporter:
             )
 
     def _set_io_attributes(
-        self, span: Span, op: SerializedRunOperation, run_info: dict
+        self, span: Span, op: SerializedRunOperation, run_info: Optional[dict] = None
     ) -> None:
         """Set input/output attributes on the span.
 
-        Args:
-            span: The span to set attributes on.
-            op: The serialized run operation.
-            run_info: The deserialized run info. Used to fall back to token
-                usage recorded under ``extra.metadata.usage_metadata`` (e.g.
-                by the claude_agent_sdk integration) when neither the
-                top-level run token fields nor the outputs carry usage.
+        run_info is optional for existing callers that export only
+        serialized inputs and outputs; the normal exporter passes it so
+        extra.metadata.usage_metadata can provide fallback token counts.
         """
         if op.inputs:
             try:
@@ -748,7 +760,7 @@ class OTELExporter:
                             GEN_AI_REQUEST_EXTRA_BODY, inputs["extra_body"]
                         )
 
-                span.set_attribute(GENAI_PROMPT, op.inputs)
+                span.set_attribute(GENAI_PROMPT, op.inputs.decode("utf-8"))
 
             except Exception:
                 logger.debug(
@@ -757,30 +769,32 @@ class OTELExporter:
 
         outputs: Optional[dict] = None
         token_usage: Optional[tuple[int, int]] = None
-
         if op.outputs:
             try:
                 outputs = _orjson.loads(op.outputs)
 
-                # Extract token usage from outputs (for LLM runs)
+                # Output usage has priority over extra metadata.
                 token_usage = self.get_unified_run_tokens(outputs)
                 # Extract additional response attributes.
                 if isinstance(outputs, dict):
                     if "id" in outputs and outputs["id"] is not None:
                         span.set_attribute(GEN_AI_RESPONSE_ID, outputs["id"])
-                    if "choices" in outputs and isinstance(outputs["choices"], list):
-                        finish_reasons = []
+                    finish_reasons = []
+                    if isinstance(outputs.get("choices"), list):
                         for choice in outputs["choices"]:
-                            if (
-                                "finish_reason" in choice
-                                and choice["finish_reason"] is not None
-                            ):
+                            if isinstance(choice, dict) and choice.get("finish_reason"):
                                 finish_reasons.append(str(choice["finish_reason"]))
-                        if finish_reasons:
-                            span.set_attribute(
-                                GEN_AI_RESPONSE_FINISH_REASONS,
-                                ", ".join(finish_reasons),
-                            )
+                    if not finish_reasons:
+                        for key in ("stop_reason", "finish_reason"):
+                            reason = outputs.get(key)
+                            if reason:
+                                finish_reasons = [str(reason)]
+                                break
+                    if finish_reasons:
+                        span.set_attribute(
+                            GEN_AI_RESPONSE_FINISH_REASONS,
+                            finish_reasons,
+                        )
                     if (
                         "service_tier" in outputs
                         and outputs["service_tier"] is not None
@@ -821,22 +835,18 @@ class OTELExporter:
                                 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS, output_token_details
                             )
 
-                span.set_attribute(GENAI_COMPLETION, op.outputs)
+                span.set_attribute(GENAI_COMPLETION, op.outputs.decode("utf-8"))
 
             except Exception:
                 logger.debug(
                     "Failed to process outputs for run %s", op.id, exc_info=True
                 )
 
-        if not token_usage and not self._has_run_info_token_usage(run_info):
-            # Some integrations (e.g. claude_agent_sdk) record real per-turn
-            # usage only under extra.metadata.usage_metadata -- never in
-            # outputs or the top-level run token fields, and sometimes on a
-            # patch operation that carries no outputs at all. Fall back to
-            # it as a last resort so usage still reaches OTEL. Lowest
-            # precedence: only used when neither run_info nor outputs
-            # already supplied usage.
-            extra = run_info.get("extra")
+        if not token_usage and not self._has_run_info_token_usage(run_info or {}):
+            # Claude Agent SDK and other integrations can record token usage
+            # only in extra.metadata.usage_metadata, including output-less runs.
+            info = run_info or {}
+            extra = info.get("extra")
             metadata = extra.get("metadata") if isinstance(extra, dict) else None
             if isinstance(metadata, dict):
                 token_usage = self._extract_unified_run_tokens(
@@ -849,8 +859,7 @@ class OTELExporter:
             span.set_attribute(
                 GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1]
             )
-
-            if outputs is not None and "model" in outputs:
+            if isinstance(outputs, dict) and outputs.get("model") is not None:
                 span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
 
     def _as_utc_nano(self, timestamp: Optional[str]) -> Optional[int]:
@@ -865,11 +874,10 @@ class OTELExporter:
 
     @staticmethod
     def _has_run_info_token_usage(run_info: dict) -> bool:
-        """Whether run_info's top-level token fields already carry usage."""
-        return (
-            run_info.get("prompt_tokens") is not None
-            or run_info.get("completion_tokens") is not None
-            or run_info.get("total_tokens") is not None
+        """True if top-level usage has already been supplied."""
+        return any(
+            run_info.get(key) is not None
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
         )
 
     def get_unified_run_tokens(

@@ -402,6 +402,18 @@ describe("createSecretAnonymizer", () => {
       expect(out).toBe(`{"api_key": "${SECRET_PLACEHOLDER}"}`);
     });
 
+    test.each([
+      "langsmithLicenseKey",
+      "langsmith_license_key",
+      "apiKeySalt",
+      "api_key_salt",
+    ])("redacts %s in file output", (name) => {
+      const value = `fake_${"A1b2C3d4".repeat(5)}`;
+      expect(redact({ tool_output: `${name}: ${value}` })).toEqual({
+        tool_output: `${name}: ${SECRET_PLACEHOLDER}`,
+      });
+    });
+
     test("redacts bare Bearer tokens", () => {
       const out = redact("header: Bearer aB3xY7zQ1234567890") as string;
       expect(out).toBe(`header: Bearer ${SECRET_PLACEHOLDER}`);
@@ -427,6 +439,7 @@ describe("createSecretAnonymizer", () => {
       'description="a reasonably long human description"', // non-sensitive name
       'tokenizer: "cl100k_base"', // "token" must not match mid-word
       "tokens_used: 123456", // keyword as a prefix of a longer word
+      "apiKeySaltLength: reasonablevalue", // keep non-secret key suffixes
     ];
     test.each(SAFE)("leaves %s untouched", (value) => {
       expect(redact(value)).toBe(value);
@@ -546,5 +559,51 @@ describe("createSecretAnonymizer", () => {
     expect(JSON.stringify(data.inputs)).toContain(SECRET_PLACEHOLDER);
     expect(JSON.stringify(data.inputs)).not.toContain("AKIAIOSFODNN7EXAMPLE");
     expect(JSON.stringify(data.outputs)).toContain(SECRET_PLACEHOLDER);
+  });
+});
+
+describe("traversal scaling", () => {
+  // No rule matches, so this times the walk itself, not the masking.
+  const anonymizer = createAnonymizer([
+    { pattern: "no-such-secret-here", replace: "[redacted]" },
+  ]);
+
+  // Fastest of 3 runs: noise only ever adds time, so the min is the real cost.
+  const fastestMs = (n: number) => {
+    const payload = {
+      records: Array.from({ length: n }, (_, i) => ({
+        id: `r${i}`,
+        text: "x".repeat(32),
+      })),
+    };
+
+    let best = Infinity;
+    for (let i = 0; i < 3; i += 1) {
+      const start = performance.now();
+      anonymizer(payload);
+      best = Math.min(best, performance.now() - start);
+    }
+    return best;
+  };
+
+  test("8x the nodes costs ~8x the time, not ~64x", () => {
+    // With `queue.shift()`: 2k records 2.6ms, 16k records 121ms.
+    expect(fastestMs(16_000) / fastestMs(2_000)).toBeLessThan(20);
+  });
+
+  test("preserves BFS order, paths and maxDepth truncation", () => {
+    const seen: string[] = [];
+    const tap = (value: string, path?: string) => {
+      seen.push(`${path}=${value}`);
+      return value;
+    };
+    const data = { a: "1", b: ["2", { c: "3" }], n: 7, ok: true };
+
+    createAnonymizer(tap)(data);
+    expect(seen).toEqual(["a=1", "b[0]=2", "b[1].c=3"]);
+
+    seen.length = 0;
+    createAnonymizer(tap, { maxDepth: 2 })(data);
+    expect(seen).toEqual(["a=1", "b[0]=2"]);
   });
 });

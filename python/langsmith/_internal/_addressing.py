@@ -1,0 +1,258 @@
+"""Resolving whether a run is addressed by project or by address.
+
+!!! warning "Beta"
+    Addressing runs to an address is enabled per workspace. A workspace
+    without it rejects the runs, so tracing is lost rather than falling back
+    to a project. This API may change without notice.
+
+A run goes to exactly one destination: a project (`project_name`) or an
+address (`langsmith.AgentAddress(id, environment)`), which
+names an agent and one of its environments. The server resolves an address to
+the agent environment's project, so traces follow the agent rather than a
+project name. Project addressing keeps working alongside it.
+
+A run with a parent, in-process or from distributed-tracing headers, joins its
+parent's destination. A root run takes the first of these levels that names a
+project or an address, whichever it names; naming both at one level raises:
+
+1. `tracing_context`
+2. `langsmith_extra`
+3. the `@traceable` / `trace` arguments
+4. `configure`
+5. the env vars (`LANGSMITH_PROJECT`, `LANGSMITH_AGENT_*`)
+
+In code the address is an `AgentAddress`: in context variables, run trees and
+replicas. It becomes its LRN string only on the wire, in the `address` payload
+field, which is set only here, in `apply_to_payload` and
+`FeedbackCreate.model_dump`, and in the `langsmith-address` baggage entry.
+"""
+
+from __future__ import annotations
+
+import functools
+import logging
+import warnings
+from collections.abc import Mapping
+from typing import Any, Optional
+
+from langsmith import address as _address
+from langsmith import utils
+from langsmith._internal._beta_decorator import _warn_once
+from langsmith.address import AgentAddress, EnvAddressError
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def check_address(address: Any) -> Optional[AgentAddress]:
+    """Return `address` if it is an `AgentAddress`, or `None` if it is `None`.
+
+    Raises:
+        utils.LangSmithUserError: If `address` is not an `AgentAddress`.
+    """
+    return None if address is None else _address.ensure_agent(address)
+
+
+def check_lookup_address(address: Any) -> Optional[_address.Address]:
+    """Return `address` if it is an `Address` of any kind, or `None` if it is `None`.
+
+    For the calls that resolve an address to its project, which take any kind.
+
+    Raises:
+        utils.LangSmithUserError: If `address` is not an `Address`.
+    """
+    return None if address is None else _address.ensure_address(address)
+
+
+def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
+    """Put a bare `AgentAddress` replica in an `address` key, and check the rest."""
+    if replicas is None:
+        return None
+    normalized = []
+    for replica in replicas:
+        if not isinstance(replica, Mapping):
+            normalized.append({"address": check_address(replica)})
+            continue
+        normalized_replica = dict(replica)
+        if replica.get("address") is not None:
+            normalized_replica["address"] = check_address(replica["address"])
+        normalized.append(normalized_replica)
+    return normalized
+
+
+def warn_is_beta() -> None:
+    """Warn the first time a run is actually addressed to an address.
+
+    `_warn_once` caches on the message, so this fires once per process.
+    """
+    _warn_once(
+        "Addressing runs with `langsmith.address` is in beta and is enabled per "
+        "workspace. A workspace without it rejects the run, so the trace is "
+        "lost rather than falling back to a project. The behavior may change "
+        "without notice."
+    )
+
+
+Tier = tuple[Optional[str], Optional[AgentAddress]]
+"""One precedence level: the `(project, address)` it names, either may be unset."""
+
+
+def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[AgentAddress]]:
+    """Settle a run's single destination, as `(project, address)`.
+
+    `tiers` are the levels named in code, highest precedence first; the env
+    vars are the last level, consulted here. The first level that names
+    anything decides, whichever mode it names -- an address in `tracing_context`
+    beats a project on the decorator, and the other way round.
+
+    Raises:
+        utils.LangSmithUserError: If one level named in code names both.
+        EnvAddressError: If the env vars are the deciding level and name both,
+            or half an address.
+    """
+    for level, (project, address) in enumerate(tiers, start=1):
+        if project and address is not None:
+            raise _both_at_one_level(project, address, f"at precedence level {level}")
+        if project:
+            return project, None
+        if address is not None:
+            return None, address
+    env_project = utils.get_tracer_project(return_default_value=False) or None
+    env_address = AgentAddress.from_env()
+    if env_project and env_address is not None:
+        raise EnvAddressError(
+            str(_both_at_one_level(env_project, env_address, "in the environment"))
+        )
+    if env_address is not None:
+        return None, env_address
+    return env_project or "default", None
+
+
+def first_named(*tiers: Tier) -> Tier:
+    """Return the highest level that names a destination, without the env vars.
+
+    Raises:
+        utils.LangSmithUserError: If that level names both.
+    """
+    for level, (project, address) in enumerate(tiers, start=1):
+        if project and address is not None:
+            raise _both_at_one_level(project, address, f"at precedence level {level}")
+        if project or address is not None:
+            return project or None, address
+    return None, None
+
+
+def _both_at_one_level(
+    project: str, address: AgentAddress, where: str
+) -> utils.LangSmithUserError:
+    return utils.LangSmithUserError(
+        f"A project ({project!r}) and an address ({address!r}) are both set "
+        f"{where}, so neither outranks the other. Set only one there, or set "
+        "the one you want at a higher-precedence level."
+    )
+
+
+def log_untraced(error: EnvAddressError) -> None:
+    """Log, once per distinct cause, that calls run untraced for a bad env."""
+    _log_untraced_once(str(error))
+
+
+@functools.cache
+def _log_untraced_once(message: str) -> None:
+    _LOGGER.warning("LangSmith is not tracing this call: %s", message)
+
+
+def warn_on_env() -> None:
+    """Warn when the environment's address cannot be used.
+
+    Half an address, an invalid one, or one beside a configured project, leaves
+    calls that name nothing in code untraced -- and a name like
+    `LANGSMITH_AGENT_ENVIRONMENT` is generic enough to be set by accident.
+
+    Emitted at client construction rather than per run, so it is seen once.
+    """
+    present = [name for name, value in _address.env_values().items() if value]
+    if not present:
+        return
+    try:
+        address = AgentAddress.from_env()
+    except EnvAddressError as e:
+        warnings.warn(
+            f"{e} Calls that name no destination in code are not traced.",
+            utils.LangSmithWarning,
+            stacklevel=3,
+        )
+        return
+    if address is None:
+        return
+    project = utils.get_tracer_project(return_default_value=False)
+    if project is None:
+        return
+    warnings.warn(
+        f"The address from LANGSMITH_AGENT_ID and LANGSMITH_AGENT_ENVIRONMENT "
+        f"({address!r}) and a configured "
+        f"project ({project!r}) are both set in the environment, so calls that name "
+        "no destination in code are not traced. Unset one of them.",
+        utils.LangSmithWarning,
+        stacklevel=3,
+    )
+
+
+def reject_conflicting(
+    *,
+    project: Optional[Any] = None,
+    session_id: Optional[Any] = None,
+    address: Optional[_address.Address] = None,
+) -> None:
+    """Reject a call that names both a project and an address.
+
+    Pass only values the caller supplied in this call: an inherited or
+    ambient address beside an explicit project is not a conflict -- the project
+    wins, which is what lets an evaluation set its own project while
+    `LANGSMITH_AGENT_ID` is set process-wide.
+
+    Raises:
+        utils.LangSmithUserError: If a project and an address are both named.
+    """
+    named_project = project if project is not None else session_id
+    if named_project is not None and address is not None:
+        raise utils.LangSmithUserError(
+            f"A run is addressed by project ({named_project!r}) or by address "
+            f"({address!r}), not both."
+        )
+
+
+def apply_to_payload(payload: dict, *, update: bool = False) -> None:
+    """Put a run payload's address in its wire field, as its LRN string.
+
+    The one place a run's `address` is settled. A project already on the
+    payload addresses the run, so the environment is not consulted. With no
+    project, an ambient address fills in and the null project keys are dropped.
+
+    On an update the environment is not consulted: a patch inherits its
+    address from the post that established it, and one naming nothing is
+    resolved by run id.
+    """
+    address = payload.pop("address", None)
+    if isinstance(address, str):
+        # Wire data already applied: a retried batch re-sends it. It is parsed
+        # again, so a malformed one cannot fail the whole batch in the backend.
+        try:
+            address = AgentAddress._from_lrn(address)
+        except utils.LangSmithUserError:
+            raise utils.LangSmithUserError(
+                "The run's `address` is not a valid agent address."
+            ) from None
+    else:
+        address = check_address(address)
+    named_project = (
+        payload.get("session_id") is not None or payload.get("session_name") is not None
+    )
+    if address is None and not (update or named_project):
+        address = AgentAddress.from_env()
+    if address is None:
+        return
+    warn_is_beta()
+    payload["address"] = address._lrn()
+    if not named_project:
+        payload.pop("session_name", None)
+        payload.pop("session_id", None)

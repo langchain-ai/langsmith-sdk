@@ -93,26 +93,34 @@ def extract_usage_metadata(usage: Any) -> dict[str, Any]:
     return meta
 
 
-def read_usage_from_transcript(
+def read_usage_and_stop_reasons_from_transcript(
     file_path: str,
-) -> dict[str, dict[str, Any]]:
-    """Read a JSONL transcript and return final usage per message_id.
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """Read a JSONL transcript and return final usage and stop reason per id.
 
     The Claude SDK streams assistant messages as multiple JSONL chunks
     with the same ``message.id``.  Only the final chunk (where
     ``stop_reason`` is set) has accurate ``output_tokens``.
 
+    A single cheap pass, deliberately: this runs after every
+    ``receive_response`` over a transcript that grows for the whole session.
+    :func:`read_llm_turns_from_transcript` returns the same two fields but
+    also builds a conversation history copy per turn, so it stays reserved
+    for subagent transcripts, where that history is actually needed.
+
     Returns:
-        ``{message_id: usage_metadata}`` with canonical usage dicts.
+        ``({message_id: usage_metadata}, {message_id: stop_reason})``.  Ids
+        missing either field are absent from the corresponding dict.
     """
     try:
         path = Path(file_path)
         if not path.exists():
-            return {}
+            return {}, {}
 
-        # Collect the last usage seen per message_id — the final chunk
+        # Collect the last value seen per message_id — the final chunk
         # (with stop_reason set) overwrites earlier partials.
         raw_usage: dict[str, dict[str, Any]] = {}
+        stop_reasons: dict[str, str] = {}
         with open(path) as f:
             for line in f:
                 line = line.strip()
@@ -126,17 +134,20 @@ def read_usage_from_transcript(
                     continue
                 msg = data.get("message", {})
                 msg_id = msg.get("id")
-                usage = msg.get("usage")
-                if not msg_id or not usage:
+                if not msg_id:
                     continue
-                # Always overwrite — later chunks have better counts.
-                # The final chunk (with stop_reason) is last.
-                raw_usage[msg_id] = usage
+                # Always overwrite — later chunks have better counts, and
+                # the final chunk is the one carrying the stop reason.
+                if usage := msg.get("usage"):
+                    raw_usage[msg_id] = usage
+                if stop_reason := msg.get("stop_reason"):
+                    stop_reasons[msg_id] = str(stop_reason)
 
-        return {mid: extract_usage_metadata(u) for mid, u in raw_usage.items() if u}
+        usage_by_id = {mid: extract_usage_metadata(u) for mid, u in raw_usage.items()}
+        return usage_by_id, stop_reasons
     except OSError as e:
         logger.debug(f"Could not read transcript {file_path}: {e}")
-        return {}
+        return {}, {}
 
 
 def read_llm_turns_from_transcript(

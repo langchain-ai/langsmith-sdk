@@ -60,9 +60,6 @@ import packaging.version
 import requests
 from pydantic import Field
 from requests import adapters as requests_adapters
-from requests_toolbelt import (  # type: ignore[import-untyped]
-    multipart as rqtb_multipart,
-)
 from typing_extensions import TypeGuard, deprecated, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
@@ -71,8 +68,13 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import (
+    _addressing,
+    _orjson,
+    _profiles,
+    _v2_migration_utils,
+)
 from langsmith._internal import _aiter as aitertools
-from langsmith._internal import _orjson, _profiles, _v2_migration_utils
 from langsmith._internal._backend_version import _check_backend_version
 from langsmith._internal._background_thread import (
     TracingQueueItem,
@@ -90,6 +92,7 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _BOUNDARY,
+    _MULTIPART_INLINE_MAX_BYTES,
     _SIZE_LIMIT_BYTES,
     _TRACING_QUEUE_MAX_SIZE,
 )
@@ -103,6 +106,7 @@ from langsmith._internal._hub import (
 from langsmith._internal._multipart import (
     MultipartPart,
     MultipartPartsAndContext,
+    RewindableMultipartBody,
     join_multipart_parts_and_context,
 )
 from langsmith._internal._operations import (
@@ -128,6 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
+from langsmith.address import Address, AgentAddress
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -357,6 +362,7 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
     from langsmith._openapi_client.types.run import Run as V2Run
@@ -673,7 +679,7 @@ def _default_retry_config() -> Retry:
     """
     retry_params = dict(
         total=3,
-        status_forcelist=[502, 503, 504, 408, 425],
+        status_forcelist=[429, 500, 502, 503, 504, 408, 425],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
@@ -710,6 +716,21 @@ def _get_langsmith_env_var_uncached(name: str) -> Optional[str]:
         if value is not None and value.strip() != "":
             return value
     return None
+
+
+def _api_url_source(
+    api_url_arg: Optional[str],
+    env_api_url: Optional[str],
+    profile_api_url: Optional[str],
+) -> str:
+    """Name where the API URL came from, so a wrong region is easy to spot in logs."""
+    if api_url_arg:
+        return "api_url argument"
+    if env_api_url:
+        return "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
+    if profile_api_url:
+        return "profile config"
+    return "built-in default"
 
 
 def _validate_api_key_if_hosted(
@@ -1326,6 +1347,12 @@ class Client:
                 tracing_mode=resolved_mode,
             )
             self._write_api_urls = {self.api_url: self.api_key}
+            logger.debug(
+                "LangSmith API URL %s resolved from %s",
+                self.api_url,
+                _api_url_source(api_url, env_api_url, profile_config.api_url),
+            )
+        _addressing.warn_on_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -1678,6 +1705,12 @@ class Client:
         """Access the traces resource (query, list_runs)."""
         _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().traces
+
+    @property
+    def sessions(self) -> AsyncSessionsResource:
+        """(beta) Access the sessions resource (resolve an address to its project)."""
+        _check_backend_version(self.info.version, min_version="0.18.0")
+        return self._get_langsmith_api().sessions
 
     @property
     def public(self) -> AsyncPublicResource:
@@ -2431,6 +2464,9 @@ class Client:
         """
         if hasattr(run, "model_dump") and callable(getattr(run, "model_dump")):
             run_create: dict = run.model_dump()  # type: ignore
+            # `RunTree.address` is excluded from the dump; put it back.
+            if getattr(run, "address", None) is not None:
+                run_create["address"] = run.address  # type: ignore[union-attr]
         else:
             run_create = cast(dict, run)
         if "id" not in run_create:
@@ -2458,6 +2494,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+        _addressing.apply_to_payload(run_create, update=update)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
@@ -2474,6 +2511,7 @@ class Client:
         if self._omit_traced_runtime_info:
             return
         runtime_env = ls_env.get_runtime_environment()
+        sample_rate = self.tracing_sample_rate
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
@@ -2483,6 +2521,8 @@ class Client:
             metadata: dict = run_extra.setdefault("metadata", {})
             langchain_metadata = ls_env.get_langchain_env_var_metadata()
             added = {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            if sample_rate is not None:
+                added["ls_tracing_sample_rate"] = sample_rate
             if added:
                 metadata.update(self._hide_run_metadata(added))
 
@@ -2551,6 +2591,13 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
+            address (Optional[AgentAddress]): (beta) An `AgentAddress`, such as
+                `ls.AgentAddress(id, environment)`, to send the run to instead of a project.
+                Cannot be combined with `project_name` / `session_id` in the
+                same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
+                This is in beta and enabled per workspace; a
+                workspace without it rejects the run, so the trace is lost
+                rather than falling back to a project.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
@@ -2596,11 +2643,35 @@ class Client:
         tenant_id: str | None = kwargs.pop("tenant_id", None)
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
-        project_name = project_name or kwargs.pop(
-            "session_name",
-            # if the project is not provided, use the environment's project
-            ls_utils.get_tracer_project(),
+        if kwargs.get("address") is not None:
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
+        # Only `project_name`, this method's own parameter, counts as a caller
+        # naming a project. `session_name` and `session_id` arrive in `kwargs`
+        # as part of an already-resolved run body -- `RunTree.post` sends the
+        # tree's fields that way -- where a project beside an agent means the
+        # two were meant to travel together for the endpoint to refuse.
+        _addressing.reject_conflicting(
+            project=project_name, address=kwargs.get("address")
         )
+        if project_name:
+            pass
+        elif kwargs.get("session_name") is not None:
+            project_name = kwargs.pop("session_name")
+        elif kwargs.get("session_id") is not None:
+            # Already addressed by project id; leave it alone.
+            project_name = None
+        else:
+            # No project, `session_name=None` included: resolve here, where a
+            # bad env is caught, rather than in `_run_transform`.
+            kwargs.pop("session_name", None)
+            try:
+                project_name, kwargs["address"] = _addressing.resolve(
+                    (None, kwargs.get("address"))
+                )
+            except _addressing.EnvAddressError as e:
+                # Dropped, not raised: tracing must not break the caller.
+                _addressing.log_untraced(e)
+                return
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -3600,11 +3671,15 @@ class Client:
         for target_api_url, headers_for_endpoint in endpoints:
             for idx in range(1, attempts + 1):
                 try:
-                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-                    if encoder.len <= 20_000_000:  # ~20 MB
-                        data = encoder.to_string()
-                    else:
-                        data = encoder
+                    # A fresh body per attempt and per endpoint: an encoder is
+                    # single-use, and this one also rewinds itself for the
+                    # transport-level retries urllib3 runs beneath us.
+                    body = RewindableMultipartBody(parts, _BOUNDARY)
+                    data: Union[bytes, RewindableMultipartBody] = (
+                        body.to_bytes()
+                        if len(body) <= _MULTIPART_INLINE_MAX_BYTES
+                        else body
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",
@@ -3612,7 +3687,7 @@ class Client:
                             "data": data,
                             "headers": {
                                 **headers_for_endpoint,
-                                "Content-Type": encoder.content_type,
+                                "Content-Type": body.content_type,
                             },
                             "timeout": _TRACING_SEND_TIMEOUT,
                         },
@@ -3640,15 +3715,13 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     _fail_exc = e
+
                 # Fell through — final attempt failed or non-retryable error.
+                def _dump_body() -> bytes:
+                    return RewindableMultipartBody(parts, _BOUNDARY).to_bytes()
+
                 self._dump_failed_trace(
-                    lambda: (
-                        data
-                        if isinstance(data, bytes)
-                        else rqtb_multipart.MultipartEncoder(
-                            parts, boundary=_BOUNDARY
-                        ).to_string()
-                    ),
+                    _dump_body,
                     {"Content-Type": f"multipart/form-data; boundary={_BOUNDARY}"},
                 )
                 self._invoke_tracing_error_callback(_fail_exc)
@@ -3802,7 +3875,13 @@ class Client:
             tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
             authorization (Optional[str]): The Authorization header value.
             cookie (Optional[str]): The Cookie header value.
-            **kwargs (Any): Kwargs are ignored.
+            **kwargs (Any): Ignored, except `address`.
+
+                !!! warning "Experimental"
+                    `address` is in beta. It sends the patch to an address,
+                    and must match the post it belongs to: an update that
+                    names none is resolved by run id, as every update was
+                    before. It may change without notice.
 
         Returns:
             None
@@ -3841,6 +3920,8 @@ class Client:
         replica_auths: Optional[Sequence[ReplicaAuth]] = kwargs.pop(
             "_replica_auths", None
         )
+        if kwargs.get("address") is not None:
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3852,7 +3933,10 @@ class Client:
             "extra": extra,
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
+            "address": kwargs.pop("address", None),
         }
+        # Updates don't go through `_run_transform`, so address them here.
+        _addressing.apply_to_payload(data, update=True)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:
@@ -4161,7 +4245,7 @@ class Client:
             raise ls_utils.LangSmithError(
                 "Loading child runs is not supported on SmithDB-only"
                 " backends (no ClickHouse query support). See"
-                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
                 "#load-a-run’s-child-runs"
             )
 
@@ -4200,7 +4284,7 @@ class Client:
     @_deprecated(
         "read_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.retrieve() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
         "#runs-retrieve for the migration guide."
     )
     def read_run(
@@ -4276,7 +4360,7 @@ class Client:
             raise ls_utils.LangSmithError(
                 "load_child_runs is not supported on SmithDB-only"
                 " backends (no ClickHouse query support). See"
-                " https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+                " https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
                 "#load-a-run’s-child-runs"
             )
         return _v2_migration_utils._read_run_v2(
@@ -4289,7 +4373,7 @@ class Client:
     @_deprecated(
         "read_thread() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.threads.list_traces() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads"
         "#threads-list-traces for the migration guide."
     )
     def read_thread(
@@ -4360,7 +4444,7 @@ class Client:
     @_deprecated(
         "list_runs() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-query-runs"
         "#runs-query for the migration guide."
     )
     def list_runs(
@@ -4512,6 +4596,9 @@ class Client:
             "prompt_tokens",
             "reference_example_id",
             "run_type",
+            # Needed for run.attachments; the server only returns it when
+            # selected.
+            "s3_urls",
             "session_id",
             "start_time",
             "status",
@@ -4566,7 +4653,7 @@ class Client:
     @_deprecated(
         "list_threads() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.threads.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-threads"
         "#threads-query for the migration guide."
     )
     def list_threads(
@@ -4635,6 +4722,9 @@ class Client:
             "reference_example_id",
             "feedback_stats",
             "app_path",
+            # Needed for run.attachments; the server only returns it when
+            # selected.
+            "s3_urls",
         ]
         body_query: dict[str, Any] = {
             "session": [session_id],
@@ -4794,7 +4884,7 @@ class Client:
     @_deprecated(
         "get_run_url() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.get_url() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-runs"
         "#runs-get-url for the migration guide."
     )
     def get_run_url(
@@ -4803,6 +4893,7 @@ class Client:
         run: ls_schemas.RunBase,
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
+        address: Optional[Address] = None,
     ) -> str:
         """Get the URL for a run.
 
@@ -4820,13 +4911,26 @@ class Client:
             run (RunBase): The run.
             project_name (Optional[str]): The name of the project.
             project_id (Optional[Union[UUID, str]]): The ID of the project.
+            address (Optional[Address]): (beta) An address that names the run's
+                project, such as the `AgentAddress` the run was sent to or an
+                `ExperimentAddress`, for a run that names no project. It is
+                resolved to its project with one request, which needs LangSmith
+                0.18 or later. It must name the project the run is in. A run
+                that carries its own `address` does not need it.
 
         Returns:
             str: The URL for the run.
         """
         return self._construct_run_url(
-            run=run, project_name=project_name, project_id=project_id
+            run=run, project_name=project_name, project_id=project_id, address=address
         )
+
+    def _resolve_address(self, address: Address) -> uuid.UUID:
+        """Return the ID of the project an address names, with one request."""
+        response = self._get_langsmith_api_sync().sessions.resolve(
+            **address.to_api_address()
+        )
+        return _as_uuid(response.session_id, "session_id")
 
     def _construct_run_url(
         self,
@@ -4834,13 +4938,21 @@ class Client:
         run: ls_schemas.RunBase,
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
+        address: Optional[Address] = None,
     ) -> str:
         """Build a run's UI URL locally, without calling the backend.
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
+        address = _addressing.check_lookup_address(address)
+        _addressing.reject_conflicting(
+            project=project_name, session_id=project_id, address=address
+        )
         if session_id := getattr(run, "session_id", None):
             pass
+        elif address is not None:
+            # Passed in, so it outranks the default project a run tree names.
+            session_id = self._resolve_address(address)
         elif session_name := getattr(run, "session_name", None):
             session_id = self.read_project(project_name=session_name).id
         elif project_id is not None:
@@ -4848,8 +4960,14 @@ class Client:
         elif project_name is not None:
             session_id = self.read_project(project_name=project_name).id
         else:
-            project_name = ls_utils.get_tracer_project()
-            session_id = self.read_project(project_name=project_name).id
+            # Nothing names a project, so the run is located by the agent it was
+            # sent to, when it carries one.
+            address = _addressing.check_address(getattr(run, "address", None))
+            if address is not None:
+                session_id = self._resolve_address(address)
+            else:
+                project_name = ls_utils.get_tracer_project()
+                session_id = self.read_project(project_name=project_name).id
         session_id_ = _as_uuid(session_id, "session_id")
         return (
             f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id_}/"
@@ -4859,7 +4977,7 @@ class Client:
     @_deprecated(
         "share_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.share.create() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
@@ -4897,7 +5015,7 @@ class Client:
     @_deprecated(
         "unshare_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.runs.share.delete() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def unshare_run(self, run_id: ID_TYPE) -> None:
@@ -4925,7 +5043,7 @@ class Client:
     @_deprecated(
         "read_run_shared_link() is deprecated and will be removed after Jan 31, 2027. "
         'Use client.runs.retrieve(selects=["SHARE_URL"]) instead. '
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
@@ -4971,7 +5089,7 @@ class Client:
     @_deprecated(
         "read_shared_run() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.public.runs.retrieve() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def read_shared_run(
@@ -5008,7 +5126,7 @@ class Client:
     @_deprecated(
         "list_shared_runs() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.public.runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-feedback"
         "#share-and-read-public-runs for the migration guide."
     )
     def list_shared_runs(
@@ -5777,7 +5895,7 @@ class Client:
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_orjson.dumps(dataset),
+            data=_dumps_json(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -6455,7 +6573,11 @@ class Client:
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
-    ) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
+    ) -> tuple[
+        RewindableMultipartBody,
+        Union[bytes, RewindableMultipartBody],
+        dict[str, io.BufferedReader],
+    ]:
         parts: list[MultipartPart] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
         if include_dataset_id:
@@ -6627,13 +6749,12 @@ class Client:
                     )
                 )
 
-        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
-        if encoder.len <= 20_000_000:  # ~20 MB
-            data = encoder.to_string()
-        else:
-            data = encoder
+        body = RewindableMultipartBody(parts, _BOUNDARY)
+        data: Union[bytes, RewindableMultipartBody] = (
+            body.to_bytes() if len(body) <= _MULTIPART_INLINE_MAX_BYTES else body
+        )
 
-        return encoder, data, opened_files_dict
+        return body, data, opened_files_dict
 
     def update_examples_multipart(
         self,
@@ -6681,7 +6802,7 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data, opened_files_dict = self._prepare_multipart_data(
+        body, data, opened_files_dict = self._prepare_multipart_data(
             updates,
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
@@ -6695,7 +6816,7 @@ class Client:
                     "data": data,
                     "headers": {
                         **self._headers,
-                        "Content-Type": encoder.content_type,
+                        "Content-Type": body.content_type,
                     },
                 },
             )
@@ -6822,7 +6943,7 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data, opened_files_dict = self._prepare_multipart_data(
+        body, data, opened_files_dict = self._prepare_multipart_data(
             uploads,
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
@@ -6836,7 +6957,7 @@ class Client:
                     "data": data,
                     "headers": {
                         **self._headers,
-                        "Content-Type": encoder.content_type,
+                        "Content-Type": body.content_type,
                     },
                 },
             )
@@ -6867,7 +6988,7 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data, opened_files_dict = self._prepare_multipart_data(
+        body, data, opened_files_dict = self._prepare_multipart_data(
             upserts,
             include_dataset_id=True,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
@@ -6885,7 +7006,7 @@ class Client:
                     "data": data,
                     "headers": {
                         **self._headers,
-                        "Content-Type": encoder.content_type,
+                        "Content-Type": body.content_type,
                     },
                 },
             )
@@ -8220,6 +8341,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
+        address: Optional[AgentAddress] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8228,6 +8350,13 @@ class Client:
 
             To enable feedback to be batch uploaded in the background you must
             specify `trace_id`. *We highly encourage this for latency-sensitive environments.*
+
+        !!! warning "Experimental"
+            `address` is in beta. It is enabled per workspace; a
+            workspace without it rejects the feedback, so it is lost rather
+            than falling back to a project. The address must already exist --
+            unlike run ingestion, a feedback part never creates one. It may
+            change without notice.
 
         Args:
             key (str):
@@ -8285,6 +8414,13 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
+            address (Optional[AgentAddress]):
+                The address to attach this feedback to, instead of a project.
+                Pass whatever the run being described was traced to -- for a
+                run created in this process, `run_tree.address`. Cannot be
+                combined with `session_id` / `project_id`, and is never read
+                from the env vars: feedback follows its run, not the ambient
+                environment.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -8335,6 +8471,10 @@ class Client:
             )
             ```
         """
+        address = _addressing.check_address(address)
+        _addressing.reject_conflicting(
+            project=project_id, session_id=session_id, address=address
+        )
         run_id = run_id or trace_id
         if run_id is None and project_id is None:
             raise ValueError("One of run_id, trace_id, or project_id  must be provided")
@@ -8342,7 +8482,9 @@ class Client:
             raise ValueError(
                 "project_id cannot be provided if run_id or trace_id is provided"
             )
-        if run_id is not None and session_id is None:
+        if run_id is not None and session_id is None and address is None:
+            # An address locates the project directly, so it satisfies the same
+            # requirement this gate exists for.
             _check_feedback_session_id(self.info)
         if kwargs:
             warnings.warn(
@@ -8404,6 +8546,7 @@ class Client:
                 modified_at=datetime.datetime.now(datetime.timezone.utc),
                 feedback_config=feedback_config,
                 session_id=_session_id,
+                address=address,
                 start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
                     comparative_experiment_id, accept_null=True
@@ -10619,6 +10762,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ExperimentResults: ...
 
@@ -10638,6 +10782,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ComparativeExperimentResults: ...
 
@@ -10660,6 +10805,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
@@ -10704,6 +10850,11 @@ class Client:
                 `'log'` will trace the runs with the error message as part of the
                 experiment, `'ignore'` will not count the run as part of the experiment at
                 all.
+            disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+                evaluator invocations to the `evaluators` project in LangSmith. Set to
+                `True` to run evaluators without creating evaluator traces; feedback is
+                still created and attached to the experiment runs, but can't be
+                corrected from the UI.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -10866,6 +11017,7 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
 
@@ -10893,6 +11045,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
@@ -10934,6 +11087,11 @@ class Client:
                 `'log'` will trace the runs with the error message as part of the
                 experiment, `'ignore'` will not count the run as part of the experiment at
                 all.
+            disable_evaluator_tracing (bool, default=False): Whether to skip tracing
+                evaluator invocations to the `evaluators` project in LangSmith. Set to
+                `True` to run evaluators without creating evaluator traces; feedback is
+                still created and attached to the experiment runs, but can't be
+                corrected from the UI.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -11117,6 +11275,7 @@ class Client:
             experiment=experiment,
             upload_results=upload_results,
             error_handling=error_handling,
+            disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,
         )
 
@@ -11181,7 +11340,7 @@ class Client:
     @_deprecated(
         "get_experiment_results() is deprecated and will be removed after Jan 31, 2027. "
         "Use client.datasets.experiment_runs.query() instead. "
-        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration"
+        "See https://docs.langchain.com/langsmith/smithdb-sdk-migration-experiments"
         "#dataset-experiment-runs-query for the migration guide."
     )
     def get_experiment_results(

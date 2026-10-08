@@ -37,6 +37,7 @@ import {
   LangSmithCommandTimeoutError,
   LangSmithSandboxServerReloadError,
   LangSmithSandboxConnectionError,
+  LangSmithSandboxNotReadyError,
   LangSmithStreamEndedBeforeStartedError,
 } from "../sandbox/errors.js";
 import type {
@@ -204,14 +205,18 @@ describe("sandbox proxy config helpers", () => {
     expect(
       proxyConfig({
         rules: [awsRule, gcpRule],
-        noProxy: ["metadata.google.internal"],
         accessControl: { allow_list: ["*.googleapis.com", "*.amazonaws.com"] },
       }),
     ).toEqual({
       rules: [awsRule, gcpRule],
-      no_proxy: ["metadata.google.internal"],
       access_control: { allow_list: ["*.googleapis.com", "*.amazonaws.com"] },
     });
+  });
+
+  it("proxyConfig ignores the deprecated noProxy option", () => {
+    expect(
+      proxyConfig({ rules: [], noProxy: ["metadata.google.internal"] }),
+    ).toEqual({ rules: [] });
   });
 
   it("mountConfig nests mounts and provider auth", () => {
@@ -1070,7 +1075,6 @@ describe("SandboxClient - createSandbox", () => {
     });
     const extraProxyConfig = proxyConfig({
       rules: [extraRule],
-      noProxy: ["metadata.google.internal"],
       accessControl: { allow_list: ["github.com", "*.amazonaws.com"] },
     });
 
@@ -1085,7 +1089,6 @@ describe("SandboxClient - createSandbox", () => {
     expect(body.mounts).toBeUndefined();
     expect(body.proxy_config).toEqual({
       rules: [extraRule],
-      no_proxy: ["metadata.google.internal"],
       access_control: { allow_list: ["github.com", "*.amazonaws.com"] },
     });
   });
@@ -1274,6 +1277,57 @@ describe("SandboxClient - updateSandbox", () => {
     expect(url).toContain("/boxes/sb-1");
     expect(init.method).toBeUndefined();
     expect(sb.name).toBe("sb-1");
+  });
+
+  it("should PATCH proxy_config when provided in options", async () => {
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: "sb-1",
+        status: "ready",
+      }),
+    } as Response);
+
+    const config = proxyConfig({
+      rules: [
+        {
+          name: "github",
+          match_hosts: ["github.com"],
+          headers: [
+            { name: "Authorization", type: "opaque", value: "Basic rotated" },
+          ],
+        },
+      ],
+    });
+
+    const client = createClientWithMock(mockFetch);
+    await client.updateSandbox("sb-1", { proxyConfig: config });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ proxy_config: config });
+  });
+
+  it("should throw NotReady when proxy config is set on a stopped sandbox", async () => {
+    const body = {
+      detail: {
+        error: "InvalidRequest",
+        message:
+          'sandbox "sb-1" is in "stopped" state, must be "ready" to update proxy config',
+      },
+    };
+    const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => body,
+      clone: () => ({ status: 400, json: async () => body }),
+    } as unknown as Response);
+
+    const client = createClientWithMock(mockFetch);
+    await expect(
+      client.updateSandbox("sb-1", { proxyConfig: { rules: [] } }),
+    ).rejects.toThrow(LangSmithSandboxNotReadyError);
   });
 });
 

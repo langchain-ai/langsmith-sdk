@@ -59,9 +59,12 @@ export class LangSmithSandboxConnectionError extends LangSmithSandboxError {
  * deduplicate an attempt whose outcome is unknown.
  */
 export class LangSmithSandboxRetryableConnectionError extends LangSmithSandboxConnectionError {
-  constructor(message: string) {
+  readonly retryAfterSeconds?: number;
+
+  constructor(message: string, retryAfterSeconds?: number) {
     super(message);
     this.name = "LangSmithSandboxRetryableConnectionError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -350,5 +353,16 @@ export class LangSmithSandboxServerReloadError extends LangSmithSandboxConnectio
   constructor(message: string) {
     super(message);
     this.name = "LangSmithSandboxServerReloadError";
+  }
+}
+
+/**
+ * Raised when a sandbox user token or proxy callback signature fails
+ * verification.
+ */
+export class LangSmithSandboxTokenVerificationError extends LangSmithSandboxError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithSandboxTokenVerificationError";
   }
 }

@@ -74,6 +74,8 @@ class AnnotationQueuesResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AnnotationQueuesResourceWithRawResponse(self)
 
@@ -81,6 +83,8 @@ class AnnotationQueuesResource(SyncAPIResource):
     def with_streaming_response(self) -> AnnotationQueuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AnnotationQueuesResourceWithStreamingResponse(self)
 
@@ -687,6 +691,8 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncAnnotationQueuesResourceWithRawResponse(self)
 
@@ -694,6 +700,8 @@ class AsyncAnnotationQueuesResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncAnnotationQueuesResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncAnnotationQueuesResourceWithStreamingResponse(self)
 

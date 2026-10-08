@@ -80,6 +80,13 @@ export type TracesItemsCursorPostPagination = ItemsCursorPostPagination<Trace>;
 
 export interface Trace {
   /**
+   * `query_metadata` describes why this trace matched the query, including
+   * `sem_filter_score` when a semantic filter is used. Returned automatically, or
+   * null when unavailable.
+   */
+  query_metadata?: unknown | null;
+
+  /**
    * `root_run` is the trace's root run. Which properties are populated is controlled
    * by `selects` in the request.
    */
@@ -200,6 +207,7 @@ export interface TraceListRunsParams {
     | 'LAST_QUEUED_AT'
     | 'SHARE_URL'
     | 'FEEDBACK_STATS'
+    | 'LS_USER_ID'
   >;
 
   /**

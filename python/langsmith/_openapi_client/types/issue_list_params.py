@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import List, Iterable
 from typing_extensions import Literal, TypedDict
 
 __all__ = ["IssueListParams"]
 
 
 class IssueListParams(TypedDict, total=False):
+    activity: List[Literal["fixing", "watching", "recurred"]]
+    """Filter by Engine activity (repeatable; OR semantics)"""
+
     limit: int
     """Page size (positive integer; defaults to 50, capped at 500)"""
 
@@ -23,11 +27,17 @@ class IssueListParams(TypedDict, total=False):
     severity: Literal[0, 1, 2, 3]
     """Filter by severity"""
 
-    sort_by: Literal["created_at", "updated_at", "severity"]
+    severity_exact: Iterable[Literal[0, 1, 2, 3]]
+    """Filter by exact severity (repeatable; OR semantics)"""
+
+    sort_by: Literal["default", "created_at", "updated_at", "last_seen", "last_updated", "trace_count", "severity"]
     """Sort field"""
 
     status: Literal["open", "fixing", "watching", "completed", "ignored"]
     """Filter by status"""
+
+    status_first: bool
+    """Group results by issue lifecycle status before applying sort_by"""
 
     tag: str
     """Filter by tag (exact match)"""

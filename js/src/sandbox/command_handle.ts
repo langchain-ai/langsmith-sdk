@@ -8,6 +8,7 @@
 import type { ExecutionResult, OutputChunk, WsMessage } from "./types.js";
 import type { WSStreamControl } from "./ws_execute.js";
 import type { Sandbox } from "./sandbox.js";
+import { addSandboxMetadata } from "./tracing.js";
 import {
   LangSmithSandboxConnectionError,
   LangSmithSandboxServerReloadError,
@@ -82,6 +83,8 @@ export class CommandHandle {
   private _reconnectAttempts = 0;
   private _onStdout?: (data: string) => void;
   private _onStderr?: (data: string) => void;
+  private _stdinClosed: boolean;
+  private _pty: boolean;
 
   /** @internal */
   constructor(
@@ -94,6 +97,8 @@ export class CommandHandle {
       stderrOffset?: number;
       onStdout?: (data: string) => void;
       onStderr?: (data: string) => void;
+      stdinClosed?: boolean;
+      pty?: boolean;
     },
   ) {
     this._stream = messageStream;
@@ -103,6 +108,8 @@ export class CommandHandle {
     this._lastStderrOffset = options?.stderrOffset ?? 0;
     this._onStdout = options?.onStdout;
     this._onStderr = options?.onStderr;
+    this._stdinClosed = options?.stdinClosed ?? false;
+    this._pty = options?.pty ?? false;
 
     // New executions (no commandId): _ensureStarted reads "started".
     // Reconnections (commandId set): skip since reconnect streams
@@ -155,6 +162,7 @@ export class CommandHandle {
    * The final execution result. Drains the stream if not already exhausted.
    */
   get result(): Promise<ExecutionResult> {
+    addSandboxMetadata(this._sandbox.id);
     return this._getResult();
   }
 
@@ -223,6 +231,7 @@ export class CommandHandle {
    * - After kill():                  no reconnect, error propagates
    */
   async *[Symbol.asyncIterator](): AsyncIterableIterator<OutputChunk> {
+    addSandboxMetadata(this._sandbox.id);
     this._reconnectAttempts = 0;
 
     while (true) {
@@ -238,6 +247,8 @@ export class CommandHandle {
               chunk.offset + new TextEncoder().encode(chunk.data).length;
             this._onStderr?.(chunk.data);
           }
+          // Each resumption runs in the consumer's current context.
+          addSandboxMetadata(this._sandbox.id);
           yield chunk;
         }
         return; // Stream ended normally (exit message received)
@@ -290,6 +301,7 @@ export class CommandHandle {
    * subsequently yield an exit message with a non-zero exit code.
    */
   kill(): void {
+    addSandboxMetadata(this._sandbox.id);
     if (this._control) {
       this._control.sendKill();
     }
@@ -299,9 +311,32 @@ export class CommandHandle {
    * Write data to the command's stdin.
    */
   sendInput(data: string): void {
+    addSandboxMetadata(this._sandbox.id);
+    if (this._stdinClosed) {
+      throw new LangSmithSandboxOperationError(
+        "stdin is closed for this command. Non-PTY commands close stdin by " +
+          "default so a command that reads it sees EOF instead of hanging; " +
+          "pass closeInput: false to run() to stream input into it.",
+        "sendInput",
+      );
+    }
     if (this._control) {
       this._control.sendInput(data);
     }
+  }
+
+  /**
+   * Half-close stdin so the command reads EOF.
+   *
+   * Idempotent, and a no-op under a PTY, where input and output share one
+   * terminal file descriptor and there is no write end to close -- send an
+   * EOT byte (0x04) with {@link sendInput} instead.
+   */
+  closeInput(): void {
+    addSandboxMetadata(this._sandbox.id);
+    if (this._pty || this._stdinClosed) return;
+    this._stdinClosed = true;
+    this._control?.sendCloseStdin();
   }
 
   /** Last known stdout byte offset (for manual reconnection). */
@@ -330,6 +365,8 @@ export class CommandHandle {
     return this._sandbox.reconnect(this._commandId, {
       stdoutOffset: this._lastStdoutOffset,
       stderrOffset: this._lastStderrOffset,
+      stdinClosed: this._stdinClosed,
+      pty: this._pty,
     });
   }
 }

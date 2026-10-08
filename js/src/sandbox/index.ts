@@ -39,6 +39,27 @@ export {
   proxyConfig,
   workspaceSecret,
 } from "./proxy_config.js";
+export { validateAccessDelegation } from "./access_delegation.js";
+export {
+  ServiceUrl,
+  ServiceLoginUrl,
+  SERVICE_TOKEN_HEADER,
+} from "./service_url.js";
+export {
+  SandboxTokenVerifier,
+  USER_TOKEN_HEADER,
+  CALLBACK_SIGNATURE_HEADER,
+} from "./verify.js";
+export type {
+  AudienceMatcher,
+  SandboxCallback,
+  SandboxCallbackIdentity,
+  SandboxCallbackRequest,
+  SandboxTokenVerifierConfig,
+  SandboxUser,
+  VerifyCallbackOptions,
+  VerifyUserTokenOptions,
+} from "./verify.js";
 export {
   contextHubMount,
   gcsMount,
@@ -49,7 +70,22 @@ export {
 
 // Types
 export type {
+  AccessDelegation,
+  AccessDelegationMode,
+} from "./access_delegation.js";
+export type { ServiceAccess, ServiceUrlData } from "./service_url.js";
+export type {
   ExecutionResult,
+  FileChunk,
+  FileInfo,
+  FileStat,
+  GlobOptions,
+  GlobResult,
+  GrepMatch,
+  GrepOptions,
+  GrepResult,
+  ReadRangeOptions,
+  RunConfig,
   OutputChunk,
   WsMessage,
   WsRunOptions,
@@ -121,4 +157,5 @@ export {
   LangSmithSandboxOperationError,
   LangSmithCommandTimeoutError,
   LangSmithDataplaneNotConfiguredError,
+  LangSmithSandboxTokenVerificationError,
 } from "./errors.js";

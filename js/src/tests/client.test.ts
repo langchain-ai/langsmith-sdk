@@ -11,6 +11,7 @@ import {
   _checkBackendVersion,
 } from "../client.js";
 import { v4 as uuid } from "../utils/uuid/src/index.js";
+import type { KVMap, RunCreate } from "../schemas.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import {
@@ -22,6 +23,68 @@ import { _resetWarnedMessages } from "../utils/warn.js";
 import { isSampledById } from "../utils/sampling.js";
 
 describe("Client", () => {
+  describe.each(["readExample", "listExamples"] as const)(
+    "%s attachment URLs",
+    (method) => {
+      test.each([
+        [
+          "/api/v1/public/download?jwt=test-token",
+          "https://smith.example.test/api/v1/public/download?jwt=test-token",
+        ],
+        [
+          "/langsmith/api/v1/public/download?jwt=test-token",
+          "https://smith.example.test/langsmith/api/v1/public/download?jwt=test-token",
+        ],
+        [
+          "https://storage.example.test/file?signature=a%2Fb&expires=123",
+          "https://storage.example.test/file?signature=a%2Fb&expires=123",
+        ],
+      ])("resolves %s", async (presignedUrl, expectedUrl) => {
+        const exampleId = "550e8400-e29b-41d4-a716-446655440000";
+        const datasetId = "550e8400-e29b-41d4-a716-446655440001";
+        const rawExample = {
+          id: exampleId,
+          dataset_id: datasetId,
+          inputs: {},
+          attachment_urls: {
+            "attachment.file": {
+              presigned_url: presignedUrl,
+              mime_type: "text/plain",
+            },
+          },
+        };
+        const mockFetch = jest
+          .fn<typeof fetch>()
+          .mockResolvedValue(
+            Response.json(method === "readExample" ? rawExample : [rawExample]),
+          );
+        const client = new Client({
+          apiUrl: "https://smith.example.test/api/v1",
+          apiKey: "test-api-key",
+          fetchImplementation: mockFetch,
+        });
+        const example =
+          method === "readExample"
+            ? await client.readExample(exampleId)
+            : (
+                await client
+                  .listExamples({
+                    datasetId,
+                    includeAttachments: true,
+                    limit: 1,
+                  })
+                  [Symbol.asyncIterator]()
+                  .next()
+              ).value;
+
+        expect(example.attachments?.file).toEqual({
+          presigned_url: expectedUrl,
+          mime_type: "text/plain",
+        });
+      });
+    },
+  );
+
   describe("resource tags on create", () => {
     const tagValueIds = [
       "550e8400-e29b-41d4-a716-446655440000",
@@ -594,6 +657,38 @@ describe("Client", () => {
       );
     });
 
+    it("logs where the API URL came from when debug is enabled", () => {
+      const log = jest.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        process.env.LANGSMITH_CONFIG_FILE = path.join(tempDir, "missing.json");
+        new Client({ apiKey: "x", debug: true });
+        expect(log).toHaveBeenCalledWith(
+          "LangSmith API URL https://api.smith.langchain.com resolved from built-in default",
+        );
+
+        process.env.LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com";
+        new Client({ apiKey: "x", debug: true });
+        expect(log).toHaveBeenCalledWith(
+          "LangSmith API URL https://eu.api.smith.langchain.com resolved from LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable",
+        );
+
+        new Client({
+          apiKey: "x",
+          debug: true,
+          apiUrl: "https://custom.example.com",
+        });
+        expect(log).toHaveBeenCalledWith(
+          "LangSmith API URL https://custom.example.com resolved from apiUrl option",
+        );
+
+        log.mockClear();
+        new Client({ apiKey: "x" });
+        expect(log).not.toHaveBeenCalled();
+      } finally {
+        log.mockRestore();
+      }
+    });
+
     it("uses profile OAuth access tokens before profile API keys", () => {
       writeProfileConfig({
         profiles: {
@@ -1027,6 +1122,46 @@ describe("Client", () => {
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
     });
+
+    it.each([
+      [{ LANGSMITH_REVISION_ID: "new" }, "new"],
+      [{ LANGCHAIN_REVISION_ID: "legacy" }, "legacy"],
+      [
+        { LANGSMITH_REVISION_ID: "new", LANGCHAIN_REVISION_ID: "legacy" },
+        "new",
+      ],
+      [
+        { LANGSMITH_REVISION_ID: "", LANGCHAIN_REVISION_ID: "legacy" },
+        "legacy",
+      ],
+    ])(
+      "should read the revision id from %o",
+      (env: Record<string, string>, expected: string) => {
+        const names = ["LANGSMITH_REVISION_ID", "LANGCHAIN_REVISION_ID"];
+        // eslint-disable-next-line no-process-env
+        const previous = names.map((name) => process.env[name]);
+        try {
+          for (const name of names) {
+            // eslint-disable-next-line no-process-env
+            delete process.env[name];
+          }
+          // eslint-disable-next-line no-process-env
+          Object.assign(process.env, env);
+
+          const metadata = getLangSmithEnvVarsMetadata();
+          expect(metadata.revision_id).toBe(expected);
+          expect(metadata).not.toHaveProperty("LANGSMITH_REVISION_ID");
+          expect(metadata).not.toHaveProperty("LANGCHAIN_REVISION_ID");
+        } finally {
+          names.forEach((name, i) => {
+            // eslint-disable-next-line no-process-env
+            if (previous[i] === undefined) delete process.env[name];
+            // eslint-disable-next-line no-process-env
+            else process.env[name] = previous[i];
+          });
+        }
+      },
+    );
   });
 
   describe("parseHubIdentifier", () => {
@@ -1749,6 +1884,103 @@ describe("Client", () => {
       expect(result.extra).toBeDefined();
       expect(result.extra.runtime).toBeDefined();
       expect(result.extra.metadata).toBeDefined();
+    });
+  });
+
+  describe("tracingSamplingRate is reported on runs", () => {
+    const metadataOf = (run: RunCreate, rate?: number) =>
+      mergeRuntimeEnvIntoRun(run, undefined, false, rate).extra?.metadata as
+        | Record<string, unknown>
+        | undefined;
+
+    const run = (): RunCreate => ({
+      id: uuid(),
+      name: "test-run",
+      run_type: "llm",
+      inputs: {},
+    });
+
+    // Sampled in at rate 0.5 per the cross-SDK golden table above, so the
+    // client-level cases below survive `_filterForSampling`.
+    const sampledId = "00000000-0000-0000-0000-000000000015";
+
+    // Body of the one request the mock fetch saw with this method.
+    const sentBody = (callSpy: any, method: string): KVMap => {
+      const calls = callSpy.mock.calls.filter(
+        (call: unknown[]) =>
+          (call[call.length - 1] as { method?: string })?.method === method,
+      );
+      expect(calls.length).toBe(1);
+      const { body } = calls[0][calls[0].length - 1] as {
+        body: string | Uint8Array;
+      };
+      return JSON.parse(
+        typeof body === "string" ? body : new TextDecoder().decode(body),
+      );
+    };
+
+    it("should report the rate on a created run", () => {
+      expect(metadataOf(run(), 0.25)?.ls_tracing_sample_rate).toBe(0.25);
+    });
+
+    it("should omit the key when no rate is configured", () => {
+      // Absent, not null: a consumer reads absence as "no sampling".
+      expect(metadataOf(run(), undefined)).not.toHaveProperty(
+        "ls_tracing_sample_rate",
+      );
+    });
+
+    it("should let the client's own rate beat one already on the run", () => {
+      // `RunTree.createChild` copies the parent's metadata onto every child, so
+      // a run can arrive carrying the rate of a differently-configured client.
+      // Reporting that one would make the extrapolation wrong, not just absent.
+      const withOwnRate: RunCreate = {
+        ...run(),
+        extra: { metadata: { ls_tracing_sample_rate: 0.9, user: "x" } },
+      };
+      const metadata = metadataOf(withOwnRate, 0.25);
+
+      expect(metadata?.ls_tracing_sample_rate).toBe(0.25);
+      expect(metadata?.user).toBe("x");
+    });
+
+    it("should wire the client's configured rate into a posted run", async () => {
+      // The helper above is pure; this pins the client actually feeding it
+      // `this.tracingSampleRate`, which no unit on the helper can catch.
+      const { client, callSpy } = mockClient({ tracingSamplingRate: 0.5 });
+      await client.createRun({
+        id: sampledId,
+        name: "traced",
+        run_type: "llm",
+        inputs: { in: "put" },
+      });
+
+      expect(
+        sentBody(callSpy, "POST").extra.metadata.ls_tracing_sample_rate,
+      ).toBe(0.5);
+    });
+
+    it("should re-stamp the rate on a non-batched patch carrying extra", async () => {
+      // The server replaces `extra` wholesale on update, so a patch that brings
+      // its own would drop what the create stamped.
+      const { client, callSpy } = mockClient({ tracingSamplingRate: 0.5 });
+      await client.updateRun(sampledId, {
+        end_time: Date.now(),
+        extra: { metadata: { user: "x" } },
+      });
+
+      const metadata = sentBody(callSpy, "PATCH").extra.metadata;
+      expect(metadata.ls_tracing_sample_rate).toBe(0.5);
+      expect(metadata.user).toBe("x");
+    });
+
+    it("should not introduce extra on a patch that omits it", async () => {
+      // Sending one here would replace the create's `extra` with a stub and
+      // erase every metadata key the caller set at create time.
+      const { client, callSpy } = mockClient({ tracingSamplingRate: 0.5 });
+      await client.updateRun(sampledId, { end_time: Date.now() });
+
+      expect(sentBody(callSpy, "PATCH")).not.toHaveProperty("extra");
     });
   });
 

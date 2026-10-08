@@ -1,8 +1,10 @@
 import re  # noqa
 import inspect
 from abc import abstractmethod
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any, Callable, Optional, TypedDict, Union
+
+from langsmith.secret import LangSmithSecret
 
 
 class _ExtractOptions(TypedDict):
@@ -25,14 +27,13 @@ class StringNode(TypedDict):
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNode]:
     max_depth = options.get("max_depth") or 10
 
-    queue: list[tuple[Any, int, list[Union[str, int]]]] = [(data, 0, [])]
+    # deque, not a list: `list.pop(0)` is O(n), and this walk runs inline on the
+    # caller's event loop, so a quadratic drain stalls unrelated requests.
+    queue: deque[tuple[Any, int, list[Union[str, int]]]] = deque([(data, 0, [])])
     result: list[StringNode] = []
 
     while queue:
-        task = queue.pop(0)
-        if task is None:
-            continue
-        value, depth, path = task
+        value, depth, path = queue.popleft()
 
         if isinstance(value, (dict, defaultdict)):
             if depth >= max_depth:
@@ -45,6 +46,9 @@ def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNod
             for i, item in enumerate(value):
                 queue.append((item, depth + 1, path + [i]))
         elif isinstance(value, str):
+            # A replacer would rewrite a secret back to a plain `str`.
+            if isinstance(value, LangSmithSecret):
+                continue
             result.append(StringNode(value=value, path=path))
 
     return result
@@ -300,7 +304,7 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     #  - requires a 6+ char value so short non-secret values are left intact.
     {
         "pattern": re.compile(
-            r"""\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}""",
+            r"""\b([A-Za-z0-9_.-]*(?:API[_-]?KEY[_-]?SALT|LICENSE[_-]?KEY|API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}""",
             re.IGNORECASE,
         ),
         "replace": rf"\g<1>{SECRET_PLACEHOLDER}",

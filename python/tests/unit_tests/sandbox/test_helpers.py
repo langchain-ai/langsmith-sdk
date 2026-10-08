@@ -2,7 +2,7 @@
 
 import httpx
 
-from langsmith.sandbox._helpers import merge_headers
+from langsmith.sandbox._helpers import merge_headers, parse_error_response
 
 
 def test_merge_headers_override_wins() -> None:
@@ -37,3 +37,28 @@ def test_merge_headers_override_replaces_across_casing() -> None:
         v.decode() for k, v in request.headers.raw if k.lower() == b"x-service-key"
     ]
     assert on_wire == ["override"]
+
+
+def test_parse_error_response_preserves_error_id() -> None:
+    request = httpx.Request(
+        "POST", "https://example.com/v2/sandboxes/boxes/box/snapshot"
+    )
+    response = httpx.Response(
+        500,
+        request=request,
+        json={
+            "detail": {
+                "error": "SandboxSnapshotFailed",
+                "message": "Snapshot capture failed.",
+                "error_id": "6a39f608-e9aa-4247-8e61-846870563681",
+            }
+        },
+    )
+    error = httpx.HTTPStatusError("server error", request=request, response=response)
+
+    assert parse_error_response(error) == {
+        "error_type": "SandboxSnapshotFailed",
+        "message": (
+            "Snapshot capture failed. (error_id=6a39f608-e9aa-4247-8e61-846870563681)"
+        ),
+    }

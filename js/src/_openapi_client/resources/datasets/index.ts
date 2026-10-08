@@ -11,6 +11,7 @@ export {
   type Missing,
   type SortByDatasetColumn,
 } from './datasets.js';
+export { Examples, type ExampleDeleteParams } from './examples.js';
 export {
   ExperimentRuns,
   type ExperimentRunQueryResponse,

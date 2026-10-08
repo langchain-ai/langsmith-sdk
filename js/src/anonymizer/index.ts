@@ -25,10 +25,11 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
 
   let nextId = 0;
   const result: StringNodeInternal[] = [];
-  while (queue.length > 0) {
-    const task = queue.shift();
-    if (task == null) continue;
-    const [value, depth, path, parent, key] = task;
+  // Head index, not `queue.shift()`: shift is O(n) per call, and this walk runs
+  // inline on the caller's tick, so a quadratic drain stalls unrelated work.
+  let head = 0;
+  while (head < queue.length) {
+    const [value, depth, path, parent, key] = queue[head++];
     if (typeof value === "string") {
       result.push({
         value,
@@ -275,7 +276,7 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
   //  - requires a 6+ char value so short non-secret values are not touched.
   {
     pattern:
-      /\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}/gi,
+      /\b([A-Za-z0-9_.-]*(?:API[_-]?KEY[_-]?SALT|LICENSE[_-]?KEY|API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}/gi,
     replace: `$1${SECRET_PLACEHOLDER}`,
   },
   // Authorization / API-key headers. Keep the header name + separator ($1$2)
