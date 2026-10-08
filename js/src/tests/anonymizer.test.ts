@@ -402,6 +402,18 @@ describe("createSecretAnonymizer", () => {
       expect(out).toBe(`{"api_key": "${SECRET_PLACEHOLDER}"}`);
     });
 
+    test.each([
+      "langsmithLicenseKey",
+      "langsmith_license_key",
+      "apiKeySalt",
+      "api_key_salt",
+    ])("redacts %s in file output", (name) => {
+      const value = `fake_${"A1b2C3d4".repeat(5)}`;
+      expect(redact({ tool_output: `${name}: ${value}` })).toEqual({
+        tool_output: `${name}: ${SECRET_PLACEHOLDER}`,
+      });
+    });
+
     test("redacts bare Bearer tokens", () => {
       const out = redact("header: Bearer aB3xY7zQ1234567890") as string;
       expect(out).toBe(`header: Bearer ${SECRET_PLACEHOLDER}`);
@@ -427,6 +439,7 @@ describe("createSecretAnonymizer", () => {
       'description="a reasonably long human description"', // non-sensitive name
       'tokenizer: "cl100k_base"', // "token" must not match mid-word
       "tokens_used: 123456", // keyword as a prefix of a longer word
+      "apiKeySaltLength: reasonablevalue", // keep non-secret key suffixes
     ];
     test.each(SAFE)("leaves %s untouched", (value) => {
       expect(redact(value)).toBe(value);
