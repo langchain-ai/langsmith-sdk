@@ -4948,6 +4948,9 @@ class Client:
         )
         if session_id := getattr(run, "session_id", None):
             pass
+        elif address is not None:
+            # Passed in, so it outranks the default project a run tree names.
+            session_id = self._resolve_address(address)
         elif session_name := getattr(run, "session_name", None):
             session_id = self.read_project(project_name=session_name).id
         elif project_id is not None:
@@ -4956,10 +4959,8 @@ class Client:
             session_id = self.read_project(project_name=project_name).id
         else:
             # Nothing names a project, so the run is located by the agent it was
-            # sent to: the one passed in, or the one the run carries.
-            address = address or _addressing.check_address(
-                getattr(run, "address", None)
-            )
+            # sent to, when it carries one.
+            address = _addressing.check_address(getattr(run, "address", None))
             if address is not None:
                 session_id = self._resolve_address(address)
             else:

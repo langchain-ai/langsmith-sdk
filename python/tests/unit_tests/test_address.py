@@ -850,6 +850,19 @@ class TestWire:
             kind="AGENT", id="support", environment="STAGING"
         )
 
+    def test_an_address_argument_outranks_the_default_project_of_a_run_tree(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A run tree without an address still names the default project."""
+        api = self._url_client(monkeypatch, self.PROJECT)
+        run = RunTree(name="r", client=client)
+        assert run.session_name
+        url = client._construct_run_url(run=run, address=STAGING)
+        assert url == self._url(client, run)
+        api.sessions.resolve.assert_called_once_with(
+            kind="AGENT", id="support", environment="STAGING"
+        )
+
     def test_a_run_url_rejects_a_project_beside_an_address(
         self, client: Client, monkeypatch: pytest.MonkeyPatch
     ) -> None:
