@@ -83,6 +83,7 @@ import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
 import { AnnotationQueues } from "./_openapi_client/resources/annotation-queues/annotation-queues.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
+import { Sessions } from "./_openapi_client/resources/sessions.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
@@ -1845,6 +1846,15 @@ export class Client implements LangSmithTracingClientInterface {
   public get traces(): Traces {
     this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.traces;
+  }
+
+  /**
+   * (beta) Access the sessions resource, which resolves an address to the
+   * project its traces go to: `client.sessions.resolve(address.toApiAddress())`.
+   */
+  public get sessions(): Sessions {
+    this._checkStainlessVersion("0.18.0");
+    return this.openAPIClient.sessions;
   }
 
   /** Access the public shared-run resource. */
