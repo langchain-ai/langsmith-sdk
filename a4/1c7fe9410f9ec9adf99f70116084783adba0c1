@@ -1,0 +1,58 @@
+python/tests/unit_tests/test_address.py
+  s_14ccaf81e1d75f::t_e41d5eb74f8990 249,711,798-801
+  s_14ccaf81e1d75f::t_7cc23abe6899e3 24-25,76,80,123,169,195-196,224,232,802-805
+js/src/utils/addressing.ts
+  s_14ccaf81e1d75f::t_fdc86d729120e6 1-6
+  s_14ccaf81e1d75f::t_59e568da95d0f4 14,50,85,89,95,106
+python/langsmith/address.py
+  s_14ccaf81e1d75f::t_e41d5eb74f8990 8-12,20,27,44,46,48,59,93,133,155,184,213,225-226,232,234,238,241-242
+python/langsmith/run_trees.py
+  s_14ccaf81e1d75f::t_e41d5eb74f8990 296-298
+  s_14ccaf81e1d75f::t_3b3ad4062bf78c 25,75,109,259,875,949,1403,1420,1522,1525
+js/src/tests/address.test.ts
+  s_14ccaf81e1d75f::t_af85a6fd1453fd 267
+  s_14ccaf81e1d75f::t_fdc86d729120e6 100-102,109,111,117-119,122,125,127,141,155,158-159,167,170,172,176-177,180,184,191-192,196,250,253,261-266,268-269,271-272,274,276,284,289-290,293,295,298,304,309,328,338,347,377,393-395,809
+  s_14ccaf81e1d75f::t_05e4f266fce9c1 14-16,31,33-34,92,532,540,569,583,614,634,642,723,742,749,765,802-808,810-811
+js/src/address.ts
+  s_14ccaf81e1d75f::t_7b55ed7ebfa167 5-7,12,14,54,72,75,128,133,141,151,166,190,201,203,205,209,217,223
+js/src/client.ts
+  s_14ccaf81e1d75f::t_1b4943fbb05b25 90,545,617,3287,5577
+js/src/index.ts
+  s_14ccaf81e1d75f::t_62c66077092c97 20-22
+js/src/run_trees.ts
+  s_14ccaf81e1d75f::t_9b8c1465a59558 36,93,173,198,200,229,235,250,326,712,726
+js/src/schemas.ts
+  s_14ccaf81e1d75f::t_db9dadfd38fa68 1,222,242
+python/langsmith/__init__.py
+  s_14ccaf81e1d75f::t_b962a664c8b50f 24-29,134,270-272
+python/langsmith/_internal/_addressing.py
+  s_14ccaf81e1d75f::t_5717d5f66c88b1 9,24,41,46-47,50,56,84,88,109,134,166,208,244,255
+python/langsmith/_internal/_context.py
+  s_14ccaf81e1d75f::t_174fffdab7e6f8 8,16,45
+python/langsmith/async_client.py
+  s_14ccaf81e1d75f::t_b22dbf8d689ddf 53,1185
+python/langsmith/client.py
+  s_14ccaf81e1d75f::t_612c8cc32dd5e1 135,2594-2595,8319,8392
+python/langsmith/run_helpers.py
+  s_14ccaf81e1d75f::t_9a3d33978258da 53,177,196,288,332-333,405,451,1059,1123,1187,1379,1381,1403,1572,1721,1783
+python/langsmith/schemas.py
+  s_14ccaf81e1d75f::t_7ee2be51363054 37,567-568,698,701
+python/tests/unit_tests/test_run_trees.py
+  s_14ccaf81e1d75f::t_b416aa8f1b7244 20,903
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a41c7fe9410f9ec9adf99f70116084783adba0c1",
+  "prompts": {},
+  "sessions": {
+    "s_14ccaf81e1d75f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "600349e5-6acd-4fdb-ab6f-6919cf185e35",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
