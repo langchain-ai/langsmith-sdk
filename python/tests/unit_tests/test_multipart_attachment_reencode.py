@@ -208,7 +208,7 @@ def test_every_retry_keeps_the_file_attachment(
     # More than one send proves urllib3 resent the body itself, the layer our
     # single app attempt cannot rewind for.
     assert len(sink.received) > 1, sink.received
-    _assert_all_intact(sink.received, "app + transport retries")
+    _assert_all_intact(sink.received, "transport retries")
 
 
 def test_every_write_endpoint_gets_the_file_attachment(

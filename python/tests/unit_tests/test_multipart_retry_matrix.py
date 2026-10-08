@@ -11,7 +11,7 @@ The ``for idx in range(1, attempts + 1)`` loop in ``_send_multipart_req`` runs
 once by default (``attempts=1``). It still fans out over ``_write_api_urls``,
 treats 409 as success and dumps the failed trace, but never retries on its own.
 
-A ``MagicMock`` session cannot see layer 1 at all, so these tests drive a real
+A ``MagicMock`` session cannot see urllib3 at all, so these tests drive a real
 local HTTP server through the real adapter and count sockets hit.
 """
 
@@ -156,7 +156,7 @@ RETRY_MATRIX = [
     (200, None, 1, "none"),
     # 409 is treated as a duplicate/no-op and breaks immediately.
     (409, None, 1, "none"),
-    # In status_forcelist -> urllib3 retries 3x, app loop then gives up.
+    # In status_forcelist -> urllib3 retries 3x beneath the single app attempt.
     (500, None, 4, "urllib3"),
     (502, None, 4, "urllib3"),
     (503, None, 4, "urllib3"),
@@ -268,14 +268,12 @@ PREPARE_MULTIPART_DATA_RETRY_MATRIX = [
 def test_prepare_multipart_data_retry_counts_streamed_body(
     endpoint, no_sleep, status, retry_after, expected_requests, retried_by
 ):
-    """Same streamed-body bug as ``_send_multipart_req``, but no app-level
-    retry loop to paper over a failed rewind -- this call path (behind
+    """Same streamed-body bug as ``_send_multipart_req``: this call path (behind
     ``upload_examples_multipart`` / ``update_examples_multipart``) relies
     entirely on urllib3 being able to resend the body.
 
-    Every row here is a status that ultimately fails (there's no app loop to
-    exhaust first), so the call is always expected to raise once urllib3
-    gives up retrying.
+    Every row here is a status that ultimately fails, so the call is always
+    expected to raise once urllib3 gives up retrying.
     """
     endpoint.status = status
     endpoint.retry_after = retry_after
@@ -435,7 +433,7 @@ def test_warning_message_when_retries_exhausted(endpoint, no_sleep, caplog):
 
 
 def test_warning_message_when_not_retryable(endpoint, no_sleep, caplog):
-    """Exact message for a failure outside the app loop's except list (429).
+    """Exact message for a failure outside the app attempt's except list (429).
 
     Note this path formats the exception differently from the exhausted-retry
     path above: it goes through ``traceback.format_exception_only``, so the
