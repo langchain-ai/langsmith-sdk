@@ -116,6 +116,18 @@ export {
   type SandboxListUsageCostsResponsesItemsCursorGetPagination,
 } from './sandboxes/sandboxes.js';
 export {
+  Sessions,
+  type CustomChartsSection,
+  type CustomChartsSectionRequest,
+  type RunStatsGroupBy,
+  type SessionSortableColumns,
+  type TimedeltaInput,
+  type TracerSession,
+  type TracerSessionWithoutVirtualFields,
+  type SessionResolveResponse,
+  type SessionResolveParams,
+} from './sessions.js';
+export {
   Threads,
   type Thread,
   type ThreadStats,
