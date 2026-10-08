@@ -13,6 +13,6 @@ def handle_order(order_id: str) -> dict:
     return {"order_id": order_id, "status": "charged"}
 
 
-with ls.tracing_context(address=ls.Agent("checkout", "staging")):
+with ls.tracing_context(address=ls.AgentAddress("checkout", "staging")):
     handle_order("A-1")
 client.flush()

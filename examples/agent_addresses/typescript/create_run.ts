@@ -4,10 +4,10 @@
 
 import { randomUUID } from "node:crypto";
 
-import { Agent, Client } from "langsmith";
+import { AgentAddress, Client } from "langsmith";
 
 const client = new Client();
-const agent = new Agent("checkout", "production");
+const agent = new AgentAddress("checkout", "production");
 const id = randomUUID();
 
 await client.createRun({

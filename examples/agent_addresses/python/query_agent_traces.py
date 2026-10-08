@@ -9,7 +9,7 @@ import asyncio
 import langsmith as ls
 
 client = ls.Client()
-agent = ls.Agent("checkout", "production")
+agent = ls.AgentAddress("checkout", "production")
 
 
 async def main() -> None:

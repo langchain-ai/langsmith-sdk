@@ -6,7 +6,7 @@ Needs LANGSMITH_API_KEY and LANGSMITH_TRACING=true. Run it with `python configur
 import langsmith as ls
 
 client = ls.Client()
-ls.configure(client=client, address=ls.Agent("checkout", "production"))
+ls.configure(client=client, address=ls.AgentAddress("checkout", "production"))
 
 
 @ls.traceable

@@ -12,7 +12,7 @@ run = ls.RunTree(
     run_type="chain",
     inputs={"order_id": "A-1"},
     client=client,
-    address=ls.Agent("checkout", "production"),
+    address=ls.AgentAddress("checkout", "production"),
 )
 run.post()
 run.end(outputs={"status": "charged"})

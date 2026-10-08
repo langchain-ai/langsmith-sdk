@@ -8,7 +8,7 @@ import langsmith as ls
 client = ls.Client()
 
 
-@ls.traceable(client=client, address=ls.Agent("checkout", "production"))
+@ls.traceable(client=client, address=ls.AgentAddress("checkout", "production"))
 def handle_order(order_id: str) -> dict:
     return {"order_id": order_id, "status": "charged"}
 

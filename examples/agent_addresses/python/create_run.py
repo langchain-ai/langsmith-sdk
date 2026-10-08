@@ -9,7 +9,7 @@ import uuid
 import langsmith as ls
 
 client = ls.Client()
-agent = ls.Agent("checkout", "production")
+agent = ls.AgentAddress("checkout", "production")
 run_id = uuid.uuid4()
 
 client.create_run(

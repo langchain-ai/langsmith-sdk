@@ -2,7 +2,7 @@
 //
 // Needs LANGSMITH_API_KEY and LANGSMITH_TRACING=true.
 
-import { Agent, Client, RunTree } from "langsmith";
+import { AgentAddress, Client, RunTree } from "langsmith";
 
 const client = new Client();
 
@@ -11,7 +11,7 @@ const run = new RunTree({
   run_type: "chain",
   inputs: { orderId: "A-1" },
   client,
-  address: new Agent("checkout", "production"),
+  address: new AgentAddress("checkout", "production"),
 });
 await run.postRun();
 await run.end({ status: "charged" });
