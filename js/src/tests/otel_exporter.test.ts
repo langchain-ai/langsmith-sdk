@@ -7,9 +7,7 @@ import {
   jest,
   test,
 } from "@jest/globals";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
-import { createServer } from "node:http";
+import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { AgentAddress } from "../address.js";
 import { LangSmithOTLPTraceExporter } from "../experimental/otel/exporter.js";
@@ -145,74 +143,81 @@ describe("agent addressing", () => {
     ]) {
       delete process.env[name];
     }
-    jest
-      .spyOn(OTLPTraceExporter.prototype, "export")
-      .mockImplementation((_spans, resultCallback) =>
-        resultCallback({ code: 0 }),
-      );
   });
 
-  async function exportSpan(
-    exporter: LangSmithOTLPTraceExporter,
-    attributes: Record<string, string> = {},
-  ): Promise<Record<string, unknown>> {
-    const span = { attributes: { ...attributes } } as unknown as ReadableSpan;
-    await new Promise((resolve) => exporter.export([span], resolve));
-    return span.attributes;
+  async function exportedHeaders(
+    config?: ConstructorParameters<typeof LangSmithOTLPTraceExporter>[0],
+  ): Promise<IncomingHttpHeaders> {
+    let headers: IncomingHttpHeaders = {};
+    const server = createServer((request, response) => {
+      headers = request.headers;
+      request.resume();
+      response.writeHead(200, { "Content-Type": "application/x-protobuf" });
+      response.end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    process.env.LANGSMITH_ENDPOINT = `http://127.0.0.1:${
+      (server.address() as AddressInfo).port
+    }`;
+    const exporter = new LangSmithOTLPTraceExporter(config);
+    try {
+      await new Promise((resolve) => exporter.export([], resolve));
+      return headers;
+    } finally {
+      await exporter.shutdown();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   }
 
-  test("sends spans to the configured agent environment", async () => {
-    const exporter = new LangSmithOTLPTraceExporter({
+  test("sends the configured agent environment as headers", async () => {
+    const headers = await exportedHeaders({
       address: new AgentAddress("support-agent", "Staging"),
     });
 
-    expect(await exportSpan(exporter)).toEqual({
-      "langsmith.trace.agent_id": "support-agent",
-      "langsmith.trace.agent_environment": "staging",
-    });
+    expect(headers["langsmith-agent-id"]).toBe("support-agent");
+    expect(headers["langsmith-agent-environment"]).toBe("staging");
   });
 
   test("takes the env agent when nothing is named", async () => {
     process.env.LANGSMITH_AGENT_ID = "support-agent";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
-    const exporter = new LangSmithOTLPTraceExporter();
 
-    expect(await exportSpan(exporter)).toEqual({
-      "langsmith.trace.agent_id": "support-agent",
-      "langsmith.trace.agent_environment": "production",
-    });
+    const headers = await exportedHeaders();
+
+    expect(headers["langsmith-agent-id"]).toBe("support-agent");
+    expect(headers["langsmith-agent-environment"]).toBe("production");
   });
 
-  test("keeps a span's own project or agent", async () => {
-    const exporter = new LangSmithOTLPTraceExporter({
+  test("keeps explicit headers beside the agent headers", async () => {
+    const headers = await exportedHeaders({
       address: new AgentAddress("support-agent", "staging"),
+      headers: { "x-api-key": "explicit-key" },
     });
 
-    expect(
-      await exportSpan(exporter, { "langsmith.trace.session_name": "mine" }),
-    ).toEqual({ "langsmith.trace.session_name": "mine" });
-    expect(
-      await exportSpan(exporter, { "langsmith.trace.agent_id": "other" }),
-    ).toEqual({ "langsmith.trace.agent_id": "other" });
+    expect(headers["x-api-key"]).toBe("explicit-key");
+    expect(headers["langsmith-agent-id"]).toBe("support-agent");
   });
 
   test("an explicit project beats the env agent", async () => {
     process.env.LANGSMITH_AGENT_ID = "support-agent";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
-    const exporter = new LangSmithOTLPTraceExporter({ projectName: "mine" });
 
-    expect(await exportSpan(exporter)).toEqual({
-      "langsmith.trace.session_name": "mine",
-    });
+    const headers = await exportedHeaders({ projectName: "mine" });
+
+    expect(headers["langsmith-agent-id"]).toBeUndefined();
+    expect(headers["langsmith-agent-environment"]).toBeUndefined();
   });
 
-  test("still sends the env project", async () => {
+  test("sends no agent headers for a project", async () => {
     process.env.LANGSMITH_PROJECT = "from-env";
-    const exporter = new LangSmithOTLPTraceExporter();
 
-    expect(await exportSpan(exporter)).toEqual({
-      "langsmith.trace.session_name": "from-env",
-    });
+    const headers = await exportedHeaders();
+
+    expect(headers["langsmith-agent-id"]).toBeUndefined();
   });
 
   test("rejects a project and an address", () => {

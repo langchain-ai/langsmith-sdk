@@ -616,42 +616,6 @@ def test_io_attributes_are_str_not_bytes():
     assert json.loads(attrs["gen_ai.completion"]) == outputs
 
 
-def _span_attributes(run_info: dict) -> dict:
-    span = MagicMock()
-    op = SimpleNamespace(id=uuid.uuid4(), inputs=None, outputs=None, operation="post")
-    _make_exporter()._set_span_attributes(span, run_info, op)
-    return {call.args[0]: call.args[1] for call in span.set_attribute.call_args_list}
-
-
-def test_addressed_run_sets_agent_attributes():
-    attributes = _span_attributes(
-        {
-            "run_type": "chain",
-            "address": "lrn:agents/support-agent/environments/staging",
-        }
-    )
-
-    assert attributes["langsmith.trace.agent_id"] == "support-agent"
-    assert attributes["langsmith.trace.agent_environment"] == "staging"
-    assert "langsmith.trace.session_name" not in attributes
-
-
-@pytest.mark.parametrize(
-    "run_info",
-    [
-        {"run_type": "chain", "session_name": "my-project"},
-        {"run_type": "chain", "address": "lrn:agents/Not_Valid/environments/staging"},
-        {"run_type": "chain", "address": 42},
-    ],
-    ids=["project", "invalid-id", "not-a-string"],
-)
-def test_run_without_a_valid_address_sets_no_agent_attributes(run_info):
-    attributes = _span_attributes(run_info)
-
-    assert "langsmith.trace.agent_id" not in attributes
-    assert "langsmith.trace.agent_environment" not in attributes
-
-
 _AGENT_ENV = (
     "LANGSMITH_AGENT_ID",
     "LANGSMITH_AGENT_ENVIRONMENT",

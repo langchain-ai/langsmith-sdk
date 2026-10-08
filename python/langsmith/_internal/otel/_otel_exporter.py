@@ -29,7 +29,6 @@ from langsmith._internal._otel_utils import (
     get_otel_trace_id_from_uuid,
 )
 from langsmith._internal.otel._attribute_utils import otel_safe_attribute_value
-from langsmith.address import AgentAddress
 
 
 def _import_otel_exporter():
@@ -101,8 +100,6 @@ GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
 # LangSmith custom attributes
 LANGSMITH_SESSION_ID = "langsmith.trace.session_id"
 LANGSMITH_SESSION_NAME = "langsmith.trace.session_name"
-LANGSMITH_AGENT_ID = "langsmith.trace.agent_id"
-LANGSMITH_AGENT_ENVIRONMENT = "langsmith.trace.agent_environment"
 LANGSMITH_RUN_TYPE = "langsmith.span.kind"
 LANGSMITH_NAME = "langsmith.trace.name"
 LANGSMITH_METADATA = "langsmith.metadata"
@@ -535,24 +532,6 @@ class OTELExporter:
 
         return None
 
-    def _set_agent_attributes(self, span: Span, run_info: dict) -> None:
-        """Address the span to an agent environment, if its run is addressed.
-
-        A run's `address` is its LRN string by the time it is queued. It is
-        wire data, so one that does not parse is skipped rather than failing
-        the export of the batch it is in.
-        """
-        address = run_info.get("address")
-        if address is None:
-            return
-        try:
-            agent = AgentAddress._from_lrn(address)
-        except ls_utils.LangSmithUserError:
-            logger.warning("Skipping the span's Agent address: it is not valid.")
-            return
-        span.set_attribute(LANGSMITH_AGENT_ID, agent.id)
-        span.set_attribute(LANGSMITH_AGENT_ENVIRONMENT, agent.environment)
-
     def _set_span_attributes(
         self,
         span: Span,
@@ -579,8 +558,6 @@ class OTELExporter:
             span.set_attribute(
                 LANGSMITH_SESSION_NAME, str(run_info.get("session_name"))
             )
-
-        self._set_agent_attributes(span, run_info)
 
         # Set GenAI attributes according to OTEL semantic conventions
         # Set gen_ai.operation.name

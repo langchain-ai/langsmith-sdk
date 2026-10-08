@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AgentAddress } from "../address.js";
 import { LangSmithToOTELTranslator } from "../experimental/otel/translator.js";
 import * as otelSingleton from "../singletons/otel.js";
 
@@ -492,49 +491,5 @@ describe("tool attributes", () => {
     expect(attributesForRun({ extra })).not.toHaveProperty(
       "gen_ai.tool.definitions",
     );
-  });
-});
-
-describe("exportBatch — agent addressing", () => {
-  function agentAttributes(address: unknown) {
-    const span = makeSpanMock();
-    const translator = makeTranslator(span);
-    translator.exportBatch(
-      [
-        {
-          operation: "post",
-          id: "run-1",
-          trace_id: "trace-1",
-          run: makeRunCreate({ address }),
-        },
-      ],
-      new Map([["run-1", DUMMY_CONTEXT]]),
-    );
-    return {
-      id: span._attributes["langsmith.trace.agent_id"],
-      environment: span._attributes["langsmith.trace.agent_environment"],
-    };
-  }
-
-  it.each([
-    ["an LRN string", "lrn:agents/support-agent/environments/staging"],
-    ["an AgentAddress", new AgentAddress("support-agent", "staging")],
-  ])("sets the agent attributes from %s", (_name, address) => {
-    expect(agentAttributes(address)).toEqual({
-      id: "support-agent",
-      environment: "staging",
-    });
-  });
-
-  it.each([
-    ["an invalid id", "lrn:agents/Not_Valid/environments/staging"],
-    ["a non-agent LRN", "lrn:projects/x"],
-    ["a non-string", 42],
-    ["nothing", undefined],
-  ])("sets no agent attributes for %s", (_name, address) => {
-    expect(agentAttributes(address)).toEqual({
-      id: undefined,
-      environment: undefined,
-    });
   });
 });

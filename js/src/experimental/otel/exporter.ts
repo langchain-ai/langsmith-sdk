@@ -104,7 +104,6 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
   ) => ReadableSpan | Promise<ReadableSpan>;
 
   private projectName?: string;
-  private address?: AgentAddress;
 
   constructor(config?: LangSmithOTLPTraceExporterConfig) {
     const defaultLsEndpoint =
@@ -148,27 +147,36 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       headers = parseHeadersString(defaultHeaderString);
     }
 
-    super({
-      url: defaultUrl,
-      headers,
-      ...config,
-    });
-
-    this.transformExportedSpan = config?.transformExportedSpan;
     const address = ensureAgent(config?.address);
     rejectConflicting(config?.projectName, address);
-    if (config?.projectName !== undefined || address !== undefined) {
-      this.projectName = config?.projectName;
-      this.address = address;
-    } else {
+    let projectName = config?.projectName;
+    let agent = address;
+    if (projectName === undefined && agent === undefined) {
       // Like a run, the env decides when nothing is named here: an address
       // when `LANGSMITH_AGENT_*` names one, else the project.
       const envProject = getLangSmithEnvironmentVariable("PROJECT");
       const envAddress = AgentAddress.fromEnv();
       rejectConflicting(envProject, envAddress);
-      this.projectName = envProject;
-      this.address = envAddress;
+      projectName = envProject;
+      agent = envAddress;
     }
+    if (agent !== undefined) {
+      // The headers address every span the exporter sends.
+      headers = {
+        ...headers,
+        "Langsmith-Agent-Id": agent.id,
+        "Langsmith-Agent-Environment": agent.environment,
+      };
+    }
+
+    super({
+      url: defaultUrl,
+      ...config,
+      headers,
+    });
+
+    this.transformExportedSpan = config?.transformExportedSpan;
+    this.projectName = projectName;
   }
 
   export(
@@ -280,18 +288,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
             span.attributes[`${constants.LANGSMITH_METADATA}.ls_run_name`];
           delete span.attributes[`${constants.LANGSMITH_METADATA}.ls_run_name`];
         }
-        if (this.address !== undefined) {
-          // A span that names its own project or agent keeps it.
-          if (
-            span.attributes[constants.LANGSMITH_SESSION_NAME] === undefined &&
-            span.attributes[constants.LANGSMITH_SESSION_ID] === undefined &&
-            span.attributes[constants.LANGSMITH_AGENT_ID] === undefined
-          ) {
-            span.attributes[constants.LANGSMITH_AGENT_ID] = this.address.id;
-            span.attributes[constants.LANGSMITH_AGENT_ENVIRONMENT] =
-              this.address.environment;
-          }
-        } else if (
+        if (
           span.attributes[constants.LANGSMITH_SESSION_NAME] === undefined &&
           this.projectName !== undefined
         ) {
