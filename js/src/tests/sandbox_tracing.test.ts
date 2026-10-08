@@ -217,6 +217,39 @@ describe("sandbox tracing metadata", () => {
     },
   );
 
+  it("annotates each resumed command stream read in its caller's context", async () => {
+    const { client } = makeClient();
+    const sandbox = new Sandbox(data, client);
+    const makeIterator = () => {
+      const stream = (async function* (): AsyncIterableIterator<WsMessage> {
+        yield { type: "stdout", data: "a", offset: 0 };
+        yield { type: "stdout", data: "b", offset: 1 };
+        yield { type: "exit", exit_code: 0 };
+      })();
+      return new CommandHandle(stream, null, sandbox, {
+        commandId: "command-id",
+      })[Symbol.asyncIterator]();
+    };
+
+    // First chunk read outside tracing, the next inside a traced run.
+    const later = makeIterator();
+    await later.next();
+    const laterRun = makeRun();
+    await withRunTree(laterRun, () => later.next());
+    expect(laterRun.metadata.sandbox_id).toBe(sandboxId);
+
+    // Using another sandbox mid-stream, then resuming, records this sandbox.
+    const interleaved = makeIterator();
+    const run = makeRun();
+    await withRunTree(run, async () => {
+      await interleaved.next();
+      addSandboxMetadata(otherId);
+      expect(run.metadata.sandbox_id).toBe(otherId);
+      await interleaved.next();
+    });
+    expect(run.metadata.sandbox_id).toBe(sandboxId);
+  });
+
   it("annotates service requests when the URL was created outside the active run", async () => {
     const { client, request } = makeClient();
     await client.getSandbox(data.name);

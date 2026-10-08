@@ -1041,6 +1041,8 @@ class CommandHandle:
                         )
                         if self._on_stderr is not None:
                             self._on_stderr(chunk.data)
+                    # Each resumption runs in the consumer's current context.
+                    add_sandbox_metadata(self._sandbox.id)
                     yield chunk
                 return  # Stream ended normally (exit message received)
 
@@ -1335,6 +1337,8 @@ class AsyncCommandHandle:
                         )
                         if self._on_stderr is not None:
                             self._on_stderr(chunk.data)
+                    # Each resumption runs in the consumer's current context.
+                    add_sandbox_metadata(self._sandbox.id)
                     yield chunk
                 return  # Stream ended normally
 

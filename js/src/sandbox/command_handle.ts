@@ -247,6 +247,8 @@ export class CommandHandle {
               chunk.offset + new TextEncoder().encode(chunk.data).length;
             this._onStderr?.(chunk.data);
           }
+          // Each resumption runs in the consumer's current context.
+          addSandboxMetadata(this._sandbox.id);
           yield chunk;
         }
         return; // Stream ended normally (exit message received)

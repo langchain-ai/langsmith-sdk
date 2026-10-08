@@ -300,3 +300,52 @@ async def test_async_context_isolation():
         "first",
         "second",
     ]
+
+
+def _two_chunk_messages():
+    return [
+        {"type": "stdout", "data": "a", "offset": 0},
+        {"type": "stdout", "data": "b", "offset": 1},
+        {"type": "exit", "exit_code": 0},
+    ]
+
+
+async def _aiter(messages):
+    for message in messages:
+        yield message
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+async def test_command_stream_annotates_each_resumption(is_async):
+    sandbox = MagicMock(id=SANDBOX_ID)
+    other_id = "22222222-2222-4222-8222-222222222222"
+
+    def make_handle():
+        messages = _two_chunk_messages()
+        if is_async:
+            return AsyncCommandHandle(
+                _aiter(messages), None, sandbox, command_id="command"
+            )
+        return CommandHandle(iter(messages), None, sandbox, command_id="command")
+
+    async def next_chunk(iterator):
+        return await iterator.__anext__() if is_async else next(iterator)
+
+    def iterate(handle):
+        return handle.__aiter__() if is_async else iter(handle)
+
+    # First chunk consumed outside tracing, the next inside a traced run.
+    chunks = iterate(make_handle())
+    await next_chunk(chunks)
+    with tracing_context(enabled="local"), trace("later") as run:
+        await next_chunk(chunks)
+        assert run.metadata["sandbox_id"] == SANDBOX_ID
+
+    # Using another sandbox mid-stream, then resuming, records this sandbox.
+    chunks = iterate(make_handle())
+    with tracing_context(enabled="local"), trace("interleaved") as run:
+        await next_chunk(chunks)
+        add_sandbox_metadata(other_id)
+        assert run.metadata["sandbox_id"] == other_id
+        await next_chunk(chunks)
+        assert run.metadata["sandbox_id"] == SANDBOX_ID
