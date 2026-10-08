@@ -64,7 +64,7 @@ export {
 } from "./_openapi_client/core/error.js";
 
 // Update using pnpm bump-version
-export const __version__ = "0.10.8";
+export const __version__ = "0.10.9";
 
 // Metadata key to hide a traced run from LangSmith's Messages View.
 export const LS_MESSAGE_VIEW_EXCLUDE = "ls_message_view_exclude" as const;
