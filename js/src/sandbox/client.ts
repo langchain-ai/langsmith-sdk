@@ -3,6 +3,7 @@
  */
 
 import { validateAccessDelegation } from "./access_delegation.js";
+import { getOpenAPIBaseUrl } from "../utils/api_url.js";
 import {
   ServiceLoginUrl,
   ServiceUrl,
@@ -81,7 +82,7 @@ function getDefaultApiEndpoint(): string {
   const base =
     getLangSmithEnvironmentVariable("ENDPOINT") ??
     "https://api.smith.langchain.com";
-  return `${base.replace(/\/$/, "")}/v2/sandboxes`;
+  return `${getOpenAPIBaseUrl(base)}/api/v2/sandboxes`;
 }
 
 /**
@@ -395,7 +396,7 @@ export class SandboxClient {
   private _apiRoot(): string {
     const suffix = "/v2/sandboxes";
     return this._baseUrl.endsWith(suffix)
-      ? this._baseUrl.slice(0, -suffix.length)
+      ? getOpenAPIBaseUrl(this._baseUrl.slice(0, -suffix.length))
       : this._baseUrl;
   }
 
