@@ -21,8 +21,6 @@ import contextvars
 import copy
 import datetime
 import functools
-import importlib
-import importlib.metadata
 import io
 import itertools
 import json
@@ -672,12 +670,10 @@ RUN_TYPE_T = Literal[
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
-    If `urllib3` version is `1.26` or greater, retry on all methods.
-
     Returns:
         The default retry configuration.
     """
-    retry_params = dict(
+    return ls_utils.LangSmithRetry(
         total=3,
         status_forcelist=[429, 500, 502, 503, 504, 408, 425],
         backoff_factor=0.5,
@@ -685,19 +681,9 @@ def _default_retry_config() -> Retry:
         raise_on_redirect=False,
         raise_on_status=False,
         respect_retry_after_header=True,
+        # Retry on all methods, POST included.
+        allowed_methods=None,
     )
-
-    # the `allowed_methods` keyword is not available in urllib3 < 1.26
-
-    # check to see if urllib3 version is 1.26 or greater
-    urllib3_version = packaging.version.parse(importlib.metadata.version("urllib3"))
-    use_allowed_methods = urllib3_version >= packaging.version.parse("1.26")
-
-    if use_allowed_methods:
-        # Retry on all methods
-        retry_params["allowed_methods"] = None
-
-    return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
 def close_session(session: requests.Session) -> None:
