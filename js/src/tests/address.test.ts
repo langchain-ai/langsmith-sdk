@@ -89,7 +89,7 @@ function headersWith(baggage: string) {
 
 describe("address", () => {
   test("is exported from the package", () => {
-    expect(langsmith.address.Agent).toBe(Agent);
+    expect(langsmith.Agent).toBe(Agent);
   });
 
   test("an agent is an immutable address", () => {
@@ -160,7 +160,7 @@ describe("Experiment and Evaluator", () => {
     expect(Object.isFrozen(experiment)).toBe(true);
     const address: Address = experiment;
     expect(address).toBe(experiment);
-    expect(langsmith.address.Experiment).toBe(Experiment);
+    expect(langsmith.Experiment).toBe(Experiment);
   });
 
   test("an Experiment rejects a non-UUID", () => {
@@ -173,7 +173,7 @@ describe("Experiment and Evaluator", () => {
     const evaluator = new Evaluator();
     expect(evaluator.toApiAddress()).toEqual({ kind: "EVALUATOR" });
     expect(Object.isFrozen(evaluator)).toBe(true);
-    expect(langsmith.address.Evaluator).toBe(Evaluator);
+    expect(langsmith.Evaluator).toBe(Evaluator);
   });
 });
 
@@ -337,7 +337,7 @@ describe("RunTree", () => {
   test("rejects a string, even a valid LRN", () => {
     for (const bad of [SUPPORT_STR, "support"]) {
       expect(() => new RunTree({ name: "r", address: jsCaller(bad) })).toThrow(
-        /address must be an Agent such as `new address.Agent\(id, environment\)`/,
+        /address must be an Agent such as `new Agent\(id, environment\)`/,
       );
     }
   });
@@ -788,26 +788,6 @@ describe("address types", () => {
       // @ts-expect-error updateRun takes an Address
       client.updateRun("r", { address: dynamic });
     });
-  });
-
-  test("the address names are only in the address namespace", () => {
-    for (const name of [
-      "Agent",
-      "Experiment",
-      "Evaluator",
-      "EnvAddressError",
-    ]) {
-      expect(name in langsmith).toBe(false);
-    }
-    expect(Object.keys(langsmith.address).sort()).toEqual([
-      "Agent",
-      "EnvAddressError",
-      "Evaluator",
-      "Experiment",
-    ]);
-    expect(new langsmith.address.Agent("a", "local")).toEqual(
-      new Agent("a", "LOCAL"),
-    );
   });
 
   test("Lrn is not exported from the package", () => {

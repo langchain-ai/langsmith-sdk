@@ -9,9 +9,9 @@
  *
  * @example
  * ```ts
- * import { address, traceable } from "langsmith";
+ * import { Agent, traceable } from "langsmith";
  *
- * const support = new address.Agent("customer-support", "production");
+ * const support = new Agent("customer-support", "production");
  * const handle = traceable(fn, { address: support });
  * ```
  */
@@ -69,7 +69,7 @@ export class EnvAddressError extends Error {
  *
  * @example
  * ```ts
- * new address.Agent("customer-support", "production");
+ * new Agent("customer-support", "production");
  * ```
  */
 export class Agent implements Address {
@@ -220,7 +220,7 @@ export function ensureAgent(value: unknown): Agent | undefined {
     );
   }
   throw new Error(
-    "address must be an Agent such as `new address.Agent(id, environment)`, got " +
+    "address must be an Agent such as `new Agent(id, environment)`, got " +
       `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
   );
 }

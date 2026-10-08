@@ -293,9 +293,8 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (beta) An `Agent`, such as `ls.address.Agent(id, environment)`, to
-            send traces to instead of a project. Mutually exclusive with
-            `project_name`.
+        address: (beta) An `Agent`, such as `ls.Agent(id, environment)`, to send traces
+            to instead of a project. Mutually exclusive with `project_name`.
 
             Pass `None` to explicitly clear it.
         tags: A list of tags to be applied to all traced runs.

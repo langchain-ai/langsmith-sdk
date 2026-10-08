@@ -21,8 +21,8 @@ from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree, _Baggage
 from langsmith.schemas import FeedbackCreate
 
-SUPPORT = ls.address.Agent("support", "production")
-STAGING = ls.address.Agent("support", "staging")
+SUPPORT = ls.Agent("support", "production")
+STAGING = ls.Agent("support", "staging")
 SUPPORT_LRN = "lrn:agents/support/environments/production"
 STAGING_LRN = "lrn:agents/support/environments/staging"
 UNTRACED = "LangSmith is not tracing this call"
@@ -73,11 +73,11 @@ def _root() -> tuple:
 
 
 def _agent(agent_id: str, environment: str) -> str:
-    return ls.address.Agent(agent_id, environment)._lrn()
+    return ls.Agent(agent_id, environment)._lrn()
 
 
 def _from_env() -> Optional[str]:
-    agent = ls.address.Agent.from_env()
+    agent = ls.Agent.from_env()
     return None if agent is None else agent._lrn()
 
 
@@ -120,7 +120,7 @@ class TestConstructors:
     )
     def test_environments_are_lowercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
-            assert ls.address.Agent("a", given).environment == environment
+            assert ls.Agent("a", given).environment == environment
 
     def test_from_env_with_nothing_set(self) -> None:
         assert _from_env() is None
@@ -164,9 +164,9 @@ class TestConstructors:
         assert _from_env() is None
 
     def test_agent_is_an_address(self) -> None:
-        assert isinstance(SUPPORT, ls.address.Address)
-        assert not isinstance(SUPPORT_LRN, ls.address.Address)
-        assert ls.address.Agent(id="support", environment="PRODUCTION") == SUPPORT
+        assert isinstance(SUPPORT, ls.Address)
+        assert not isinstance(SUPPORT_LRN, ls.Address)
+        assert ls.Agent(id="support", environment="PRODUCTION") == SUPPORT
 
     def test_agent_renders_the_api_address(self) -> None:
         assert SUPPORT.to_api_address() == {
@@ -192,8 +192,8 @@ class TestConstructors:
             RunTree(name="r", address=value)
 
 
-EXPERIMENT = ls.address.Experiment("0190C3D4-0000-7000-8000-0000000000B1")
-EVALUATOR = ls.address.Evaluator()
+EXPERIMENT = ls.Experiment("0190C3D4-0000-7000-8000-0000000000B1")
+EVALUATOR = ls.Evaluator()
 
 
 class TestOtherAddresses:
@@ -221,11 +221,11 @@ class TestOtherAddresses:
     )
     def test_an_experiment_id_must_be_a_uuid(self, value: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="UUID"):
-            ls.address.Experiment(value)
+            ls.Experiment(value)
 
     def test_they_are_addresses(self) -> None:
         for address in (SUPPORT, EXPERIMENT, EVALUATOR):
-            assert isinstance(address, ls.address.Address)
+            assert isinstance(address, ls.Address)
 
     @pytest.mark.parametrize("address", [EXPERIMENT, EVALUATOR], ids=["exp", "eval"])
     def test_only_an_agent_can_receive_traces(self, address: Any) -> None:
@@ -708,7 +708,7 @@ class TestWire:
         assert payload["address"] == SUPPORT_LRN
 
     def test_a_payload_address_object_is_rendered_once(self) -> None:
-        payload = {"id": "x", "address": ls.address.Agent("support", "Production")}
+        payload = {"id": "x", "address": ls.Agent("support", "Production")}
         _addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT_LRN
 
@@ -795,11 +795,3 @@ class TestWire:
     def test_no_run_url_for_an_addressed_run(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="run URL"):
             RunTree(name="r", address=SUPPORT).get_url()
-
-
-def test_the_address_names_are_only_in_the_namespace() -> None:
-    """The address names are not top-level, where they would read as other models."""
-    for name in ("Agent", "Experiment", "Evaluator", "Address"):
-        assert not hasattr(ls, name), name
-        assert name in ls.address.__all__
-    assert ls.address.Agent("a", "local") == ls.address.Agent("a", "LOCAL")

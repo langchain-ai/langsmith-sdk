@@ -16,7 +16,15 @@ export type {
 
 export { RunTree, type RunTreeConfig, type WriteReplica } from "./run_trees.js";
 
-export * as address from "./address_public.js";
+export {
+  Agent,
+  Experiment,
+  Evaluator,
+  type Address,
+  type ApiAddress,
+  type Environment,
+  EnvAddressError,
+} from "./address.js";
 
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
