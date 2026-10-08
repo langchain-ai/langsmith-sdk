@@ -230,6 +230,11 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "replace": SECRET_PLACEHOLDER,
     },
     {"pattern": re.compile(r"ls__[A-Za-z0-9]{16,}"), "replace": SECRET_PLACEHOLDER},
+    # LangSmith self-hosted license keys
+    {
+        "pattern": re.compile(r"\blcl[_-][A-Za-z0-9_-]{20,}\b"),
+        "replace": SECRET_PLACEHOLDER,
+    },
     # GitHub personal access / app tokens
     {
         "pattern": re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),
@@ -304,7 +309,7 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
     #  - requires a 6+ char value so short non-secret values are left intact.
     {
         "pattern": re.compile(
-            r"""\b([A-Za-z0-9_.-]*(?:API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}""",
+            r"""\b([A-Za-z0-9_.-]*(?:API[_-]?KEY[_-]?SALT|LICENSE[_-]?KEY|API[_-]?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|AUTH[_-]?TOKEN|CLIENT[_-]?SECRET)(?![A-Za-z0-9])(?:[_.-][A-Za-z0-9]+)*["']?\s*[:=]\s*["']?)(?:(?:bearer|token|basic)\s+)?[^\s"'&;]{6,}""",
             re.IGNORECASE,
         ),
         "replace": rf"\g<1>{SECRET_PLACEHOLDER}",

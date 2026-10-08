@@ -209,6 +209,7 @@ SECRET_SAMPLES = {
     "openai_legacy": "sk-" + "a" * 48,
     "langsmith_lsv2": "lsv2_pt_" + "a" * 36 + "_" + "b" * 10,
     "langsmith_legacy": "ls__" + "a" * 24,
+    "langsmith_license": "lcl_" + "a" * 32,
     "github_pat": "ghp_" + "A" * 36,
     "github_fine_grained": "github_pat_" + "A" * 82,
     "gitlab": "glpat-" + "a" * 20,
@@ -288,6 +289,18 @@ def test_secret_anonymizer_structural_rules():
 
 
 @pytest.mark.parametrize(
+    "name",
+    ["langsmithLicenseKey", "langsmith_license_key", "apiKeySalt", "api_key_salt"],
+)
+def test_secret_anonymizer_redacts_license_keys_and_api_key_salts(name):
+    value = "fake_" + "A1b2C3d4" * 5
+    redact = create_secret_anonymizer()
+    assert redact({"tool_output": f"{name}: {value}"}) == {
+        "tool_output": f"{name}: {SECRET_PLACEHOLDER}"
+    }
+
+
+@pytest.mark.parametrize(
     "value",
     [
         "123e4567-e89b-12d3-a456-426614174000",  # UUID
@@ -298,6 +311,7 @@ def test_secret_anonymizer_structural_rules():
         'description="a reasonably long human description"',  # non-sensitive name
         'tokenizer: "cl100k_base"',  # "token" must not match mid-word
         "tokens_used: 123456",  # keyword as a prefix of a longer word
+        "apiKeySaltLength: reasonablevalue",  # keep non-secret key suffixes
     ],
 )
 def test_secret_anonymizer_precision_guards(value):
