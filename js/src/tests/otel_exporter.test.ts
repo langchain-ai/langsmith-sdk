@@ -1,7 +1,17 @@
 /* eslint-disable no-process-env */
-import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from "@jest/globals";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { AgentAddress } from "../address.js";
 import { LangSmithOTLPTraceExporter } from "../experimental/otel/exporter.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
 
@@ -122,4 +132,106 @@ test.each([
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
+});
+
+describe("agent addressing", () => {
+  beforeEach(() => {
+    for (const name of [
+      "LANGSMITH_PROJECT",
+      "LANGCHAIN_PROJECT",
+      "LANGCHAIN_SESSION",
+      "LANGSMITH_AGENT_ID",
+      "LANGSMITH_AGENT_ENVIRONMENT",
+    ]) {
+      delete process.env[name];
+    }
+    jest
+      .spyOn(OTLPTraceExporter.prototype, "export")
+      .mockImplementation((_spans, resultCallback) =>
+        resultCallback({ code: 0 }),
+      );
+  });
+
+  async function exportSpan(
+    exporter: LangSmithOTLPTraceExporter,
+    attributes: Record<string, string> = {},
+  ): Promise<Record<string, unknown>> {
+    const span = { attributes: { ...attributes } } as unknown as ReadableSpan;
+    await new Promise((resolve) => exporter.export([span], resolve));
+    return span.attributes;
+  }
+
+  test("sends spans to the configured agent environment", async () => {
+    const exporter = new LangSmithOTLPTraceExporter({
+      address: new AgentAddress("support-agent", "Staging"),
+    });
+
+    expect(await exportSpan(exporter)).toEqual({
+      "langsmith.trace.agent_id": "support-agent",
+      "langsmith.trace.agent_environment": "staging",
+    });
+  });
+
+  test("takes the env agent when nothing is named", async () => {
+    process.env.LANGSMITH_AGENT_ID = "support-agent";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+    const exporter = new LangSmithOTLPTraceExporter();
+
+    expect(await exportSpan(exporter)).toEqual({
+      "langsmith.trace.agent_id": "support-agent",
+      "langsmith.trace.agent_environment": "production",
+    });
+  });
+
+  test("keeps a span's own project or agent", async () => {
+    const exporter = new LangSmithOTLPTraceExporter({
+      address: new AgentAddress("support-agent", "staging"),
+    });
+
+    expect(
+      await exportSpan(exporter, { "langsmith.trace.session_name": "mine" }),
+    ).toEqual({ "langsmith.trace.session_name": "mine" });
+    expect(
+      await exportSpan(exporter, { "langsmith.trace.agent_id": "other" }),
+    ).toEqual({ "langsmith.trace.agent_id": "other" });
+  });
+
+  test("an explicit project beats the env agent", async () => {
+    process.env.LANGSMITH_AGENT_ID = "support-agent";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+    const exporter = new LangSmithOTLPTraceExporter({ projectName: "mine" });
+
+    expect(await exportSpan(exporter)).toEqual({
+      "langsmith.trace.session_name": "mine",
+    });
+  });
+
+  test("still sends the env project", async () => {
+    process.env.LANGSMITH_PROJECT = "from-env";
+    const exporter = new LangSmithOTLPTraceExporter();
+
+    expect(await exportSpan(exporter)).toEqual({
+      "langsmith.trace.session_name": "from-env",
+    });
+  });
+
+  test("rejects a project and an address", () => {
+    expect(
+      () =>
+        new LangSmithOTLPTraceExporter({
+          projectName: "mine",
+          address: new AgentAddress("support-agent", "staging"),
+        }),
+    ).toThrow(/project .* or to an address/);
+  });
+
+  test("rejects an env that names a project and an agent", () => {
+    process.env.LANGSMITH_PROJECT = "from-env";
+    process.env.LANGSMITH_AGENT_ID = "support-agent";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+
+    expect(() => new LangSmithOTLPTraceExporter()).toThrow(
+      /project .* or to an address/,
+    );
+  });
 });

@@ -12,6 +12,8 @@ if TYPE_CHECKING:
         TracerProvider = object  # type: ignore[assignment, misc]
 
 from langsmith import utils as ls_utils
+from langsmith._internal import _addressing
+from langsmith.address import AgentAddress, EnvAddressError
 
 
 def _import_otel_client():
@@ -55,6 +57,24 @@ def _warn_legacy_traces_endpoint() -> None:
         UserWarning,
         stacklevel=3,
     )
+
+
+def _destination_headers() -> dict[str, str]:
+    """Return the headers sending exports to the env's project or agent environment.
+
+    An env that names half an agent address, or an agent and a project, sends
+    neither: calls that name no destination in code are not traced for it, so
+    there is nothing to address.
+    """
+    try:
+        address = AgentAddress.from_env()
+    except EnvAddressError:
+        return {}
+    if address is not None:
+        if ls_utils.get_tracer_project(return_default_value=False):
+            return {}
+        return _addressing.otlp_destination_headers(None, address)
+    return _addressing.otlp_destination_headers(ls_utils.get_tracer_project(), None)
 
 
 def get_otlp_tracer_provider() -> "TracerProvider":
@@ -115,11 +135,7 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         }
     else:
         api_key = ls_utils.get_api_key(None) or ""
-        headers = {"x-api-key": api_key}
-
-        project = ls_utils.get_tracer_project()
-        if project:
-            headers["Langsmith-Project"] = project
+        headers = {"x-api-key": api_key, **_destination_headers()}
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "langsmith")
     resource = Resource(

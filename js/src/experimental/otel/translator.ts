@@ -1,6 +1,7 @@
 import type { OTELContext, OTELSpan } from "./types.js";
 import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import * as constants from "./constants.js";
+import { AgentAddress } from "../../address.js";
 import { getOTELTrace } from "../../singletons/otel.js";
 
 const WELL_KNOWN_OPERATION_NAMES: Record<string, string> = {
@@ -31,6 +32,25 @@ export type SerializedRunOperation<
   trace_id: string;
   run: T extends "post" ? RunCreate : RunUpdate;
 };
+
+/**
+ * The agent a run's `address` names. By the time a run is queued it is the
+ * LRN string it is sent as. That is wire data, so one that does not parse
+ * addresses nothing rather than failing the batch it is in.
+ */
+function toAgentAddress(value: unknown): AgentAddress | undefined {
+  if (value instanceof AgentAddress) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  try {
+    return AgentAddress._fromLrn(value);
+  } catch {
+    return undefined;
+  }
+}
 
 export class LangSmithToOTELTranslator {
   private spans: Map<string, OTELSpan> = new Map();
@@ -183,6 +203,15 @@ export class LangSmithToOTELTranslator {
 
     if ("session_name" in runInfo && runInfo.session_name) {
       span.setAttribute(constants.LANGSMITH_SESSION_NAME, runInfo.session_name);
+    }
+
+    const agent = toAgentAddress((runInfo as { address?: unknown }).address);
+    if (agent !== undefined) {
+      span.setAttribute(constants.LANGSMITH_AGENT_ID, agent.id);
+      span.setAttribute(
+        constants.LANGSMITH_AGENT_ENVIRONMENT,
+        agent.environment,
+      );
     }
 
     // Set gen_ai.system

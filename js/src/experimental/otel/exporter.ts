@@ -8,6 +8,8 @@ import {
 } from "../../utils/env.js";
 import { extractUsageMetadata } from "../../utils/vercel.js";
 import { warnOnce } from "../../utils/warn.js";
+import { AgentAddress, ensureAgent } from "../../address.js";
+import { rejectConflicting } from "../../utils/addressing.js";
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -66,6 +68,14 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
   projectName?: string;
 
   /**
+   * (beta) The agent environment to export traces to, instead of a project.
+   * Defaults to the one `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`
+   * name. Naming both a project and an address throws. Agent addressing is
+   * enabled per workspace.
+   */
+  address?: AgentAddress;
+
+  /**
    * Default headers to add to exporter requests.
    */
   headers?: Record<string, string>;
@@ -94,6 +104,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
   ) => ReadableSpan | Promise<ReadableSpan>;
 
   private projectName?: string;
+  private address?: AgentAddress;
 
   constructor(config?: LangSmithOTLPTraceExporterConfig) {
     const defaultLsEndpoint =
@@ -144,8 +155,20 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     });
 
     this.transformExportedSpan = config?.transformExportedSpan;
-    this.projectName =
-      config?.projectName ?? getLangSmithEnvironmentVariable("PROJECT");
+    const address = ensureAgent(config?.address);
+    rejectConflicting(config?.projectName, address);
+    if (config?.projectName !== undefined || address !== undefined) {
+      this.projectName = config?.projectName;
+      this.address = address;
+    } else {
+      // Like a run, the env decides when nothing is named here: an address
+      // when `LANGSMITH_AGENT_*` names one, else the project.
+      const envProject = getLangSmithEnvironmentVariable("PROJECT");
+      const envAddress = AgentAddress.fromEnv();
+      rejectConflicting(envProject, envAddress);
+      this.projectName = envProject;
+      this.address = envAddress;
+    }
   }
 
   export(
@@ -257,7 +280,18 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
             span.attributes[`${constants.LANGSMITH_METADATA}.ls_run_name`];
           delete span.attributes[`${constants.LANGSMITH_METADATA}.ls_run_name`];
         }
-        if (
+        if (this.address !== undefined) {
+          // A span that names its own project or agent keeps it.
+          if (
+            span.attributes[constants.LANGSMITH_SESSION_NAME] === undefined &&
+            span.attributes[constants.LANGSMITH_SESSION_ID] === undefined &&
+            span.attributes[constants.LANGSMITH_AGENT_ID] === undefined
+          ) {
+            span.attributes[constants.LANGSMITH_AGENT_ID] = this.address.id;
+            span.attributes[constants.LANGSMITH_AGENT_ENVIRONMENT] =
+              this.address.environment;
+          }
+        } else if (
           span.attributes[constants.LANGSMITH_SESSION_NAME] === undefined &&
           this.projectName !== undefined
         ) {

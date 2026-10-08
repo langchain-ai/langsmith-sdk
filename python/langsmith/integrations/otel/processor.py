@@ -6,6 +6,8 @@ from typing import Any, Optional
 from urllib.parse import urljoin
 
 from langsmith import utils as ls_utils
+from langsmith._internal import _addressing
+from langsmith.address import AgentAddress
 from langsmith.integrations.otel._utils import set_langsmith_metadata_attribute
 
 try:
@@ -75,6 +77,7 @@ class OtelExporter(OTLPSpanExporter):
         api_key: Optional[str] = None,
         project: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
+        address: Optional[AgentAddress] = None,
         **kwargs,
     ):
         """Initialize the `OtelExporter`.
@@ -82,11 +85,18 @@ class OtelExporter(OTLPSpanExporter):
         Args:
             url: OTLP endpoint URL. Defaults to `{LANGSMITH_ENDPOINT}/otel/v1/traces`.
             api_key: LangSmith API key. Defaults to `LANGSMITH_API_KEY` env var.
-            parent: Parent identifier (e.g., `'project_name:test'`).
-
-                Defaults to `LANGSMITH_PARENT` env var.
+            project: Project to send traces to. Defaults to `LANGSMITH_PROJECT`
+                env var.
             headers: Additional headers to include in requests.
+            address: (beta) An `AgentAddress` to send traces to instead of a
+                project. Defaults to the one `LANGSMITH_AGENT_ID` and
+                `LANGSMITH_AGENT_ENVIRONMENT` name. Naming both a project and
+                an address raises. Agent addressing is enabled per workspace.
             **kwargs: Additional arguments passed to `OTLPSpanExporter`.
+
+        Raises:
+            LangSmithUserError: If both `project` and `address` are given, or the
+                env names both, or half an address.
         """
         base_url = ls_utils.get_api_url(None)
         # Ensure base_url ends with / for proper joining
@@ -94,7 +104,9 @@ class OtelExporter(OTLPSpanExporter):
             base_url += "/"
         endpoint = url or urljoin(base_url, "otel/v1/traces")
         api_key = api_key or ls_utils.get_api_key(None)
-        project = project or ls_utils.get_tracer_project()
+        address = _addressing.check_address(address)
+        # An explicit project or address decides; the env is the fallback.
+        project, address = _addressing.resolve((project, address))
         headers = headers or {}
 
         if not api_key:
@@ -103,8 +115,11 @@ class OtelExporter(OTLPSpanExporter):
                 "LANGSMITH_API_KEY environment variable."
             )
 
-        if not project:
-            project = "default"
+        if address is not None:
+            _addressing.warn_is_beta()
+        elif project == "default" and not ls_utils.get_tracer_project(
+            return_default_value=False
+        ):
             logging.info(
                 "No project specified, using default. "
                 "Configure with LANGSMITH_PROJECT environment variable or "
@@ -114,12 +129,11 @@ class OtelExporter(OTLPSpanExporter):
         exporter_headers = {
             "x-api-key": api_key,
             **headers,
+            **_addressing.otlp_destination_headers(project, address),
         }
 
-        if project:
-            exporter_headers["Langsmith-Project"] = project
-
         self.project = project
+        self.address = address
 
         super().__init__(endpoint=endpoint, headers=exporter_headers, **kwargs)
 
@@ -161,6 +175,7 @@ class OtelSpanProcessor:
         url: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
         SpanProcessor: Optional[type] = None,
+        address: Optional[AgentAddress] = None,
     ):
         """Initialize the `OtelSpanProcessor`.
 
@@ -172,6 +187,8 @@ class OtelSpanProcessor:
             headers: Additional headers to include in requests.
             SpanProcessor: Optional span processor class. Defaults to
                 `BatchSpanProcessor`.
+            address: (beta) An `AgentAddress` to send traces to instead of a
+                project. See `OtelExporter`.
         """
         # Create the exporter
         # Convert url to the full endpoint URL that OtelExporter expects
@@ -180,7 +197,11 @@ class OtelSpanProcessor:
             exporter_url = f"{url.rstrip('/')}/otel/v1/traces"
 
         self._exporter = OtelExporter(
-            url=exporter_url, api_key=api_key, project=project, headers=headers
+            url=exporter_url,
+            api_key=api_key,
+            project=project,
+            headers=headers,
+            address=address,
         )
 
         # Create the processor chain

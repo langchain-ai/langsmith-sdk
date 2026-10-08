@@ -37,6 +37,8 @@ export const GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS =
 // LangSmith custom attributes
 export const LANGSMITH_SESSION_ID = "langsmith.trace.session_id";
 export const LANGSMITH_SESSION_NAME = "langsmith.trace.session_name";
+export const LANGSMITH_AGENT_ID = "langsmith.trace.agent_id";
+export const LANGSMITH_AGENT_ENVIRONMENT = "langsmith.trace.agent_environment";
 export const LANGSMITH_RUN_TYPE = "langsmith.span.kind";
 export const LANGSMITH_NAME = "langsmith.trace.name";
 export const LANGSMITH_METADATA = "langsmith.metadata";
