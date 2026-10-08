@@ -815,3 +815,46 @@ describe("address types", () => {
     expect("Lrn" in langsmith).toBe(false);
   });
 });
+
+describe("client.sessions", () => {
+  const PROJECT = "0190c3d4-0000-7000-8000-0000000000b1";
+
+  test("resolve sends the address as query parameters", async () => {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) => {
+        const url = new URL(
+          String(input instanceof Request ? input.url : input),
+        );
+        const body = url.pathname.endsWith("/sessions/resolutions")
+          ? { session_id: PROJECT }
+          : {};
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+    const client = new Client({
+      apiKey: "MOCK",
+      autoBatchTracing: false,
+      fetchImplementation: fetchMock,
+    });
+
+    const response = await client.sessions.resolve(
+      new AgentAddress("checkout", "production").toApiAddress(),
+    );
+
+    expect(response.session_id).toBe(PROJECT);
+    const resolved = fetchMock.mock.calls
+      .map(
+        ([input]) =>
+          new URL(String(input instanceof Request ? input.url : input)),
+      )
+      .find((url) => url.pathname.endsWith("/sessions/resolutions"));
+    expect(Object.fromEntries(resolved!.searchParams)).toEqual({
+      kind: "AGENT",
+      id: "checkout",
+      environment: "PRODUCTION",
+    });
+  });
+});

@@ -30,7 +30,7 @@ export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
 export type ApiAddress = {
   kind: "AGENT" | "EXPERIMENT" | "EVALUATOR";
   id?: string;
-  environment?: string;
+  environment?: Uppercase<Environment>;
 };
 
 /** (beta) A feature that holds traces in a tracing project. */
@@ -111,7 +111,7 @@ export class AgentAddress implements Address {
     return {
       kind: "AGENT",
       id: this.id,
-      environment: this.environment.toUpperCase(),
+      environment: this.environment.toUpperCase() as Uppercase<Environment>,
     };
   }
 
