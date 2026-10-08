@@ -52,6 +52,17 @@ def check_address(address: Any) -> Optional[AgentAddress]:
     return None if address is None else _address.ensure_agent(address)
 
 
+def check_lookup_address(address: Any) -> Optional[_address.Address]:
+    """Return `address` if it is an `Address` of any kind, or `None` if it is `None`.
+
+    For the calls that resolve an address to its project, which take any kind.
+
+    Raises:
+        utils.LangSmithUserError: If `address` is not an `Address`.
+    """
+    return None if address is None else _address.ensure_address(address)
+
+
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
     """Put a bare `AgentAddress` replica in an `address` key, and check the rest."""
     if replicas is None:
@@ -190,7 +201,7 @@ def reject_conflicting(
     *,
     project: Optional[Any] = None,
     session_id: Optional[Any] = None,
-    address: Optional[AgentAddress] = None,
+    address: Optional[_address.Address] = None,
 ) -> None:
     """Reject a call that names both a project and an address.
 

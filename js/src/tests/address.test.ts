@@ -919,6 +919,21 @@ describe("run URL", () => {
     expect(resolved!.searchParams.get("environment")).toBe("STAGING");
   });
 
+  test.each([
+    ["an experiment", new ExperimentAddress(PROJECT), "EXPERIMENT"],
+    ["the evaluators", new EvaluatorAddress(), "EVALUATOR"],
+  ])("an address naming %s is resolved", async (_name, address, kind) => {
+    const { client, fetchMock } = urlClient();
+    const run = { id: "0190c3d4-0000-7000-8000-0000000000c1" } as any;
+    expect(await client.getRunUrl({ run, address })).toBe(
+      urlOf(client, run.id),
+    );
+    const resolved = fetchMock.mock.calls
+      .map(([input]) => requestUrl(input))
+      .find((url) => url.pathname.endsWith("/sessions/resolutions"));
+    expect(resolved!.searchParams.get("kind")).toBe(kind);
+  });
+
   test("a project beside an address is rejected", async () => {
     const { client } = urlClient();
     const run = { id: "0190c3d4-0000-7000-8000-0000000000c1" } as any;

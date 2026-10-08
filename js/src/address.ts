@@ -225,6 +225,27 @@ export function ensureAgent(value: unknown): AgentAddress | undefined {
   );
 }
 
+/**
+ * Return `value` if it is an `Address` of any kind, as a lookup takes it.
+ * For the calls that only resolve an address to its project, such as
+ * `getRunUrl`. Whatever receives traces takes `ensureAgent`.
+ */
+export function ensureAddress(value: unknown): Address | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (
+    typeof value === "object" &&
+    typeof (value as Address).toApiAddress === "function"
+  ) {
+    return value as Address;
+  }
+  throw new Error(
+    "address must be an AgentAddress, ExperimentAddress or EvaluatorAddress, got " +
+      `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
+  );
+}
+
 /** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */
 export function envNames(): string[] {
   return ENV_NAMES;

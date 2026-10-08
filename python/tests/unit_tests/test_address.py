@@ -871,6 +871,29 @@ class TestWire:
         with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
             client._construct_run_url(run=run, project_name="p", address=SUPPORT)
 
+    @pytest.mark.parametrize(
+        ("address", "query"),
+        [
+            (SUPPORT, {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"}),
+            (EXPERIMENT, {"kind": "EXPERIMENT", "id": str(EXPERIMENT.id)}),
+            (EVALUATOR, {"kind": "EVALUATOR"}),
+        ],
+        ids=["agent", "experiment", "evaluator"],
+    )
+    def test_a_run_url_resolves_an_address_of_any_kind(
+        self,
+        client: Client,
+        monkeypatch: pytest.MonkeyPatch,
+        address: Any,
+        query: dict,
+    ) -> None:
+        api = self._url_client(monkeypatch, self.PROJECT)
+        run = self._plain_run()
+        assert client._construct_run_url(run=run, address=address) == self._url(
+            client, run
+        )
+        api.sessions.resolve.assert_called_once_with(**query)
+
     def test_a_run_url_rejects_a_string_address(self, client: Client) -> None:
         run = self._plain_run()
         with pytest.raises(ls_utils.LangSmithUserError):

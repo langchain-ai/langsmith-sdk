@@ -88,7 +88,13 @@ import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type AgentAddress, EnvAddressError, ensureAgent } from "./address.js";
+import {
+  type Address,
+  type AgentAddress,
+  EnvAddressError,
+  ensureAddress,
+  ensureAgent,
+} from "./address.js";
 import {
   applyToPayload,
   logUntraced,
@@ -3288,11 +3294,13 @@ export class Client implements LangSmithTracingClientInterface {
     run?: Run;
     projectOpts?: ProjectOptions;
     /**
-     * (beta) The agent the run was sent to, for a run that names no project.
-     * It is resolved to its project with one request, which needs LangSmith
-     * 0.18 or later. A run that carries its own `address` does not need it.
+     * (beta) An address that names the run's project, such as the
+     * `AgentAddress` the run was sent to or an `ExperimentAddress`, for a run
+     * that names no project. It is resolved to its project with one request,
+     * which needs LangSmith 0.18 or later. It must name the project the run is
+     * in. A run that carries its own `address` does not need it.
      */
-    address?: AgentAddress;
+    address?: Address;
   }): Promise<string> {
     warnOnce(
       "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
@@ -3301,7 +3309,7 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      const argumentAddress = ensureAgent(rawAddress);
+      const argumentAddress = ensureAddress(rawAddress);
       rejectConflicting(
         projectOpts?.projectName ?? projectOpts?.projectId,
         argumentAddress,
@@ -3345,7 +3353,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /** The ID of the project an address names, with one request. */
-  private async _resolveAddress(address: AgentAddress): Promise<string> {
+  private async _resolveAddress(address: Address): Promise<string> {
     const { session_id: sessionId } = await this.sessions.resolve(
       address.toApiAddress(),
     );
