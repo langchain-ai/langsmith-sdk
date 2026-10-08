@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import urllib.parse
+import uuid
 import warnings
 from typing import Any, Optional
 from unittest import mock
@@ -15,11 +17,12 @@ import langsmith as ls
 from langsmith import utils as ls_utils
 from langsmith._internal import _addressing, _context
 from langsmith._internal._uuid import uuid7_deterministic
+from langsmith._internal._v2_migration_utils import QueryBackend as _QueryBackend
 from langsmith.address import EnvAddressError
 from langsmith.client import Client
 from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree, _Baggage
-from langsmith.schemas import FeedbackCreate
+from langsmith.schemas import FeedbackCreate, Run
 
 SUPPORT = ls.AgentAddress("support", "production")
 STAGING = ls.AgentAddress("support", "staging")
@@ -792,9 +795,124 @@ class TestWire:
         with pytest.raises(ls_utils.LangSmithUserError):
             self._feedback("support")
 
-    def test_no_run_url_for_an_addressed_run(self) -> None:
-        with pytest.raises(ls_utils.LangSmithUserError, match="run URL"):
-            RunTree(name="r", address=SUPPORT).get_url()
+    def _url_client(
+        self, monkeypatch: pytest.MonkeyPatch, project: uuid.UUID
+    ) -> mock.MagicMock:
+        """Resolve every address to `project`, in a workspace with a fixed tenant."""
+        api = mock.MagicMock()
+        api.sessions.resolve.return_value = mock.Mock(session_id=str(project))
+        monkeypatch.setattr(Client, "_get_langsmith_api_sync", lambda self: api)
+        tenant = self.TENANT
+        monkeypatch.setattr(Client, "_get_tenant_id", lambda client: tenant)
+        return api
+
+    TENANT = uuid.UUID("0190c3d4-0000-7000-8000-0000000000a1")
+    PROJECT = uuid.UUID("0190c3d4-0000-7000-8000-0000000000b1")
+
+    @staticmethod
+    def _plain_run() -> Run:
+        """A run that names neither a project nor an address, as a tracer keeps it."""
+        return Run(
+            id=uuid.uuid4(),
+            name="r",
+            run_type="chain",
+            start_time=datetime.datetime.now(datetime.timezone.utc),
+            inputs={},
+            trace_id=uuid.uuid4(),
+            dotted_order="x",
+        )
+
+    def _url(self, client: Client, run: Any) -> str:
+        return (
+            f"{client._host_url}/o/{self.TENANT}/projects/p/{self.PROJECT}/"
+            f"r/{run.id}?poll=true"
+        )
+
+    def test_an_addressed_run_url_resolves_the_address(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = self._url_client(monkeypatch, self.PROJECT)
+        run = RunTree(name="r", address=SUPPORT, client=client)
+        assert client._construct_run_url(run=run) == self._url(client, run)
+        api.sessions.resolve.assert_called_once_with(
+            kind="AGENT", id="support", environment="PRODUCTION"
+        )
+
+    def test_a_run_without_an_address_takes_one_as_an_argument(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A `Run` read or traced elsewhere does not carry its address."""
+        api = self._url_client(monkeypatch, self.PROJECT)
+        run = self._plain_run()
+        url = client._construct_run_url(run=run, address=STAGING)
+        assert url == self._url(client, run)
+        api.sessions.resolve.assert_called_once_with(
+            kind="AGENT", id="support", environment="STAGING"
+        )
+
+    def test_an_address_argument_outranks_the_default_project_of_a_run_tree(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A run tree without an address still names the default project."""
+        api = self._url_client(monkeypatch, self.PROJECT)
+        run = RunTree(name="r", client=client)
+        assert run.session_name
+        url = client._construct_run_url(run=run, address=STAGING)
+        assert url == self._url(client, run)
+        api.sessions.resolve.assert_called_once_with(
+            kind="AGENT", id="support", environment="STAGING"
+        )
+
+    def test_a_run_url_rejects_a_project_beside_an_address(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._url_client(monkeypatch, self.PROJECT)
+        run = self._plain_run()
+        with pytest.raises(ls_utils.LangSmithUserError, match="not both"):
+            client._construct_run_url(run=run, project_name="p", address=SUPPORT)
+
+    @pytest.mark.parametrize(
+        ("address", "query"),
+        [
+            (SUPPORT, {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"}),
+            (EXPERIMENT, {"kind": "EXPERIMENT", "id": str(EXPERIMENT.id)}),
+            (EVALUATOR, {"kind": "EVALUATOR"}),
+        ],
+        ids=["agent", "experiment", "evaluator"],
+    )
+    def test_a_run_url_resolves_an_address_of_any_kind(
+        self,
+        client: Client,
+        monkeypatch: pytest.MonkeyPatch,
+        address: Any,
+        query: dict,
+    ) -> None:
+        api = self._url_client(monkeypatch, self.PROJECT)
+        run = self._plain_run()
+        assert client._construct_run_url(run=run, address=address) == self._url(
+            client, run
+        )
+        api.sessions.resolve.assert_called_once_with(**query)
+
+    def test_a_run_url_rejects_a_string_address(self, client: Client) -> None:
+        run = self._plain_run()
+        with pytest.raises(ls_utils.LangSmithUserError):
+            client._construct_run_url(run=run, address=SUPPORT_LRN)  # type: ignore[arg-type]
+
+    def test_the_run_tree_url_resolves_its_address(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._url_client(monkeypatch, self.PROJECT)
+        run = RunTree(name="r", address=SUPPORT, client=client)
+        with (
+            mock.patch.object(Client, "info", new_callable=mock.PropertyMock) as info,
+            mock.patch(
+                "langsmith.run_trees._v2_migration_utils.get_query_backend",
+                return_value=_QueryBackend.CLICKHOUSE_ONLY,
+            ),
+        ):
+            info.return_value = mock.Mock(instance_flags={})
+            assert run.get_url() == self._url(client, run)
 
 
 def test_the_address_classes_carry_the_address_suffix() -> None:

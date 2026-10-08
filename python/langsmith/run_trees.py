@@ -1155,18 +1155,20 @@ class RunTree(ls_schemas.RunBase):
     def _resolve_url(self) -> str:
         """Ask the backend for the run's URL, falling back to building it locally."""
         client = self.client
-        _addressing.reject_url(self.session_id, self.address)
         try:
             backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
             if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
                 # The v2 endpoint doesn't exist on ClickHouse-only backends, which
                 # may predate it; build the URL locally there instead.
                 return client._construct_run_url(run=self)
-            session_id = self.session_id or (
-                client.read_project(
+            if self.session_id:
+                session_id = self.session_id
+            elif self.address is not None:
+                session_id = client._resolve_address(self.address)
+            else:
+                session_id = client.read_project(
                     project_name=self.session_name or utils.get_tracer_project()
                 ).id
-            )
             response = client._get_langsmith_api_sync().runs.get_url(
                 str(self.id),
                 project_id=str(session_id),

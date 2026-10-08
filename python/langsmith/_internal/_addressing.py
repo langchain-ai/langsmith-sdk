@@ -52,6 +52,17 @@ def check_address(address: Any) -> Optional[AgentAddress]:
     return None if address is None else _address.ensure_agent(address)
 
 
+def check_lookup_address(address: Any) -> Optional[_address.Address]:
+    """Return `address` if it is an `Address` of any kind, or `None` if it is `None`.
+
+    For the calls that resolve an address to its project, which take any kind.
+
+    Raises:
+        utils.LangSmithUserError: If `address` is not an `Address`.
+    """
+    return None if address is None else _address.ensure_address(address)
+
+
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
     """Put a bare `AgentAddress` replica in an `address` key, and check the rest."""
     if replicas is None:
@@ -186,26 +197,11 @@ def warn_on_env() -> None:
     )
 
 
-def reject_url(session_id: Optional[Any], address: Optional[Any]) -> None:
-    """Refuse to build a run URL the SDK cannot know.
-
-    A run URL is keyed on the project id, and the endpoint resolves an address
-    to its project without telling the SDK which.
-    """
-    if session_id is not None or address is None:
-        return
-    raise utils.LangSmithUserError(
-        "No run URL is available for an addressed run yet. The endpoint "
-        "resolves the address to its project, so only it knows the project this "
-        "run is in. Read the run back and build the URL from its `session_id`."
-    )
-
-
 def reject_conflicting(
     *,
     project: Optional[Any] = None,
     session_id: Optional[Any] = None,
-    address: Optional[AgentAddress] = None,
+    address: Optional[_address.Address] = None,
 ) -> None:
     """Reject a call that names both a project and an address.
 

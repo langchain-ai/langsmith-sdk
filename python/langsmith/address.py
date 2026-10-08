@@ -243,6 +243,24 @@ def ensure_agent(address: Any) -> AgentAddress:
     )
 
 
+def ensure_address(address: Any) -> Address:
+    """Return `address` if it is an `Address` of any kind, as a lookup takes it.
+
+    For the calls that only resolve an address to its project, such as
+    `get_run_url`. Whatever receives traces takes `ensure_agent`. A string is
+    not an address.
+
+    Raises:
+        LangSmithUserError: If `address` is not an `Address`.
+    """
+    if isinstance(address, Address) and not isinstance(address, str):
+        return address
+    raise utils.LangSmithUserError(
+        "An address must be an `AgentAddress`, `ExperimentAddress` or "
+        f"`EvaluatorAddress`, got {address!r}."
+    )
+
+
 def env_values() -> dict[str, Optional[str]]:
     """Return each `LANGSMITH_AGENT_*` env var an address reads, with its value."""
     return {

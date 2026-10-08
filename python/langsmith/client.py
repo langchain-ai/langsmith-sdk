@@ -132,7 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
-from langsmith.address import AgentAddress
+from langsmith.address import Address, AgentAddress
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -4893,6 +4893,7 @@ class Client:
         run: ls_schemas.RunBase,
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
+        address: Optional[Address] = None,
     ) -> str:
         """Get the URL for a run.
 
@@ -4910,13 +4911,26 @@ class Client:
             run (RunBase): The run.
             project_name (Optional[str]): The name of the project.
             project_id (Optional[Union[UUID, str]]): The ID of the project.
+            address (Optional[Address]): (beta) An address that names the run's
+                project, such as the `AgentAddress` the run was sent to or an
+                `ExperimentAddress`, for a run that names no project. It is
+                resolved to its project with one request, which needs LangSmith
+                0.18 or later. It must name the project the run is in. A run
+                that carries its own `address` does not need it.
 
         Returns:
             str: The URL for the run.
         """
         return self._construct_run_url(
-            run=run, project_name=project_name, project_id=project_id
+            run=run, project_name=project_name, project_id=project_id, address=address
         )
+
+    def _resolve_address(self, address: Address) -> uuid.UUID:
+        """Return the ID of the project an address names, with one request."""
+        response = self._get_langsmith_api_sync().sessions.resolve(
+            **address.to_api_address()
+        )
+        return _as_uuid(response.session_id, "session_id")
 
     def _construct_run_url(
         self,
@@ -4924,16 +4938,21 @@ class Client:
         run: ls_schemas.RunBase,
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
+        address: Optional[Address] = None,
     ) -> str:
         """Build a run's UI URL locally, without calling the backend.
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
-        _addressing.reject_url(
-            getattr(run, "session_id", None), getattr(run, "address", None)
+        address = _addressing.check_lookup_address(address)
+        _addressing.reject_conflicting(
+            project=project_name, session_id=project_id, address=address
         )
         if session_id := getattr(run, "session_id", None):
             pass
+        elif address is not None:
+            # Passed in, so it outranks the default project a run tree names.
+            session_id = self._resolve_address(address)
         elif session_name := getattr(run, "session_name", None):
             session_id = self.read_project(project_name=session_name).id
         elif project_id is not None:
@@ -4941,8 +4960,14 @@ class Client:
         elif project_name is not None:
             session_id = self.read_project(project_name=project_name).id
         else:
-            project_name = ls_utils.get_tracer_project()
-            session_id = self.read_project(project_name=project_name).id
+            # Nothing names a project, so the run is located by the agent it was
+            # sent to, when it carries one.
+            address = _addressing.check_address(getattr(run, "address", None))
+            if address is not None:
+                session_id = self._resolve_address(address)
+            else:
+                project_name = ls_utils.get_tracer_project()
+                session_id = self.read_project(project_name=project_name).id
         session_id_ = _as_uuid(session_id, "session_id")
         return (
             f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id_}/"
