@@ -8348,12 +8348,11 @@ class TestTheEnvGuardWarnsOnEitherHalf:
             Client(api_url="http://localhost:1984", api_key="123")
 
 
-class TestNoRunUrlForAnAgentAddressedRun:
-    """The endpoint resolves the project, so the SDK cannot build the URL.
+class TestRunUrlOfAnAddressedRun:
+    """A run that carries a project needs no resolution.
 
-    Falling through resolved the literal `default` project, handing back a
-    link to the wrong place or raising a not-found from inside what callers
-    treat as a convenience.
+    One that names no project is located by its agent instead, rather than
+    falling through to the literal `default` project.
     """
 
     def test_a_resolved_project_is_enough(
