@@ -355,7 +355,6 @@ describe("createSecretAnonymizer", () => {
     "openai-legacy": `sk-${"a".repeat(48)}`,
     "langsmith-lsv2": `lsv2_pt_${"a".repeat(36)}_${"b".repeat(10)}`,
     "langsmith-legacy": `ls__${"a".repeat(24)}`,
-    "langsmith-license": `lcl_${"a".repeat(32)}`,
     "github-pat": `ghp_${"A".repeat(36)}`,
     "github-fine-grained": `github_pat_${"A".repeat(82)}`,
     gitlab: `glpat-${"a".repeat(20)}`,

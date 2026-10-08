@@ -209,7 +209,6 @@ SECRET_SAMPLES = {
     "openai_legacy": "sk-" + "a" * 48,
     "langsmith_lsv2": "lsv2_pt_" + "a" * 36 + "_" + "b" * 10,
     "langsmith_legacy": "ls__" + "a" * 24,
-    "langsmith_license": "lcl_" + "a" * 32,
     "github_pat": "ghp_" + "A" * 36,
     "github_fine_grained": "github_pat_" + "A" * 82,
     "gitlab": "glpat-" + "a" * 20,

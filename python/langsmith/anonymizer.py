@@ -230,11 +230,6 @@ DEFAULT_SECRET_RULES: list[StringNodeRule] = [
         "replace": SECRET_PLACEHOLDER,
     },
     {"pattern": re.compile(r"ls__[A-Za-z0-9]{16,}"), "replace": SECRET_PLACEHOLDER},
-    # LangSmith self-hosted license keys
-    {
-        "pattern": re.compile(r"\blcl[_-][A-Za-z0-9_-]{20,}\b"),
-        "replace": SECRET_PLACEHOLDER,
-    },
     # GitHub personal access / app tokens
     {
         "pattern": re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),

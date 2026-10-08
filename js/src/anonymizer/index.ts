@@ -214,11 +214,6 @@ export const DEFAULT_SECRET_RULES: StringNodeRule[] = [
     replace: SECRET_PLACEHOLDER,
   },
   { pattern: /ls__[A-Za-z0-9]{16,}/g, replace: SECRET_PLACEHOLDER },
-  // LangSmith self-hosted license keys
-  {
-    pattern: /\blcl[_-][A-Za-z0-9_-]{20,}\b/g,
-    replace: SECRET_PLACEHOLDER,
-  },
   // GitHub personal access / app tokens
   { pattern: /gh[pousr]_[A-Za-z0-9]{36,}/g, replace: SECRET_PLACEHOLDER },
   { pattern: /github_pat_[A-Za-z0-9_]{82}/g, replace: SECRET_PLACEHOLDER },
