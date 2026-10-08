@@ -3621,7 +3621,7 @@ class Client:
         self,
         acc: MultipartPartsAndContext,
         *,
-        attempts: int = 3,
+        attempts: int = 1,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         service_key: Optional[str] = None,
@@ -3733,7 +3733,7 @@ class Client:
         compressed_traces_info: Optional[tuple[int, int]],
         *,
         destinations: Optional[frozenset] = None,
-        attempts: int = 3,
+        attempts: int = 1,
     ):
         """Send a zstd-compressed multipart stream to each of `destinations`.
 
@@ -4132,7 +4132,7 @@ class Client:
                 )
 
     def flush_compressed_traces(
-        self, attempts: int = 3, timeout: Optional[float] = None
+        self, attempts: int = 1, timeout: Optional[float] = None
     ) -> None:
         """Force flush the currently buffered compressed runs.
 

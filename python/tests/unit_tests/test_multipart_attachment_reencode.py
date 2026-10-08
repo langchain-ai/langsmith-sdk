@@ -192,11 +192,11 @@ def _assert_all_intact(received, label):
 def test_every_retry_keeps_the_file_attachment(
     sink, no_backoff, attachment_batch, max_inline_bytes
 ):
-    """500 drives both retry layers; every resulting request must be complete.
+    """500 drives urllib3's retries; every resulting request must be complete.
 
-    ``_send_multipart_req`` runs 3 attempts and urllib3 force-lists 500, so one
-    call produces several sends of the same batch. Attempt 1 used to be the only
-    one carrying the attachment.
+    urllib3 force-lists 500, so one ``_send_multipart_req`` call produces
+    several sends of the same batch. The first used to be the only one carrying
+    the attachment.
     """
     sink.status = 500
     ls_utils.get_env_var.cache_clear()
@@ -205,9 +205,9 @@ def test_every_retry_keeps_the_file_attachment(
     with mock.patch("langsmith.client._MULTIPART_INLINE_MAX_BYTES", max_inline_bytes):
         client._send_multipart_req(attachment_batch())
 
-    # More sends than app attempts proves urllib3 resent the body itself, which
-    # is the layer our attempt loop cannot rewind for.
-    assert len(sink.received) > 3, sink.received
+    # More than one send proves urllib3 resent the body itself, the layer our
+    # single app attempt cannot rewind for.
+    assert len(sink.received) > 1, sink.received
     _assert_all_intact(sink.received, "app + transport retries")
 
 
