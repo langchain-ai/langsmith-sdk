@@ -16,14 +16,16 @@ Example:
     ```python
     import langsmith as ls
 
-    support = ls.Agent(id="customer-support", environment="production")
+    support = ls.address.Agent(id="customer-support", environment="production")
 
 
     @ls.traceable(address=support)
     def handle(order): ...
 
 
-    with ls.tracing_context(address=ls.Agent("customer-support", "staging")):
+    with ls.tracing_context(
+        address=ls.address.Agent("customer-support", "staging")
+    ):
         handle(order)
     ```
 """
@@ -237,7 +239,7 @@ def ensure_agent(address: Any) -> Agent:
             f"Only an `Agent` can receive traces, got {address!r}."
         )
     raise utils.LangSmithUserError(
-        "An address must be an `Agent` such as `ls.Agent(id, environment)`, "
+        "An address must be an `Agent` such as `ls.address.Agent(id, environment)`, "
         f"got {address!r}."
     )
 

@@ -21,7 +21,6 @@ if TYPE_CHECKING:
         RateLimitError,
         UnprocessableEntityError,
     )
-    from langsmith.address import Address, Agent, Evaluator, Experiment
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client, TracingMode
     from langsmith.evaluation import (
@@ -126,10 +125,6 @@ def __getattr__(name: str) -> Any:
 
         # `from langsmith import address` would re-enter this hook.
         return importlib.import_module("langsmith.address")
-    elif name in ("Address", "Agent", "Evaluator", "Experiment"):
-        from langsmith import address
-
-        return getattr(address, name)
     elif name == "tracing_context":
         from langsmith.run_helpers import tracing_context
 
@@ -261,10 +256,6 @@ __all__ = [
     "tracing_context",
     "get_tracing_context",
     "address",
-    "Address",
-    "Agent",
-    "Experiment",
-    "Evaluator",
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
