@@ -138,6 +138,27 @@ def test_env_var_metadata_excludes_signing_secrets(
 
 
 @pytest.mark.parametrize(
+    "env, expected",
+    [
+        ({"LANGSMITH_REVISION_ID": "new"}, "new"),
+        ({"LANGCHAIN_REVISION_ID": "legacy"}, "legacy"),
+        ({"LANGSMITH_REVISION_ID": "new", "LANGCHAIN_REVISION_ID": "legacy"}, "new"),
+        ({"LANGSMITH_REVISION_ID": "", "LANGCHAIN_REVISION_ID": "legacy"}, "legacy"),
+    ],
+)
+def test_env_var_metadata_revision_id(
+    monkeypatch: pytest.MonkeyPatch, env: dict, expected: str
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    get_langchain_env_var_metadata.cache_clear()
+    metadata = get_langchain_env_var_metadata()
+    assert metadata["revision_id"] == expected
+    assert "LANGSMITH_REVISION_ID" not in metadata
+    assert "LANGCHAIN_REVISION_ID" not in metadata
+
+
+@pytest.mark.parametrize(
     "agent_var",
     [
         "LANGSMITH_AGENT_ENVIRONMENT",
