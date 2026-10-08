@@ -18,11 +18,11 @@ from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 import langsmith._internal._context as _context
-from langsmith import address as _address
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith._internal import _agent_addressing, _v2_migration_utils
+from langsmith._internal import _addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
+from langsmith.address import AgentAddress
 from langsmith.client import (
     ID_TYPE,
     RUN_TYPE_T,
@@ -72,7 +72,7 @@ class WriteReplica(TypedDict, total=False):
     api_key: NotRequired[str]
     auth: AuthHeaders
     project_name: Optional[str]
-    address: Optional[str]
+    address: Optional[AgentAddress]
     primary: bool
     """Whether this replica keeps the original run IDs.
 
@@ -106,7 +106,7 @@ class _PayloadKey(NamedTuple):
     project_name: Optional[str]
     updates: Optional[dict]
     primary: Optional[bool]
-    address: Optional[str] = None
+    address: Optional[AgentAddress] = None
 
 
 class _ReplicaGroup(NamedTuple):
@@ -207,7 +207,6 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
-# The address string, URL-encoded.
 LANGSMITH_ADDRESS = sys.intern(f"{LANGSMITH_PREFIX}address")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
@@ -257,7 +256,7 @@ def configure(
     project_name: Optional[str] = _SENTINEL,
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
-    address: Optional[str] = _SENTINEL,
+    address: Optional[AgentAddress] = _SENTINEL,
 ):
     """Configure global LangSmith tracing context.
 
@@ -294,9 +293,9 @@ def configure(
             This determines which project dashboard will display your traces.
 
             Pass `None` to explicitly clear the project name.
-        address: (beta) An address string, e.g. from `langsmith.address.agent`, to send
-            traces to instead of a project. Mutually exclusive with
-            `project_name`.
+        address: (beta) An `AgentAddress`, such as
+            `ls.AgentAddress(id, environment)`, to send traces to instead of a
+            project. Mutually exclusive with `project_name`.
 
             Pass `None` to explicitly clear it.
         tags: A list of tags to be applied to all traced runs.
@@ -339,11 +338,10 @@ def configure(
     """
     global _CLIENT
     set_address = address is not _SENTINEL
-    if set_address:
-        address = _agent_addressing.check_address(address)
-    _agent_addressing.reject_conflicting(
+    checked = _addressing.check_address(address) if set_address else None
+    _addressing.reject_conflicting(
         project=None if project_name is _SENTINEL else project_name,
-        address=address if set_address else None,
+        address=checked,
     )
     with _LOCK:
         if client is not _SENTINEL:
@@ -353,14 +351,13 @@ def configure(
             _context._GLOBAL_TRACING_ENABLED = enabled
         # One level holds one mode: naming one replaces the other. Set the
         # same way as `project_name` always has been, context var included.
-        if project_name is not _SENTINEL or (set_address and address is not None):
+        if project_name is not _SENTINEL or (set_address and checked is not None):
             project_name = None if project_name is _SENTINEL else project_name
             _context._PROJECT_NAME.set(project_name)
             _context._GLOBAL_PROJECT_NAME = project_name
         if set_address or (project_name is not _SENTINEL and project_name is not None):
-            address = address if set_address else None
-            _context._ADDRESS.set(address)
-            _context._GLOBAL_ADDRESS = address
+            _context._ADDRESS.set(checked)
+            _context._GLOBAL_ADDRESS = checked
         if tags is not _SENTINEL:
             _context._TAGS.set(tags)
             _context._GLOBAL_TAGS = tags
@@ -392,11 +389,11 @@ def validate_extracted_usage_metadata(
     return data  # type: ignore
 
 
-def _apply_agent_addressing(values: dict[str, Any]) -> None:
+def _apply_addressing(values: dict[str, Any]) -> None:
     """Settle on one addressing mode for a run tree, in place.
 
     A run is addressed either by project (`session_name` / `session_id`) or by
-    address (`address`). `_agent_addressing.resolve` settles
+    address (`address`). `_addressing.resolve` settles
     which, so this shares one rule with `create_run` and `@traceable`.
 
     Runs against the raw validator input, so a value here was passed by the
@@ -406,7 +403,7 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
     overriding what was settled.
     """
     if values.get("address") is not None:
-        values["address"] = _agent_addressing.check_address(values["address"])
+        values["address"] = _addressing.check_address(values["address"])
     named_project = next(
         (
             values[key]
@@ -419,13 +416,11 @@ def _apply_agent_addressing(values: dict[str, Any]) -> None:
         # Already addressed, by the caller or by the resolution that built
         # these values -- `_setup_run` settles a trace's address before
         # constructing the tree, and `create_child` copies the parent's down.
-        _agent_addressing.reject_conflicting(
-            project=named_project, address=values["address"]
-        )
+        _addressing.reject_conflicting(project=named_project, address=values["address"])
         values.pop("project_name", None)
         values["session_name"] = None
         return
-    project, values["address"] = _agent_addressing.resolve((named_project, None))
+    project, values["address"] = _addressing.resolve((named_project, None))
     if named_project is None:
         # Nothing was named, so whatever the resolution chose is the answer.
         # `project_name` is an alias of `session_name`; leaving it set would
@@ -458,7 +453,7 @@ class RunTree(ls_schemas.RunBase):
     project from `address` instead.
     """
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    address: Optional[str] = Field(
+    address: Optional[Any] = Field(
         default=None,
         exclude=True,
         description=(
@@ -548,7 +543,7 @@ class RunTree(ls_schemas.RunBase):
         if values.get("replicas") is None:
             values["replicas"] = _REPLICAS.get()
         values["replicas"] = _ensure_write_replicas(values["replicas"])
-        _apply_agent_addressing(values)
+        _apply_addressing(values)
         return values
 
     @model_validator(mode="after")
@@ -877,7 +872,7 @@ class RunTree(ls_schemas.RunBase):
         updates: Optional[dict] = None,
         *,
         primary: Optional[bool] = None,
-        address: Optional[str] = None,
+        address: Optional[AgentAddress] = None,
     ) -> dict:
         """Rewrites ids/dotted_order for a given target with optional updates."""
         run_dict = self._get_dicts_safe()
@@ -892,7 +887,7 @@ class RunTree(ls_schemas.RunBase):
         seed = (
             project_name
             if project_name is not None
-            else (address if address is not None else "agent//")
+            else (address._lrn() if address is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -951,16 +946,16 @@ class RunTree(ls_schemas.RunBase):
 
     def _replica_addressing(
         self, replica: WriteReplica
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[Optional[str], Optional[AgentAddress]]:
         """Resolve one replica's `(project_name, address)`.
 
         Same precedence as everywhere else, applied per replica: the replica's
         own project wins over its own agent, and a replica that names neither
         inherits the run tree's addressing whole rather than mixing the two.
         """
-        address = replica.get("address")
+        address = _addressing.check_address(replica.get("address"))
         if (project_name := replica.get("project_name")) is not None:
-            _agent_addressing.reject_conflicting(project=project_name, address=address)
+            _addressing.reject_conflicting(project=project_name, address=address)
             return project_name, None
         if address is not None:
             return None, address
@@ -1160,7 +1155,7 @@ class RunTree(ls_schemas.RunBase):
     def _resolve_url(self) -> str:
         """Ask the backend for the run's URL, falling back to building it locally."""
         client = self.client
-        _agent_addressing.reject_url(self.session_id, self.address)
+        _addressing.reject_url(self.session_id, self.address)
         try:
             backend = _v2_migration_utils.get_query_backend(client.info.instance_flags)
             if backend == _v2_migration_utils.QueryBackend.CLICKHOUSE_ONLY:
@@ -1350,11 +1345,11 @@ class RunTree(ls_schemas.RunBase):
 
         try:
             run_tree = RunTree(**init_args)
-        except _agent_addressing.EnvAddressError as e:
+        except _addressing.EnvAddressError as e:
             # Neither the header nor the caller names a destination, and the
             # env can't: treat it like a missing parent rather than break the
             # request handling it.
-            _agent_addressing.log_untraced(e)
+            _addressing.log_untraced(e)
             return None  # type: ignore[return-value]
 
         # Set the distributed parent ID to this run's ID for rerooting
@@ -1388,7 +1383,7 @@ class RunTree(ls_schemas.RunBase):
 def _take_address(values: dict[str, Any]) -> dict[str, Any]:
     """Pop and return the project and address keys `values` names."""
     if values.get("address") is not None:
-        values["address"] = _agent_addressing.check_address(values["address"])
+        values["address"] = _addressing.check_address(values["address"])
     return {
         key: value
         for key in (*_PROJECT_ADDRESSING_KEYS, "address")
@@ -1405,7 +1400,7 @@ class _Baggage:
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
         replicas: Optional[Sequence[WriteReplica]] = None,
-        address: Optional[str] = None,
+        address: Optional[AgentAddress] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -1422,7 +1417,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        address: Optional[str] = None
+        address: Optional[AgentAddress] = None
         replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
@@ -1458,8 +1453,13 @@ class _Baggage:
                             # A replica has to name a destination, but either
                             # mode counts. A malformed address is dropped here
                             # rather than raising downstream.
-                            replica_address = _address_from_header(
-                                cast(dict, filtered_replica).pop("address", None)
+                            raw_address = cast(dict, filtered_replica).pop(
+                                "address", None
+                            )
+                            replica_address = (
+                                None
+                                if raw_address is None
+                                else _address_from_header(raw_address)
                             )
                             if filtered_replica.get("project_name"):
                                 # Naming both would raise once resolved, and a
@@ -1513,16 +1513,16 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         if self.address is not None:
-            items.append(f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address)}")
+            items.append(
+                f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address._lrn())}"
+            )
         return ",".join(items)
 
 
-def _address_from_header(value: Any) -> Optional[str]:
-    """Build an address from untrusted header input, or `None` if it is unusable."""
-    if value is None:
-        return None
+def _address_from_header(value: Any) -> Optional[AgentAddress]:
+    """Build an address from an untrusted header value, or `None` if unusable."""
     try:
-        return _address.parse(value)
+        return AgentAddress._from_lrn(value)
     except utils.LangSmithUserError:
         # The value is untrusted, so it is not logged.
         logger.warning("Ignoring an unusable address in a `baggage` header.")
@@ -1663,7 +1663,7 @@ def _ensure_write_replicas(
     ensured = (
         _get_write_replicas_from_env()
         if replicas is None
-        else cast(list[WriteReplica], _agent_addressing.normalize_replicas(replicas))
+        else cast(list[WriteReplica], _addressing.normalize_replicas(replicas))
     )
     if sum(replica.get("primary") is True for replica in ensured) > 1:
         raise ValueError("Only one replica can be marked as primary.")

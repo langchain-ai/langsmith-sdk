@@ -6,7 +6,7 @@
     to a project. This API may change without notice.
 
 A run goes to exactly one destination: a project (`project_name`) or an
-address (`langsmith.address.agent(agent_id, agent_environment)`), which
+address (`langsmith.AgentAddress(id, environment)`), which
 names an agent and one of its environments. The server resolves an address to
 the agent environment's project, so traces follow the agent rather than a
 project name. Project addressing keeps working alongside it.
@@ -21,9 +21,10 @@ project or an address, whichever it names; naming both at one level raises:
 4. `configure`
 5. the env vars (`LANGSMITH_PROJECT`, `LANGSMITH_AGENT_*`)
 
-The address travels as one validated string everywhere -- context variables, run
-trees, replicas, headers -- and is put into the `address` payload field only
-here, in `apply_to_payload` and `FeedbackCreate.model_dump`.
+In code the address is an `AgentAddress`: in context variables, run trees and
+replicas. It becomes its LRN string only on the wire, in the `address` payload
+field, which is set only here, in `apply_to_payload` and
+`FeedbackCreate.model_dump`, and in the `langsmith-address` baggage entry.
 """
 
 from __future__ import annotations
@@ -31,32 +32,33 @@ from __future__ import annotations
 import functools
 import logging
 import warnings
+from collections.abc import Mapping
 from typing import Any, Optional
 
 from langsmith import address as _address
 from langsmith import utils
 from langsmith._internal._beta_decorator import _warn_once
-from langsmith.address import EnvAddressError
+from langsmith.address import AgentAddress, EnvAddressError
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def check_address(address: Any) -> Optional[str]:
-    """Return `address` validated and normalized, or `None` if it is `None`.
+def check_address(address: Any) -> Optional[AgentAddress]:
+    """Return `address` if it is an `AgentAddress`, or `None` if it is `None`.
 
     Raises:
-        utils.LangSmithUserError: If `address` is not a valid address string.
+        utils.LangSmithUserError: If `address` is not an `AgentAddress`.
     """
-    return None if address is None else _address.parse(address)
+    return None if address is None else _address.ensure_agent(address)
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
-    """Put a bare address string replica in an `address` key, and check the rest."""
+    """Put a bare `AgentAddress` replica in an `address` key, and check the rest."""
     if replicas is None:
         return None
     normalized = []
     for replica in replicas:
-        if isinstance(replica, str):
+        if not isinstance(replica, Mapping):
             normalized.append({"address": check_address(replica)})
             continue
         normalized_replica = dict(replica)
@@ -79,11 +81,11 @@ def warn_is_beta() -> None:
     )
 
 
-Tier = tuple[Optional[str], Optional[str]]
+Tier = tuple[Optional[str], Optional[AgentAddress]]
 """One precedence level: the `(project, address)` it names, either may be unset."""
 
 
-def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[str]]:
+def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[AgentAddress]]:
     """Settle a run's single destination, as `(project, address)`.
 
     `tiers` are the levels named in code, highest precedence first; the env
@@ -104,7 +106,7 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[str]]:
         if address is not None:
             return None, address
     env_project = utils.get_tracer_project(return_default_value=False) or None
-    env_address = _address.from_env()
+    env_address = AgentAddress.from_env()
     if env_project and env_address is not None:
         raise EnvAddressError(
             str(_both_at_one_level(env_project, env_address, "in the environment"))
@@ -129,7 +131,7 @@ def first_named(*tiers: Tier) -> Tier:
 
 
 def _both_at_one_level(
-    project: str, address: str, where: str
+    project: str, address: AgentAddress, where: str
 ) -> utils.LangSmithUserError:
     return utils.LangSmithUserError(
         f"A project ({project!r}) and an address ({address!r}) are both set "
@@ -161,7 +163,7 @@ def warn_on_env() -> None:
     if not present:
         return
     try:
-        address = _address.from_env()
+        address = AgentAddress.from_env()
     except EnvAddressError as e:
         warnings.warn(
             f"{e} Calls that name no destination in code are not traced.",
@@ -184,7 +186,7 @@ def warn_on_env() -> None:
     )
 
 
-def reject_url(session_id: Optional[Any], address: Optional[str]) -> None:
+def reject_url(session_id: Optional[Any], address: Optional[Any]) -> None:
     """Refuse to build a run URL the SDK cannot know.
 
     A run URL is keyed on the project id, and the endpoint resolves an address
@@ -203,7 +205,7 @@ def reject_conflicting(
     *,
     project: Optional[Any] = None,
     session_id: Optional[Any] = None,
-    address: Optional[str] = None,
+    address: Optional[AgentAddress] = None,
 ) -> None:
     """Reject a call that names both a project and an address.
 
@@ -224,7 +226,7 @@ def reject_conflicting(
 
 
 def apply_to_payload(payload: dict, *, update: bool = False) -> None:
-    """Put a run payload's address in its wire field, as one lowercase string.
+    """Put a run payload's address in its wire field, as its LRN string.
 
     The one place a run's `address` is settled. A project already on the
     payload addresses the run, so the environment is not consulted. With no
@@ -234,16 +236,27 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
     address from the post that established it, and one naming nothing is
     resolved by run id.
     """
-    address = check_address(payload.pop("address", None))
+    address = payload.pop("address", None)
+    if isinstance(address, str):
+        # Wire data already applied: a retried batch re-sends it. It is parsed
+        # again, so a malformed one cannot fail the whole batch in the backend.
+        try:
+            address = AgentAddress._from_lrn(address)
+        except utils.LangSmithUserError:
+            raise utils.LangSmithUserError(
+                "The run's `address` is not a valid agent address."
+            ) from None
+    else:
+        address = check_address(address)
     named_project = (
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
     if address is None and not (update or named_project):
-        address = _address.from_env()
+        address = AgentAddress.from_env()
     if address is None:
         return
     warn_is_beta()
-    payload["address"] = address
+    payload["address"] = address._lrn()
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)

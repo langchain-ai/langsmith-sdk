@@ -2,19 +2,17 @@
  * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  *
- * An address is a plain string, `lrn:agents/{id}/environments/{environment}`,
- * typed as a template literal so a literal is checked at compile time. A
- * dynamic `string` goes through `address.parse`, which validates it at
- * runtime (JS callers are validated the same way). The environment is always
- * rendered lowercase.
+ * An `Address` names a tracing project held by a feature: an `AgentAddress`, an
+ * `ExperimentAddress` or the workspace's `EvaluatorAddress`. Any of them can be resolved to
+ * its project. Only an `AgentAddress` can receive traces, and ingestion rejects the
+ * others at its entry points.
  *
  * @example
  * ```ts
- * import { address, traceable } from "langsmith";
+ * import { AgentAddress, traceable } from "langsmith";
  *
- * const support = address.agent("customer-support", "production");
+ * const support = new AgentAddress("customer-support", "production");
  * const handle = traceable(fn, { address: support });
- * // or a literal: { address: "lrn:agents/customer-support/environments/staging" }
  * ```
  */
 import { getEnvironmentVariable } from "./utils/env.js";
@@ -22,8 +20,27 @@ import { getEnvironmentVariable } from "./utils/env.js";
 /** (beta) An agent environment. */
 export type Environment = "local" | "development" | "staging" | "production";
 
-/** (beta) An address string, `lrn:agents/{id}/environments/{environment}`. */
-export type Address = `lrn:agents/${string}/environments/${Environment}`;
+/**
+ * @internal The wire identifier, `lrn:agents/{id}/environments/{environment}`,
+ * typed as a template literal so a literal is checked at compile time.
+ */
+export type Lrn = `lrn:agents/${string}/environments/${Environment}`;
+
+/** (beta) The backend's form of an address, as the resolve endpoint takes it. */
+export type ApiAddress = {
+  kind: "AGENT" | "EXPERIMENT" | "EVALUATOR";
+  id?: string;
+  environment?: string;
+};
+
+/** (beta) A feature that holds traces in a tracing project. */
+export interface Address {
+  /** The address in the backend's form. */
+  toApiAddress(): ApiAddress;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // The server's agent id rule: a DNS label, so a hostname can carry the id.
 const AGENT_ID_PATTERN = /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -33,11 +50,13 @@ const ENVIRONMENTS: string[] = [
   "staging",
   "production",
 ];
-const ADDRESS_PATTERN = /^lrn:agents\/([^/]*)\/environments\/([^/]*)$/;
+
+// The wire form of an agent address. The parts are validated by `AgentAddress`.
+const LRN_PATTERN = /^lrn:agents\/([^/]+)\/environments\/([^/]+)$/;
 
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
 
-/** The `LANGSMITH_AGENT_*` / project env vars name half an address, or both. */
+/** (beta) The `LANGSMITH_AGENT_*` / project env vars name half an address, or both. */
 export class EnvAddressError extends Error {
   constructor(message: string) {
     super(message);
@@ -46,84 +65,165 @@ export class EnvAddressError extends Error {
 }
 
 /**
- * (beta) Build the address of an agent's environment.
- * @param agentId 1 to 63 lowercase ASCII letters, digits or hyphens, starting
- *   with a letter and ending with a letter or digit.
- * @param agentEnvironment One of `local`, `development`, `staging` or
- *   `production`, in any case.
- * @throws If a value is invalid.
+ * (beta) The address of an agent's environment.
+ *
+ * @example
+ * ```ts
+ * new AgentAddress("customer-support", "production");
+ * ```
  */
-export function agent(
-  agentId: string,
-  agentEnvironment: Environment | (string & {}),
-): Address {
-  if (typeof agentId !== "string" || !AGENT_ID_PATTERN.test(agentId)) {
-    throw new Error(
-      "Address agent id must be 1 to 63 lowercase ASCII letters, digits, or " +
-        "hyphens, start with a letter, and end with a letter or digit, got " +
-        `${JSON.stringify(agentId)}. Use an id such as "support-agent".`,
-    );
+export class AgentAddress implements Address {
+  readonly id: string;
+
+  /** Always lowercase. */
+  readonly environment: Environment;
+
+  /**
+   * @param id 1 to 63 lowercase ASCII letters, digits or hyphens, starting
+   *   with a letter and ending with a letter or digit. The server creates the
+   *   agent on first use.
+   * @param environment One of `local`, `development`, `staging` or `production`, in
+   *   any case.
+   * @throws If a value is invalid.
+   */
+  constructor(id: string, environment: Environment | (string & {})) {
+    if (typeof id !== "string" || !AGENT_ID_PATTERN.test(id)) {
+      throw new Error(
+        "Address agent id must be 1 to 63 lowercase ASCII letters, digits, or " +
+          "hyphens, start with a letter, and end with a letter or digit, got " +
+          `${JSON.stringify(id)}. Use an id such as "support-agent".`,
+      );
+    }
+    const normalized =
+      typeof environment === "string" ? environment.toLowerCase() : undefined;
+    if (normalized === undefined || !ENVIRONMENTS.includes(normalized)) {
+      throw new Error(
+        `Address environment must be one of ${ENVIRONMENTS.join(", ")}, got ` +
+          `${JSON.stringify(environment)}.`,
+      );
+    }
+    this.id = id;
+    this.environment = normalized as Environment;
+    Object.freeze(this);
   }
-  const environment =
-    typeof agentEnvironment === "string"
-      ? agentEnvironment.toLowerCase()
-      : undefined;
-  if (environment === undefined || !ENVIRONMENTS.includes(environment)) {
-    throw new Error(
-      `Address environment must be one of ${ENVIRONMENTS.join(", ")}, got ` +
-        `${JSON.stringify(agentEnvironment)}.`,
-    );
+
+  toApiAddress(): ApiAddress {
+    return {
+      kind: "AGENT",
+      id: this.id,
+      environment: this.environment.toUpperCase(),
+    };
   }
-  return `lrn:agents/${agentId}/environments/${environment as Environment}`;
+
+  /** @internal */
+  _toLrn(): Lrn {
+    return `lrn:agents/${this.id}/environments/${this.environment}`;
+  }
+
+  /**
+   * @internal Parse an LRN read from the wire, such as a `baggage` header. The
+   * value is untrusted, so it is not echoed in the error.
+   * @throws If `value` is not an agent LRN, or names an invalid id or environment.
+   */
+  static _fromLrn(value: unknown): AgentAddress {
+    const match = typeof value === "string" ? LRN_PATTERN.exec(value) : null;
+    if (match === null) {
+      throw new Error("Not an agent address.");
+    }
+    return new AgentAddress(match[1], match[2]);
+  }
+
+  /**
+   * Read the agent named by `LANGSMITH_AGENT_ID` and
+   * `LANGSMITH_AGENT_ENVIRONMENT`; `undefined` if neither is set.
+   * @throws {EnvAddressError} If only one is set, or a value is invalid.
+   */
+  static fromEnv(): AgentAddress | undefined {
+    const values = ENV_NAMES.map((name) => getEnvironmentVariable(name));
+    if (!values.some(Boolean)) {
+      return undefined;
+    }
+    try {
+      const missing = ENV_NAMES.filter((_, i) => !values[i]);
+      if (missing.length > 0) {
+        throw new Error(`An address needs ${missing.join(" and ")} as well.`);
+      }
+      return new AgentAddress(values[0] as string, values[1] as string);
+    } catch (e) {
+      const present = ENV_NAMES.flatMap((name, i) =>
+        values[i] ? [`${name}=${JSON.stringify(values[i])}`] : [],
+      ).join(", ");
+      throw new EnvAddressError(
+        `The LANGSMITH_AGENT_* env vars can't address a run (${present}): ${
+          (e as Error).message
+        }`,
+      );
+    }
+  }
+}
+
+/** (beta) The address of an experiment's tracing project. */
+export class ExperimentAddress implements Address {
+  /** Always lowercase. */
+  readonly id: string;
+
+  /**
+   * @param id The experiment's UUID.
+   * @throws If `id` is not a UUID.
+   */
+  constructor(id: string) {
+    if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
+      throw new Error(
+        `Experiment id must be a UUID, got ${JSON.stringify(id)}.`,
+      );
+    }
+    this.id = id.toLowerCase();
+    Object.freeze(this);
+  }
+
+  toApiAddress(): ApiAddress {
+    return { kind: "EXPERIMENT", id: this.id };
+  }
+}
+
+/** (beta) The address of the workspace's shared evaluators project. */
+export class EvaluatorAddress implements Address {
+  constructor() {
+    Object.freeze(this);
+  }
+
+  toApiAddress(): ApiAddress {
+    return { kind: "EVALUATOR" };
+  }
 }
 
 /**
- * (beta) Validate an address string, lowercasing its environment.
- * Only agent addresses, `lrn:agents/{id}/environments/{environment}`, exist.
- * @throws If `value` is not a valid agent address.
+ * @internal The ingestion entry-point guard: `value` must be an `AgentAddress` (or
+ * absent), and is returned as is. Other addresses and strings are rejected.
+ * @throws If `value` is not an `AgentAddress`.
  */
-export function parse(value: string): Address {
-  const match =
-    typeof value === "string" ? ADDRESS_PATTERN.exec(value) : undefined;
-  if (!match) {
-    throw new Error(
-      "An address must be a string like " +
-        `"lrn:agents/{id}/environments/{environment}", got ${JSON.stringify(value)}.`,
-    );
-  }
-  return agent(match[1], match[2]);
-}
-
-/**
- * (beta) Read the address named by `LANGSMITH_AGENT_ID` and
- * `LANGSMITH_AGENT_ENVIRONMENT`; `undefined` if neither is set.
- * @throws {EnvAddressError} If only one is set, or a value is invalid.
- */
-export function fromEnv(): Address | undefined {
-  const values = ENV_NAMES.map((name) => getEnvironmentVariable(name));
-  if (!values.some(Boolean)) {
+export function ensureAgent(value: unknown): AgentAddress | undefined {
+  if (value == null) {
     return undefined;
   }
-  try {
-    const missing = ENV_NAMES.filter((_, i) => !values[i]);
-    if (missing.length > 0) {
-      throw new Error(`An address needs ${missing.join(" and ")} as well.`);
-    }
-    return agent(values[0] as string, values[1] as string);
-  } catch (e) {
-    const present = ENV_NAMES.flatMap((name, i) =>
-      values[i] ? [`${name}=${JSON.stringify(values[i])}`] : [],
-    ).join(", ");
-    throw new EnvAddressError(
-      `The LANGSMITH_AGENT_* env vars can't address a run (${present}): ${
-        (e as Error).message
-      }`,
+  if (value instanceof AgentAddress) {
+    return value;
+  }
+  if (
+    typeof value === "object" &&
+    typeof (value as Address).toApiAddress === "function"
+  ) {
+    throw new Error(
+      `Only an AgentAddress can receive traces, got ${
+        (value as object).constructor?.name ?? "an unknown address"
+      }.`,
     );
   }
+  throw new Error(
+    "address must be an AgentAddress such as `new AgentAddress(id, environment)`, got " +
+      `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
+  );
 }
-
-/** (beta) Build, validate and read addresses. */
-export const address = { agent, parse, fromEnv };
 
 /** @internal The `LANGSMITH_AGENT_*` env var names an address reads. */
 export function envNames(): string[] {

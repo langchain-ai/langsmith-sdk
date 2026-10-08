@@ -69,7 +69,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import (
-    _agent_addressing,
+    _addressing,
     _orjson,
     _profiles,
     _v2_migration_utils,
@@ -132,6 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
+from langsmith.address import AgentAddress
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -361,6 +362,7 @@ if TYPE_CHECKING:
     from langsmith._openapi_client.resources.sandboxes.sandboxes import (
         AsyncSandboxesResource,
     )
+    from langsmith._openapi_client.resources.sessions import AsyncSessionsResource
     from langsmith._openapi_client.resources.threads import AsyncThreadsResource
     from langsmith._openapi_client.resources.traces import AsyncTracesResource
     from langsmith._openapi_client.types.run import Run as V2Run
@@ -1350,7 +1352,7 @@ class Client:
                 self.api_url,
                 _api_url_source(api_url, env_api_url, profile_config.api_url),
             )
-        _agent_addressing.warn_on_env()
+        _addressing.warn_on_env()
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -1703,6 +1705,12 @@ class Client:
         """Access the traces resource (query, list_runs)."""
         _check_backend_version(self.info.version, min_version="0.16.0")
         return self._get_langsmith_api().traces
+
+    @property
+    def sessions(self) -> AsyncSessionsResource:
+        """(beta) Access the sessions resource (resolve an address to its project)."""
+        _check_backend_version(self.info.version, min_version="0.18.0")
+        return self._get_langsmith_api().sessions
 
     @property
     def public(self) -> AsyncPublicResource:
@@ -2486,7 +2494,7 @@ class Client:
                 extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
-        _agent_addressing.apply_to_payload(run_create, update=update)
+        _addressing.apply_to_payload(run_create, update=update)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
@@ -2583,8 +2591,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            address (Optional[str]): (beta) An address string, e.g.
-                from `langsmith.address.agent`, to send the run to instead of a project.
+            address (Optional[AgentAddress]): (beta) An `AgentAddress`, such as
+                `ls.AgentAddress(id, environment)`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 This is in beta and enabled per workspace; a
@@ -2636,13 +2644,13 @@ class Client:
         authorization: str | None = kwargs.pop("authorization", None)
         cookie: str | None = kwargs.pop("cookie", None)
         if kwargs.get("address") is not None:
-            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
         # Only `project_name`, this method's own parameter, counts as a caller
         # naming a project. `session_name` and `session_id` arrive in `kwargs`
         # as part of an already-resolved run body -- `RunTree.post` sends the
         # tree's fields that way -- where a project beside an agent means the
         # two were meant to travel together for the endpoint to refuse.
-        _agent_addressing.reject_conflicting(
+        _addressing.reject_conflicting(
             project=project_name, address=kwargs.get("address")
         )
         if project_name:
@@ -2657,12 +2665,12 @@ class Client:
             # bad env is caught, rather than in `_run_transform`.
             kwargs.pop("session_name", None)
             try:
-                project_name, kwargs["address"] = _agent_addressing.resolve(
+                project_name, kwargs["address"] = _addressing.resolve(
                     (None, kwargs.get("address"))
                 )
-            except _agent_addressing.EnvAddressError as e:
+            except _addressing.EnvAddressError as e:
                 # Dropped, not raised: tracing must not break the caller.
-                _agent_addressing.log_untraced(e)
+                _addressing.log_untraced(e)
                 return
         run_create = {
             **kwargs,
@@ -3913,7 +3921,7 @@ class Client:
             "_replica_auths", None
         )
         if kwargs.get("address") is not None:
-            kwargs["address"] = _agent_addressing.check_address(kwargs["address"])
+            kwargs["address"] = _addressing.check_address(kwargs["address"])
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -3928,7 +3936,7 @@ class Client:
             "address": kwargs.pop("address", None),
         }
         # Updates don't go through `_run_transform`, so address them here.
-        _agent_addressing.apply_to_payload(data, update=True)
+        _addressing.apply_to_payload(data, update=True)
         if start_time is not None:
             data["start_time"] = start_time.isoformat()
         if attachments:
@@ -4921,7 +4929,7 @@ class Client:
 
         Kept for backends that predate the ``/runs/{run_id}/url`` v2 endpoint.
         """
-        _agent_addressing.reject_url(
+        _addressing.reject_url(
             getattr(run, "session_id", None), getattr(run, "address", None)
         )
         if session_id := getattr(run, "session_id", None):
@@ -8308,7 +8316,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        address: Optional[str] = None,
+        address: Optional[AgentAddress] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8381,7 +8389,7 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
-            address (Optional[str]):
+            address (Optional[AgentAddress]):
                 The address to attach this feedback to, instead of a project.
                 Pass whatever the run being described was traced to -- for a
                 run created in this process, `run_tree.address`. Cannot be
@@ -8438,8 +8446,8 @@ class Client:
             )
             ```
         """
-        address = _agent_addressing.check_address(address)
-        _agent_addressing.reject_conflicting(
+        address = _addressing.check_address(address)
+        _addressing.reject_conflicting(
             project=project_id, session_id=session_id, address=address
         )
         run_id = run_id or trace_id

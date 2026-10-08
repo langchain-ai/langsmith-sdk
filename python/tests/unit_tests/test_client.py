@@ -50,7 +50,7 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
-from langsmith._internal import _agent_addressing, _operations, _orjson
+from langsmith._internal import _addressing, _operations, _orjson
 from langsmith._internal._beta_decorator import (
     LangSmithBetaWarning,
     _warn_once,
@@ -8408,9 +8408,9 @@ class TestPatchInheritsThePostsTarget:
             LANGSMITH_AGENT_ENVIRONMENT="staging",
         )
         post: dict = {"session_name": "myproj"}
-        _agent_addressing.apply_to_payload(post)
+        _addressing.apply_to_payload(post)
         patch: dict = {"session_name": None, "session_id": None}
-        _agent_addressing.apply_to_payload(patch, update=True)
+        _addressing.apply_to_payload(patch, update=True)
         assert post == {"session_name": "myproj"}
         # No address added. The null session keys are left exactly as
         # `update_run` built them, which is what `main` sends today.
@@ -8423,7 +8423,7 @@ def test_batch_update_does_not_resolve_the_ambient_agent(
 ) -> None:
     """`multipart_ingest(update=...)` must inherit the post's target too.
 
-    Driven through the public method rather than `_apply_agent_addressing`:
+    Driven through the public method rather than `_apply_addressing`:
     the first round of tests for this called the helper directly, which is why
     they passed while `_run_transform` -- and so both batch paths -- stayed
     broken.
@@ -8469,7 +8469,7 @@ class TestAgentAddressingWarnsOnce:
         payload: dict = {"session_name": "proj"}
         with warnings.catch_warnings():
             warnings.simplefilter("error", LangSmithBetaWarning)
-            _agent_addressing.apply_to_payload(payload)
+            _addressing.apply_to_payload(payload)
         assert payload == {"session_name": "proj"}
 
 
