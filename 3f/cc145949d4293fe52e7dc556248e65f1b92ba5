@@ -1,0 +1,32 @@
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 19
+js/src/traceable.ts
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 43
+js/src/utils/addressing.ts
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 1-109
+js/src/client.ts
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 97
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3fcc145949d4293fe52e7dc556248e65f1b92ba5",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
