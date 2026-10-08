@@ -132,7 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
-from langsmith.address import Agent
+from langsmith.address import AgentAddress
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -2591,8 +2591,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
-            address (Optional[Agent]): (beta) An `Agent`, such as
-                `ls.Agent(id, environment)`, to send the run to instead of a project.
+            address (Optional[AgentAddress]): (beta) An `AgentAddress`, such as
+                `ls.AgentAddress(id, environment)`, to send the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 This is in beta and enabled per workspace; a
@@ -8316,7 +8316,7 @@ class Client:
         session_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         extend_trace_retention: bool = True,
-        address: Optional[Agent] = None,
+        address: Optional[AgentAddress] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -8389,7 +8389,7 @@ class Client:
             extend_trace_retention (bool, default=True):
                 If false, create the feedback without extending the trace's retention
                 tier.
-            address (Optional[Agent]):
+            address (Optional[AgentAddress]):
                 The address to attach this feedback to, instead of a project.
                 Pass whatever the run being described was traced to -- for a
                 run created in this process, `run_tree.address`. Cannot be

@@ -2,16 +2,16 @@
  * (beta) Addresses that name where runs are sent instead of a project.
  * Enabled per workspace; a workspace without it rejects the runs.
  *
- * An `Address` names a tracing project held by a feature: an `Agent`, an
- * `Experiment` or the workspace's `Evaluator`s. Any of them can be resolved to
- * its project. Only an `Agent` can receive traces, and ingestion rejects the
+ * An `Address` names a tracing project held by a feature: an `AgentAddress`, an
+ * `ExperimentAddress` or the workspace's `EvaluatorAddress`. Any of them can be resolved to
+ * its project. Only an `AgentAddress` can receive traces, and ingestion rejects the
  * others at its entry points.
  *
  * @example
  * ```ts
- * import { Agent, traceable } from "langsmith";
+ * import { AgentAddress, traceable } from "langsmith";
  *
- * const support = new Agent("customer-support", "production");
+ * const support = new AgentAddress("customer-support", "production");
  * const handle = traceable(fn, { address: support });
  * ```
  */
@@ -51,7 +51,7 @@ const ENVIRONMENTS: string[] = [
   "production",
 ];
 
-// The wire form of an agent address. The parts are validated by `Agent`.
+// The wire form of an agent address. The parts are validated by `AgentAddress`.
 const LRN_PATTERN = /^lrn:agents\/([^/]+)\/environments\/([^/]+)$/;
 
 const ENV_NAMES = ["LANGSMITH_AGENT_ID", "LANGSMITH_AGENT_ENVIRONMENT"];
@@ -69,10 +69,10 @@ export class EnvAddressError extends Error {
  *
  * @example
  * ```ts
- * new Agent("customer-support", "production");
+ * new AgentAddress("customer-support", "production");
  * ```
  */
-export class Agent implements Address {
+export class AgentAddress implements Address {
   readonly id: string;
 
   /** Always lowercase. */
@@ -125,12 +125,12 @@ export class Agent implements Address {
    * value is untrusted, so it is not echoed in the error.
    * @throws If `value` is not an agent LRN, or names an invalid id or environment.
    */
-  static _fromLrn(value: unknown): Agent {
+  static _fromLrn(value: unknown): AgentAddress {
     const match = typeof value === "string" ? LRN_PATTERN.exec(value) : null;
     if (match === null) {
       throw new Error("Not an agent address.");
     }
-    return new Agent(match[1], match[2]);
+    return new AgentAddress(match[1], match[2]);
   }
 
   /**
@@ -138,7 +138,7 @@ export class Agent implements Address {
    * `LANGSMITH_AGENT_ENVIRONMENT`; `undefined` if neither is set.
    * @throws {EnvAddressError} If only one is set, or a value is invalid.
    */
-  static fromEnv(): Agent | undefined {
+  static fromEnv(): AgentAddress | undefined {
     const values = ENV_NAMES.map((name) => getEnvironmentVariable(name));
     if (!values.some(Boolean)) {
       return undefined;
@@ -148,7 +148,7 @@ export class Agent implements Address {
       if (missing.length > 0) {
         throw new Error(`An address needs ${missing.join(" and ")} as well.`);
       }
-      return new Agent(values[0] as string, values[1] as string);
+      return new AgentAddress(values[0] as string, values[1] as string);
     } catch (e) {
       const present = ENV_NAMES.flatMap((name, i) =>
         values[i] ? [`${name}=${JSON.stringify(values[i])}`] : [],
@@ -163,7 +163,7 @@ export class Agent implements Address {
 }
 
 /** (beta) The address of an experiment's tracing project. */
-export class Experiment implements Address {
+export class ExperimentAddress implements Address {
   /** Always lowercase. */
   readonly id: string;
 
@@ -187,7 +187,7 @@ export class Experiment implements Address {
 }
 
 /** (beta) The address of the workspace's shared evaluators project. */
-export class Evaluator implements Address {
+export class EvaluatorAddress implements Address {
   constructor() {
     Object.freeze(this);
   }
@@ -198,15 +198,15 @@ export class Evaluator implements Address {
 }
 
 /**
- * @internal The ingestion entry-point guard: `value` must be an `Agent` (or
+ * @internal The ingestion entry-point guard: `value` must be an `AgentAddress` (or
  * absent), and is returned as is. Other addresses and strings are rejected.
- * @throws If `value` is not an `Agent`.
+ * @throws If `value` is not an `AgentAddress`.
  */
-export function ensureAgent(value: unknown): Agent | undefined {
+export function ensureAgent(value: unknown): AgentAddress | undefined {
   if (value == null) {
     return undefined;
   }
-  if (value instanceof Agent) {
+  if (value instanceof AgentAddress) {
     return value;
   }
   if (
@@ -214,13 +214,13 @@ export function ensureAgent(value: unknown): Agent | undefined {
     typeof (value as Address).toApiAddress === "function"
   ) {
     throw new Error(
-      `Only an Agent can receive traces, got ${
+      `Only an AgentAddress can receive traces, got ${
         (value as object).constructor?.name ?? "an unknown address"
       }.`,
     );
   }
   throw new Error(
-    "address must be an Agent such as `new Agent(id, environment)`, got " +
+    "address must be an AgentAddress such as `new AgentAddress(id, environment)`, got " +
       `${typeof value === "string" ? JSON.stringify(value) : typeof value}.`,
   );
 }

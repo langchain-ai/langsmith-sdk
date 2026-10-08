@@ -11,9 +11,9 @@ import {
 import * as langsmith from "../index.js";
 import { Client } from "../index.js";
 import {
-  Agent,
-  Evaluator,
-  Experiment,
+  AgentAddress,
+  EvaluatorAddress,
+  ExperimentAddress,
   type Address,
   EnvAddressError,
 } from "../address.js";
@@ -28,10 +28,10 @@ import { _resetWarnedMessages } from "../utils/warn.js";
 import { mockClient } from "./utils/mock_client.js";
 
 // What a JS caller can pass; the SDK validates it at runtime.
-const jsCaller = (value: unknown) => value as Agent;
+const jsCaller = (value: unknown) => value as AgentAddress;
 
-const SUPPORT_AGENT = new Agent("customer-support", "production");
-const STAGING_AGENT = new Agent("customer-support", "staging");
+const SUPPORT_AGENT = new AgentAddress("customer-support", "production");
+const STAGING_AGENT = new AgentAddress("customer-support", "staging");
 const SUPPORT_STR = "lrn:agents/customer-support/environments/production";
 const STAGING_STR = "lrn:agents/customer-support/environments/staging";
 const SUPPORT_WIRE = {
@@ -89,7 +89,7 @@ function headersWith(baggage: string) {
 
 describe("address", () => {
   test("is exported from the package", () => {
-    expect(langsmith.Agent).toBe(Agent);
+    expect(langsmith.AgentAddress).toBe(AgentAddress);
   });
 
   test("an agent is an immutable address", () => {
@@ -97,30 +97,34 @@ describe("address", () => {
     expect(address).toBe(SUPPORT_AGENT);
     expect(SUPPORT_AGENT.id).toBe("customer-support");
     expect(SUPPORT_AGENT.environment).toBe("production");
-    expect(new Agent("customer-support", "PRODUCTION")).toEqual(SUPPORT_AGENT);
+    expect(new AgentAddress("customer-support", "PRODUCTION")).toEqual(
+      SUPPORT_AGENT,
+    );
     expect(() => {
       (SUPPORT_AGENT as any).environment = "staging";
     }).toThrow();
   });
 
   test("the environment is lowercased", () => {
-    expect(new Agent("a", "STAGING").environment).toBe("staging");
+    expect(new AgentAddress("a", "STAGING").environment).toBe("staging");
     for (const env of ["local", "development", "staging", "production"]) {
-      expect(new Agent("a", env).environment).toBe(env);
+      expect(new AgentAddress("a", env).environment).toBe(env);
     }
   });
 
   test("agent rejects invalid values", () => {
     for (const id of ["", "a".repeat(64), "Support", "1a", "a-", "a_b"]) {
-      expect(() => new Agent(id, "production")).toThrow(/1 to 63 lowercase/);
+      expect(() => new AgentAddress(id, "production")).toThrow(
+        /1 to 63 lowercase/,
+      );
     }
     for (const id of ["a", "a".repeat(63), "support-v2"]) {
-      expect(new Agent(id, "production").id).toBe(id);
+      expect(new AgentAddress(id, "production").id).toBe(id);
     }
     for (const env of ["", "prod", "e"]) {
-      expect(() => new Agent("a", env)).toThrow(/must be one of/);
+      expect(() => new AgentAddress("a", env)).toThrow(/must be one of/);
     }
-    expect(() => new Agent("a", undefined as any)).toThrow();
+    expect(() => new AgentAddress("a", undefined as any)).toThrow();
   });
 
   test("toApiAddress names the agent with an uppercase environment", () => {
@@ -134,7 +138,7 @@ describe("address", () => {
 
   test("the LRN is not public", () => {
     // @ts-expect-error parse is internal
-    expect(Agent.parse).toBeUndefined();
+    expect(AgentAddress.parse).toBeUndefined();
     const rendered: string = String(SUPPORT_AGENT);
     expect(rendered).not.toContain("lrn:");
     expect(Object.keys(SUPPORT_AGENT).sort()).toEqual(["environment", "id"]);
@@ -148,11 +152,11 @@ describe("address", () => {
   });
 });
 
-describe("Experiment and Evaluator", () => {
+describe("ExperimentAddress and EvaluatorAddress", () => {
   const UUID = "0A1B2C3D-0000-4000-8000-ABCDEF012345";
 
-  test("an Experiment is a frozen address with a lowercase id", () => {
-    const experiment = new Experiment(UUID);
+  test("an ExperimentAddress is a frozen address with a lowercase id", () => {
+    const experiment = new ExperimentAddress(UUID);
     expect(experiment.toApiAddress()).toEqual({
       kind: "EXPERIMENT",
       id: UUID.toLowerCase(),
@@ -160,36 +164,36 @@ describe("Experiment and Evaluator", () => {
     expect(Object.isFrozen(experiment)).toBe(true);
     const address: Address = experiment;
     expect(address).toBe(experiment);
-    expect(langsmith.Experiment).toBe(Experiment);
+    expect(langsmith.ExperimentAddress).toBe(ExperimentAddress);
   });
 
-  test("an Experiment rejects a non-UUID", () => {
+  test("an ExperimentAddress rejects a non-UUID", () => {
     for (const bad of ["", "exp", "0a1b2c3d00004000800abcdef012345", 1, null]) {
-      expect(() => new Experiment(bad as any)).toThrow(/must be a UUID/);
+      expect(() => new ExperimentAddress(bad as any)).toThrow(/must be a UUID/);
     }
   });
 
-  test("an Evaluator is a frozen address without an id", () => {
-    const evaluator = new Evaluator();
+  test("an EvaluatorAddress is a frozen address without an id", () => {
+    const evaluator = new EvaluatorAddress();
     expect(evaluator.toApiAddress()).toEqual({ kind: "EVALUATOR" });
     expect(Object.isFrozen(evaluator)).toBe(true);
-    expect(langsmith.Evaluator).toBe(Evaluator);
+    expect(langsmith.EvaluatorAddress).toBe(EvaluatorAddress);
   });
 });
 
-describe("only an Agent can receive traces", () => {
+describe("only an AgentAddress can receive traces", () => {
   class Custom implements Address {
     toApiAddress() {
       return { kind: "EVALUATOR" as const };
     }
   }
   const others = (): any[] => [
-    new Experiment("0a1b2c3d-0000-4000-8000-abcdef012345"),
-    new Evaluator(),
+    new ExperimentAddress("0a1b2c3d-0000-4000-8000-abcdef012345"),
+    new EvaluatorAddress(),
     new Custom(),
   ];
   const ONLY = (name: string) =>
-    new RegExp(`Only an Agent can receive traces, got ${name}\\.`);
+    new RegExp(`Only an AgentAddress can receive traces, got ${name}\\.`);
   const RUN_ID = "00000000-0000-0000-0000-000000000001";
 
   test("RunTree and its replicas reject them", () => {
@@ -243,10 +247,10 @@ describe("only an Agent can receive traces", () => {
     }
   });
 
-  test("a plain object is rejected as not an Agent", () => {
+  test("a plain object is rejected as not an AgentAddress", () => {
     for (const bad of [{}, { _toLrn: () => "x" }]) {
       expect(() => new RunTree({ name: "r", address: bad as any })).toThrow(
-        /address must be an Agent/,
+        /address must be an AgentAddress/,
       );
     }
   });
@@ -254,19 +258,22 @@ describe("only an Agent can receive traces", () => {
   test("the types reject them", () => {
     const rejected = (build: () => unknown) => expect(build).toBeDefined(); // never called; only type-checked
     rejected(() => {
-      // @ts-expect-error an Experiment is not an Agent
-      new RunTree({ name: "r", address: new Experiment(RUN_ID) });
-      // @ts-expect-error an Evaluator is not an Agent
-      traceable(async () => 1, { address: new Evaluator() });
-      // @ts-expect-error a replica takes an Agent
-      new RunTree({ name: "r", replicas: [{ address: new Evaluator() }] });
+      // @ts-expect-error an ExperimentAddress is not an AgentAddress
+      new RunTree({ name: "r", address: new ExperimentAddress(RUN_ID) });
+      // @ts-expect-error an EvaluatorAddress is not an AgentAddress
+      traceable(async () => 1, { address: new EvaluatorAddress() });
+      new RunTree({
+        name: "r",
+        // @ts-expect-error a replica takes an AgentAddress
+        replicas: [{ address: new EvaluatorAddress() }],
+      });
       const { client } = mockClient();
-      const address = new Evaluator();
-      // @ts-expect-error createRun takes an Agent
+      const address = new EvaluatorAddress();
+      // @ts-expect-error createRun takes an AgentAddress
       client.createRun({ name: "r", run_type: "chain", address });
-      // @ts-expect-error createFeedback takes an Agent
+      // @ts-expect-error createFeedback takes an AgentAddress
       client.createFeedback({ runId: "r", key: "k", address });
-      // @ts-expect-error updateRun takes an Agent
+      // @ts-expect-error updateRun takes an AgentAddress
       client.updateRun("r", { address });
     });
   });
@@ -274,32 +281,32 @@ describe("only an Agent can receive traces", () => {
 
 describe("fromEnv", () => {
   test("is undefined when nothing is set", () => {
-    expect(Agent.fromEnv()).toBeUndefined();
+    expect(AgentAddress.fromEnv()).toBeUndefined();
   });
 
   test("half an address or an invalid value throws", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
-    expect(() => Agent.fromEnv()).toThrow(EnvAddressError);
-    expect(() => Agent.fromEnv()).toThrow(/LANGSMITH_AGENT_ENVIRONMENT/);
+    expect(() => AgentAddress.fromEnv()).toThrow(EnvAddressError);
+    expect(() => AgentAddress.fromEnv()).toThrow(/LANGSMITH_AGENT_ENVIRONMENT/);
     delete process.env.LANGSMITH_AGENT_ID;
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
-    expect(() => Agent.fromEnv()).toThrow(/LANGSMITH_AGENT_ID/);
+    expect(() => AgentAddress.fromEnv()).toThrow(/LANGSMITH_AGENT_ID/);
     process.env.LANGSMITH_AGENT_ID = "Bad";
-    expect(() => Agent.fromEnv()).toThrow(EnvAddressError);
+    expect(() => AgentAddress.fromEnv()).toThrow(EnvAddressError);
     process.env.LANGSMITH_AGENT_ID = "a";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "nope";
-    expect(() => Agent.fromEnv()).toThrow(EnvAddressError);
+    expect(() => AgentAddress.fromEnv()).toThrow(EnvAddressError);
   });
 
   test("reads both vars, case-insensitively for the environment", () => {
     process.env.LANGSMITH_AGENT_ID = "customer-support";
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "Production";
-    expect(Agent.fromEnv()).toEqual(SUPPORT_AGENT);
+    expect(AgentAddress.fromEnv()).toEqual(SUPPORT_AGENT);
   });
 
   test("there is no LANGSMITH_ADDRESS env var", () => {
     process.env.LANGSMITH_ADDRESS = SUPPORT_STR;
-    expect(Agent.fromEnv()).toBeUndefined();
+    expect(AgentAddress.fromEnv()).toBeUndefined();
     expect(resolveFromEnv()).toEqual(["default", undefined]);
   });
 });
@@ -318,7 +325,7 @@ describe("precedence", () => {
     process.env.LANGSMITH_AGENT_ID = "a";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
     process.env.LANGSMITH_AGENT_ENVIRONMENT = "staging";
-    expect(resolveFromEnv()[1]).toEqual(new Agent("a", "staging"));
+    expect(resolveFromEnv()[1]).toEqual(new AgentAddress("a", "staging"));
     process.env.LANGSMITH_PROJECT = "p";
     expect(() => resolveFromEnv()).toThrow(EnvAddressError);
   });
@@ -328,7 +335,7 @@ describe("RunTree", () => {
   test("carries the Address it was given", () => {
     const run = new RunTree({
       name: "r",
-      address: new Agent("customer-support", "PRODUCTION"),
+      address: new AgentAddress("customer-support", "PRODUCTION"),
     });
     expect(run.address).toEqual(SUPPORT_AGENT);
     expect(Object.isFrozen(run.address)).toBe(true);
@@ -337,7 +344,7 @@ describe("RunTree", () => {
   test("rejects a string, even a valid LRN", () => {
     for (const bad of [SUPPORT_STR, "support"]) {
       expect(() => new RunTree({ name: "r", address: jsCaller(bad) })).toThrow(
-        /address must be an Agent such as `new Agent\(id, environment\)`/,
+        /address must be an AgentAddress such as `new AgentAddress\(id, environment\)`/,
       );
     }
   });
@@ -367,7 +374,7 @@ describe("RunTree", () => {
     const { client, callSpy } = mockClient();
     await new RunTree({
       name: "r",
-      address: new Agent("customer-support", "Production"),
+      address: new AgentAddress("customer-support", "Production"),
       client,
     }).postRun();
     const [body] = await postedRuns(callSpy, client);
@@ -383,7 +390,9 @@ describe("RunTree", () => {
       name: "r",
       address: SUPPORT_AGENT,
       client,
-      replicas: [{ address: new Agent("customer-support", "PRODUCTION") }],
+      replicas: [
+        { address: new AgentAddress("customer-support", "PRODUCTION") },
+      ],
     });
     await run.postRun();
     const [body] = await postedRuns(callSpy, client);
@@ -520,7 +529,7 @@ describe("traceable", () => {
   test("a string address is rejected at wrap time", () => {
     expect(() =>
       traceable(async () => "ok", { address: jsCaller(SUPPORT_STR) }),
-    ).toThrow(/address must be an Agent/);
+    ).toThrow(/address must be an AgentAddress/);
   });
 
   test("an Address is posted as its LRN", async () => {
@@ -528,7 +537,7 @@ describe("traceable", () => {
     const fn = traceable(async () => "ok", {
       client,
       tracingEnabled: true,
-      address: new Agent("customer-support", "Staging"),
+      address: new AgentAddress("customer-support", "Staging"),
     });
     await fn();
     const [body] = await postedRuns(callSpy, client);
@@ -557,7 +566,7 @@ describe("traceable", () => {
       project_name: "p",
       argsConfigPath: [1],
     });
-    await (fn as any)("x", { address: new Agent("a", "LOCAL") });
+    await (fn as any)("x", { address: new AgentAddress("a", "LOCAL") });
     const [body] = await postedRuns(callSpy, client);
     expect(body.address).toBe("lrn:agents/a/environments/local");
   });
@@ -571,7 +580,7 @@ describe("traceable", () => {
     });
     await expect(async () =>
       (fn as any)("x", { address: "lrn:agents/a/environments/local" }),
-    ).rejects.toThrow(/address must be an Agent/);
+    ).rejects.toThrow(/address must be an AgentAddress/);
   });
 });
 
@@ -602,7 +611,7 @@ describe("Client", () => {
           run_type: "chain",
           address: jsCaller(bad),
         }),
-      ).rejects.toThrow(/address must be an Agent/);
+      ).rejects.toThrow(/address must be an AgentAddress/);
     }
   });
 
@@ -622,7 +631,7 @@ describe("Client", () => {
 
   test("applyToPayload writes the LRN string and keeps it when applied again", () => {
     const payload: any = {
-      address: new Agent("customer-support", "PRODUCTION"),
+      address: new AgentAddress("customer-support", "PRODUCTION"),
     };
     applyToPayload(payload);
     expect(payload).toEqual({ address: SUPPORT_STR });
@@ -630,7 +639,7 @@ describe("Client", () => {
     applyToPayload(payload);
     expect(payload).toEqual({ address: SUPPORT_STR });
     expect(() => applyToPayload({ address: 42 } as any)).toThrow(
-      /address must be an Agent/,
+      /address must be an AgentAddress/,
     );
   });
 
@@ -711,7 +720,7 @@ describe("Client", () => {
     await client.createFeedback({
       runId: "00000000-0000-0000-0000-000000000001",
       key: "k",
-      address: new Agent("customer-support", "PRODUCTION"),
+      address: new AgentAddress("customer-support", "PRODUCTION"),
     });
     const [, init] = callSpy.mock.calls.find(([url]: [string]) =>
       String(url).endsWith("/feedback"),
@@ -730,14 +739,14 @@ describe("Client", () => {
           key: "k",
           address: jsCaller(bad),
         }),
-      ).rejects.toThrow(/address must be an Agent/);
+      ).rejects.toThrow(/address must be an AgentAddress/);
     }
   });
 
   test("a direct updateRun sends the LRN string", async () => {
     const { client, callSpy } = mockClient();
     await client.updateRun("00000000-0000-0000-0000-000000000001", {
-      address: new Agent("customer-support", "STAGING"),
+      address: new AgentAddress("customer-support", "STAGING"),
     });
     const [, init] = callSpy.mock.calls.find(
       ([, init]: [string, any]) => init?.method === "PATCH",
@@ -753,7 +762,7 @@ describe("Client", () => {
       client.updateRun("00000000-0000-0000-0000-000000000001", {
         address: jsCaller(SUPPORT_STR),
       }),
-    ).rejects.toThrow(/address must be an Agent/);
+    ).rejects.toThrow(/address must be an AgentAddress/);
   });
 });
 
@@ -788,6 +797,16 @@ describe("address types", () => {
       // @ts-expect-error updateRun takes an Address
       client.updateRun("r", { address: dynamic });
     });
+  });
+
+  test("the address classes are exported with the Address suffix", () => {
+    for (const name of ["Agent", "Experiment", "Evaluator"]) {
+      expect(name in langsmith).toBe(false);
+      expect(`${name}Address` in langsmith).toBe(true);
+    }
+    expect(new langsmith.AgentAddress("a", "local")).toEqual(
+      new AgentAddress("a", "LOCAL"),
+    );
   });
 
   test("Lrn is not exported from the package", () => {

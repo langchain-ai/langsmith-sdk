@@ -17,9 +17,9 @@ export type {
 export { RunTree, type RunTreeConfig, type WriteReplica } from "./run_trees.js";
 
 export {
-  Agent,
-  Experiment,
-  Evaluator,
+  AgentAddress,
+  ExperimentAddress,
+  EvaluatorAddress,
   type Address,
   type ApiAddress,
   type Environment,

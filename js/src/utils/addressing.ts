@@ -1,4 +1,9 @@
-import { Agent, EnvAddressError, ensureAgent, envNames } from "../address.js";
+import {
+  AgentAddress,
+  EnvAddressError,
+  ensureAgent,
+  envNames,
+} from "../address.js";
 import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
@@ -6,7 +11,7 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, Agent | undefined];
+export type Tier = [string | undefined, AgentAddress | undefined];
 
 export function rejectConflicting(project: unknown, address: unknown): void {
   if (project && address) {
@@ -42,7 +47,7 @@ function getEnvProject(): string | undefined {
  */
 export function resolveFromEnv(): Tier {
   const project = getEnvProject();
-  const address = Agent.fromEnv();
+  const address = AgentAddress.fromEnv();
   if (project && address) {
     throw new EnvAddressError(
       "LANGSMITH_AGENT_* and a project are both set in the environment.",
@@ -77,17 +82,17 @@ export function warnOnEnv(): void {
  * @throws {EnvAddressError} If the env names half an address.
  */
 export function applyToPayload(
-  run: { address?: Agent; session_id?: string; session_name?: string },
+  run: { address?: AgentAddress; session_id?: string; session_name?: string },
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  let address: Agent | undefined;
+  let address: AgentAddress | undefined;
   if (typeof payload.address === "string") {
     // Wire data already applied: a queued run is applied again when its batch
     // is sent. It is parsed again, so a malformed one cannot fail the whole
     // batch in the backend.
     try {
-      address = Agent._fromLrn(payload.address);
+      address = AgentAddress._fromLrn(payload.address);
     } catch {
       throw new Error("The run's `address` is not a valid agent address.");
     }
@@ -98,7 +103,7 @@ export function applyToPayload(
   const namedProject =
     payload.session_id != null || payload.session_name != null;
   if (!address && !update && !namedProject) {
-    address = Agent.fromEnv();
+    address = AgentAddress.fromEnv();
   }
   if (!address) {
     return;

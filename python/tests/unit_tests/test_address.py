@@ -21,8 +21,8 @@ from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree, _Baggage
 from langsmith.schemas import FeedbackCreate
 
-SUPPORT = ls.Agent("support", "production")
-STAGING = ls.Agent("support", "staging")
+SUPPORT = ls.AgentAddress("support", "production")
+STAGING = ls.AgentAddress("support", "staging")
 SUPPORT_LRN = "lrn:agents/support/environments/production"
 STAGING_LRN = "lrn:agents/support/environments/staging"
 UNTRACED = "LangSmith is not tracing this call"
@@ -73,11 +73,11 @@ def _root() -> tuple:
 
 
 def _agent(agent_id: str, environment: str) -> str:
-    return ls.Agent(agent_id, environment)._lrn()
+    return ls.AgentAddress(agent_id, environment)._lrn()
 
 
 def _from_env() -> Optional[str]:
-    agent = ls.Agent.from_env()
+    agent = ls.AgentAddress.from_env()
     return None if agent is None else agent._lrn()
 
 
@@ -120,7 +120,7 @@ class TestConstructors:
     )
     def test_environments_are_lowercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
-            assert ls.Agent("a", given).environment == environment
+            assert ls.AgentAddress("a", given).environment == environment
 
     def test_from_env_with_nothing_set(self) -> None:
         assert _from_env() is None
@@ -166,7 +166,7 @@ class TestConstructors:
     def test_agent_is_an_address(self) -> None:
         assert isinstance(SUPPORT, ls.Address)
         assert not isinstance(SUPPORT_LRN, ls.Address)
-        assert ls.Agent(id="support", environment="PRODUCTION") == SUPPORT
+        assert ls.AgentAddress(id="support", environment="PRODUCTION") == SUPPORT
 
     def test_agent_renders_the_api_address(self) -> None:
         assert SUPPORT.to_api_address() == {
@@ -192,8 +192,8 @@ class TestConstructors:
             RunTree(name="r", address=value)
 
 
-EXPERIMENT = ls.Experiment("0190C3D4-0000-7000-8000-0000000000B1")
-EVALUATOR = ls.Evaluator()
+EXPERIMENT = ls.ExperimentAddress("0190C3D4-0000-7000-8000-0000000000B1")
+EVALUATOR = ls.EvaluatorAddress()
 
 
 class TestOtherAddresses:
@@ -221,7 +221,7 @@ class TestOtherAddresses:
     )
     def test_an_experiment_id_must_be_a_uuid(self, value: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="UUID"):
-            ls.Experiment(value)
+            ls.ExperimentAddress(value)
 
     def test_they_are_addresses(self) -> None:
         for address in (SUPPORT, EXPERIMENT, EVALUATOR):
@@ -229,7 +229,7 @@ class TestOtherAddresses:
 
     @pytest.mark.parametrize("address", [EXPERIMENT, EVALUATOR], ids=["exp", "eval"])
     def test_only_an_agent_can_receive_traces(self, address: Any) -> None:
-        match = "Only an `Agent` can receive traces"
+        match = "Only an `AgentAddress` can receive traces"
         with pytest.raises(ls_utils.LangSmithUserError, match=match):
             with ls.tracing_context(address=address):
                 pass
@@ -246,7 +246,7 @@ class TestOtherAddresses:
 
 
 class TestAddressObjectsAtEntryPoints:
-    """An `Address` is validated once at the entry point; the SDK carries an `Agent`."""
+    """An `Address` is validated once at the entry point, then carried as is."""
 
     def test_tracing_context(self, client: Client) -> None:
         with ls.tracing_context(enabled=True, client=client, address=SUPPORT):
@@ -708,7 +708,7 @@ class TestWire:
         assert payload["address"] == SUPPORT_LRN
 
     def test_a_payload_address_object_is_rendered_once(self) -> None:
-        payload = {"id": "x", "address": ls.Agent("support", "Production")}
+        payload = {"id": "x", "address": ls.AgentAddress("support", "Production")}
         _addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT_LRN
 
@@ -795,3 +795,11 @@ class TestWire:
     def test_no_run_url_for_an_addressed_run(self) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="run URL"):
             RunTree(name="r", address=SUPPORT).get_url()
+
+
+def test_the_address_classes_carry_the_address_suffix() -> None:
+    """`Agent` would read as other models, so the names end in Address."""
+    for name in ("Agent", "Experiment", "Evaluator"):
+        assert not hasattr(ls, name), name
+        assert getattr(ls, f"{name}Address") is getattr(ls.address, f"{name}Address")
+    assert ls.AgentAddress("a", "local") == ls.AgentAddress("a", "LOCAL")

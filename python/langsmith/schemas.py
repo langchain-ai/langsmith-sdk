@@ -34,7 +34,7 @@ from typing_extensions import Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     # Not imported at runtime: `address` imports `utils`, which imports this module.
-    from langsmith.address import Agent
+    from langsmith.address import AgentAddress
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[dict, str, StrictBool, StrictInt, StrictFloat, None]
@@ -564,8 +564,8 @@ class RunLikeDict(TypedDict, total=False):
     id: Optional[UUID]
     session_id: Optional[UUID]
     session_name: Optional[str]
-    address: Optional[Agent]
-    """(beta) The `Agent` to send the run to, instead of a project."""
+    address: Optional[AgentAddress]
+    """(beta) The `AgentAddress` to send the run to, instead of a project."""
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
@@ -695,10 +695,10 @@ class FeedbackCreate(FeedbackBase):
     extend_trace_retention: bool = True
     """When true, extend trace retention as a side effect of creating this feedback."""
     error: Optional[bool] = None
-    # `Any`, not `Agent`: pydantic needs the type at class creation, and importing
+    # `Any`, not `AgentAddress`: pydantic needs the type at class creation, and importing
     # `address` here is circular. The validator below checks it.
     address: Optional[Any] = Field(default=None, exclude=True)
-    """(beta) The `Agent` to send the feedback to, instead of a project."""
+    """(beta) The `AgentAddress` to send the feedback to, instead of a project."""
 
     @field_validator("address")
     @classmethod

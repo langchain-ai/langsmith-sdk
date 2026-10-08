@@ -6,7 +6,7 @@
     to a project. This API may change without notice.
 
 A run goes to exactly one destination: a project (`project_name`) or an
-address (`langsmith.Agent(id, environment)`), which
+address (`langsmith.AgentAddress(id, environment)`), which
 names an agent and one of its environments. The server resolves an address to
 the agent environment's project, so traces follow the agent rather than a
 project name. Project addressing keeps working alongside it.
@@ -21,7 +21,7 @@ project or an address, whichever it names; naming both at one level raises:
 4. `configure`
 5. the env vars (`LANGSMITH_PROJECT`, `LANGSMITH_AGENT_*`)
 
-In code the address is an `Agent`: in context variables, run trees and
+In code the address is an `AgentAddress`: in context variables, run trees and
 replicas. It becomes its LRN string only on the wire, in the `address` payload
 field, which is set only here, in `apply_to_payload` and
 `FeedbackCreate.model_dump`, and in the `langsmith-address` baggage entry.
@@ -38,22 +38,22 @@ from typing import Any, Optional
 from langsmith import address as _address
 from langsmith import utils
 from langsmith._internal._beta_decorator import _warn_once
-from langsmith.address import Agent, EnvAddressError
+from langsmith.address import AgentAddress, EnvAddressError
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def check_address(address: Any) -> Optional[Agent]:
-    """Return `address` if it is an `Agent`, or `None` if it is `None`.
+def check_address(address: Any) -> Optional[AgentAddress]:
+    """Return `address` if it is an `AgentAddress`, or `None` if it is `None`.
 
     Raises:
-        utils.LangSmithUserError: If `address` is not an `Agent`.
+        utils.LangSmithUserError: If `address` is not an `AgentAddress`.
     """
     return None if address is None else _address.ensure_agent(address)
 
 
 def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
-    """Put a bare `Agent` replica in an `address` key, and check the rest."""
+    """Put a bare `AgentAddress` replica in an `address` key, and check the rest."""
     if replicas is None:
         return None
     normalized = []
@@ -81,11 +81,11 @@ def warn_is_beta() -> None:
     )
 
 
-Tier = tuple[Optional[str], Optional[Agent]]
+Tier = tuple[Optional[str], Optional[AgentAddress]]
 """One precedence level: the `(project, address)` it names, either may be unset."""
 
 
-def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[Agent]]:
+def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[AgentAddress]]:
     """Settle a run's single destination, as `(project, address)`.
 
     `tiers` are the levels named in code, highest precedence first; the env
@@ -106,7 +106,7 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[Agent]]:
         if address is not None:
             return None, address
     env_project = utils.get_tracer_project(return_default_value=False) or None
-    env_address = Agent.from_env()
+    env_address = AgentAddress.from_env()
     if env_project and env_address is not None:
         raise EnvAddressError(
             str(_both_at_one_level(env_project, env_address, "in the environment"))
@@ -131,7 +131,7 @@ def first_named(*tiers: Tier) -> Tier:
 
 
 def _both_at_one_level(
-    project: str, address: Agent, where: str
+    project: str, address: AgentAddress, where: str
 ) -> utils.LangSmithUserError:
     return utils.LangSmithUserError(
         f"A project ({project!r}) and an address ({address!r}) are both set "
@@ -163,7 +163,7 @@ def warn_on_env() -> None:
     if not present:
         return
     try:
-        address = Agent.from_env()
+        address = AgentAddress.from_env()
     except EnvAddressError as e:
         warnings.warn(
             f"{e} Calls that name no destination in code are not traced.",
@@ -205,7 +205,7 @@ def reject_conflicting(
     *,
     project: Optional[Any] = None,
     session_id: Optional[Any] = None,
-    address: Optional[Agent] = None,
+    address: Optional[AgentAddress] = None,
 ) -> None:
     """Reject a call that names both a project and an address.
 
@@ -241,7 +241,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         # Wire data already applied: a retried batch re-sends it. It is parsed
         # again, so a malformed one cannot fail the whole batch in the backend.
         try:
-            address = Agent._from_lrn(address)
+            address = AgentAddress._from_lrn(address)
         except utils.LangSmithUserError:
             raise utils.LangSmithUserError(
                 "The run's `address` is not a valid agent address."
@@ -252,7 +252,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
     if address is None and not (update or named_project):
-        address = Agent.from_env()
+        address = AgentAddress.from_env()
     if address is None:
         return
     warn_is_beta()

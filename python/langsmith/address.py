@@ -5,10 +5,11 @@
     it rejects the runs, so tracing is lost rather than falling back to a
     project. This API may change without notice.
 
-An `Address` names the tracing project of a feature: an `Agent`'s environment,
-an `Experiment`, or the workspace's `Evaluator` traces. Query APIs resolve an
-address to its project (`client.sessions.resolve`). Only an `Agent` can receive
-traces, so tracing entry points take an `Agent`, and anything else is rejected.
+An `Address` names the tracing project of a feature: an `AgentAddress`'s
+environment, an `ExperimentAddress`, or the workspace's `EvaluatorAddress` traces.
+Query APIs resolve an address to its project (`client.sessions.resolve`). Only an
+`AgentAddress` can receive traces, so tracing entry points take an `AgentAddress`,
+and anything else is rejected.
 The environment of an agent is one of `local`, `development`, `staging` or
 `production`, and is always lowercase.
 
@@ -16,14 +17,14 @@ Example:
     ```python
     import langsmith as ls
 
-    support = ls.Agent(id="customer-support", environment="production")
+    support = ls.AgentAddress(id="customer-support", environment="production")
 
 
     @ls.traceable(address=support)
     def handle(order): ...
 
 
-    with ls.tracing_context(address=ls.Agent("customer-support", "staging")):
+    with ls.tracing_context(address=ls.AgentAddress("customer-support", "staging")):
         handle(order)
     ```
 """
@@ -40,11 +41,11 @@ from langsmith import utils
 
 __all__ = [
     "Address",
-    "Agent",
+    "AgentAddress",
     "ApiAddress",
-    "Evaluator",
+    "EvaluatorAddress",
     "EnvAddressError",
-    "Experiment",
+    "ExperimentAddress",
 ]
 
 # The server's agent id rule: a DNS label, so a hostname can carry the id.
@@ -55,7 +56,7 @@ _ENVIRONMENTS = ("local", "development", "staging", "production")
 _UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
 )
-# The wire form of an agent address. The parts are validated by `Agent`.
+# The wire form of an agent address. The parts are validated by `AgentAddress`.
 _LRN_PATTERN = re.compile(r"lrn:agents/([^/]+)/environments/([^/]+)")
 
 
@@ -89,7 +90,7 @@ class EnvAddressError(utils.LangSmithUserError):
 
 
 @dataclasses.dataclass(frozen=True)
-class Agent:
+class AgentAddress:
     """(beta) The address of an agent's environment.
 
     Args:
@@ -129,7 +130,7 @@ class Agent:
         return f"lrn:agents/{self.id}/environments/{self.environment}"
 
     @classmethod
-    def _from_lrn(cls, value: Any) -> Agent:
+    def _from_lrn(cls, value: Any) -> AgentAddress:
         """Parse an LRN read from the wire, such as a `baggage` header.
 
         The value is untrusted, so it is not echoed in the error.
@@ -151,7 +152,7 @@ class Agent:
         )
 
     @classmethod
-    def from_env(cls) -> Optional[Agent]:
+    def from_env(cls) -> Optional[AgentAddress]:
         """Read the agent named by the `LANGSMITH_AGENT_*` env vars.
 
         Reads `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`, and
@@ -180,7 +181,7 @@ class Agent:
 
 
 @dataclasses.dataclass(frozen=True)
-class Experiment:
+class ExperimentAddress:
     """(beta) The tracing project of an experiment, by its id.
 
     Query APIs take it; it cannot be sent traces.
@@ -209,7 +210,7 @@ class Experiment:
 
 
 @dataclasses.dataclass(frozen=True)
-class Evaluator:
+class EvaluatorAddress:
     """(beta) The tracing project of the workspace's evaluators.
 
     Evaluator traces share one project per workspace. Query APIs take it; it
@@ -221,24 +222,24 @@ class Evaluator:
         return cast("ApiAddress", {"kind": "EVALUATOR"})
 
 
-def ensure_agent(address: Any) -> Agent:
-    """Return `address` if it is an `Agent`: the only address that takes traces.
+def ensure_agent(address: Any) -> AgentAddress:
+    """Return `address` if it is an `AgentAddress`: the only address that takes traces.
 
     The one place an address given to a tracing entry point is checked; the SDK
     then carries it as is. A string is not an address.
 
     Raises:
-        LangSmithUserError: If `address` is not an `Agent`.
+        LangSmithUserError: If `address` is not an `AgentAddress`.
     """
-    if isinstance(address, Agent):
+    if isinstance(address, AgentAddress):
         return address
     if isinstance(address, Address) and not isinstance(address, str):
         raise utils.LangSmithUserError(
-            f"Only an `Agent` can receive traces, got {address!r}."
+            f"Only an `AgentAddress` can receive traces, got {address!r}."
         )
     raise utils.LangSmithUserError(
-        "An address must be an `Agent` such as `ls.Agent(id, environment)`, "
-        f"got {address!r}."
+        "An address must be an `AgentAddress` such as "
+        f"`ls.AgentAddress(id, environment)`, got {address!r}."
     )
 
 

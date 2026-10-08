@@ -1,4 +1,4 @@
-import type { Agent } from "./address.js";
+import type { AgentAddress } from "./address.js";
 
 export interface TracerSession {
   // The ID of the tenant, or organization
@@ -219,7 +219,7 @@ export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
   session_name?: string;
-  address?: Agent;
+  address?: AgentAddress;
 }
 
 export interface RunUpdate {
@@ -239,7 +239,7 @@ export interface RunUpdate {
   events?: KVMap[];
   session_id?: string;
   session_name?: string;
-  address?: Agent;
+  address?: AgentAddress;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 
