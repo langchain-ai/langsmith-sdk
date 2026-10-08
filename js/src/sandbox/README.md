@@ -661,6 +661,56 @@ try {
 }
 ```
 
+## Verifying Requests from LangSmith
+
+`SandboxTokenVerifier` checks EdDSA signatures against LangSmith's JWKS
+(derived from `LANGSMITH_ENDPOINT`, cached) using Web Crypto, so it needs a
+runtime with Ed25519 support (Node.js 20+, Deno, Bun, Cloudflare Workers). The
+JWKS must be served over HTTPS (localhost is exempt); for a plain-HTTP
+self-hosted deployment on a trusted network, pass `allowInsecureJwks: true`.
+
+### Service URL Users
+
+Apps served from a service URL with LangSmith login receive the caller's
+identity in `X-Langsmith-User-Id` / `X-Langsmith-User-Email`. The sandbox
+runtime strips these from inbound requests and sets them itself, so code that
+knows it is running in a sandbox can trust them as-is. This holds only for
+requests that arrive through the service URL: TCP tunnels and other processes in
+the sandbox calling the port over localhost reach the app with whatever headers
+they choose. Otherwise, verify the signed `X-Langsmith-User-Token` header, which
+carries the same identity:
+
+```typescript
+import { SandboxTokenVerifier, USER_TOKEN_HEADER } from "langsmith/sandbox";
+
+const verifier = new SandboxTokenVerifier();
+
+const user = await verifier.verifyUserToken(req.headers.get(USER_TOKEN_HEADER)!, {
+  audience: req.headers.get("host")!, // the service URL host
+});
+console.log(user.subject, user.email);
+```
+
+### Proxy Callbacks
+
+Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
+header. Pass the raw body. Optionally pass `aud` to check the signature was
+minted for this endpoint: either the callback URL exactly as configured, or a
+predicate called with the signature's audience:
+
+```typescript
+import { CALLBACK_SIGNATURE_HEADER } from "langsmith/sandbox";
+
+const callback = await verifier.verifyCallback({
+  body: await req.text(),
+  signature: req.headers.get(CALLBACK_SIGNATURE_HEADER)!,
+  aud: "https://example.com/sandbox-callback",
+});
+console.log(callback.identity.sandbox_id, callback.host);
+```
+
+Both throw `LangSmithSandboxTokenVerificationError` on failure.
+
 ## Snapshots
 
 Snapshots are the filesystem images sandboxes boot from. You can build one from

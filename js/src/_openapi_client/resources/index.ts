@@ -36,8 +36,15 @@ export {
   type Missing,
   type SortByDatasetColumn,
 } from './datasets/datasets.js';
+export { Fleet } from './fleet/fleet.js';
 export { Info, type InfoListResponse } from './info.js';
-export { Issues, type Issue, type IssueListParams, type IssuesOffsetPaginationIssues } from './issues.js';
+export {
+  Issues,
+  type Issue,
+  type IssueRetrieveParams,
+  type IssueListParams,
+  type IssuesOffsetPaginationIssues,
+} from './issues.js';
 export {
   OnlineEvaluators,
   type BulkDeleteEvaluatorFailedItem,
@@ -67,6 +74,12 @@ export {
   type OnlineEvaluatorSpendParams,
   type OnlineEvaluatorsOffsetPaginationOnlineEvaluators,
 } from './online-evaluators.js';
+export {
+  ProductFeedback,
+  type ProductFeedbackCreateResponse,
+  type ProductFeedbackRetrieveResponse,
+  type ProductFeedbackCreateParams,
+} from './product-feedback.js';
 export { Public } from './public/public.js';
 export {
   Runs,
@@ -96,20 +109,25 @@ export {
   type ServiceURLResponse,
   type SnapshotListResponse,
   type SnapshotResponse,
+  type SandboxListUsageCostsResponse,
+  type SandboxListUsageCostsParams,
   type SandboxResponsesItemsCursorGetPagination,
   type SnapshotResponsesItemsCursorGetPagination,
+  type SandboxListUsageCostsResponsesItemsCursorGetPagination,
 } from './sandboxes/sandboxes.js';
 export {
   Threads,
   type Thread,
   type ThreadStats,
   type ThreadTrace,
+  type ThreadAggregateStatsResponse,
+  type ThreadAggregateStatsParams,
   type ThreadListTracesParams,
   type ThreadQueryParams,
   type ThreadStatsParams,
   type ThreadTracesItemsCursorGetPagination,
   type ThreadsItemsCursorPostPagination,
-} from './threads.js';
+} from './threads/threads.js';
 export {
   Traces,
   type Trace,

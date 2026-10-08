@@ -1136,7 +1136,7 @@ class TestRaiseForInvalidHandshake:
         with pytest.raises(SandboxRetryableConnectionError, match="error_id=err-503"):
             _raise_for_invalid_handshake(exc, "ws://example.com/sb-123/execute/ws")
 
-    @pytest.mark.parametrize("status", [500, 502, 504])
+    @pytest.mark.parametrize("status", [429, 500, 502, 504])
     def test_transient_5xx_is_retryable_and_preserves_error_id(self, status):
         from langsmith.sandbox._ws_execute import _raise_for_invalid_handshake
 
@@ -1233,4 +1233,23 @@ class TestHandshakeFailureWrapping:
                 "https://sb.example.com", "key", "cmd-123"
             )
             with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                list(msg_stream)
+
+    def test_abrupt_execute_close_is_retryable(self):
+        from websockets.exceptions import ConnectionClosedError, InvalidHandshake
+
+        ws = MagicMock()
+        ws.__iter__.side_effect = ConnectionClosedError(None, None)
+        connect = MagicMock()
+        connect.return_value.__enter__.return_value = ws
+
+        with patch(
+            "langsmith.sandbox._ws_execute._ensure_websockets",
+            return_value=(connect, ConnectionClosedError, InvalidHandshake),
+        ):
+            msg_stream, _ = run_ws_stream("https://sb.example.com", "key", "echo hi")
+            with pytest.raises(
+                SandboxRetryableConnectionError,
+                match="no close frame received or sent",
+            ):
                 list(msg_stream)

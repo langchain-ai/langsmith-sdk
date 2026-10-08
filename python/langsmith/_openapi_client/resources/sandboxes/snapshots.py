@@ -30,6 +30,8 @@ class SnapshotsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return SnapshotsResourceWithRawResponse(self)
 
@@ -37,6 +39,8 @@ class SnapshotsResource(SyncAPIResource):
     def with_streaming_response(self) -> SnapshotsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return SnapshotsResourceWithStreamingResponse(self)
 
@@ -46,8 +50,10 @@ class SnapshotsResource(SyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        description: str | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
+        run_config: snapshot_create_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -56,12 +62,23 @@ class SnapshotsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SnapshotResponse:
-        """
-        Create a snapshot from a Docker image (async build).
+        """Create a snapshot from a Docker image (async build).
+
+        Names use lowercase
+        registry-style components separated by slashes, up to 255 characters. The
+        system/ namespace is read-only.
 
         Args:
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           labels: Labels seed the snapshot's labels, overriding any label of the same key derived
               from the Docker image.
+
+          run_config: RunConfig overrides the runtime configuration taken from the Docker image. Every
+              sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+              its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+              the image's, and env_vars merge over it.
 
           tag: mutable Docker-style tag; defaults to "latest"
 
@@ -80,8 +97,10 @@ class SnapshotsResource(SyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "description": description,
                     "labels": labels,
                     "registry_id": registry_id,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 snapshot_create_params.SnapshotCreateParams,
@@ -103,11 +122,12 @@ class SnapshotsResource(SyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SnapshotResponse:
-        """Get a sandbox snapshot by ID or by a Docker-style reference.
-
-        A bare name means
-        name:latest, falling back to the newest ready untagged snapshot of that name. To
-        list the tags under a name, use /api/v2/sandboxes/snapshots-by-name/{name}.
+        """
+        Get a sandbox snapshot by ID or a registry-style reference, including
+        system/default:latest. URL-encode references containing slashes. A bare name
+        means name:latest, falling back to the newest ready untagged snapshot of that
+        name. To list the tags under a name, use
+        /api/v2/sandboxes/snapshots-by-name/{name}.
 
         Args:
           extra_headers: Send extra headers
@@ -150,8 +170,8 @@ class SnapshotsResource(SyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SyncItemsCursorGetPagination[SnapshotResponse]:
         """
-        List sandbox snapshots for the authenticated tenant, with optional filtering,
-        sorting, and pagination. Page with page_size and cursor: replay the response's
+        List workspace and published system snapshots, with optional filtering, sorting,
+        and pagination. Page with page_size and cursor: replay the response's
         next_cursor until it comes back null, which is the only signal that no pages
         remain. Cursors are opaque and only valid on this endpoint; do not parse or
         construct one.
@@ -293,6 +313,8 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncSnapshotsResourceWithRawResponse(self)
 
@@ -300,6 +322,8 @@ class AsyncSnapshotsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncSnapshotsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncSnapshotsResourceWithStreamingResponse(self)
 
@@ -309,8 +333,10 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         docker_image: str,
         fs_capacity_bytes: int,
         name: str,
+        description: str | Omit = omit,
         labels: Dict[str, str] | Omit = omit,
         registry_id: str | Omit = omit,
+        run_config: snapshot_create_params.RunConfig | Omit = omit,
         tag: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
@@ -319,12 +345,23 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SnapshotResponse:
-        """
-        Create a snapshot from a Docker image (async build).
+        """Create a snapshot from a Docker image (async build).
+
+        Names use lowercase
+        registry-style components separated by slashes, up to 255 characters. The
+        system/ namespace is read-only.
 
         Args:
+          description: Description says what this snapshot's image can do, so a caller can hand it to
+              an agent as a capability summary. At most 1024 characters.
+
           labels: Labels seed the snapshot's labels, overriding any label of the same key derived
               from the Docker image.
+
+          run_config: RunConfig overrides the runtime configuration taken from the Docker image. Every
+              sandbox created from the snapshot runs as the image's USER, in its WORKDIR, with
+              its ENV beneath the sandbox's own env_vars; user and work_dir given here replace
+              the image's, and env_vars merge over it.
 
           tag: mutable Docker-style tag; defaults to "latest"
 
@@ -343,8 +380,10 @@ class AsyncSnapshotsResource(AsyncAPIResource):
                     "docker_image": docker_image,
                     "fs_capacity_bytes": fs_capacity_bytes,
                     "name": name,
+                    "description": description,
                     "labels": labels,
                     "registry_id": registry_id,
+                    "run_config": run_config,
                     "tag": tag,
                 },
                 snapshot_create_params.SnapshotCreateParams,
@@ -366,11 +405,12 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> SnapshotResponse:
-        """Get a sandbox snapshot by ID or by a Docker-style reference.
-
-        A bare name means
-        name:latest, falling back to the newest ready untagged snapshot of that name. To
-        list the tags under a name, use /api/v2/sandboxes/snapshots-by-name/{name}.
+        """
+        Get a sandbox snapshot by ID or a registry-style reference, including
+        system/default:latest. URL-encode references containing slashes. A bare name
+        means name:latest, falling back to the newest ready untagged snapshot of that
+        name. To list the tags under a name, use
+        /api/v2/sandboxes/snapshots-by-name/{name}.
 
         Args:
           extra_headers: Send extra headers
@@ -413,8 +453,8 @@ class AsyncSnapshotsResource(AsyncAPIResource):
         timeout: float | httpx.Timeout | None | NotGiven = not_given,
     ) -> AsyncPaginator[SnapshotResponse, AsyncItemsCursorGetPagination[SnapshotResponse]]:
         """
-        List sandbox snapshots for the authenticated tenant, with optional filtering,
-        sorting, and pagination. Page with page_size and cursor: replay the response's
+        List workspace and published system snapshots, with optional filtering, sorting,
+        and pagination. Page with page_size and cursor: replay the response's
         next_cursor until it comes back null, which is the only signal that no pages
         remain. Cursors are opaque and only valid on this endpoint; do not parse or
         construct one.

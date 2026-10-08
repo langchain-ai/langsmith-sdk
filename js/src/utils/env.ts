@@ -115,6 +115,8 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
     "LANGSMITH_CONFIG_FILE",
     "LANGSMITH_PROJECT",
     "LANGSMITH_SESSION",
+    "LANGSMITH_AGENT_ID",
+    "LANGSMITH_AGENT_ENVIRONMENT",
   ];
 
   for (const [key, value] of Object.entries(allEnvVars)) {

@@ -86,6 +86,53 @@ jobs:
               - '.github/**'
 
   # ============================================================================
+  # Freeze Guard
+  # ============================================================================
+  # Fails a PR touching a language folder once that SDK moved to its own repo.
+  # FROZEN is empty until switch day: set it to "js" on the js switch day,
+  # "js python" on the python switch day. Required through the CI Success gate.
+  # Add the `skip-freeze-guard` label to a PR to bypass it (a revert, a hotfix
+  # that has to ship from here). The job is skipped, which the gate accepts.
+  freeze-guard:
+    name: Freeze Guard
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-freeze-guard')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      FROZEN: ""
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Fail if the PR touches a frozen folder
+        run: |
+          if [ -z "$FROZEN" ]; then
+            echo "No folder frozen."
+            exit 0
+          fi
+          # Paginated files API: no size limit like `gh pr diff`, and a rename
+          # lists both its old and new path so moving files out of a frozen
+          # folder is caught too.
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
+          status=0
+          for dir in $FROZEN; do
+            case "$dir" in
+              js) repo=langsmith-javascript ;;
+              python) repo=langsmith-python ;;
+              *) repo="langsmith-$dir" ;;
+            esac
+            hits=$(printf '%s\n' "$files" | grep -E "^$dir/" || true)
+            if [ -n "$hits" ]; then
+              echo "::error::$dir/ moved to https://github.com/langchain-ai/$repo, open this PR there instead. Add the skip-freeze-guard label if it really has to land here."
+              printf '%s\n' "$hits"
+              status=1
+            fi
+          done
+          exit $status
+
+  # ============================================================================
   # Python CI
   # ============================================================================
   python-lint:
@@ -99,7 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -128,7 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
@@ -153,7 +200,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.11"
           enable-cache: true
@@ -174,7 +221,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js 24.x
@@ -199,7 +246,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js 24.x
@@ -224,7 +271,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js 24.x
@@ -258,7 +305,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ matrix.node-version }}
@@ -289,7 +336,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -315,7 +362,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -341,7 +388,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -367,7 +414,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -393,7 +440,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -419,7 +466,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -445,7 +492,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -471,7 +518,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js ${{ env.NODE_VERSION }}
@@ -499,7 +546,7 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.11"
       - name: Create venv and install local langsmith
@@ -716,7 +763,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js 24.x
@@ -766,7 +813,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
       - name: Use Node.js 24.x
@@ -819,6 +866,7 @@ jobs:
     name: "CI Success"
     needs:
       - changes
+      - freeze-guard
       # Python
       - python-lint
       - python-test
@@ -889,3 +937,5 @@ jobs:
               *Workflow:* ${{ github.workflow }}
               *Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
               *Environments:* beta, v16-ch-only, v16-dual, v16-smithdb-only
+
+              <@U0AKDLKCV3J> please investigate the issue and explain simply what happens, add a TLDR at the end of your answer where you go straight to the point to explain to a non-focused reader with ADHD. If the root cause is flaky tests, mention it. Open a fix PR when confidence is high. Tag <@U0BSQM2BQJ3> in your answer.

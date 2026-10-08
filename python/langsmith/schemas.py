@@ -27,6 +27,7 @@ from pydantic import (
     StrictBool,
     StrictFloat,
     StrictInt,
+    field_validator,
 )
 from typing_extensions import Literal, NotRequired, TypedDict
 
@@ -558,6 +559,8 @@ class RunLikeDict(TypedDict, total=False):
     id: Optional[UUID]
     session_id: Optional[UUID]
     session_name: Optional[str]
+    address: Optional[str]
+    """(beta) An address to send the run to, instead of a project."""
     reference_example_id: Optional[UUID]
     input_attachments: Optional[dict]
     output_attachments: Optional[dict]
@@ -687,6 +690,22 @@ class FeedbackCreate(FeedbackBase):
     extend_trace_retention: bool = True
     """When true, extend trace retention as a side effect of creating this feedback."""
     error: Optional[bool] = None
+    address: Optional[str] = Field(default=None, exclude=True)
+
+    @field_validator("address")
+    @classmethod
+    def _check_address(cls, value: Any) -> Optional[str]:
+        # Imported here: `address` imports `utils`, which imports this module.
+        from langsmith._internal._agent_addressing import check_address
+
+        return check_address(value)
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """Dump the feedback, including its address."""
+        dumped = super().model_dump(**kwargs)
+        if self.address is not None:
+            dumped["address"] = self.address
+        return dumped
 
 
 class Feedback(FeedbackBase):

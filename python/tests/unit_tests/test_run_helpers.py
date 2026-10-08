@@ -2746,3 +2746,18 @@ def test_tracing_context_replicas_apply_to_distributed_root_run(parent_kind: str
     assert seen["nested_replicas"] == replicas
     # No reroot: the downstream root still points at the real upstream run id.
     assert seen["parent_run_id"] == upstream.id
+
+
+def _clean_agent_addressing_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_project.cache_clear()

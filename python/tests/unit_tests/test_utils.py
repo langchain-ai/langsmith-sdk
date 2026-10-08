@@ -14,11 +14,37 @@ from unittest.mock import MagicMock, patch
 import attr
 import dataclasses_json
 import pytest
+import requests
 from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
+from langsmith._internal import _agent_addressing
 from langsmith.run_helpers import get_current_run_tree, tracing_context
+
+
+@pytest.mark.parametrize("status_code", [400, 429, 500])
+def test_raise_for_status_with_text_preserves_response(status_code: int) -> None:
+    response = requests.Response()
+    response.status_code = status_code
+    response.url = "https://api.smith.langchain.com/settings"
+    response.headers["Retry-After"] = "7"
+    response._content = b'{"detail": "request failed"}'
+    response.request = requests.Request("GET", response.url).prepare()
+
+    with pytest.raises(requests.HTTPError) as original:
+        response.raise_for_status()
+    with pytest.raises(requests.HTTPError) as raised:
+        ls_utils.raise_for_status_with_text(response)
+
+    error = raised.value
+    assert error.response is response
+    assert error.response.status_code == status_code
+    assert error.response.headers["Retry-After"] == "7"
+    assert error.request is response.request
+    assert error.args == (str(original.value), response.text)
+    assert isinstance(error.__cause__, requests.HTTPError)
+    assert error.__cause__.response is response
 
 
 class LangSmithProjectNameTest(unittest.TestCase):
@@ -647,3 +673,25 @@ def test_filter_request_headers_localhost():
         request, allow_hosts=["http://localhost:3000"]
     )
     assert result is None
+
+
+def test_an_empty_project_variable_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`get_tracer_project` returns "" for an empty variable, not the default.
+
+    The `session_name` field's `default_factory` used to guard that with
+    `or "default"`; the resolution writes the field now, so the guard lives
+    here instead.
+    """
+    for name in ("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT", "LANGCHAIN_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOSTED_LANGSERVE_PROJECT_NAME", "")
+    for fn in (
+        ls_utils.get_env_var,
+        ls_utils.get_tracer_project,
+    ):
+        fn.cache_clear()
+
+    assert ls_utils.get_tracer_project() == ""
+    assert _agent_addressing.resolve()[0] == "default"

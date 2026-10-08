@@ -49,3 +49,6 @@ class BoxListParams(TypedDict, total=False):
 
     status: str
     """Filter by status (provisioning, ready, failed, stopped, deleting)"""
+
+    tag_value_id: SequenceNotStr[str]
+    """Filter by workspace resource tag value IDs; all must match"""

@@ -180,12 +180,14 @@ def raise_for_status_with_text(
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
-        raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
+        raise requests.HTTPError(
+            str(e), response.text, response=cast(requests.Response, response)
+        ) from e
     except httpx.HTTPStatusError as e:
         raise httpx.HTTPStatusError(
             f"{str(e)}: {response.text}",
             request=response.request,  # type: ignore[arg-type]
-            response=response,  # type: ignore[arg-type]
+            response=cast(httpx.Response, response),
         ) from e
 
 

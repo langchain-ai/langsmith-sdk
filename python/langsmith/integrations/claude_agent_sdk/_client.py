@@ -3,13 +3,19 @@
 import logging
 import time
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
+from contextlib import AsyncExitStack, aclosing, contextmanager
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langsmith._internal import _context
 from langsmith._internal._package_version import get_package_version
-from langsmith.run_helpers import get_current_run_tree, trace
+from langsmith.run_helpers import (
+    _set_tracing_context,
+    get_current_run_tree,
+    get_tracing_context,
+    trace,
+)
 
 from ._config import get_tracing_config
 from ._hooks import (
@@ -55,6 +61,11 @@ class TurnLifecycle:
 
     def __init__(self, query_start_time: Optional[float] = None):
         self.current_run: Optional[Any] = None
+        # The most recent *main agent* turn. Tracked separately because
+        # ``current_run`` may be a subagent turn, and a conversation can end
+        # while a subagent spoke last (interrupt, max turns, denied
+        # permission). See ``set_stop_reason_from_result``.
+        self.last_main_run: Optional[Any] = None
         self.current_message_id: Optional[str] = None
         self.next_start_time: Optional[float] = query_start_time
         # message_id → RunTree for all LLM runs created this conversation.
@@ -98,6 +109,9 @@ class TurnLifecycle:
                             break
                 elif isinstance(content, list):
                     self.current_run.outputs["content"] = content
+            # Update outputs with provider-specific keys
+            if isinstance(self.current_run.outputs, dict):
+                self.current_run.outputs.update(_anthropic_response_fields(message))
             self._set_usage_from_message(message, self.current_run)
             return None
 
@@ -117,6 +131,11 @@ class TurnLifecycle:
         if run:
             if message_id:
                 self.llm_runs_by_message_id[message_id] = run
+            # Read off the message, not the resolved parent: a subagent turn
+            # whose subagent run could not be looked up still is not a main
+            # agent turn.
+            if getattr(message, "parent_tool_use_id", None) is None:
+                self.last_main_run = run
             self._set_usage_from_message(message, run)
 
         return final_output
@@ -136,6 +155,21 @@ class TurnLifecycle:
         if usage_meta:
             meta = run.extra.setdefault("metadata", {})
             meta["usage_metadata"] = usage_meta
+
+    def set_stop_reason_from_result(self, message: Any) -> None:
+        """Apply a ``ResultMessage`` stop reason to the last main agent turn.
+
+        ``ResultMessage`` describes how the *conversation* ended, so it
+        belongs to the main agent's final turn — not to whichever subagent
+        happened to be speaking if the run was cut short.  Gap-fill only: a
+        streamed value wins here, and transcript reconcile wins over both.
+        """
+        stop_reason = getattr(message, "stop_reason", None)
+        if not stop_reason or self.last_main_run is None:
+            return
+        outputs = self.last_main_run.outputs
+        if isinstance(outputs, dict) and not outputs.get("stop_reason"):
+            outputs["stop_reason"] = stop_reason
 
     def mark_next_start(self) -> None:
         """Mark when the next assistant message will start."""
@@ -158,6 +192,18 @@ class TurnLifecycle:
         self._pending_patch.clear()
 
 
+def _anthropic_response_fields(message: Any) -> dict[str, Any]:
+    """Return Anthropic-native response fields for an LLM run."""
+    fields: dict[str, Any] = {}
+    message_id = getattr(message, "message_id", None)
+    if message_id:
+        fields["id"] = message_id
+    stop_reason = getattr(message, "stop_reason", None)
+    if stop_reason:
+        fields["stop_reason"] = stop_reason
+    return fields
+
+
 def begin_llm_run_from_assistant_messages(
     messages: list[Any],
     prompt: Any,
@@ -178,7 +224,11 @@ def begin_llm_run_from_assistant_messages(
 
     inputs = build_llm_input(prompt, history)
     outputs = [
-        {"content": flatten_content_blocks(m.content), "role": "assistant"}
+        {
+            "content": flatten_content_blocks(m.content),
+            "role": "assistant",
+            **_anthropic_response_fields(m),
+        }
         for m in messages
         if hasattr(m, "content")
     ]
@@ -436,7 +486,7 @@ def instrument_claude_client(original_class: Any) -> None:
     # ── stash originals ──────────────────────────────────────────────
     _orig_init = original_class.__init__
     _orig_query = original_class.query
-    _orig_receive_response = original_class.receive_response
+    _orig_receive_messages = original_class.receive_messages
 
     # ── patched __init__ ─────────────────────────────────────────────
     def _traced_init(self: Any, *args: Any, **kwargs: Any) -> None:
@@ -478,10 +528,10 @@ def instrument_claude_client(original_class: Any) -> None:
 
         return await _orig_query(self, *args, **kwargs)
 
-    # ── patched receive_response ─────────────────────────────────────
-    async def _traced_receive_response(self: Any) -> AsyncGenerator[Any, None]:
-        messages = _orig_receive_response(self)
-
+    # Trace one response, ending before its ResultMessage reaches the caller.
+    async def _traced_response(
+        self: Any, messages: AsyncIterable[Any]
+    ) -> AsyncGenerator[Any, None]:
         trace_inputs: dict[str, Any] = {}
         trace_metadata: dict[str, Any] = {
             "ls_integration": "claude-agent-sdk",
@@ -533,7 +583,42 @@ def instrument_claude_client(original_class: Any) -> None:
         if config.get("tags"):
             trace_kwargs["tags"] = config["tags"]
 
-        async with trace(**trace_kwargs) as run:
+        caller_context = get_tracing_context()
+        caller_session = _current_session.get()
+        caller_parent = get_parent_run_tree()
+        result_message = None
+
+        def _restore_caller_context() -> None:
+            _set_tracing_context(caller_context)
+            _current_session.set(caller_session)
+            set_parent_run_tree(caller_parent)
+
+        @contextmanager
+        def _caller_scope() -> Iterator[None]:
+            """Yield in the caller's scope, preserving any changes made there."""
+            nonlocal caller_context, caller_session, caller_parent
+            response_context = get_tracing_context()
+            response_session = _current_session.get()
+            response_parent = get_parent_run_tree()
+            _restore_caller_context()
+            try:
+                yield
+            finally:
+                caller_context = get_tracing_context()
+                caller_session = _current_session.get()
+                caller_parent = get_parent_run_tree()
+                _set_tracing_context(response_context)
+                _current_session.set(response_session)
+                set_parent_run_tree(response_parent)
+
+        async with AsyncExitStack() as cleanup, trace(**trace_kwargs) as run:
+            # Restore the latest caller scope after trace restores its entry scope.
+            cleanup.callback(_restore_caller_context)
+            # Include the wait for the first message in the response duration.
+            if self._ls_start_time is not None:
+                run.start_time = datetime.fromtimestamp(
+                    self._ls_start_time, tz=timezone.utc
+                )
             # Bind this client's state container to the ContextVar so stream
             # helpers on this SDK event loop pick it up (see
             # _hooks.SessionState). This keeps concurrent ClaudeSDKClient
@@ -549,6 +634,10 @@ def instrument_claude_client(original_class: Any) -> None:
             collected_by_ctx: dict[Optional[str], list[dict[str, Any]]] = {None: []}
 
             prompt_for_llm: Any = self._ls_prompt
+
+            def _end_run() -> None:
+                main_collected = collected_by_ctx.get(None, [])
+                run.end(outputs=main_collected[-1] if main_collected else None)
 
             try:
                 async for msg in messages:
@@ -636,6 +725,7 @@ def instrument_claude_client(original_class: Any) -> None:
                                 )
                         tracker.mark_next_start()
                     elif msg_type == "ResultMessage":
+                        tracker.set_stop_reason_from_result(msg)
                         session_id_val = getattr(msg, "session_id", None)
                         meta = {
                             k: v
@@ -653,12 +743,26 @@ def instrument_claude_client(original_class: Any) -> None:
                         }
                         if meta:
                             run.metadata.update(meta)
+                        # Stop this response's loop, then end the run and clean up.
+                        # Yield ResultMessage only after that cleanup completes.
+                        result_message = msg
+                        break
 
-                    yield msg
-                main_collected = collected_by_ctx.get(None, [])
-                run.end(outputs=main_collected[-1] if main_collected else None)
+                    # Application work must not inherit this response's trace.
+                    with _caller_scope():
+                        yield msg
+                _end_run()
+            except GeneratorExit:
+                # Consumer closed the stream before a ResultMessage arrived.
+                logger.debug(
+                    "Claude Agent stream closed by consumer; ending run %s", run.id
+                )
+                _end_run()
             except Exception:
+                # Let the SDK error reach the caller. The trace() context
+                # manager records it on the root run on the way out.
                 logger.exception("Error while tracing Claude Agent stream")
+                raise
             finally:
                 tracker.close()
                 reconcile_from_transcripts(tracker, session=session)
@@ -669,10 +773,46 @@ def instrument_claude_client(original_class: Any) -> None:
                 finally:
                     _unregister_session(session, session_token)
 
+        if result_message is not None:
+            # The caller may stop reading here; the trace is already finished.
+            yield result_message
+
+    async def _prepend_message(
+        first: Any, messages: AsyncIterator[Any]
+    ) -> AsyncGenerator[Any, None]:
+        """Put back the first message into the async iterator so it can be processed."""
+        yield first
+        async for msg in messages:
+            yield msg
+
+    async def _traced_receive_messages(self: Any) -> AsyncGenerator[Any, None]:
+        # The SDK supplies messages, not response objects. ResultMessage marks
+        # each response boundary: [assistant, tool, ..., result] -> one trace.
+        # Both loops share one SDK iterator. The outer loop reads the first
+        # message of a response. The inner loop forwards that message and keeps
+        # reading until it has also forwarded ResultMessage, then stops.
+        # The outer loop then waits for the first message of the next response.
+        # aclosing closes each iterator when its block exits, including on errors.
+        async with aclosing(_orig_receive_messages(self)) as sdk_messages:
+            # Wait before opening a trace so an idle connection creates no run.
+            async for first_message in sdk_messages:  # OUTER loop
+                # Include the first message this loop already read in the trace.
+                messages = _prepend_message(first_message, sdk_messages)
+                # Create the generator; its body has not run and no trace exists yet.
+                response = _traced_response(self, messages)
+                async with aclosing(response):
+                    # The first iteration starts _traced_response(), which enters
+                    # `async with trace(...)` to create the run, then processes
+                    # a message and yields it here. Later iterations resume that
+                    # same generator and run, rather than starting a new trace.
+                    async for msg in response:  # INNER loop
+                        # Forward each message to the application unchanged.
+                        yield msg
+
     # ── apply patches to the class itself ────────────────────────────
     original_class.__init__ = _traced_init
     original_class.query = _traced_query
-    original_class.receive_response = _traced_receive_response
+    original_class.receive_messages = _traced_receive_messages
     original_class._langsmith_instrumented = True
 
 

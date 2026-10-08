@@ -33,6 +33,7 @@ from langsmith.evaluation._runner import (
     DATA_T,
     EVALUATOR_T,
     ExperimentResultRow,
+    _addressed_to_project,
     _collect_evaluator_keys,
     _evaluator_tracing_mode,
     _evaluators_include_attachments,
@@ -1018,8 +1019,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         }
         with rh.tracing_context(
             **{
-                **current_context,
-                "project_name": "evaluators",
+                **_addressed_to_project(current_context, "evaluators"),
                 "metadata": metadata,
                 "enabled": _evaluator_tracing_mode(
                     self._upload_results, self._disable_evaluator_tracing
@@ -1127,8 +1127,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         }
         with rh.tracing_context(
             **{
-                **current_context,
-                "project_name": "evaluators",
+                **_addressed_to_project(current_context, "evaluators"),
                 "metadata": metadata,
                 "enabled": _evaluator_tracing_mode(
                     self._upload_results, self._disable_evaluator_tracing
