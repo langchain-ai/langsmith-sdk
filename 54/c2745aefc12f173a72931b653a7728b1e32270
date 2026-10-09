@@ -1,0 +1,52 @@
+js/src/tests/otel_translator.vitesttest.ts
+  s_111b5f8a4beaf8::t_a6c0079bbe697f 3,497-539
+  s_111b5f8a4beaf8::t_7c7174c1896f81 540
+js/src/experimental/otel/exporter.ts
+  s_111b5f8a4beaf8::t_5164c63f143b86 11-12,70-77,107,158-171,290-293
+  s_111b5f8a4beaf8::t_fbaad4ae1911a1 283-289,294
+python/langsmith/_internal/_addressing.py
+  s_111b5f8a4beaf8::t_bd428d14b18983 154-156,158-170
+  s_111b5f8a4beaf8::t_30985b0dc4460d 157
+python/tests/unit_tests/test_otel_exporter.py
+  s_111b5f8a4beaf8::t_a40d27f96ee27e 617-627,632-654,664-665,679,694-710,712,718-742,744,746-749,751-760,762-764,766-774,779,781-785,788-791,793-800
+  s_111b5f8a4beaf8::t_b266f71f7ea47f 628-631,714-717
+  s_111b5f8a4beaf8::t_29cffbe3395fe2 14,655-663,666-678,680-693,711,713,743,745,750,761,765,775-778,780,786-787,792
+python/langsmith/_internal/otel/_otel_client.py
+  s_111b5f8a4beaf8::t_52c5f3babfde2f 62,64-79,138
+  s_111b5f8a4beaf8::t_30985b0dc4460d 63
+  s_111b5f8a4beaf8::t_92441d9a627b1c 15-16
+js/src/tests/otel_exporter.test.ts
+  s_111b5f8a4beaf8::t_a6c0079bbe697f 2-11,14,136-236
+  s_111b5f8a4beaf8::t_a8c7c34d0cfe20 237
+js/src/experimental/otel/translator.ts
+  s_111b5f8a4beaf8::t_0b0c3b392bb237 4,36-54,208-210
+  s_111b5f8a4beaf8::t_f7f6fc19b482f9 211-214
+  s_111b5f8a4beaf8::t_cb13398b6066e5 215-216
+python/langsmith/integrations/otel/processor.py
+  s_111b5f8a4beaf8::t_92441d9a627b1c 80,88-89,91-94,96-99,107-109,118-122,132,136,178,190-191,200-204
+  s_111b5f8a4beaf8::t_3b72b75a61ae86 9-10
+python/langsmith/_internal/otel/_otel_exporter.py
+  s_111b5f8a4beaf8::t_bd428d14b18983 32,104-105,538-555,583
+  s_111b5f8a4beaf8::t_a2a2e0cceb2816 584
+python/langsmith/integrations/otel/__init__.py
+  s_111b5f8a4beaf8::t_198cd14bd2af58 10
+  s_111b5f8a4beaf8::t_3b72b75a61ae86 131,178-181,225-228
+js/src/experimental/otel/constants.ts
+  s_111b5f8a4beaf8::t_0b0c3b392bb237 40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54c2745aefc12f173a72931b653a7728b1e32270",
+  "prompts": {},
+  "sessions": {
+    "s_111b5f8a4beaf8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7f87b209-fbce-49bc-a337-bbca768f905e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
