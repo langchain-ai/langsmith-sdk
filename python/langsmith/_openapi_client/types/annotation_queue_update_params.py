@@ -8,7 +8,7 @@ from typing_extensions import Literal, TypeAlias, TypedDict
 from .missing_param import MissingParam
 from .annotation_queue_rubric_item_schema_param import AnnotationQueueRubricItemSchemaParam
 
-__all__ = ["AnnotationQueueUpdateParams", "Metadata", "NumReviewersPerItem"]
+__all__ = ["AnnotationQueueUpdateParams", "EnableReservations", "Metadata", "NumReviewersPerItem", "ReservationMinutes"]
 
 
 class AnnotationQueueUpdateParams(TypedDict, total=False):
@@ -16,7 +16,7 @@ class AnnotationQueueUpdateParams(TypedDict, total=False):
 
     description: Optional[str]
 
-    enable_reservations: bool
+    enable_reservations: EnableReservations
 
     metadata: Optional[Metadata]
 
@@ -24,7 +24,7 @@ class AnnotationQueueUpdateParams(TypedDict, total=False):
 
     num_reviewers_per_item: Optional[NumReviewersPerItem]
 
-    reservation_minutes: Optional[int]
+    reservation_minutes: Optional[ReservationMinutes]
 
     reviewer_access_mode: Optional[Literal["any", "assigned"]]
 
@@ -33,6 +33,10 @@ class AnnotationQueueUpdateParams(TypedDict, total=False):
     rubric_items: Optional[Iterable[AnnotationQueueRubricItemSchemaParam]]
 
 
+EnableReservations: TypeAlias = Union[bool, MissingParam]
+
 Metadata: TypeAlias = Union[Dict[str, object], MissingParam]
 
 NumReviewersPerItem: TypeAlias = Union[int, MissingParam]
+
+ReservationMinutes: TypeAlias = Union[int, MissingParam]
