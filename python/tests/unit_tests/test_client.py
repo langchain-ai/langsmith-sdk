@@ -4727,10 +4727,10 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
 
 
 @patch("langsmith.client.requests.Session")
-def test_zstd_flush_interval_fires_under_steady_traffic(
+def test_flush_interval_fires_under_steady_traffic_with_zstd_compression(
     mock_session_cls: mock.Mock,
 ) -> None:
-    """Steady traffic below the size threshold must still flush on the interval."""
+    """Test that steady traffic below the size threshold still flushes on interval."""
     mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -4758,13 +4758,15 @@ def test_zstd_flush_interval_fires_under_steady_traffic(
             info=info,
         )
 
+        zstd_magic = b"\x28\xb5\x2f\xfd"
+
         def posted() -> bool:
             # A zstd frame, so it is the compress thread that sent, not another path.
-            for c in mock_session.request.mock_calls:
-                if c.args and c.args[0] == "POST":
-                    data = c[2].get("data")
+            for call_obj in mock_session.request.mock_calls:
+                if call_obj.args and call_obj.args[0] == "POST":
+                    data = call_obj[2].get("data")
                     data = data.getvalue() if hasattr(data, "getvalue") else data
-                    if isinstance(data, bytes) and data.startswith(b"\x28\xb5\x2f\xfd"):
+                    if isinstance(data, bytes) and data.startswith(zstd_magic):
                         return True
             return False
 
