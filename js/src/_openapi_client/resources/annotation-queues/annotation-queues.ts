@@ -195,6 +195,8 @@ export interface AnnotationQueueRubricItemSchema {
 
   description?: string | null;
 
+  feedback_config_id?: string | null;
+
   is_assertion?: boolean | null;
 
   is_required?: boolean | null;

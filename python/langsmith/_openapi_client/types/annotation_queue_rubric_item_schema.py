@@ -16,6 +16,8 @@ class AnnotationQueueRubricItemSchema(BaseModel):
 
     description: Optional[str] = None
 
+    feedback_config_id: Optional[str] = None
+
     is_assertion: Optional[bool] = None
 
     is_required: Optional[bool] = None

@@ -17,6 +17,8 @@ class AnnotationQueueRubricItemSchemaParam(TypedDict, total=False):
 
     description: Optional[str]
 
+    feedback_config_id: Optional[str]
+
     is_assertion: Optional[bool]
 
     is_required: Optional[bool]
