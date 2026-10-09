@@ -2753,6 +2753,38 @@ def test_http_status_404_handling(mock_raise_for_status):
         client.request_with_retries("GET", "https://test.url")
 
 
+@pytest.mark.parametrize(
+    "status_code, error_class",
+    [
+        (401, ls_utils.LangSmithAuthError),
+        (404, ls_utils.LangSmithNotFoundError),
+        (409, ls_utils.LangSmithConflictError),
+        (429, ls_utils.LangSmithRateLimitError),
+        (500, ls_utils.LangSmithAPIError),
+        (503, ls_utils.LangSmithError),
+    ],
+)
+@patch("langsmith.client.time.sleep")
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_errors_keep_the_response(
+    mock_raise_for_status, _mock_sleep, status_code, error_class
+):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.headers = {"retry-after": "7"}
+    mock_session.request.return_value = mock_response
+    http_error = HTTPError()
+    mock_raise_for_status.side_effect = http_error
+    with pytest.raises(error_class) as exc_info:
+        client.request_with_retries("GET", "https://test.url", stop_after_attempt=1)
+    assert exc_info.value.response is mock_response
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.response.headers["retry-after"] == "7"
+    assert exc_info.value.__cause__ is http_error
+
+
 @patch("langsmith.client.ls_utils.raise_for_status_with_text")
 def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
     mock_session = MagicMock()
