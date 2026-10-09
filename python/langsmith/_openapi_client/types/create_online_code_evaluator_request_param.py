@@ -19,6 +19,12 @@ class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
 
     code: str
 
+    code_evaluator_input: Optional[Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai"]]
+    """
+    CodeEvaluatorInput is which thread data the evaluator receives. Null or omitted
+    for run evaluators.
+    """
+
     dependencies: Optional[str]
 
     language: str

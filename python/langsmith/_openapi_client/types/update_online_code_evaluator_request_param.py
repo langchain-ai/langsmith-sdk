@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Dict, Optional
-from typing_extensions import TypedDict
+from typing_extensions import Literal, TypedDict
 
 __all__ = ["UpdateOnlineCodeEvaluatorRequestParam", "ManagedCodeEvaluatorSettings"]
 
@@ -18,6 +18,9 @@ class UpdateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
     advanced_features_enabled: bool
 
     code: str
+
+    code_evaluator_input: Optional[Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai"]]
+    """CodeEvaluatorInput is config (not a snapshot rebuild). Null clears it."""
 
     dependencies: Optional[str]
 

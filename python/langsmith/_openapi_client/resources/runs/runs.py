@@ -126,6 +126,7 @@ class RunsResource(SyncAPIResource):
     def query_v2(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         has_error: bool | Omit = omit,
@@ -155,9 +156,18 @@ class RunsResource(SyncAPIResource):
         start_time. Supports filters, cursor pagination, and `selects` to select fields
         to return.
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the run. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes. Not supported on public dataset queries.
+
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
               as opaque and pass it back unmodified.
 
@@ -232,6 +242,7 @@ class RunsResource(SyncAPIResource):
             page=SyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "filter": filter,
                     "has_error": has_error,
@@ -460,6 +471,7 @@ class AsyncRunsResource(AsyncAPIResource):
     def query_v2(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         has_error: bool | Omit = omit,
@@ -489,9 +501,18 @@ class AsyncRunsResource(AsyncAPIResource):
         start_time. Supports filters, cursor pagination, and `selects` to select fields
         to return.
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the run. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes. Not supported on public dataset queries.
+
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
               as opaque and pass it back unmodified.
 
@@ -566,6 +587,7 @@ class AsyncRunsResource(AsyncAPIResource):
             page=AsyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "filter": filter,
                     "has_error": has_error,

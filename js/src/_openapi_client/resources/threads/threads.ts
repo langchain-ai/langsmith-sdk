@@ -86,6 +86,10 @@ export class Threads extends APIResource {
    * Query threads within a project (session), with cursor-based pagination. Returns
    * threads matching the given time range and optional filters.
    *
+   * When `ai_search` is set, `Accept: text/event-stream` is required; requests
+   * without it return 406. AI search is unavailable on deployments that route
+   * queries to the v1 backend and returns 501 there.
+   *
    * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
@@ -1089,6 +1093,14 @@ export interface ThreadListTracesParams extends ItemsCursorGetPaginationParams {
 
 export interface ThreadQueryParams extends ItemsCursorPostPaginationParams {
   /**
+   * Body param: `ai_search` is a plain-language criterion evaluated against the
+   * messages from the agent trajectory scoped to the thread. AND-ed with the
+   * ordinary filters. Requires semantic filtering enabled for the deployment. Must
+   * contain nonempty text of at most 2000 UTF-8 bytes.
+   */
+  ai_search?: string;
+
+  /**
    * Body param: `filter` narrows which threads are returned, using a LangSmith
    * filter expression evaluated against each thread's root run. For example:
    * has(tags, "production") or eq(status, "error"). See
@@ -1144,7 +1156,8 @@ export interface ThreadQueryParams extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json or text/event-stream
+   * Header param: application/json, or text/event-stream (required when ai_search is
+   * set)
    */
   Accept?: string;
 }

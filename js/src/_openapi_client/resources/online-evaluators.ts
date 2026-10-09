@@ -126,6 +126,12 @@ export interface CreateOnlineCodeEvaluatorRequest {
 
   code?: string;
 
+  /**
+   * CodeEvaluatorInput is which thread data the evaluator receives. Null or omitted
+   * for run evaluators.
+   */
+  code_evaluator_input?: 'thread' | 'all_messages' | 'human_ai_pairs' | 'first_human_last_ai' | null;
+
   dependencies?: string | null;
 
   /**
@@ -193,6 +199,12 @@ export interface OnlineCodeEvaluator {
   advanced_features_enabled?: boolean;
 
   code?: string;
+
+  /**
+   * CodeEvaluatorInput is which thread data the evaluator receives. Null for run
+   * evaluators.
+   */
+  code_evaluator_input?: 'thread' | 'all_messages' | 'human_ai_pairs' | 'first_human_last_ai' | null;
 
   dependencies?: string;
 
@@ -373,6 +385,11 @@ export interface UpdateOnlineCodeEvaluatorRequest {
   advanced_features_enabled?: boolean;
 
   code?: string;
+
+  /**
+   * CodeEvaluatorInput is config (not a snapshot rebuild). Null clears it.
+   */
+  code_evaluator_input?: 'thread' | 'all_messages' | 'human_ai_pairs' | 'first_human_last_ai' | null;
 
   dependencies?: string | null;
 

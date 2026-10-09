@@ -175,6 +175,7 @@ class TracesResource(SyncAPIResource):
     def query(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
@@ -184,6 +185,7 @@ class TracesResource(SyncAPIResource):
         trace_filter: str | Omit = omit,
         trace_ids: SequenceNotStr[str] | Omit = omit,
         tree_filter: str | Omit = omit,
+        accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -204,9 +206,18 @@ class TracesResource(SyncAPIResource):
         Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
         and field projection (`selects`).
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the trace. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes.
+
           cursor: `cursor` is the opaque string returned in a previous response's `next_cursor`.
 
           max_start_time: `max_start_time` is the exclusive upper bound for the root-run start time scan
@@ -247,11 +258,13 @@ class TracesResource(SyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/api/v2/traces/query",
             page=SyncItemsCursorPostPagination[Trace],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "max_start_time": max_start_time,
                     "min_start_time": min_start_time,
@@ -420,6 +433,7 @@ class AsyncTracesResource(AsyncAPIResource):
     def query(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
@@ -429,6 +443,7 @@ class AsyncTracesResource(AsyncAPIResource):
         trace_filter: str | Omit = omit,
         trace_ids: SequenceNotStr[str] | Omit = omit,
         tree_filter: str | Omit = omit,
+        accept: str | Omit = omit,
         # Use the following arguments if you need to pass additional parameters to the API that aren't available via kwargs.
         # The extra values given here take precedence over values defined on the client or passed to this method.
         extra_headers: Headers | None = None,
@@ -449,9 +464,18 @@ class AsyncTracesResource(AsyncAPIResource):
         Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
         and field projection (`selects`).
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the trace. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes.
+
           cursor: `cursor` is the opaque string returned in a previous response's `next_cursor`.
 
           max_start_time: `max_start_time` is the exclusive upper bound for the root-run start time scan
@@ -492,11 +516,13 @@ class AsyncTracesResource(AsyncAPIResource):
 
           timeout: Override the client-level default timeout for this request, in seconds
         """
+        extra_headers = {**strip_not_given({"Accept": accept}), **(extra_headers or {})}
         return self._get_api_list(
             "/api/v2/traces/query",
             page=AsyncItemsCursorPostPagination[Trace],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "max_start_time": max_start_time,
                     "min_start_time": min_start_time,

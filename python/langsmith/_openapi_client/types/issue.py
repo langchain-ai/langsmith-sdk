@@ -68,6 +68,17 @@ class EvidenceSeriesMetricDefinitionDenominator(BaseModel):
             "completion_token_details.audio",
             "completion_token_details.image",
             "completion_token_details.video",
+            "prompt_cost_details.cache_creation",
+            "prompt_cost_details.cache_read",
+            "prompt_cost_details.ephemeral_1h_input_tokens",
+            "prompt_cost_details.ephemeral_5m_input_tokens",
+            "prompt_cost_details.audio",
+            "prompt_cost_details.image",
+            "prompt_cost_details.video",
+            "completion_cost_details.reasoning",
+            "completion_cost_details.audio",
+            "completion_cost_details.image",
+            "completion_cost_details.video",
         ]
     ] = None
 
@@ -123,6 +134,17 @@ class EvidenceSeriesMetricDefinitionNumerator(BaseModel):
             "completion_token_details.audio",
             "completion_token_details.image",
             "completion_token_details.video",
+            "prompt_cost_details.cache_creation",
+            "prompt_cost_details.cache_read",
+            "prompt_cost_details.ephemeral_1h_input_tokens",
+            "prompt_cost_details.ephemeral_5m_input_tokens",
+            "prompt_cost_details.audio",
+            "prompt_cost_details.image",
+            "prompt_cost_details.video",
+            "completion_cost_details.reasoning",
+            "completion_cost_details.audio",
+            "completion_cost_details.image",
+            "completion_cost_details.video",
         ]
     ] = None
 
@@ -178,6 +200,17 @@ class EvidenceSeriesMetricDefinition(BaseModel):
             "completion_token_details.audio",
             "completion_token_details.image",
             "completion_token_details.video",
+            "prompt_cost_details.cache_creation",
+            "prompt_cost_details.cache_read",
+            "prompt_cost_details.ephemeral_1h_input_tokens",
+            "prompt_cost_details.ephemeral_5m_input_tokens",
+            "prompt_cost_details.audio",
+            "prompt_cost_details.image",
+            "prompt_cost_details.video",
+            "completion_cost_details.reasoning",
+            "completion_cost_details.audio",
+            "completion_cost_details.image",
+            "completion_cost_details.video",
         ]
     ] = None
 
