@@ -978,10 +978,11 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         for pname, p in sig.parameters.items()
         if p.default is not inspect.Parameter.empty
     ]
+    has_unsupported = not all(
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    )
     if not all_args or (
-        not all(
-            pname in supported_args or pname in args_with_defaults for pname in all_args
-        )
+        has_unsupported
         and len([a for a in all_args if a not in args_with_defaults]) != 2
     ):
         msg = (
@@ -993,10 +994,11 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         raise ValueError(msg)
     # For backwards compatibility we assume custom arg names are Sequence[Run] and
     # Sequence[Example] types, respectively.
-    elif not all(pname in supported_args for pname in all_args) or all_args == [
-        "runs",
-        "examples",
-    ]:
+    elif (
+        has_unsupported
+        or not any(pname in supported_args for pname in all_args)
+        or all_args == ["runs", "examples"]
+    ):
         return func
     else:
 
@@ -1015,10 +1017,9 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
             for param_name, param in sig.parameters.items():
                 # Could have params with defaults that are not in the arg map
                 if param_name in arg_map:
-                    if param.kind in (
-                        param.POSITIONAL_OR_KEYWORD,
-                        param.POSITIONAL_ONLY,
-                    ):
+                    # Bind by keyword unless positional-only, so a defaulted
+                    # param left out of the arg map cannot shift later args.
+                    if param.kind == param.POSITIONAL_ONLY:
                         args.append(arg_map[param_name])
                     else:
                         kwargs[param_name] = arg_map[param_name]
