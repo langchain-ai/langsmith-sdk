@@ -151,6 +151,7 @@ def vcr_fixture(request):
     # For Google ADK tests, don't match on body since the format can change
     match_on = None
     if is_google_adk_test:
+        record_mode = "none"
         match_on = ["method", "scheme", "host", "port", "path", "query"]
 
     # Create the VCR instance

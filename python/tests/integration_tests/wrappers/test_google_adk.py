@@ -40,6 +40,15 @@ def get_weather(city: str) -> Dict[str, str]:
     return {"status": "error", "error_message": f"Weather for '{city}' unavailable."}
 
 
+@pytest.fixture(autouse=True)
+def google_httpx_transport(monkeypatch):
+    """Use the HTTPX transport supported by cassette replay."""
+    from google.genai import _api_client
+
+    monkeypatch.setattr(_api_client, "has_aiohttp", False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "cassette-replay")
+
+
 @pytest.fixture
 def mock_ls_client() -> Client:
     """Create a mock LangSmith client."""
