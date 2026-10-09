@@ -471,6 +471,8 @@ class AsyncClient:
                 the client's configured max retries.
             retry_on: Additional exception types to retry on, beyond the
                 connection/timeout/server-error set that is always retried.
+                Rate-limit (429) responses are also retried, waiting for the
+                `Retry-After` header with exponential backoff.
             **kwargs: Forwarded to the underlying httpx request.
         """
         max_retries = (
@@ -543,6 +545,17 @@ class AsyncClient:
                     raise ls_utils.LangSmithConnectionError(
                         f"Request error: {repr(e)}"
                     ) from e
+            except ls_utils.LangSmithRateLimitError:
+                if attempt == max_retries - 1:
+                    raise
+                try:
+                    retry_after = float(response.headers.get("retry-after", "30"))
+                except Exception as e:
+                    logger.warning("Invalid retry-after header: %s", repr(e))
+                    retry_after = 30
+                # Add exponential backoff
+                retry_after = retry_after * 2**attempt + random.random()
+                await asyncio.sleep(retry_after)
             except retry_on_:
                 if attempt == max_retries - 1:
                     raise
