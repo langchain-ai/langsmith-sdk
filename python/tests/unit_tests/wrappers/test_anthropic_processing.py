@@ -1,6 +1,7 @@
 """Unit tests for Anthropic wrapper processing functions."""
 
 import warnings
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -333,3 +334,45 @@ class TestRedactMCPServers:
 
     def test_none_is_dropped_by_strip_not_given(self) -> None:
         assert "mcp_servers" not in _strip_not_given({"mcp_servers": None})
+
+
+class TestWrapAnthropicCompletions:
+    """wrap_anthropic must tolerate clients without the legacy completions resource."""
+
+    @staticmethod
+    def _messages() -> SimpleNamespace:
+        def create(*args, **kwargs):
+            return None
+
+        def stream(*args, **kwargs):
+            return None
+
+        return SimpleNamespace(create=create, stream=stream)
+
+    def test_client_without_completions(self):
+        from langsmith.wrappers import wrap_anthropic
+
+        messages = self._messages()
+        original_create = messages.create
+        client = SimpleNamespace(messages=messages)
+
+        wrapped = wrap_anthropic(client)  # type: ignore[type-var]
+
+        assert wrapped is client
+        assert not hasattr(client, "completions")
+        assert client.messages.create is not original_create
+
+    def test_client_with_completions_is_still_wrapped(self):
+        from langsmith.wrappers import wrap_anthropic
+
+        def completions_create(*args, **kwargs):
+            return None
+
+        client = SimpleNamespace(
+            messages=self._messages(),
+            completions=SimpleNamespace(create=completions_create),
+        )
+
+        wrap_anthropic(client)  # type: ignore[type-var]
+
+        assert client.completions.create is not completions_create
