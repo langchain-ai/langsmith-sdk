@@ -125,7 +125,7 @@ jobs:
             esac
             hits=$(printf '%s\n' "$files" | grep -E "^$dir/" || true)
             if [ -n "$hits" ]; then
-              msg="$dir/ moved out of this repo. Internal: open this PR on https://github.com/langchain-ai/$repo-staging. External contributors: open it on https://github.com/langchain-ai/$repo. Maintainers only: add the skip-freeze-guard label for a revert or a hotfix that has to ship from here."
+              msg="$dir/ moved out of this repo. Internal: open this PR on https://github.com/langchain-ai/$repo-staging instead. External contributors: open it on https://github.com/langchain-ai/$repo instead. Maintainers only: add the skip-freeze-guard label for a revert or a hotfix that has to ship from here."
               echo "::error::$msg"
               printf '%s\n' "$hits"
               # The job summary shows on the checks page, no need to open the logs.
