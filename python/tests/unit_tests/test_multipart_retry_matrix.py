@@ -144,6 +144,25 @@ def _one_run_payload():
     return _payload(1)[0]
 
 
+def _one_run_op():
+    i = uuid.uuid4()
+    return SerializedRunOperation(
+        operation="post",
+        id=i,
+        trace_id=i,
+        _none=json.dumps(
+            {"id": str(i), "name": "n", "run_type": "chain", "trace_id": str(i)}
+        ).encode(),
+        inputs=None,
+        outputs=None,
+        events=None,
+        extra=None,
+        error=None,
+        serialized=None,
+        attachments=None,
+    )
+
+
 def _client(endpoint, failed_traces_dir=None, monkeypatch=None):
     ls_utils.get_env_var.cache_clear()
     if failed_traces_dir is not None:
@@ -398,23 +417,7 @@ def test_multipart_ingest_404_falls_back_to_batch(endpoint, no_sleep):
     """End to end: /runs/multipart 404 -> /runs/batch is hit, multipart disabled."""
     endpoint.status = 404
     client = _client(endpoint)
-    ops = [
-        SerializedRunOperation(
-            operation="post",
-            id=(i := uuid.uuid4()),
-            trace_id=i,
-            _none=json.dumps(
-                {"id": str(i), "name": "n", "run_type": "chain", "trace_id": str(i)}
-            ).encode(),
-            inputs=None,
-            outputs=None,
-            events=None,
-            extra=None,
-            error=None,
-            serialized=None,
-            attachments=None,
-        )
-    ]
+    ops = [_one_run_op()]
     with mock.patch.object(Client, "_batch_ingest_run_ops") as batch:
         client._multipart_ingest_ops(ops)
 
@@ -448,25 +451,14 @@ def test_multipart_404_on_one_endpoint_still_tries_the_rest():
 
 
 def test_multipart_404_fallback_warns_about_dropped_feedback(endpoint, caplog):
+    """Dropping feedback ops on the batch fallback is logged, not silent."""
     endpoint.status = 404
     client = _client(endpoint)
-    run_op = SerializedRunOperation(
-        operation="post",
-        id=(i := uuid.uuid4()),
-        trace_id=i,
-        _none=json.dumps(
-            {"id": str(i), "name": "n", "run_type": "chain", "trace_id": str(i)}
-        ).encode(),
-        inputs=None,
-        outputs=None,
-        events=None,
-        extra=None,
-        error=None,
-        serialized=None,
-        attachments=None,
-    )
+    run_op = _one_run_op()
     fb = SerializedFeedbackOperation(
-        id=uuid.uuid4(), trace_id=i, feedback=json.dumps({"key": "k"}).encode()
+        id=uuid.uuid4(),
+        trace_id=run_op.trace_id,
+        feedback=json.dumps({"key": "k"}).encode(),
     )
     with mock.patch.object(Client, "_batch_ingest_run_ops") as batch:
         with caplog.at_level("WARNING", logger="langsmith.client"):
