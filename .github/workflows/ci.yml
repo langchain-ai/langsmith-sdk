@@ -89,8 +89,8 @@ jobs:
   # Freeze Guard
   # ============================================================================
   # Fails a PR touching a language folder once that SDK moved to its own repo.
-  # FROZEN is empty until switch day: set it to "js" on the js switch day,
-  # "js python" on the python switch day. Required through the CI Success gate.
+  # FROZEN lists the moved folders: "js" since the js switch, "js python" on
+  # the python switch day. Required through the CI Success gate.
   # Add the `skip-freeze-guard` label to a PR to bypass it (a revert, a hotfix
   # that has to ship from here). The job is skipped, which the gate accepts.
   freeze-guard:
@@ -101,7 +101,7 @@ jobs:
       contents: read
       pull-requests: read
     env:
-      FROZEN: ""
+      FROZEN: "js"
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
     steps:
