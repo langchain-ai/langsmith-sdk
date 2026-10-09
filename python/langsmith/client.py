@@ -1019,6 +1019,7 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "_run_ops_buffer_futures",
         "_run_ops_buffer",
         "_run_ops_buffer_lock",
         "otel_exporter",
@@ -1384,6 +1385,7 @@ class Client:
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
         self._run_ops_buffer: list[tuple[str, dict, dict[str, Any]]] = []
         self._run_ops_buffer_lock = threading.Lock()
+        self._run_ops_buffer_futures: weakref.WeakSet[cf.Future] = weakref.WeakSet()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
         self._multipart_disabled: bool = False
@@ -3081,7 +3083,8 @@ class Client:
             future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                 _process_buffered_run_ops_batch, self, batch_to_process
             )
-            # Track the future if we have a futures set
+            # flush() waits on these so it doesn't return before the batch is queued
+            self._run_ops_buffer_futures.add(future)
             if self._futures is not None:
                 self._futures.add(future)
         except RuntimeError:
@@ -4207,6 +4210,15 @@ class Client:
             with self._run_ops_buffer_lock:
                 if self._run_ops_buffer:
                     self._flush_run_ops_buffer()
+                futures = list(self._run_ops_buffer_futures)
+            # The batch is processed on a pool thread and only then enqueued, so
+            # wait for it before joining the tracing queue.
+            remaining = (
+                max(0.0, deadline - time.monotonic()) if deadline is not None else None
+            )
+            done, _ = cf.wait(futures, timeout=remaining)
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer_futures.difference_update(done)
 
         if self.tracing_queue is not None:
             if deadline is None:
