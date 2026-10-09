@@ -195,6 +195,8 @@ export interface AnnotationQueueRubricItemSchema {
 
   description?: string | null;
 
+  feedback_config?: AnnotationQueueRubricItemSchema.FeedbackConfig | null;
+
   feedback_config_id?: string | null;
 
   is_assertion?: boolean | null;
@@ -206,6 +208,48 @@ export interface AnnotationQueueRubricItemSchema {
   score_descriptions?: { [key: string]: string } | null;
 
   value_descriptions?: { [key: string]: string } | null;
+}
+
+export namespace AnnotationQueueRubricItemSchema {
+  export interface FeedbackConfig {
+    id: string;
+
+    feedback_config: FeedbackConfig.FeedbackConfig;
+
+    feedback_key: string;
+
+    modified_at: string;
+
+    tenant_id: string;
+
+    is_lower_score_better?: boolean | null;
+  }
+
+  export namespace FeedbackConfig {
+    export interface FeedbackConfig {
+      /**
+       * Enum for feedback types.
+       */
+      type: 'continuous' | 'categorical' | 'freeform';
+
+      categories?: Array<FeedbackConfig.Category> | null;
+
+      max?: number | null;
+
+      min?: number | null;
+    }
+
+    export namespace FeedbackConfig {
+      /**
+       * Specific value and label pair for feedback
+       */
+      export interface Category {
+        value: number;
+
+        label?: string | null;
+      }
+    }
+  }
 }
 
 /**
