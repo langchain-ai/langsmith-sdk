@@ -4727,6 +4727,69 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
 
 
 @patch("langsmith.client.requests.Session")
+def test_zstd_flush_interval_fires_under_steady_traffic(
+    mock_session_cls: mock.Mock,
+) -> None:
+    """Steady traffic below the size threshold must still flush on the interval."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1000,
+                size_limit_bytes=20_971_520,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        def posted() -> bool:
+            # A zstd frame, so it is the compress thread that sent, not another path.
+            for c in mock_session.request.mock_calls:
+                if c.args and c.args[0] == "POST":
+                    data = c[2].get("data")
+                    data = data.getvalue() if hasattr(data, "getvalue") else data
+                    if isinstance(data, bytes) and data.startswith(b"\x28\xb5\x2f\xfd"):
+                        return True
+            return False
+
+        # One run every 20ms keeps the compress thread's event set on every
+        # wake-up (never idle) and stays far below the 1000-trace threshold. The
+        # loop exits on the first send (~0.5s); 5s is only a CI-slowness bound.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not posted():
+            run_id = uuid.uuid4()
+            client.create_run(
+                name="steady",
+                run_type="llm",
+                inputs={"k": "v"},
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=str(run_id),
+            )
+            time.sleep(0.02)
+        sent_during_traffic = posted()
+        client.flush()
+
+    assert sent_during_traffic, "flush_interval never fired under steady traffic"
+
+
+@patch("langsmith.client.requests.Session")
 def test_sample_rate_survives_zstd_compression(mock_session_cls: mock.Mock) -> None:
     """The compression path must carry the sampling rate like any other send path.
 
