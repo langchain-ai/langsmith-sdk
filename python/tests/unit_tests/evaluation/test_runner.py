@@ -1416,6 +1416,17 @@ def summary_eval_defaulted_param(outputs, reference_outputs, threshold=0.5):
     return min([len(x["response"]) for x in outputs])
 
 
+def summary_eval_defaulted_middle(outputs, threshold=0.5, reference_outputs=None):
+    assert threshold == 0.5
+    assert reference_outputs is not None
+    return min([len(x["response"]) for x in outputs])
+
+
+def summary_eval_runs_examples_defaulted(runs, examples, threshold=0.5):
+    assert threshold == 0.5
+    return min([len(x.outputs["response"]) for x in runs])
+
+
 @pytest.mark.parametrize(
     "evaluator",
     [
@@ -1423,6 +1434,8 @@ def summary_eval_defaulted_param(outputs, reference_outputs, threshold=0.5):
         summary_eval_inputs_outputs,
         summary_eval_outputs_reference,
         summary_eval_defaulted_param,
+        summary_eval_defaulted_middle,
+        summary_eval_runs_examples_defaulted,
     ],
 )
 def test__normalize_summary_evaluator(evaluator: Callable) -> None:
