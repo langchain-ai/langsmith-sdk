@@ -54,6 +54,10 @@ export class Traces extends APIResource {
    * Supports filters (`trace_filter`, `tree_filter`), cursor pagination (`cursor`),
    * and field projection (`selects`).
    *
+   * When `ai_search` is set, `Accept: text/event-stream` is required; requests
+   * without it return 406. AI search is unavailable on deployments that route
+   * queries to the v1 backend and returns 501 there.
+   *
    * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
@@ -65,13 +69,15 @@ export class Traces extends APIResource {
    * ```
    */
   query(
-    body: TraceQueryParams,
+    params: TraceQueryParams,
     options?: RequestOptions,
   ): PagePromise<TracesItemsCursorPostPagination, Trace> {
+    const { Accept, ...body } = params;
     return this._client.getAPIList('/api/v2/traces/query', ItemsCursorPostPagination<Trace>, {
       body,
       method: 'post',
       ...options,
+      headers: buildHeaders([{ ...(Accept != null ? { Accept: Accept } : undefined) }, options?.headers]),
     });
   }
 }
@@ -218,25 +224,34 @@ export interface TraceListRunsParams {
 
 export interface TraceQueryParams extends ItemsCursorPostPaginationParams {
   /**
-   * `max_start_time` is the exclusive upper bound for the root-run start time scan
-   * (RFC3339). Defaults to the request time when omitted.
+   * Body param: `ai_search` is a plain-language criterion evaluated against the
+   * messages from the agent trajectory scoped to the trace. AND-ed with the ordinary
+   * filters. Requires semantic filtering enabled for the deployment. Must contain
+   * nonempty text of at most 2000 UTF-8 bytes.
+   */
+  ai_search?: string;
+
+  /**
+   * Body param: `max_start_time` is the exclusive upper bound for the root-run start
+   * time scan (RFC3339). Defaults to the request time when omitted.
    */
   max_start_time?: string;
 
   /**
-   * `min_start_time` is the inclusive lower bound for the root-run start time scan
-   * (RFC3339). Defaults to 24 hours before the request when omitted.
+   * Body param: `min_start_time` is the inclusive lower bound for the root-run start
+   * time scan (RFC3339). Defaults to 24 hours before the request when omitted.
    */
   min_start_time?: string;
 
   /**
-   * `project_id` is the UUID of the tracing project that owns the traces. Required.
+   * Body param: `project_id` is the UUID of the tracing project that owns the
+   * traces. Required.
    */
   project_id?: string;
 
   /**
-   * `selects` lists which properties to include on each returned trace. Properties
-   * listed here are routed to the appropriate sub-object on each item:
+   * Body param: `selects` lists which properties to include on each returned trace.
+   * Properties listed here are routed to the appropriate sub-object on each item:
    * `total_tokens`, `total_cost`, and `first_token_time` appear under
    * `trace_aggregates`; everything else appears under `root_run`. If omitted, only
    * `id` is returned on `root_run`.
@@ -244,26 +259,33 @@ export interface TraceQueryParams extends ItemsCursorPostPaginationParams {
   selects?: Array<RunsAPI.RunSelectField>;
 
   /**
-   * `trace_filter` narrows results to traces whose root run matches this LangSmith
-   * filter expression. This filter targets root runs only — `is_root = true` is
-   * implied. See
+   * Body param: `trace_filter` narrows results to traces whose root run matches this
+   * LangSmith filter expression. This filter targets root runs only —
+   * `is_root = true` is implied. See
    * https://docs.langchain.com/langsmith/trace-query-syntax#filter-query-language
    * for syntax.
    */
   trace_filter?: string;
 
   /**
-   * `trace_ids` is an optional fast-path restriction to a known set of trace UUIDs.
-   * Equivalent in result to including each UUID in a `trace_filter`, but more
-   * efficient at scale.
+   * Body param: `trace_ids` is an optional fast-path restriction to a known set of
+   * trace UUIDs. Equivalent in result to including each UUID in a `trace_filter`,
+   * but more efficient at scale.
    */
   trace_ids?: Array<string>;
 
   /**
-   * `tree_filter` narrows results to traces containing at least one run anywhere in
-   * the run tree (root or descendant) that matches this LangSmith filter expression.
+   * Body param: `tree_filter` narrows results to traces containing at least one run
+   * anywhere in the run tree (root or descendant) that matches this LangSmith filter
+   * expression.
    */
   tree_filter?: string;
+
+  /**
+   * Header param: application/json, or text/event-stream (required when ai_search is
+   * set)
+   */
+  Accept?: string;
 }
 
 export declare namespace Traces {

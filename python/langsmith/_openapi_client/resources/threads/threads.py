@@ -286,6 +286,7 @@ class ThreadsResource(SyncAPIResource):
     def query(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
@@ -308,9 +309,18 @@ class ThreadsResource(SyncAPIResource):
         Returns
         threads matching the given time range and optional filters.
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the thread. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes.
+
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Omit on
               the first request; pass the returned cursor to fetch the next page.
 
@@ -366,6 +376,7 @@ class ThreadsResource(SyncAPIResource):
             page=SyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "filter": filter,
                     "max_start_time": max_start_time,
@@ -713,6 +724,7 @@ class AsyncThreadsResource(AsyncAPIResource):
     def query(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
@@ -735,9 +747,18 @@ class AsyncThreadsResource(AsyncAPIResource):
         Returns
         threads matching the given time range and optional filters.
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the thread. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes.
+
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Omit on
               the first request; pass the returned cursor to fetch the next page.
 
@@ -793,6 +814,7 @@ class AsyncThreadsResource(AsyncAPIResource):
             page=AsyncItemsCursorPostPagination[Thread],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "filter": filter,
                     "max_start_time": max_start_time,

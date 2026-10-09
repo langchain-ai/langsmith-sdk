@@ -15,6 +15,14 @@ __all__ = ["RunQueryV2Params"]
 
 
 class RunQueryV2Params(TypedDict, total=False):
+    ai_search: str
+    """
+    `ai_search` is a plain-language criterion evaluated against the messages from
+    the agent trajectory scoped to the run. AND-ed with the ordinary filters.
+    Requires semantic filtering enabled for the deployment. Must contain nonempty
+    text of at most 2000 UTF-8 bytes. Not supported on public dataset queries.
+    """
+
     cursor: str
     """`cursor` is the opaque string from a previous response's `next_cursor`.
 
