@@ -993,10 +993,9 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         raise ValueError(msg)
     # For backwards compatibility we assume custom arg names are Sequence[Run] and
     # Sequence[Example] types, respectively.
-    elif not all(pname in supported_args for pname in all_args) or all_args == [
-        "runs",
-        "examples",
-    ]:
+    elif not all(
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    ) or all_args == ["runs", "examples"]:
         return func
     else:
 
