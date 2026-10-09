@@ -8,6 +8,8 @@ import {
 } from "../../utils/env.js";
 import { extractUsageMetadata } from "../../utils/vercel.js";
 import { warnOnce } from "../../utils/warn.js";
+import { AgentAddress, ensureAgent } from "../../address.js";
+import { rejectConflicting } from "../../utils/addressing.js";
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -64,6 +66,14 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * The name of the project to export traces to.
    */
   projectName?: string;
+
+  /**
+   * (beta) The agent environment to export traces to, instead of a project.
+   * Defaults to the one `LANGSMITH_AGENT_ID` and `LANGSMITH_AGENT_ENVIRONMENT`
+   * name. Naming both a project and an address throws. Agent addressing is
+   * enabled per workspace.
+   */
+  address?: AgentAddress;
 
   /**
    * Default headers to add to exporter requests.
@@ -137,15 +147,36 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       headers = parseHeadersString(defaultHeaderString);
     }
 
+    const address = ensureAgent(config?.address);
+    rejectConflicting(config?.projectName, address);
+    let projectName = config?.projectName;
+    let agent = address;
+    if (projectName === undefined && agent === undefined) {
+      // Like a run, the env decides when nothing is named here: an address
+      // when `LANGSMITH_AGENT_*` names one, else the project.
+      const envProject = getLangSmithEnvironmentVariable("PROJECT");
+      const envAddress = AgentAddress.fromEnv();
+      rejectConflicting(envProject, envAddress);
+      projectName = envProject;
+      agent = envAddress;
+    }
+    if (agent !== undefined) {
+      // The headers address every span the exporter sends.
+      headers = {
+        ...headers,
+        "Langsmith-Agent-Id": agent.id,
+        "Langsmith-Agent-Environment": agent.environment,
+      };
+    }
+
     super({
       url: defaultUrl,
-      headers,
       ...config,
+      headers,
     });
 
     this.transformExportedSpan = config?.transformExportedSpan;
-    this.projectName =
-      config?.projectName ?? getLangSmithEnvironmentVariable("PROJECT");
+    this.projectName = projectName;
   }
 
   export(

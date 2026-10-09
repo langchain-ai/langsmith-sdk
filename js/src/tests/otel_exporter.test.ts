@@ -1,7 +1,15 @@
 /* eslint-disable no-process-env */
-import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import { createServer } from "node:http";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from "@jest/globals";
+import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
+import { AgentAddress } from "../address.js";
 import { LangSmithOTLPTraceExporter } from "../experimental/otel/exporter.js";
 import { _resetWarnedMessages } from "../utils/warn.js";
 
@@ -122,4 +130,113 @@ test.each([
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
+});
+
+describe("agent addressing", () => {
+  beforeEach(() => {
+    for (const name of [
+      "LANGSMITH_PROJECT",
+      "LANGCHAIN_PROJECT",
+      "LANGCHAIN_SESSION",
+      "LANGSMITH_AGENT_ID",
+      "LANGSMITH_AGENT_ENVIRONMENT",
+    ]) {
+      delete process.env[name];
+    }
+  });
+
+  async function exportedHeaders(
+    config?: ConstructorParameters<typeof LangSmithOTLPTraceExporter>[0],
+  ): Promise<IncomingHttpHeaders> {
+    let headers: IncomingHttpHeaders = {};
+    const server = createServer((request, response) => {
+      headers = request.headers;
+      request.resume();
+      response.writeHead(200, { "Content-Type": "application/x-protobuf" });
+      response.end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    process.env.LANGSMITH_ENDPOINT = `http://127.0.0.1:${
+      (server.address() as AddressInfo).port
+    }`;
+    const exporter = new LangSmithOTLPTraceExporter(config);
+    try {
+      await new Promise((resolve) => exporter.export([], resolve));
+      return headers;
+    } finally {
+      await exporter.shutdown();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  }
+
+  test("sends the configured agent environment as headers", async () => {
+    const headers = await exportedHeaders({
+      address: new AgentAddress("support-agent", "Staging"),
+    });
+
+    expect(headers["langsmith-agent-id"]).toBe("support-agent");
+    expect(headers["langsmith-agent-environment"]).toBe("staging");
+  });
+
+  test("takes the env agent when nothing is named", async () => {
+    process.env.LANGSMITH_AGENT_ID = "support-agent";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+
+    const headers = await exportedHeaders();
+
+    expect(headers["langsmith-agent-id"]).toBe("support-agent");
+    expect(headers["langsmith-agent-environment"]).toBe("production");
+  });
+
+  test("keeps explicit headers beside the agent headers", async () => {
+    const headers = await exportedHeaders({
+      address: new AgentAddress("support-agent", "staging"),
+      headers: { "x-api-key": "explicit-key" },
+    });
+
+    expect(headers["x-api-key"]).toBe("explicit-key");
+    expect(headers["langsmith-agent-id"]).toBe("support-agent");
+  });
+
+  test("an explicit project beats the env agent", async () => {
+    process.env.LANGSMITH_AGENT_ID = "support-agent";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+
+    const headers = await exportedHeaders({ projectName: "mine" });
+
+    expect(headers["langsmith-agent-id"]).toBeUndefined();
+    expect(headers["langsmith-agent-environment"]).toBeUndefined();
+  });
+
+  test("sends no agent headers for a project", async () => {
+    process.env.LANGSMITH_PROJECT = "from-env";
+
+    const headers = await exportedHeaders();
+
+    expect(headers["langsmith-agent-id"]).toBeUndefined();
+  });
+
+  test("rejects a project and an address", () => {
+    expect(
+      () =>
+        new LangSmithOTLPTraceExporter({
+          projectName: "mine",
+          address: new AgentAddress("support-agent", "staging"),
+        }),
+    ).toThrow(/project .* or to an address/);
+  });
+
+  test("rejects an env that names a project and an agent", () => {
+    process.env.LANGSMITH_PROJECT = "from-env";
+    process.env.LANGSMITH_AGENT_ID = "support-agent";
+    process.env.LANGSMITH_AGENT_ENVIRONMENT = "production";
+
+    expect(() => new LangSmithOTLPTraceExporter()).toThrow(
+      /project .* or to an address/,
+    );
+  });
 });

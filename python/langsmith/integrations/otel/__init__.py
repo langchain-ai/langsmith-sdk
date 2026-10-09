@@ -7,6 +7,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import utils as ls_utils
+from langsmith.address import AgentAddress
 from langsmith.client import Client
 
 from ._utils import otel_safe_attribute_value, set_langsmith_metadata_attribute
@@ -127,6 +128,7 @@ def configure(
     api_key: Optional[str] = None,
     project_name: Optional[str] = None,
     SpanProcessor: Optional[type] = None,
+    address: Optional[AgentAddress] = None,
 ) -> bool:
     """Configure OpenTelemetry with LangSmith as the `TracerProvider`.
 
@@ -173,6 +175,10 @@ def configure(
         api_key: LangSmith API key. Defaults to `LANGSMITH_API_KEY` env var.
         project_name: Project name. Defaults to `LANGSMITH_PROJECT` env var.
         SpanProcessor: Span processor class to use. Defaults to `BatchSpanProcessor`.
+        address: (beta) An `AgentAddress` to send traces to instead of a project.
+            Defaults to the one `LANGSMITH_AGENT_ID` and
+            `LANGSMITH_AGENT_ENVIRONMENT` name. Agent addressing is enabled per
+            workspace.
 
     Returns:
         `True` if configuration succeeded, `False` if `TracerProvider` already exists.
@@ -213,12 +219,13 @@ def configure(
         if not api_key:
             return False
 
-        project_name = project_name or ls_utils.get_tracer_project()
-
         from .processor import OtelSpanProcessor
 
         processor = OtelSpanProcessor(
-            api_key=api_key, project=project_name, SpanProcessor=SpanProcessor
+            api_key=api_key,
+            project=project_name,
+            SpanProcessor=SpanProcessor,
+            address=address,
         )
         provider.add_span_processor(processor)  # type: ignore
         return True

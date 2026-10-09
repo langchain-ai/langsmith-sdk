@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from langsmith import Client
+from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
 from langsmith._internal.otel._otel_exporter import (
     GEN_AI_RESPONSE_FINISH_REASONS,
@@ -613,3 +614,151 @@ def test_io_attributes_are_str_not_bytes():
     assert isinstance(attrs["gen_ai.completion"], str)
     assert json.loads(attrs["gen_ai.prompt"]) == inputs
     assert json.loads(attrs["gen_ai.completion"]) == outputs
+
+
+_AGENT_ENV = (
+    "LANGSMITH_AGENT_ID",
+    "LANGSMITH_AGENT_ENVIRONMENT",
+    "LANGSMITH_PROJECT",
+    "LANGCHAIN_PROJECT",
+    "LANGCHAIN_SESSION",
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+)
+
+
+@pytest.fixture
+def set_env(monkeypatch):
+    """Return a setter for the env a destination reads, from an empty start.
+
+    The env lookups are cached, so the caches are cleared with every change and
+    again afterwards.
+    """
+
+    def clear_caches():
+        ls_utils.get_env_var.cache_clear()
+        ls_utils.get_tracer_project.cache_clear()
+
+    for name in _AGENT_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+    def setter(env: dict) -> None:
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        clear_caches()
+
+    setter({})
+    yield setter
+    monkeypatch.undo()
+    clear_caches()
+
+
+def _provider_headers(set_env, env: dict, project):
+    set_env(env)
+    mocks = _make_mock_otel_imports()
+    with (
+        patch(
+            "langsmith._internal.otel._otel_client._import_otel_client",
+            return_value=mocks,
+        ),
+        patch("langsmith._internal.otel._otel_client.ls_utils") as mock_utils,
+    ):
+        mock_utils.get_api_url.return_value = "https://api.smith.langchain.com"
+        mock_utils.get_api_key.return_value = "lsv2_pt_test123"
+        mock_utils.get_tracer_project.return_value = project
+        from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+
+        get_otlp_tracer_provider()
+    return mocks[0].call_args.kwargs["headers"]
+
+
+def test_tracer_provider_addresses_the_env_agent(set_env):
+    headers = _provider_headers(
+        set_env,
+        {
+            "LANGSMITH_AGENT_ID": "support-agent",
+            "LANGSMITH_AGENT_ENVIRONMENT": "Staging",
+        },
+        project=None,
+    )
+
+    assert headers == {
+        "x-api-key": "lsv2_pt_test123",
+        "Langsmith-Agent-Id": "support-agent",
+        "Langsmith-Agent-Environment": "staging",
+    }
+
+
+@pytest.mark.parametrize(
+    "env, project",
+    [
+        ({"LANGSMITH_AGENT_ID": "support-agent"}, None),
+        (
+            {
+                "LANGSMITH_AGENT_ID": "support-agent",
+                "LANGSMITH_AGENT_ENVIRONMENT": "staging",
+            },
+            "my-project",
+        ),
+    ],
+    ids=["half-an-address", "address-and-project"],
+)
+def test_tracer_provider_sends_no_destination_for_an_unusable_env(
+    set_env, env, project
+):
+    headers = _provider_headers(set_env, env, project)
+
+    assert headers == {"x-api-key": "lsv2_pt_test123"}
+
+
+def _otel_exporter_headers(**kwargs) -> dict:
+    from langsmith.integrations.otel.processor import OtelExporter
+
+    with patch(
+        "langsmith.integrations.otel.processor.OTLPSpanExporter.__init__",
+        return_value=None,
+    ) as init:
+        OtelExporter(api_key="lsv2_pt_test123", **kwargs)
+    return init.call_args.kwargs["headers"]
+
+
+def test_otel_exporter_addresses_an_agent(set_env):
+    from langsmith.address import AgentAddress
+
+    headers = _otel_exporter_headers(
+        address=AgentAddress("support-agent", "production")
+    )
+
+    assert headers == {
+        "x-api-key": "lsv2_pt_test123",
+        "Langsmith-Agent-Id": "support-agent",
+        "Langsmith-Agent-Environment": "production",
+    }
+
+
+def test_otel_exporter_takes_the_env_agent_when_nothing_is_named(set_env):
+    set_env(
+        {"LANGSMITH_AGENT_ID": "support-agent", "LANGSMITH_AGENT_ENVIRONMENT": "local"}
+    )
+
+    headers = _otel_exporter_headers()
+
+    assert headers["Langsmith-Agent-Id"] == "support-agent"
+    assert "Langsmith-Project" not in headers
+
+
+def test_otel_exporter_keeps_the_project_default(set_env):
+    headers = _otel_exporter_headers()
+
+    assert headers == {"x-api-key": "lsv2_pt_test123", "Langsmith-Project": "default"}
+
+
+def test_otel_exporter_rejects_a_project_and_an_address(set_env):
+    from langsmith.address import AgentAddress
+    from langsmith.utils import LangSmithUserError
+
+    with pytest.raises(LangSmithUserError, match="both set"):
+        _otel_exporter_headers(
+            project="my-project",
+            address=AgentAddress("support-agent", "production"),
+        )
