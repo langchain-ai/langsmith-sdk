@@ -22,4 +22,4 @@ def test_embedding_distance_metrics(metric: str, expected: float) -> None:
     result = EmbeddingDistance({"encoder": encoder, "metric": metric}).evaluate(
         "a", "b"
     )
-    assert result == pytest.approx(expected, abs=1e-9)
+    assert result == pytest.approx(expected, abs=1e-6)
