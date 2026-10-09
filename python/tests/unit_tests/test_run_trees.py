@@ -6,7 +6,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from multipart import MultipartParser, parse_options_header
@@ -806,6 +806,40 @@ def test_patch_exclude_inputs_env_flag(
         assert sent == {"a": 1}
     else:
         assert sent is None
+
+
+def test_patch_sends_project_id():
+    """A run addressed by project id keeps that id on the update, so the patch
+    resolves the same project as the post even if the project was renamed."""
+    client = MagicMock()
+    project_id = uuid4()
+    run_tree = RunTree(
+        name="test_run",
+        run_type="chain",
+        inputs={"a": 1},
+        client=client,
+        project_name="test-project",
+        project_id=project_id,
+    )
+    run_tree.patch()
+
+    sent = client.update_run.call_args.kwargs
+    assert sent["session_id"] == project_id
+    assert sent["session_name"] == "test-project"
+
+
+def test_patch_without_project_id_sends_none():
+    client = MagicMock()
+    run_tree = RunTree(
+        name="test_run",
+        run_type="chain",
+        inputs={"a": 1},
+        client=client,
+        project_name="test-project",
+    )
+    run_tree.patch()
+
+    assert client.update_run.call_args.kwargs["session_id"] is None
 
 
 def test_patch_exclude_inputs_env_flag_with_replicas(
