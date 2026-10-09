@@ -29,6 +29,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal._multipart import join_multipart_parts_and_context
 from langsmith._internal._operations import (
+    SerializedFeedbackOperation,
     SerializedRunOperation,
     serialized_run_operation_to_multipart_parts_and_context,
 )
@@ -173,6 +174,7 @@ RETRY_MATRIX = [
     # Plain client errors are never retried.
     (401, None, 1, "none"),
     (403, None, 1, "none"),
+    # 404 is raised to the caller (see test_multipart_404_*), still one request.
     (404, None, 1, "none"),
     (422, None, 1, "none"),
 ]
@@ -202,7 +204,11 @@ def test_multipart_retry_counts(
     endpoint.retry_after = retry_after
     client = _client(endpoint)
 
-    client._send_multipart_req(_one_run_payload())
+    if status == 404:
+        with pytest.raises(ls_utils.LangSmithNotFoundError):
+            client._send_multipart_req(_one_run_payload())
+    else:
+        client._send_multipart_req(_one_run_payload())
 
     assert endpoint.count == expected_requests, (
         f"HTTP {status} (Retry-After={retry_after}) produced {endpoint.count} "
@@ -351,7 +357,6 @@ def test_app_loop_does_not_back_off(endpoint, no_sleep):
         (409, False),  # swallowed as a duplicate -- silently dropped, no dump
         (500, True),
         (429, True),
-        (404, True),
     ],
 )
 def test_exhausted_batch_is_dropped_not_requeued(
@@ -370,6 +375,105 @@ def test_exhausted_batch_is_dropped_not_requeued(
     files = list(tmp_path.iterdir())
     assert bool(files) is dumped
     ls_utils.get_env_var.cache_clear()
+
+
+def test_multipart_404_raises_for_batch_fallback(
+    endpoint, no_sleep, tmp_path, monkeypatch
+):
+    """404 must reach ``_multipart_ingest_ops`` (no dump, no callback here)."""
+    endpoint.status = 404
+    errors = []
+    client = _client(endpoint, failed_traces_dir=tmp_path, monkeypatch=monkeypatch)
+    client._tracing_error_callback = errors.append
+
+    with pytest.raises(ls_utils.LangSmithNotFoundError):
+        client._send_multipart_req(_one_run_payload())
+
+    assert not list(tmp_path.iterdir())
+    assert not errors
+    ls_utils.get_env_var.cache_clear()
+
+
+def test_multipart_ingest_404_falls_back_to_batch(endpoint, no_sleep):
+    """End to end: /runs/multipart 404 -> /runs/batch is hit, multipart disabled."""
+    endpoint.status = 404
+    client = _client(endpoint)
+    ops = [
+        SerializedRunOperation(
+            operation="post",
+            id=(i := uuid.uuid4()),
+            trace_id=i,
+            _none=json.dumps(
+                {"id": str(i), "name": "n", "run_type": "chain", "trace_id": str(i)}
+            ).encode(),
+            inputs=None,
+            outputs=None,
+            events=None,
+            extra=None,
+            error=None,
+            serialized=None,
+            attachments=None,
+        )
+    ]
+    with mock.patch.object(Client, "_batch_ingest_run_ops") as batch:
+        client._multipart_ingest_ops(ops)
+
+    batch.assert_called_once()
+    assert batch.call_args.args[0] == ops
+    assert client._multipart_disabled is True
+
+
+def test_multipart_404_on_one_endpoint_still_tries_the_rest():
+    """A 404 from one replica must not skip the replicas after it."""
+    client = Client(
+        api_urls={
+            "http://a.invalid": "k1",
+            "http://b.invalid": "k2",
+            "http://c.invalid": "k3",
+        },
+        auto_batch_tracing=False,
+    )
+    seen = []
+
+    def fake_request(method, url, **kwargs):
+        seen.append(url)
+        if url.startswith("http://b.invalid"):
+            raise ls_utils.LangSmithNotFoundError("nope")
+
+    with mock.patch.object(Client, "request_with_retries", side_effect=fake_request):
+        with pytest.raises(ls_utils.LangSmithNotFoundError):
+            client._send_multipart_req(_one_run_payload())
+
+    assert seen == [f"http://{h}.invalid/runs/multipart" for h in "abc"]
+
+
+def test_multipart_404_fallback_warns_about_dropped_feedback(endpoint, caplog):
+    endpoint.status = 404
+    client = _client(endpoint)
+    run_op = SerializedRunOperation(
+        operation="post",
+        id=(i := uuid.uuid4()),
+        trace_id=i,
+        _none=json.dumps(
+            {"id": str(i), "name": "n", "run_type": "chain", "trace_id": str(i)}
+        ).encode(),
+        inputs=None,
+        outputs=None,
+        events=None,
+        extra=None,
+        error=None,
+        serialized=None,
+        attachments=None,
+    )
+    fb = SerializedFeedbackOperation(
+        id=uuid.uuid4(), trace_id=i, feedback=json.dumps({"key": "k"}).encode()
+    )
+    with mock.patch.object(Client, "_batch_ingest_run_ops") as batch:
+        with caplog.at_level("WARNING", logger="langsmith.client"):
+            client._multipart_ingest_ops([run_op, fb])
+
+    assert batch.call_args.args[0] == [run_op]
+    assert "dropping 1 feedback" in caplog.text
 
 
 def test_no_failed_traces_dir_means_silent_data_loss(endpoint, no_sleep, monkeypatch):
