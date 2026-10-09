@@ -1,0 +1,21 @@
+js/package.json
+  s_8fffc3248cabb5::t_d1061b2306e30a 3
+js/src/index.ts
+  s_8fffc3248cabb5::t_4d1a65d1504586 67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6a9a98502023ba82b26daae86af938f50fd4fbb",
+  "prompts": {},
+  "sessions": {
+    "s_8fffc3248cabb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "27dff4eb-33a2-409a-a9b5-060fa34048ff",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

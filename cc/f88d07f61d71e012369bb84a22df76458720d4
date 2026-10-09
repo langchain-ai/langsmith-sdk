@@ -1,0 +1,34 @@
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_24ab08d725af82 1115-1116
+js/src/schemas.ts
+  s_f37c3e6c74d99c::t_24ab08d725af82 49-55,547-550
+js/src/traceable.ts
+  s_f37c3e6c74d99c::t_24ab08d725af82 373-374,379-380
+js/src/client.ts
+  s_f37c3e6c74d99c::t_24ab08d725af82 1089-1090,3769-3770,5898-5900,5946-5948,5956-5958,5970-5972
+python/langsmith/_openapi_client/types/session_resolve_response.py
+  s_f37c3e6c74d99c::t_9358083abfdc1c 9
+python/langsmith/_openapi_client/resources/sessions.py
+  s_f37c3e6c74d99c::t_9358083abfdc1c 86,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccf88d07f61d71e012369bb84a22df76458720d4",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

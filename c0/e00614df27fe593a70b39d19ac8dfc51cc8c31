@@ -1,0 +1,46 @@
+examples/agent_addresses/python/configure.py
+  s_14ccaf81e1d75f::t_23e9f00bf966b4 9
+examples/agent_addresses/python/create_run.py
+  s_14ccaf81e1d75f::t_79fa0aa3cddab8 12
+examples/agent_addresses/python/experiment_traces.py
+  s_14ccaf81e1d75f::t_23ade0716fb8e3 41
+examples/agent_addresses/python/langsmith_extra.py
+  s_14ccaf81e1d75f::t_6690ee58fb7a3b 16-18
+examples/agent_addresses/python/query_agent_traces.py
+  s_14ccaf81e1d75f::t_58f1744df5e60b 12
+examples/agent_addresses/python/run_tree.py
+  s_14ccaf81e1d75f::t_a42f27c30eb712 15
+examples/agent_addresses/python/trace_context_manager.py
+  s_14ccaf81e1d75f::t_ab8d092471c336 15
+examples/agent_addresses/python/traceable.py
+  s_14ccaf81e1d75f::t_c034d62e96a068 11
+examples/agent_addresses/python/tracing_context.py
+  s_14ccaf81e1d75f::t_27665505aef8c5 16
+examples/agent_addresses/typescript/create_run.ts
+  s_14ccaf81e1d75f::t_86490c17406d22 7,10
+examples/agent_addresses/typescript/run_tree.ts
+  s_14ccaf81e1d75f::t_8c3c6c67029d62 5,14
+examples/agent_addresses/typescript/traceable.ts
+  s_14ccaf81e1d75f::t_ed2a3b00636608 5,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0e00614df27fe593a70b39d19ac8dfc51cc8c31",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_14ccaf81e1d75f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "600349e5-6acd-4fdb-ab6f-6919cf185e35",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}

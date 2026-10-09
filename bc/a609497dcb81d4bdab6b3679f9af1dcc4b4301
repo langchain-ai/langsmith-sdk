@@ -1,0 +1,277 @@
+js/src/tests/address.test.ts
+  s_f37c3e6c74d99c::t_1a8d3b8df74c53 93-96,98,103,105,801,816,818,844-845,848,854,863-864,870,875-876,887-888,895
+  s_f37c3e6c74d99c::t_78bb9e796a3c41 817,896
+  s_f37c3e6c74d99c::t_019063a8a3c5e9 346,348-349,354-355,360,362,373,391,408,415,417,422,431,439,446,495,513,522-525,529-531,533-535,552,573-582,584,604,606-613,615,627
+  s_f37c3e6c74d99c::t_b74e6f63d2d2ee 316,318,320,340-341,344-345,707,718,733,735-741,743,746,758-764,766,771-774,778,782-784,786-788,790,793,795,797-798,801,812-816
+  s_f37c3e6c74d99c::t_d18323f39583df 37-40,97,108,139-140,142-143,147-150,402,475-477,504
+  s_f37c3e6c74d99c::t_368eb73d7e5785 335
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 26
+  s_f37c3e6c74d99c::t_0b9ed4dd6cb7fe 273,275,277
+  s_f37c3e6c74d99c::t_0e4c9d906cade2 13,17-19,130-138,145-146,156-157,160-166,168-169,171,173-175,178-179,181-183,185-190,193-195,197-216,222,226-249,251-252,254-260,270,278-281
+  s_f37c3e6c74d99c::t_e32bf4b27cafd6 217-221,223-225
+  s_f37c3e6c74d99c::t_c788ac812627a2 700
+  s_f37c3e6c74d99c::t_be61372a5196e8 675-687
+  s_f37c3e6c74d99c::t_b5e6eb3c9116cb 632,638-641,643-645,688-692,702
+  s_f37c3e6c74d99c::t_152b5251e23eca 12
+  s_f37c3e6c74d99c::t_1af2243a9eacd2 693-699,701
+  s_286aef046a3fdf::t_8b185343183f7f 503,505-507
+  s_286aef046a3fdf::t_324e553ed46994 430,434
+  s_286aef046a3fdf::t_da532fdd853496 455-464,468,471-474,478-484,490-492
+  s_286aef046a3fdf::t_1fabc1d4decb93 646-674
+  s_286aef046a3fdf::t_a8d1c46e76443f 99,104,144
+  s_286aef046a3fdf::t_64aaa47a4cc195 818-896
+python/langsmith/address.py
+  s_f37c3e6c74d99c::t_0a0ff9cdac3693 34,69-72,74,77-79,92,94,97,101,106-107,109-110,112-117,122-123,125,127,131-132,137-138,141,143,145-146,154,156-182,188
+  s_f37c3e6c74d99c::t_e8512c6b24076b 111
+  s_f37c3e6c74d99c::t_60fc3c7bf47360 235,237,239
+  s_f37c3e6c74d99c::t_019cbe66568f22 41
+  s_f37c3e6c74d99c::t_ca0c2155e1ca7d 127
+  s_f37c3e6c74d99c::t_c349831c32de29 14,128
+  s_f37c3e6c74d99c::t_0fcc0acc0cab72 77-78,135,195,206,230-231,233
+  s_f37c3e6c74d99c::t_5f58f0dcfa5f00 1,4-7,13,73,76,148,183,185-199,201,206,208,210-212,214-219,221,223-224,228-229,235-236,240,243
+  s_f37c3e6c74d99c::t_49a0e8c663f99d 36,38,40,42-43,45,47,49,63,65-70,75,147,150,207,209,220,222
+  s_286aef046a3fdf::t_bd7a7944270d4a 60
+  s_286aef046a3fdf::t_33f54dd7a0886b 132,134-145
+  s_286aef046a3fdf::t_16f6addc4debb7 200,202-205
+  s_286aef046a3fdf::t_a15cbac8daf427 54-58
+  s_286aef046a3fdf::t_a8d1c46e76443f 100,108,118-121,124,126,129-130,151
+  s_286aef046a3fdf::t_26a81ff17ab3a8 64,81
+python/langsmith/run_helpers.py
+  s_f37c3e6c74d99c::t_8095a014925461 209,343
+  s_f37c3e6c74d99c::t_4b2b4789ab5801 1782
+  s_f37c3e6c74d99c::t_74e959e58853cc 48,222-223,232,641,650,1152-1153,1206,1210,1391,1394,1404,1670,1730,1766,1770,1775,1784,1789,1810,1814
+python/tests/unit_tests/test_address.py
+  s_f37c3e6c74d99c::t_6c3c9d0a94f282 1,78,80-82,85-86,96,114,119,129,163,167-169,181-182,201,204,211,249-251,253-254,256-258,260-264,266-271,273-275,277-278,281-282,285-287,285-286,287,291,298-301
+  s_f37c3e6c74d99c::t_e9fdd303408221 302-303
+  s_f37c3e6c74d99c::t_06f94126e607da 659,711,716,730,751,776-777
+  s_f37c3e6c74d99c::t_db7b82c946ef1f 29-30,91,137,166,185-186,255,259,265,272,276,279-280,288-289,291,293,295,297,304-305,307-310,312-314,318-319,322-323,326-336
+  s_f37c3e6c74d99c::t_019cbe66568f22 174,176-180
+  s_f37c3e6c74d99c::t_74ff6268d8f132 84,92,580,615-617,628-630,635-636,639,641,644-645
+  s_f37c3e6c74d99c::t_86650ac35830ac 632-633
+  s_f37c3e6c74d99c::t_203ef850824429 713,732-733
+  s_f37c3e6c74d99c::t_74e959e58853cc 18,54,283-284,290,292,296,399,533,675,715,721,723,734,738,750,762
+  s_f37c3e6c74d99c::t_553f8700a86ab3 249
+  s_f37c3e6c74d99c::t_44bcb67031b489 175,202-203,205-211,225-226,228-230,232-234,236-248
+  s_286aef046a3fdf::t_9884d3b5463614 618-627
+  s_286aef046a3fdf::t_b738655723d421 640,642-643
+  s_286aef046a3fdf::t_4a8f58f80063cd 581-582
+  s_286aef046a3fdf::t_d2ee1e148fd9c1 681-703
+  s_286aef046a3fdf::t_03bd61ce4e8440 212-224
+  s_286aef046a3fdf::t_a8d1c46e76443f 183
+  s_286aef046a3fdf::t_ba08991384ad5d 5,25,812-824,846,857,862
+  s_286aef046a3fdf::t_ac3de2e09d363e 9,20,798,800-803,807-811,825-831,833,835-841,843-844,847-853,855,858-861,863-866,868,870-879
+  s_286aef046a3fdf::t_70a24c4c70edfe 799,804-806,832,834,842,845,854,856,867,869
+js/src/address.ts
+  s_f37c3e6c74d99c::t_3b373add970452 23,26-28,37,40,68-71,73,76-78,80-84,86-88,90-96,100-101,103-105,107-109,117,121-123,127,132,134-140,142-150,152-161,163-164
+  s_f37c3e6c74d99c::t_70f31364aa47be 216,220-221
+  s_f37c3e6c74d99c::t_4d6c5cb971a068 24-25,118-119,197,198-199
+  s_f37c3e6c74d99c::t_72d52ffedb7d3e 134-135,198-200,204,207-208,211
+  s_f37c3e6c74d99c::t_bfd72c302628e2 8,30-36,38-39,42-44,110-113,115-117,165,167-189,191-197,202,210-215,218-219,222,224-225
+  s_286aef046a3fdf::t_7ef189991db4ad 55-56
+  s_286aef046a3fdf::t_081a03d4dbe667 123-127,130-132
+  s_286aef046a3fdf::t_3d7b4b155a342a 129
+  s_286aef046a3fdf::t_a8d1c46e76443f 79,85,89,97-99,102,106,114,120
+  s_286aef046a3fdf::t_5c990e6fd6a04e 29,59
+python/langsmith/_openapi_client/_client.py
+  h_53e10026eac609 47,56,159-164,445-450,669-674,754-759,839-844,924-929
+  s_286aef046a3fdf::t_2f1ca1eac8dcc8 47,56,160-161,163,446-447,449,670-671,673,755-756,758,840-841,843,925-926,928
+python/langsmith/_openapi_client/resources/__init__.py
+  h_53e10026eac609 67-74,121-126
+  s_286aef046a3fdf::t_47313c060a47fb 67-73,121-126
+python/langsmith/_openapi_client/resources/sessions.py
+  h_53e10026eac609 1-4,6-8,10-47,51-58,68-69,76-84,87,100-127,131-138,148-149,156-164,167,180-218
+  s_f37c3e6c74d99c::t_9358083abfdc1c 86,166
+  s_f37c3e6c74d99c::t_bb795d34bee8cf 5-6,9,48-50,70-75,85,88-99,128-130,150-155,165,168-179
+  s_f37c3e6c74d99c::t_bd8a4bfd623541 1-6,8-19,21,23-24,26,28-33,35-36,38-42,44-56,68-97,99-100,102-104,106,108-113,115-116,118-122,124-136,148-177,179-180,182-184,188-189,191-193,197-198,200-202,206-207,209-211,215-216,218
+  s_286aef046a3fdf::t_3ab51562cee1de 7,20,22,25,27,34,37,43,57,61-67,98,101,105,107,114,117,123,137,141-147,178,181,185-187,190,194-196,199,203-205,208,212-214,217
+  s_286aef046a3fdf::t_671d24be2360b4 58-60,138-140
+python/langsmith/_openapi_client/types/__init__.py
+  h_53e10026eac609 40,46-47
+  s_286aef046a3fdf::t_a51eb3a15f27d0 40,46
+python/langsmith/_openapi_client/types/session_resolve_params.py
+  h_53e10026eac609 1-4,5-6,8-10,13,16,19
+  s_f37c3e6c74d99c::t_3e565f27609d76 19
+  s_f37c3e6c74d99c::t_a0a9546f73e36e 7,10
+  s_f37c3e6c74d99c::t_549d43838ed1a1 5,13,16,19
+  s_f37c3e6c74d99c::t_ac7ddc02ba64c6 11,14,18,20
+  s_f37c3e6c74d99c::t_ffbaf0937dd023 7,12,15-17,21
+  s_f37c3e6c74d99c::t_bd8a4bfd623541 1-6,8-9,11-21
+  s_286aef046a3fdf::t_8ac521f6d315ab 7,10
+python/langsmith/_openapi_client/types/session_resolve_response.py
+  h_53e10026eac609 1-2,3-4,6-8
+  s_f37c3e6c74d99c::t_3e565f27609d76 5,8
+  s_f37c3e6c74d99c::t_ac7ddc02ba64c6 10
+  s_f37c3e6c74d99c::t_9358083abfdc1c 9
+  s_f37c3e6c74d99c::t_bd8a4bfd623541 1-4,6-7,9-10
+  s_286aef046a3fdf::t_a4753fd0d170d8 5,8
+python/langsmith/_openapi_client/types/session_sortable_columns.py
+  h_53e10026eac609 1-9
+python/langsmith/schemas.py
+  s_f37c3e6c74d99c::t_02ef28f6c97f26 700,705
+  s_f37c3e6c74d99c::t_47a4e44e61fac1 715
+  s_f37c3e6c74d99c::t_74e959e58853cc 707
+  s_f37c3e6c74d99c::t_a1b7b36b47abf8 12,35-36,38,699
+python/langsmith/run_trees.py
+  s_f37c3e6c74d99c::t_02ef28f6c97f26 344,354,359-360,1518,1520
+  s_f37c3e6c74d99c::t_fbc46ee55a48f7 890
+  s_f37c3e6c74d99c::t_8183a5cd655c2d 392,546
+  s_f37c3e6c74d99c::t_74e959e58853cc 23,341-342,396,406,419,423,956,958,1350,1354,1388,1668
+  s_f37c3e6c74d99c::t_0fcc0acc0cab72 456,1529-1530
+  s_286aef046a3fdf::t_d5b73ee4b2bbeb 1433-1434
+  s_286aef046a3fdf::t_b13b86185fadc9 1518-1520,1525
+  s_286aef046a3fdf::t_7c8557bbb3f7f8 1461-1464
+  s_286aef046a3fdf::t_5db7cd4a6d376e 1458-1460
+  s_286aef046a3fdf::t_06eb9b61c43f18 210
+  s_286aef046a3fdf::t_563fad6d20e16c 1488
+  s_286aef046a3fdf::t_0cdb312fa1022c 1164-1169
+python/tests/unit_tests/test_run_trees.py
+  s_286aef046a3fdf::t_8ff14f7f4c5dd5 891
+python/langsmith/client.py
+  s_f37c3e6c74d99c::t_c975303649bfea 365,1709-1710,1713
+  s_f37c3e6c74d99c::t_52eee665698fca 1714
+  s_f37c3e6c74d99c::t_74e959e58853cc 72,1355,2497,2647,2653,2668,2671,2673,3924,3939,8467-8468
+  s_f37c3e6c74d99c::t_49a0e8c663f99d 1712
+  s_286aef046a3fdf::t_28fd8b49c41306 1710,1713
+  s_286aef046a3fdf::t_3af45c49a47a60 365
+  s_286aef046a3fdf::t_babe78c4d1b883 1711
+  s_286aef046a3fdf::t_0cdb312fa1022c 4896,4914-4917,4923,4926-4932,4939,4945-4947,4949-4950,4959-4960
+python/langsmith/_internal/_addressing.py
+  s_f37c3e6c74d99c::t_04794fb9e84bff 61,214
+  s_f37c3e6c74d99c::t_02ef28f6c97f26 35
+  s_f37c3e6c74d99c::t_ce79557d973f36 137,181,209,244
+  s_f37c3e6c74d99c::t_2b0bd4126f2ad4 224
+  s_f37c3e6c74d99c::t_ae01c01222c8ff 52
+  s_286aef046a3fdf::t_41e109f3eadd68 225-228,230-235,239,241,244
+  s_286aef046a3fdf::t_f7c08562f22dab 25-27
+js/src/client.ts
+  s_f37c3e6c74d99c::t_8bc3a7ae363fbd 3155,3207-3208,3210,3212,3217,5658,5660
+  s_f37c3e6c74d99c::t_4d6c5cb971a068 5659
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 97
+  s_f37c3e6c74d99c::t_bfd72c302628e2 2551,3156,5610
+  s_f37c3e6c74d99c::t_24ab08d725af82 1089-1090,3798-3799,5928-5930,5976-5978,5986-5988,6000-6002
+  s_286aef046a3fdf::t_71a35ee4a1ca34 5605
+  s_286aef046a3fdf::t_64aaa47a4cc195 3275,3280-3285,3294-3299,3310-3311,3336-3349
+  s_286aef046a3fdf::t_028dfcddfb76f1 3350-3351
+  s_14ccaf81e1d75f::t_b496b350119f1f 3300
+js/src/run_trees.ts
+  s_f37c3e6c74d99c::t_15aa866850fa66 303,305
+  s_f37c3e6c74d99c::t_1ca8c22a6714df 755,763
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 35
+  s_f37c3e6c74d99c::t_bfd72c302628e2 432,713,1401
+  s_f37c3e6c74d99c::t_24ab08d725af82 1098-1099
+  s_286aef046a3fdf::t_3d7b4b155a342a 277-279
+  s_286aef046a3fdf::t_e372274e95075a 260-261
+  s_286aef046a3fdf::t_3758a5d755647b 197
+  s_286aef046a3fdf::t_4ca8a5f06e447b 276
+  s_286aef046a3fdf::t_9893f3ccced9f5 303-305
+js/src/utils/addressing.ts
+  s_f37c3e6c74d99c::t_4d6c5cb971a068 79,115
+  s_f37c3e6c74d99c::t_948429d66e77a2 20
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 7-13,15-49,51-84,86-88,102-105,107-120
+  s_286aef046a3fdf::t_d7c8a55f312cba 90-94,96-101,105,108,115
+python/tests/unit_tests/test_client.py
+  s_f37c3e6c74d99c::t_74e959e58853cc 53,8411,8413,8472
+  s_f37c3e6c74d99c::t_8183a5cd655c2d 8426
+python/langsmith/async_client.py
+  s_f37c3e6c74d99c::t_74e959e58853cc 38,216,625,629,642,645,647,658,681,1240-1241
+python/tests/unit_tests/test_utils.py
+  s_f37c3e6c74d99c::t_74e959e58853cc 22,697
+python/tests/unit_tests/test_operations.py
+  s_f37c3e6c74d99c::t_74e959e58853cc 234,237
+js/src/traceable.ts
+  s_f37c3e6c74d99c::t_f07eee3dbd2b15 43
+  s_f37c3e6c74d99c::t_bfd72c302628e2 42,764,828-829
+  s_f37c3e6c74d99c::t_24ab08d725af82 373-374,379-380
+js/src/schemas.ts
+  s_f37c3e6c74d99c::t_24ab08d725af82 49-55,547-550
+examples/agent_addresses/typescript/create_run.ts
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-6,8-9,11-25
+  s_286aef046a3fdf::t_4c2a201e0e82d1 1-6,8-9,11-25
+examples/agent_addresses/README.md
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-31
+  s_286aef046a3fdf::t_3ca5c64aac1842 1-31
+examples/agent_addresses/typescript/traceable.ts
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-4,6-11,13-16
+  s_286aef046a3fdf::t_0665fbb1d42b10 1-4,6-11,13-16
+examples/agent_addresses/python/env_vars.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-23
+  s_286aef046a3fdf::t_7396f84662b7fa 1-23
+examples/agent_addresses/typescript/run_tree.ts
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-4,6-13,15-19
+  s_286aef046a3fdf::t_8d6aa9affa5940 1-4,6-13,15-19
+examples/agent_addresses/python/configure.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-8,10-18
+  s_286aef046a3fdf::t_ce16d9afe23b19 1-8,10-18
+examples/agent_addresses/python/run_tree.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-14,16-20
+  s_286aef046a3fdf::t_2874973f565d8e 1-14,16-20
+examples/agent_addresses/python/create_run.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-11,13-28
+  s_286aef046a3fdf::t_bbf6cdff5df0b7 1-11,13-28
+examples/agent_addresses/python/trace_context_manager.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-14,16-18
+  s_286aef046a3fdf::t_69f0c43e741bc8 1-14,16-18
+examples/agent_addresses/python/query_agent_traces.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-11,13-15,17-27
+  s_286aef046a3fdf::t_0ab39a40fa3a2c 1-11,13-15,17-27
+  s_286aef046a3fdf::t_2418267fa47385 16
+  s_f37c3e6c74d99c::t_f09a523078a809 16
+examples/agent_addresses/python/experiment_traces.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-40,43-50
+  s_286aef046a3fdf::t_03c2a36457bad4 1-40,43-50
+  s_286aef046a3fdf::t_2418267fa47385 42
+  s_f37c3e6c74d99c::t_f09a523078a809 42
+examples/agent_addresses/python/tracing_context.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-15,17-18
+  s_286aef046a3fdf::t_3193ec36ccf520 1-15,17-18
+examples/agent_addresses/python/langsmith_extra.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-15,19
+  s_286aef046a3fdf::t_c2b0ad37988db9 1-15,19
+  s_14ccaf81e1d75f::t_6690ee58fb7a3b 16,18
+examples/agent_addresses/python/traceable.py
+  s_f37c3e6c74d99c::t_0678dcf28c7d87 1-10,12-17
+  s_286aef046a3fdf::t_f8bca7c67f2af4 1-10,12-17
+python/langsmith/_openapi_client/types/run.py
+  s_f37c3e6c74d99c::t_196be04d07dae2 309-315
+python/langsmith/_openapi_client/types/thread.py
+  s_f37c3e6c74d99c::t_afe55ecd6cce9c 156-162
+python/langsmith/_openapi_client/types/trace.py
+  s_f37c3e6c74d99c::t_c3e6ba820083ac 13-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bca609497dcb81d4bdab6b3679f9af1dcc4b4301",
+  "prompts": {},
+  "humans": {
+    "h_53e10026eac609": {
+      "author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  },
+  "sessions": {
+    "s_14ccaf81e1d75f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "600349e5-6acd-4fdb-ab6f-6919cf185e35",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    },
+    "s_286aef046a3fdf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c104a349-66c8-4e04-88bd-c446a445b362",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    },
+    "s_f37c3e6c74d99c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58d65281-fa2a-4474-8f57-377de80319ea",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
