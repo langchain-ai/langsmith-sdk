@@ -7,6 +7,7 @@ import pathlib
 import uuid
 import warnings
 from datetime import datetime
+from typing import Optional
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -18,6 +19,7 @@ import requests
 from langsmith import AsyncClient
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._openapi_client._httpx import httpx as client_httpx
 
 _VERSION_LOGGER = "langsmith._internal._backend_version"
 
@@ -305,6 +307,91 @@ async def test_arequest_with_retries_retries_on_502(
     client = AsyncClient(retry_config={"max_retries": 2})
     response = await client._arequest_with_retries("GET", "/repos/-/test")
     assert response == second_response
+
+
+def _rate_limit_response(retry_after: Optional[str] = None) -> client_httpx.Response:
+    headers = {"retry-after": retry_after} if retry_after is not None else {}
+    return client_httpx.Response(
+        429,
+        headers=headers,
+        request=client_httpx.Request("GET", "http://test/repos/-/test"),
+    )
+
+
+@mock.patch("langsmith.async_client.random.random", return_value=0.5)
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+async def test_arequest_with_retries_retries_on_429_with_retry_after(
+    mock_client_cls: mock.Mock,
+    mock_sleep: AsyncMock,
+    _mock_random: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    success = client_httpx.Response(
+        200, request=client_httpx.Request("GET", "http://test/repos/-/test")
+    )
+    mock_httpx_client.request.side_effect = [_rate_limit_response("3"), success]
+
+    client = AsyncClient(api_key="test", retry_config={"max_retries": 2})
+    response = await client._arequest_with_retries("GET", "/repos/-/test")
+
+    assert response is success
+    assert mock_httpx_client.request.await_count == 2
+    # Same delay as the sync client: retry_after * 2**attempt + random().
+    mock_sleep.assert_awaited_once_with(3.0 * 2**0 + 0.5)
+
+
+@mock.patch("langsmith.async_client.random.random", return_value=0.5)
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+async def test_arequest_with_retries_raises_rate_limit_after_max_retries(
+    mock_client_cls: mock.Mock,
+    mock_sleep: AsyncMock,
+    _mock_random: mock.Mock,
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    mock_httpx_client.request.side_effect = [
+        _rate_limit_response("2") for _ in range(3)
+    ]
+
+    client = AsyncClient(api_key="test", retry_config={"max_retries": 3})
+    with pytest.raises(ls_utils.LangSmithRateLimitError):
+        await client._arequest_with_retries("GET", "/repos/-/test")
+
+    assert mock_httpx_client.request.await_count == 3
+    # No sleep after the final attempt; the delay doubles on each attempt.
+    assert [c.args[0] for c in mock_sleep.await_args_list] == [2.5, 4.5]
+
+
+@pytest.mark.parametrize("retry_after", ["not-a-number", None])
+@mock.patch("langsmith.async_client.random.random", return_value=0.5)
+@patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+async def test_arequest_with_retries_429_retry_after_fallback(
+    mock_client_cls: mock.Mock,
+    mock_sleep: AsyncMock,
+    _mock_random: mock.Mock,
+    retry_after: Optional[str],
+) -> None:
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    success = client_httpx.Response(
+        200, request=client_httpx.Request("GET", "http://test/repos/-/test")
+    )
+    mock_httpx_client.request.side_effect = [
+        _rate_limit_response(retry_after),
+        success,
+    ]
+
+    client = AsyncClient(api_key="test", retry_config={"max_retries": 2})
+    response = await client._arequest_with_retries("GET", "/repos/-/test")
+
+    assert response is success
+    # A missing or unparseable Retry-After falls back to 30 seconds, as in the
+    # sync client.
+    mock_sleep.assert_awaited_once_with(30 * 2**0 + 0.5)
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
