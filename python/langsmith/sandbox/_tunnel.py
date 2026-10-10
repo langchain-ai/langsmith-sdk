@@ -1,8 +1,9 @@
 """TCP tunnel for accessing services running inside sandboxes.
 
-Establishes a WebSocket connection to the daemon's ``/tunnel`` endpoint,
-runs a yamux multiplexing session on top, and forwards local TCP connections
-through yamux streams to the target port inside the sandbox.
+Establishes a WebSocket connection to the daemon's ``/tunnel`` endpoint and
+runs a yamux multiplexing session on top. A :class:`Dialer` turns each yamux
+stream into an in-process connected socket; a :class:`Tunnel` additionally
+forwards connections accepted on a local TCP listener.
 """
 
 from __future__ import annotations
@@ -16,6 +17,14 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional
 
+from typing_extensions import Self
+
+from langsmith.sandbox._exceptions import (
+    TunnelConnectionRefusedError,
+    TunnelError,
+    TunnelPortNotAllowedError,
+    TunnelUnsupportedVersionError,
+)
 from langsmith.sandbox._helpers import merge_headers
 from langsmith.sandbox._ws_execute import WS_OPEN_TIMEOUT
 
@@ -49,6 +58,23 @@ def _read_status(stream: YamuxStream) -> int:
     if not data:
         raise ConnectionError("tunnel: connection closed before status")
     return data[0]
+
+
+def _status_error(status: int, port: int) -> TunnelError:
+    """Map a non-OK daemon status to the matching exception."""
+    if status == STATUS_PORT_NOT_ALLOWED:
+        return TunnelPortNotAllowedError(
+            f"tunnel: port {port} not allowed by daemon", port=port
+        )
+    if status == STATUS_DIAL_FAILED:
+        return TunnelConnectionRefusedError(
+            f"tunnel: nothing listening on port {port} inside sandbox", port=port
+        )
+    if status == STATUS_UNSUPPORTED_VERSION:
+        return TunnelUnsupportedVersionError(
+            f"tunnel: protocol version mismatch (client v{PROTOCOL_VERSION})"
+        )
+    return TunnelError(f"tunnel: unknown status {status}")
 
 
 # ---------------------------------------------------------------------------
@@ -170,23 +196,22 @@ def _ensure_websockets():
         ) from None
 
 
-class Tunnel:
-    """TCP tunnel to a port inside a sandbox.
+class Dialer:
+    """Dials ports inside a sandbox without opening any local listener.
 
-    Opens a local TCP listener and forwards each accepted connection through
-    a yamux-multiplexed WebSocket to the daemon, which dials the target port
-    inside the sandbox.
+    Holds one yamux-multiplexed WebSocket session to the daemon. Each
+    :meth:`dial` opens a yamux stream to the target port and returns one end
+    of a :func:`socket.socketpair` bridged to it: a real, already-connected
+    socket that lives only in this process, with no port or path to reach it.
 
     Typically used as a context manager::
 
-        with sandbox.tunnel(remote_port=5432) as t:
-            conn = psycopg2.connect(host="127.0.0.1", port=t.local_port)
+        with sandbox.dialer() as d:
+            conn = http.client.HTTPConnection("app")
+            conn.sock = d.dial(8000)
+            conn.request("GET", "/")
 
-    Or with explicit lifecycle::
-
-        t = sandbox.tunnel(remote_port=5432)
-        # ... use tunnel ...
-        t.close()
+    Closing the dialer closes the session and every socket it dialed.
     """
 
     _BACKOFF_BASE = 0.5
@@ -196,41 +221,24 @@ class Tunnel:
         self,
         dataplane_url: str,
         api_key: Optional[str],
-        remote_port: int,
         *,
-        local_port: int = 0,
         max_reconnects: int = 3,
         headers: Optional[Mapping[str, str]] = None,
     ) -> None:
         self._dataplane_url = dataplane_url
         self._api_key = api_key
         self._headers = headers
-        self._remote_port = remote_port
-        self._requested_local_port = local_port or remote_port
-        self._local_port = self._requested_local_port
         self._max_reconnects = max_reconnects
 
         self._ws: object = None
         self._yamux: Optional[YamuxSession] = None
-        self._server_socket: Optional[socket.socket] = None
-        self._accept_thread: Optional[threading.Thread] = None
         self._reconnect_lock = threading.Lock()
         self._closed = False
         self._started = False
 
-    @property
-    def local_port(self) -> int:
-        """Local port the tunnel is listening on."""
-        return self._local_port
-
-    @property
-    def remote_port(self) -> int:
-        """Port inside the sandbox that the tunnel connects to."""
-        return self._remote_port
-
     # -- Context manager ----------------------------------------------------
 
-    def __enter__(self) -> Tunnel:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -248,6 +256,177 @@ class Tunnel:
         except Exception:
             self.close()
             raise
+
+    def _do_start(self) -> None:
+        self._connect()
+
+    def close(self) -> None:
+        """Close the session and every connection opened through it."""
+        if self._closed:
+            return
+        self._closed = True
+
+        if self._yamux:
+            self._yamux.close()
+
+    # -- Dialing ------------------------------------------------------------
+
+    def dial(self, port: int) -> socket.socket:
+        """Connect to ``port`` inside the sandbox and return a connected socket.
+
+        The socket is an ``AF_UNIX`` stream socket from
+        :func:`socket.socketpair` (emulated over loopback on platforms without
+        ``AF_UNIX``). Pass it to anything that accepts a connected socket, such
+        as ``asyncio.open_connection(sock=...)``. Closing it closes the stream.
+
+        Raises:
+            ValueError: If ``port`` is out of range.
+            TunnelPortNotAllowedError: If the daemon does not allow ``port``.
+            TunnelConnectionRefusedError: If nothing listens on ``port``.
+            TunnelError: If the dialer is closed or the session cannot be
+                (re-)established.
+        """
+        if not 1 <= port <= 65535:
+            raise ValueError(f"port must be between 1 and 65535 (got {port})")
+        stream = self._open_stream(port)
+        ours, theirs = socket.socketpair()
+        threading.Thread(
+            target=_bridge, args=(stream, ours), daemon=True, name="tunnel-bridge"
+        ).start()
+        return theirs
+
+    def _open_stream(self, port: int) -> YamuxStream:
+        """Open a yamux stream connected to ``port`` inside the sandbox."""
+        if self._closed:
+            raise TunnelError("tunnel: closed")
+        stream = self._ensure_session().open_stream()
+        try:
+            _write_connect_header(stream, port)
+            status = _read_status(stream)
+        except Exception:
+            stream.close()
+            raise
+        if status != STATUS_OK:
+            stream.close()
+            raise _status_error(status, port)
+        return stream
+
+    # -- Session ------------------------------------------------------------
+
+    def _connect(self) -> None:
+        """Establish (or re-establish) the WebSocket + yamux session."""
+        from langsmith.sandbox._yamux import YamuxSession
+
+        old_yamux = self._yamux
+        if old_yamux:
+            try:
+                old_yamux.close()
+            except Exception:
+                pass
+
+        ws_connect = _ensure_websockets()
+        ws_url = self._build_ws_url()
+        headers = merge_headers(
+            {"X-Api-Key": self._api_key} if self._api_key else None,
+            self._headers,
+        )
+
+        self._ws = ws_connect(
+            ws_url,
+            additional_headers=headers,
+            open_timeout=WS_OPEN_TIMEOUT,
+            close_timeout=5,
+            ping_interval=None,  # yamux handles keepalive
+        )
+
+        adapter = _WSAdapter(self._ws)
+        self._yamux = YamuxSession(adapter)
+
+    def _ensure_session(self) -> YamuxSession:
+        """Return a live yamux session, reconnecting if needed."""
+        if self._yamux and not self._yamux.is_closed:
+            return self._yamux
+
+        with self._reconnect_lock:
+            if self._yamux and not self._yamux.is_closed:
+                return self._yamux
+
+            last_err: Optional[Exception] = None
+            for attempt in range(self._max_reconnects):
+                try:
+                    self._connect()
+                    logger.debug("tunnel: reconnected (attempt %d)", attempt + 1)
+                    return self._yamux  # type: ignore[return-value]
+                except Exception as exc:
+                    last_err = exc
+                    if attempt < self._max_reconnects - 1:
+                        delay = min(
+                            self._BACKOFF_BASE * (2**attempt),
+                            self._BACKOFF_MAX,
+                        )
+                        time.sleep(delay)
+
+            raise TunnelError(
+                f"tunnel: reconnect failed after {self._max_reconnects} attempts"
+            ) from last_err
+
+    def _build_ws_url(self) -> str:
+        url = self._dataplane_url.rstrip("/")
+        url = url.replace("https://", "wss://").replace("http://", "ws://")
+        return f"{url}/tunnel"
+
+
+class Tunnel(Dialer):
+    """TCP tunnel to a port inside a sandbox.
+
+    Opens a local TCP listener and forwards each accepted connection through
+    a yamux-multiplexed WebSocket to the daemon, which dials the target port
+    inside the sandbox. To connect without a local listener, use
+    :class:`Dialer`.
+
+    Typically used as a context manager::
+
+        with sandbox.tunnel(remote_port=5432) as t:
+            conn = psycopg2.connect(host="127.0.0.1", port=t.local_port)
+
+    Or with explicit lifecycle::
+
+        t = sandbox.tunnel(remote_port=5432)
+        # ... use tunnel ...
+        t.close()
+    """
+
+    def __init__(
+        self,
+        dataplane_url: str,
+        api_key: Optional[str],
+        remote_port: int,
+        *,
+        local_port: int = 0,
+        max_reconnects: int = 3,
+        headers: Optional[Mapping[str, str]] = None,
+    ) -> None:
+        super().__init__(
+            dataplane_url, api_key, max_reconnects=max_reconnects, headers=headers
+        )
+        self._remote_port = remote_port
+        self._requested_local_port = local_port or remote_port
+        self._local_port = self._requested_local_port
+
+        self._server_socket: Optional[socket.socket] = None
+        self._accept_thread: Optional[threading.Thread] = None
+
+    @property
+    def local_port(self) -> int:
+        """Local port the tunnel is listening on."""
+        return self._local_port
+
+    @property
+    def remote_port(self) -> int:
+        """Port inside the sandbox that the tunnel connects to."""
+        return self._remote_port
+
+    # -- Lifecycle ----------------------------------------------------------
 
     def _do_start(self) -> None:
         self._connect()
@@ -293,70 +472,10 @@ class Tunnel:
         )
         self._accept_thread.start()
 
-    def _connect(self) -> None:
-        """Establish (or re-establish) the WebSocket + yamux session."""
-        from langsmith.sandbox._yamux import YamuxSession
-
-        old_yamux = self._yamux
-        if old_yamux:
-            try:
-                old_yamux.close()
-            except Exception:
-                pass
-
-        ws_connect = _ensure_websockets()
-        ws_url = self._build_ws_url()
-        headers = merge_headers(
-            {"X-Api-Key": self._api_key} if self._api_key else None,
-            self._headers,
-        )
-
-        self._ws = ws_connect(
-            ws_url,
-            additional_headers=headers,
-            open_timeout=WS_OPEN_TIMEOUT,
-            close_timeout=5,
-            ping_interval=None,  # yamux handles keepalive
-        )
-
-        adapter = _WSAdapter(self._ws)
-        self._yamux = YamuxSession(adapter)
-
-    def _ensure_session(self) -> YamuxSession:
-        """Return a live yamux session, reconnecting if needed."""
-        from langsmith.sandbox._exceptions import TunnelError
-
-        if self._yamux and not self._yamux.is_closed:
-            return self._yamux
-
-        with self._reconnect_lock:
-            if self._yamux and not self._yamux.is_closed:
-                return self._yamux
-
-            last_err: Optional[Exception] = None
-            for attempt in range(self._max_reconnects):
-                try:
-                    self._connect()
-                    logger.debug("tunnel: reconnected (attempt %d)", attempt + 1)
-                    return self._yamux  # type: ignore[return-value]
-                except Exception as exc:
-                    last_err = exc
-                    if attempt < self._max_reconnects - 1:
-                        delay = min(
-                            self._BACKOFF_BASE * (2**attempt),
-                            self._BACKOFF_MAX,
-                        )
-                        time.sleep(delay)
-
-            raise TunnelError(
-                f"tunnel: reconnect failed after {self._max_reconnects} attempts"
-            ) from last_err
-
     def close(self) -> None:
         """Shut down the tunnel, closing all connections."""
         if self._closed:
             return
-        self._closed = True
 
         if self._server_socket:
             try:
@@ -364,8 +483,7 @@ class Tunnel:
             except OSError:
                 pass
 
-        if self._yamux:
-            self._yamux.close()
+        super().close()
 
     # -- Internal -----------------------------------------------------------
 
@@ -384,47 +502,18 @@ class Tunnel:
 
     def _handle_conn(self, tcp_conn: socket.socket) -> None:
         try:
-            session = self._ensure_session()
-            stream = session.open_stream()
-            _write_connect_header(stream, self._remote_port)
-            status = _read_status(stream)
-
-            if status == STATUS_OK:
-                _bridge(stream, tcp_conn)
-                return
-
-            stream.close()
-            tcp_conn.close()
-
-            if status == STATUS_PORT_NOT_ALLOWED:
-                logger.warning(
-                    "tunnel: port %d not allowed by daemon",
-                    self._remote_port,
-                )
-            elif status == STATUS_DIAL_FAILED:
-                logger.warning(
-                    "tunnel: nothing listening on port %d inside sandbox",
-                    self._remote_port,
-                )
-            elif status == STATUS_UNSUPPORTED_VERSION:
-                logger.warning(
-                    "tunnel: protocol version mismatch (client v%d)",
-                    PROTOCOL_VERSION,
-                )
-            else:
-                logger.warning("tunnel: unknown status %d", status)
-
+            stream = self._open_stream(self._remote_port)
         except Exception as exc:
-            logger.debug("tunnel: connection handler error: %s", exc)
+            if isinstance(exc, TunnelError):
+                logger.warning("%s", exc)
+            else:
+                logger.debug("tunnel: connection handler error: %s", exc)
             try:
                 tcp_conn.close()
             except OSError:
                 pass
-
-    def _build_ws_url(self) -> str:
-        url = self._dataplane_url.rstrip("/")
-        url = url.replace("https://", "wss://").replace("http://", "ws://")
-        return f"{url}/tunnel"
+            return
+        _bridge(stream, tcp_conn)
 
 
 # ---------------------------------------------------------------------------
@@ -484,3 +573,53 @@ class AsyncTunnel:
     def close(self) -> None:
         """Shut down the tunnel (sync, safe to call from any context)."""
         self._tunnel.close()
+
+
+# ---------------------------------------------------------------------------
+# AsyncDialer
+# ---------------------------------------------------------------------------
+
+
+class AsyncDialer:
+    """Async wrapper around :class:`Dialer`.
+
+    The underlying session runs in background threads; blocking calls are
+    delegated to the event loop's executor. :meth:`dial` returns a connected
+    socket ready for ``asyncio.open_connection(sock=...)``::
+
+        async with await sandbox.dialer() as d:
+            reader, writer = await asyncio.open_connection(sock=await d.dial(8000))
+    """
+
+    def __init__(
+        self,
+        dataplane_url: str,
+        api_key: Optional[str],
+        *,
+        max_reconnects: int = 3,
+        headers: Optional[Mapping[str, str]] = None,
+    ) -> None:
+        self._dialer = Dialer(
+            dataplane_url,
+            api_key,
+            max_reconnects=max_reconnects,
+            headers=headers,
+        )
+
+    async def dial(self, port: int) -> socket.socket:
+        """Connect to ``port`` inside the sandbox; see :meth:`Dialer.dial`."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._dialer.dial, port)
+
+    async def __aenter__(self) -> AsyncDialer:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._dialer._start)
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._dialer.close)
+
+    def close(self) -> None:
+        """Close the session (sync, safe to call from any context)."""
+        self._dialer.close()

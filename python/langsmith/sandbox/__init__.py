@@ -117,7 +117,7 @@ from langsmith.sandbox._proxy_config import (
     workspace_secret,
 )
 from langsmith.sandbox._sandbox import Sandbox
-from langsmith.sandbox._tunnel import AsyncTunnel, Tunnel
+from langsmith.sandbox._tunnel import AsyncDialer, AsyncTunnel, Dialer, Tunnel
 from langsmith.sandbox._verify import (
     CALLBACK_SIGNATURE_HEADER,
     USER_TOKEN_HEADER,
@@ -227,6 +227,8 @@ __all__ = [
     # Tunnel
     "Tunnel",
     "AsyncTunnel",
+    "Dialer",
+    "AsyncDialer",
     "TunnelError",
     "TunnelPortNotAllowedError",
     "TunnelConnectionRefusedError",

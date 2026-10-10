@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import queue
 import struct
 import threading
 from unittest.mock import MagicMock, patch
@@ -21,6 +22,7 @@ from langsmith.sandbox._tunnel import (
     STATUS_PORT_NOT_ALLOWED,
     STATUS_UNSUPPORTED_VERSION,
     AsyncTunnel,
+    Dialer,
     Tunnel,
     _read_status,
     _write_connect_header,
@@ -367,3 +369,82 @@ class TestEnsureSession:
 
         with pytest.raises(TunnelError, match="reconnect failed"):
             t._ensure_session()
+
+
+# ---------------------------------------------------------------------------
+# Dialer
+# ---------------------------------------------------------------------------
+
+
+class EchoStream:
+    """Yamux stream stand-in: answers the connect header, then echoes data."""
+
+    def __init__(self, status: int) -> None:
+        self.header = b""
+        self.closed = threading.Event()
+        self._status = status
+        self._inbox: queue.Queue[bytes] = queue.Queue()
+
+    def write(self, data: bytes) -> int:
+        if len(self.header) < 3:
+            self.header += data
+            if len(self.header) == 3:
+                self._inbox.put(bytes([self._status]))
+        else:
+            self._inbox.put(data)
+        return len(data)
+
+    def read(self, n: int) -> bytes:
+        data = self._inbox.get()
+        if len(data) > n:
+            self._inbox.queue.appendleft(data[n:])
+        return data[:n]
+
+    def close(self) -> None:
+        self.closed.set()
+        self._inbox.put(b"")
+
+
+def _dialer_with(stream: EchoStream) -> Dialer:
+    d = Dialer("http://example.com", "key")
+    session = MagicMock()
+    session.is_closed = False
+    session.open_stream.return_value = stream
+    d._yamux = session
+    return d
+
+
+class TestDialer:
+    def test_dial_returns_connected_socket_bridged_to_port(self) -> None:
+        stream = EchoStream(STATUS_OK)
+        with _dialer_with(stream) as d:
+            sock = d.dial(8000)
+            sock.settimeout(5)
+            sock.sendall(b"ping")
+            assert sock.recv(4) == b"ping"
+            assert struct.unpack(">BH", stream.header) == (PROTOCOL_VERSION, 8000)
+
+            sock.close()
+            assert stream.closed.wait(5)
+
+    @pytest.mark.parametrize(
+        "status,exc_cls",
+        [
+            (STATUS_PORT_NOT_ALLOWED, TunnelPortNotAllowedError),
+            (STATUS_DIAL_FAILED, TunnelConnectionRefusedError),
+            (STATUS_UNSUPPORTED_VERSION, TunnelUnsupportedVersionError),
+        ],
+    )
+    def test_dial_raises_on_daemon_refusal(
+        self, status: int, exc_cls: type[TunnelError]
+    ) -> None:
+        stream = EchoStream(status)
+        with _dialer_with(stream) as d, pytest.raises(exc_cls):
+            d.dial(8000)
+        assert stream.closed.is_set()
+
+    def test_dial_after_close_raises(self) -> None:
+        d = _dialer_with(EchoStream(STATUS_OK))
+        d.close()
+        with pytest.raises(TunnelError, match="closed"):
+            d.dial(8000)
