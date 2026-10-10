@@ -624,7 +624,7 @@ class OTELExporter:
                 span.set_attribute(GEN_AI_SERIALIZED_DOC, serialized["doc"])
 
         # Set inputs/outputs if available
-        self._set_io_attributes(span, op)
+        self._set_io_attributes(span, op, run_info)
 
     def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
         """Set the gen_ai.system attribute on the span based on the model provider.
@@ -718,12 +718,14 @@ class OTELExporter:
                 GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
             )
 
-    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
+    def _set_io_attributes(
+        self, span: Span, op: SerializedRunOperation, run_info: Optional[dict] = None
+    ) -> None:
         """Set input/output attributes on the span.
 
-        Args:
-            span: The span to set attributes on.
-            op: The serialized run operation.
+        run_info is optional for existing callers that export only
+        serialized inputs and outputs; the normal exporter passes it so
+        extra.metadata.usage_metadata can provide fallback token counts.
         """
         if op.inputs:
             try:
@@ -765,21 +767,14 @@ class OTELExporter:
                     "Failed to process inputs for run %s", op.id, exc_info=True
                 )
 
+        outputs: Optional[dict] = None
+        token_usage: Optional[tuple[int, int]] = None
         if op.outputs:
             try:
                 outputs = _orjson.loads(op.outputs)
 
-                # Extract token usage from outputs (for LLM runs)
+                # Output usage has priority over extra metadata.
                 token_usage = self.get_unified_run_tokens(outputs)
-                if token_usage:
-                    span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, token_usage[0])
-                    span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, token_usage[1])
-                    span.set_attribute(
-                        GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1]
-                    )
-
-                    if "model" in outputs:
-                        span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
                 # Extract additional response attributes.
                 if isinstance(outputs, dict):
                     if "id" in outputs and outputs["id"] is not None:
@@ -847,6 +842,26 @@ class OTELExporter:
                     "Failed to process outputs for run %s", op.id, exc_info=True
                 )
 
+        if not token_usage and not self._has_run_info_token_usage(run_info or {}):
+            # Claude Agent SDK and other integrations can record token usage
+            # only in extra.metadata.usage_metadata, including output-less runs.
+            info = run_info or {}
+            extra = info.get("extra")
+            metadata = extra.get("metadata") if isinstance(extra, dict) else None
+            if isinstance(metadata, dict):
+                token_usage = self._extract_unified_run_tokens(
+                    metadata.get("usage_metadata")
+                )
+
+        if token_usage:
+            span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, token_usage[0])
+            span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, token_usage[1])
+            span.set_attribute(
+                GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1]
+            )
+            if isinstance(outputs, dict) and outputs.get("model") is not None:
+                span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
+
     def _as_utc_nano(self, timestamp: Optional[str]) -> Optional[int]:
         if not timestamp:
             return None
@@ -856,6 +871,14 @@ class OTELExporter:
         except ValueError:
             logger.exception(f"Failed to parse timestamp {timestamp}")
             return None
+
+    @staticmethod
+    def _has_run_info_token_usage(run_info: dict) -> bool:
+        """True if top-level usage has already been supplied."""
+        return any(
+            run_info.get(key) is not None
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+        )
 
     def get_unified_run_tokens(
         self, outputs: Optional[dict]
