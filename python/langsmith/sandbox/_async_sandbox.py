@@ -65,7 +65,7 @@ from langsmith.sandbox._sse_execute import (
     start_payload as _sse_start_payload,
 )
 from langsmith.sandbox._tracing import add_sandbox_metadata
-from langsmith.sandbox._tunnel import AsyncTunnel
+from langsmith.sandbox._tunnel import AsyncDialer, AsyncTunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
     _retry_delay,
@@ -1014,6 +1014,41 @@ class AsyncSandbox:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, t._tunnel._start)
         return t
+
+    async def dialer(
+        self,
+        *,
+        max_reconnects: int = 3,
+        headers: RequestHeaders = None,
+    ) -> AsyncDialer:
+        """Open a session for dialing ports inside the sandbox in-process.
+
+        Unlike :meth:`tunnel`, nothing listens locally: each
+        :meth:`AsyncDialer.dial` returns an already-connected socket that only
+        this process holds::
+
+            async with await sandbox.dialer() as d:
+                reader, writer = await asyncio.open_connection(sock=await d.dial(8000))
+
+        Args:
+            max_reconnects: Maximum number of automatic reconnect attempts
+                when the WebSocket session drops. Set to 0 to disable.
+
+        Returns:
+            An AsyncDialer instance (async context manager).
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+        """
+        d = AsyncDialer(
+            self._require_dataplane_url(),
+            self._client._api_key,
+            max_reconnects=max_reconnects,
+            headers=headers,
+        )
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, d._dialer._start)
+        return d
 
     async def service(
         self,

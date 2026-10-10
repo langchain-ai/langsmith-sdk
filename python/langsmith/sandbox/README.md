@@ -809,6 +809,32 @@ async with await client.sandbox(snapshot_id=snapshot_id) as sb:
         conn = await asyncpg.connect(host="127.0.0.1", port=t.local_port)
 ```
 
+### Dialing Without a Local Listener
+
+`tunnel()` binds a port on `127.0.0.1`, so any process on the machine can connect
+to the sandbox through it. When only your own process should, open a `dialer()`
+instead. Each `dial(port)` returns an already-connected socket (one end of a
+`socket.socketpair()`) bridged to that port inside the sandbox; nothing listens
+locally and there is no port or path to reach it.
+
+```python
+with sb.dialer() as d:
+    sock = d.dial(3000)
+    sock.sendall(b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n")
+    print(sock.recv(4096))
+    sock.close()
+```
+
+Pass the socket to anything that accepts a connected socket. With asyncio:
+
+```python
+async with await sb.dialer() as d:
+    reader, writer = await asyncio.open_connection(sock=await d.dial(3000))
+```
+
+One dialer multiplexes any number of connections, to any ports, over one
+WebSocket. Closing it closes every socket it dialed.
+
 ## Service URLs
 
 Access HTTP services running inside a sandbox without opening a TCP tunnel.
