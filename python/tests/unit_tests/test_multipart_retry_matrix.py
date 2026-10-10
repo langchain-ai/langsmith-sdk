@@ -1,17 +1,17 @@
 """Retry matrix for multipart ingestion.
 
 This is the executable spec for *what gets retried and how many times* when
-``POST /runs/multipart`` fails. Two independent layers decide that:
+``POST /runs/multipart`` fails. One layer decides that: urllib3 ``Retry``
+mounted on the session adapter (``_default_retry_config``):
+``status_forcelist=[429, 500, 502, 503, 504, 408, 425]`` plus a second,
+easy-to-miss trigger -- ``respect_retry_after_header`` makes 413 retryable
+*only* when the response actually carries a ``Retry-After`` header.
 
-1. urllib3 ``Retry`` mounted on the session adapter (``_default_retry_config``):
-   ``status_forcelist=[429, 500, 502, 503, 504, 408, 425]`` plus a second,
-   easy-to-miss trigger -- ``respect_retry_after_header`` makes 413 retryable
-   *only* when the response actually carries a ``Retry-After`` header.
-2. The ``for idx in range(1, attempts + 1)`` loop in ``_send_multipart_req``,
-   which retries only ``LangSmithConnectionError`` / ``LangSmithRequestTimeout``
-   / ``LangSmithAPIError`` (500) and swallows everything else.
+The ``for idx in range(1, attempts + 1)`` loop in ``_send_multipart_req`` runs
+once by default (``attempts=1``). It still fans out over ``_write_api_urls``,
+treats 409 as success and dumps the failed trace, but never retries on its own.
 
-A ``MagicMock`` session cannot see layer 1 at all, so these tests drive a real
+A ``MagicMock`` session cannot see urllib3 at all, so these tests drive a real
 local HTTP server through the real adapter and count sockets hit.
 """
 
@@ -156,16 +156,13 @@ RETRY_MATRIX = [
     (200, None, 1, "none"),
     # 409 is treated as a duplicate/no-op and breaks immediately.
     (409, None, 1, "none"),
-    # In both retry layers, 500 maps to LangSmithAPIError, so urllib3's 4
-    # requests run once per app attempt (3 attempts).
-    (500, None, 12, "urllib3 + app loop"),
-    # In status_forcelist -> urllib3 retries 3x, app loop then gives up.
+    # In status_forcelist -> urllib3 retries 3x beneath the single app attempt.
+    (500, None, 4, "urllib3"),
     (502, None, 4, "urllib3"),
     (503, None, 4, "urllib3"),
     (504, None, 4, "urllib3"),
     (425, None, 4, "urllib3"),
-    # Likewise 408 -> LangSmithRequestTimeout.
-    (408, None, 12, "urllib3 + app loop"),
+    (408, None, 4, "urllib3"),
     (429, 1, 4, "urllib3 (Retry-After delay)"),
     (429, None, 4, "urllib3 (backoff_factor delay)"),
     (413, 1, 4, "urllib3 (Retry-After only)"),
@@ -244,11 +241,9 @@ def test_multipart_retry_counts_streamed_body(
 
 
 # `_prepare_multipart_data` backs `upload_examples_multipart` /
-# `update_examples_multipart`. Unlike `_send_multipart_req` it makes a single
-# `request_with_retries` call with no app-level retry loop of its own, so
-# these counts are RETRYABLE_ROWS with the "+ app loop" rows (500, 408)
-# un-multiplied back down to urllib3's raw count -- everything here is
-# retried by urllib3 alone.
+# `update_examples_multipart`. It makes a single `request_with_retries` call
+# with no app-level loop at all, so these counts match RETRYABLE_ROWS:
+# everything is retried by urllib3 alone.
 PREPARE_MULTIPART_DATA_RETRY_MATRIX = [
     (500, None, 4, "urllib3"),
     (502, None, 4, "urllib3"),
@@ -273,14 +268,12 @@ PREPARE_MULTIPART_DATA_RETRY_MATRIX = [
 def test_prepare_multipart_data_retry_counts_streamed_body(
     endpoint, no_sleep, status, retry_after, expected_requests, retried_by
 ):
-    """Same streamed-body bug as ``_send_multipart_req``, but no app-level
-    retry loop to paper over a failed rewind -- this call path (behind
+    """Same streamed-body bug as ``_send_multipart_req``: this call path (behind
     ``upload_examples_multipart`` / ``update_examples_multipart``) relies
     entirely on urllib3 being able to resend the body.
 
-    Every row here is a status that ultimately fails (there's no app loop to
-    exhaust first), so the call is always expected to raise once urllib3
-    gives up retrying.
+    Every row here is a status that ultimately fails, so the call is always
+    expected to raise once urllib3 gives up retrying.
     """
     endpoint.status = status
     endpoint.retry_after = retry_after
@@ -330,18 +323,18 @@ def test_retry_after_header_value_drives_the_delay(endpoint, no_sleep):
     ] * 3
 
 
-def test_app_loop_does_not_back_off(endpoint, no_sleep):
-    """The app loop itself never sleeps -- every delay comes from urllib3."""
+def test_app_loop_does_not_retry(endpoint, no_sleep):
+    """One app attempt: urllib3's single backoff ramp is the only delay."""
     endpoint.status = 500
     client = _client(endpoint)
 
     client._send_multipart_req(_one_run_payload())
 
-    # 3 app attempts x urllib3's ramp; no sleep before the first retry of each.
+    # urllib3's ramp once; a second app attempt would repeat it.
     assert [c.args[0] for c in no_sleep.call_args_list] == [
         pytest.approx(1, abs=0.01),
         pytest.approx(2, abs=0.01),
-    ] * 3
+    ]
 
 
 @pytest.mark.parametrize(
@@ -403,7 +396,7 @@ def _only_warning(caplog):
     """Return the single warning emitted for a dropped batch.
 
     Asserting the count here covers every caller: retries are silent, so the
-    twelve POSTs for a 500 still produce exactly one warning, not one per
+    four POSTs for a 500 still produce exactly one warning, not one per
     attempt.
     """
     msgs = [
@@ -440,7 +433,7 @@ def test_warning_message_when_retries_exhausted(endpoint, no_sleep, caplog):
 
 
 def test_warning_message_when_not_retryable(endpoint, no_sleep, caplog):
-    """Exact message for a failure the *app loop* will not retry (429).
+    """Exact message for a failure outside the app attempt's except list (429).
 
     Note this path formats the exception differently from the exhausted-retry
     path above: it goes through ``traceback.format_exception_only``, so the
