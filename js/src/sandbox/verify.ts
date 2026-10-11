@@ -99,18 +99,73 @@ interface Jwk {
   kty?: string;
   crv?: string;
   kid?: string;
+  alg?: string;
   x?: string;
+  y?: string;
   n?: string;
   e?: string;
 }
 
 interface VerificationKey {
-  alg: "EdDSA" | "RS256";
-  key: Promise<CryptoKey>;
+  alg: string;
+  key: CryptoKey;
 }
 
-const USER_TOKEN_ALGORITHMS = ["EdDSA", "RS256"];
+interface AlgorithmSpec {
+  kty: string;
+  crv?: string;
+  importParams: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams;
+  verifyParams: AlgorithmIdentifier | RsaPssParams | EcdsaParams;
+}
+
+// Every JOSE asymmetric algorithm; the JWKS key picks which one a token may use.
+const ALGORITHMS: Record<string, AlgorithmSpec> = {
+  EdDSA: {
+    kty: "OKP",
+    crv: "Ed25519",
+    importParams: { name: "Ed25519" },
+    verifyParams: { name: "Ed25519" },
+  },
+};
+for (const [bits, curve] of [
+  [256, "P-256"],
+  [384, "P-384"],
+  [512, "P-521"],
+] as const) {
+  const hash = `SHA-${bits}`;
+  ALGORITHMS[`RS${bits}`] = {
+    kty: "RSA",
+    importParams: { name: "RSASSA-PKCS1-v1_5", hash },
+    verifyParams: { name: "RSASSA-PKCS1-v1_5" },
+  };
+  // JWS RSA-PSS uses a salt as long as the hash.
+  ALGORITHMS[`PS${bits}`] = {
+    kty: "RSA",
+    importParams: { name: "RSA-PSS", hash },
+    verifyParams: { name: "RSA-PSS", saltLength: bits / 8 },
+  };
+  // The JWS ECDSA signature is raw r||s, which Web Crypto verifies directly.
+  ALGORITHMS[`ES${bits}`] = {
+    kty: "EC",
+    crv: curve,
+    importParams: { name: "ECDSA", namedCurve: curve },
+    verifyParams: { name: "ECDSA", hash },
+  };
+}
+
+const USER_TOKEN_ALGORITHMS = Object.keys(ALGORITHMS);
 const CALLBACK_ALGORITHMS = ["EdDSA"];
+
+/** A JWK's algorithm: its `alg` member if supported, else derived from its key type. */
+function jwkAlgorithm(jwk: Jwk): string | undefined {
+  if (jwk.alg !== undefined) {
+    return USER_TOKEN_ALGORITHMS.includes(jwk.alg) ? jwk.alg : undefined;
+  }
+  if (jwk.kty === "RSA") return "RS256";
+  return USER_TOKEN_ALGORITHMS.find(
+    (alg) => ALGORITHMS[alg].kty === jwk.kty && ALGORITHMS[alg].crv === jwk.crv,
+  );
+}
 
 function fail(message: string): never {
   throw new LangSmithSandboxTokenVerificationError(message);
@@ -327,14 +382,13 @@ export class SandboxTokenVerifier {
     if (typeof header.kid !== "string" || !header.kid) fail("token has no kid");
 
     const { alg, key } = await this.key(header.kid);
-    // The key was imported for one algorithm; the token must claim that one.
+    // The key belongs to one algorithm; the token must claim that one.
     if (header.alg !== alg) {
       fail(`unexpected signing algorithm: ${JSON.stringify(header.alg)}`);
     }
     const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-    const algorithm =
-      alg === "RS256" ? { name: "RSASSA-PKCS1-v1_5" } : { name: "Ed25519" };
-    if (!(await subtle().verify(algorithm, key, signature, signed))) {
+    const { verifyParams } = ALGORITHMS[alg];
+    if (!(await subtle().verify(verifyParams, key, signature, signed))) {
       fail("invalid signature");
     }
 
@@ -366,9 +420,7 @@ export class SandboxTokenVerifier {
     return claims;
   }
 
-  private async key(
-    kid: string,
-  ): Promise<{ alg: VerificationKey["alg"]; key: CryptoKey }> {
+  private async key(kid: string): Promise<VerificationKey> {
     const age = Date.now() - this.fetchedAt;
     const fresh = this.keys.has(kid) && age < JWKS_TTL_MS;
     if (!fresh && (this.fetchedAt === 0 || age >= JWKS_MIN_REFRESH_MS)) {
@@ -379,11 +431,7 @@ export class SandboxTokenVerifier {
     }
     const entry = this.keys.get(kid);
     if (!entry) fail(`unknown signing key: ${kid}`);
-    try {
-      return { alg: entry.alg, key: await entry.key };
-    } catch (e) {
-      fail(`signing key ${kid} is not usable: ${(e as Error).message}`);
-    }
+    return entry;
   }
 
   private async refresh(): Promise<void> {
@@ -404,36 +452,33 @@ export class SandboxTokenVerifier {
       fail("invalid JWKS: expected an object with a keys array");
     }
     const keys = new Map<string, VerificationKey>();
+    const webCrypto = subtle();
     for (const jwk of entries as (Jwk | null)[]) {
       if (typeof jwk !== "object" || jwk === null || !jwk.kid) continue;
-      let entry: VerificationKey;
-      if (jwk.kty === "OKP" && jwk.crv === "Ed25519" && jwk.x) {
-        entry = {
-          alg: "EdDSA",
-          key: subtle().importKey(
-            "jwk",
-            { kty: "OKP", crv: "Ed25519", x: jwk.x },
-            { name: "Ed25519" },
-            false,
-            ["verify"],
-          ),
-        };
-      } else if (jwk.kty === "RSA" && jwk.n && jwk.e) {
-        entry = {
-          alg: "RS256",
-          key: subtle().importKey(
-            "jwk",
-            { kty: "RSA", n: jwk.n, e: jwk.e },
-            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-            false,
-            ["verify"],
-          ),
-        };
-      } else {
+      const alg = jwkAlgorithm(jwk);
+      if (!alg) continue;
+      const { kty, crv, importParams } = ALGORITHMS[alg];
+      if (jwk.kty !== kty || jwk.crv !== crv) continue;
+      try {
+        // Import with the key's own algorithm: Web Crypto fixes the RSA hash here.
+        const key = await webCrypto.importKey(
+          "jwk",
+          {
+            kty: jwk.kty,
+            crv: jwk.crv,
+            x: jwk.x,
+            y: jwk.y,
+            n: jwk.n,
+            e: jwk.e,
+          },
+          importParams,
+          false,
+          ["verify"],
+        );
+        keys.set(jwk.kid, { alg, key });
+      } catch {
         continue;
       }
-      entry.key.catch(() => undefined);
-      keys.set(jwk.kid, entry);
     }
     this.keys = keys;
     this.fetchedAt = Date.now();

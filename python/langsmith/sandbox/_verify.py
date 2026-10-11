@@ -33,7 +33,19 @@ USER_TOKEN_HEADER = "X-Langsmith-User-Token"
 CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
 
 _CALLBACK_SUBJECT = "langsmith-sandbox-callback"
-_USER_TOKEN_ALGORITHMS = ["EdDSA", "RS256"]
+# Any JOSE asymmetric algorithm; PyJWK binds the algorithm to the key the kid selects.
+_USER_TOKEN_ALGORITHMS = [
+    "RS256",
+    "RS384",
+    "RS512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "EdDSA",
+]
 _CALLBACK_ALGORITHMS = ["EdDSA"]
 _JWKS_PATH = "/.well-known/jwks.json"
 _JWKS_TTL_SECONDS = 300.0

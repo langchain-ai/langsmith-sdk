@@ -10,9 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from jwt.algorithms import OKPAlgorithm, RSAAlgorithm
+from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
 from pytest_httpx import HTTPXMock
 
 from langsmith import utils as ls_utils
@@ -70,6 +70,24 @@ def rsa_jwks(httpx_mock: HTTPXMock, key, rsa_key):
     }
     httpx_mock.add_response(
         url=JWKS_URL, json={"keys": [_jwk(key, KID), rsa_jwk]}, is_reusable=True
+    )
+
+
+@pytest.fixture
+def ec_key():
+    return ec.generate_private_key(ec.SECP256R1())
+
+
+@pytest.fixture
+def mixed_jwks(httpx_mock: HTTPXMock, key, rsa_key, ec_key):
+    rsa_jwk = {
+        **json.loads(RSAAlgorithm.to_jwk(rsa_key.public_key())),
+        "kid": RSA_KID,
+        "alg": "PS256",
+    }
+    ec_jwk = {**json.loads(ECAlgorithm.to_jwk(ec_key.public_key())), "kid": "ec-kid"}
+    httpx_mock.add_response(
+        url=JWKS_URL, json={"keys": [_jwk(key, KID), rsa_jwk, ec_jwk]}, is_reusable=True
     )
 
 
@@ -204,6 +222,25 @@ class TestUserToken:
         for token in (eddsa_under_rsa_kid, rs256_under_ed_kid):
             with pytest.raises(SandboxTokenVerificationError):
                 verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    @pytest.mark.parametrize("algorithm", ["ES256", "PS256"])
+    def test_accepts_other_jose_algorithms(
+        self, mixed_jwks, rsa_key, ec_key, verifier, algorithm
+    ):
+        signer, kid = (ec_key, "ec-kid") if algorithm == "ES256" else (rsa_key, RSA_KID)
+        token = _sign(signer, _user_claims(), kid, algorithm=algorithm)
+        user = verifier.verify_user_token(token, audience=SERVICE_HOST)
+        assert user.subject == "user-123"
+
+    def test_rejects_es256_under_rsa_key(self, mixed_jwks, ec_key, verifier):
+        token = _sign(ec_key, _user_claims(), RSA_KID, algorithm="ES256")
+        with pytest.raises(SandboxTokenVerificationError):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    def test_rejects_alg_none(self, verifier):
+        token = jwt.encode(_user_claims(), None, algorithm="none", headers={"kid": KID})
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
 
     def test_rejects_callback_signature(self, jwks, key, verifier):
         body = _callback_body()
