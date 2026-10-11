@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -10,8 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from jwt.algorithms import OKPAlgorithm
+from jwt.algorithms import OKPAlgorithm, RSAAlgorithm
 from pytest_httpx import HTTPXMock
 
 from langsmith import utils as ls_utils
@@ -27,6 +30,7 @@ APP_URL = "https://app.example.com"
 SERVICE_HOST = "0190aaaa-0000-7000-8000-000000000001--8080.svc.example.com"
 CALLBACK_URL = "https://integrator.example.com/sandbox-callback"
 KID = "test-kid"
+RSA_KID = "rsa-kid"
 
 
 @pytest.fixture(autouse=True)
@@ -48,9 +52,28 @@ def _jwk(key: Ed25519PrivateKey, kid: str) -> dict:
     }
 
 
+def _rsa_jwk(key: rsa.RSAPrivateKey, kid: str, **overrides) -> dict:
+    public = json.loads(RSAAlgorithm.to_jwk(key.public_key()))
+    return {**public, "kid": kid, "alg": "RS256", "use": "sig", **overrides}
+
+
 @pytest.fixture
 def key():
     return Ed25519PrivateKey.generate()
+
+
+@pytest.fixture(scope="module")
+def rsa_key():
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@pytest.fixture
+def mixed_jwks(httpx_mock: HTTPXMock, key, rsa_key):
+    httpx_mock.add_response(
+        url=JWKS_URL,
+        json={"keys": [_jwk(key, KID), _rsa_jwk(rsa_key, RSA_KID)]},
+        is_reusable=True,
+    )
 
 
 @pytest.fixture
@@ -64,6 +87,26 @@ def _sign(key, claims: dict, kid: str = KID, headers: dict | None = None) -> str
     return jwt.encode(
         claims, key, algorithm="EdDSA", headers={"kid": kid, **(headers or {})}
     )
+
+
+def _sign_rsa(key, claims: dict, kid: str = RSA_KID, alg: str = "RS256") -> str:
+    return jwt.encode(claims, key, algorithm=alg, headers={"kid": kid})
+
+
+def _unsigned(header: dict, claims: dict, signature: bytes = b"") -> str:
+    def b64(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    head = f"{b64(json.dumps(header).encode())}.{b64(json.dumps(claims).encode())}"
+    return f"{head}.{b64(signature)}"
+
+
+def _forge_hs256(claims: dict, secret: bytes, kid: str = RSA_KID) -> str:
+    # PyJWT refuses to HMAC with a public key, so forge the token by hand.
+    token = _unsigned({"alg": "HS256", "typ": "JWT", "kid": kid}, claims)
+    signing_input = token.rsplit(".", 1)[0]
+    mac = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
+    return _unsigned({"alg": "HS256", "typ": "JWT", "kid": kid}, claims, mac)
 
 
 def _user_claims(**overrides) -> dict:
@@ -196,6 +239,167 @@ class TestUserToken:
             _sign(key, _user_claims()), audience=SERVICE_HOST
         )
         assert user.subject == "user-123"
+
+
+@pytest.fixture
+def primed(mixed_jwks, key, rsa_key, verifier):
+    """A verifier whose cache already holds both keys, so rejections are not
+    just a side effect of never fetching the JWKS."""
+    verifier.verify_user_token(_sign(key, _user_claims()), audience=SERVICE_HOST)
+    verifier.verify_user_token(
+        _sign_rsa(rsa_key, _user_claims()), audience=SERVICE_HOST
+    )
+    return verifier
+
+
+class TestRS256:
+    def test_valid(self, httpx_mock: HTTPXMock, rsa_key, verifier):
+        httpx_mock.add_response(
+            url=JWKS_URL, json={"keys": [_rsa_jwk(rsa_key, RSA_KID)]}
+        )
+        user = verifier.verify_user_token(
+            _sign_rsa(rsa_key, _user_claims()), audience=SERVICE_HOST, issuer=APP_URL
+        )
+        assert user.subject == "user-123"
+        assert user.email == "ada@example.com"
+
+    def test_valid_without_alg_member(self, httpx_mock: HTTPXMock, rsa_key, verifier):
+        jwk = _rsa_jwk(rsa_key, RSA_KID)
+        del jwk["alg"], jwk["use"]
+        httpx_mock.add_response(url=JWKS_URL, json={"keys": [jwk]})
+        user = verifier.verify_user_token(
+            _sign_rsa(rsa_key, _user_claims()), audience=SERVICE_HOST
+        )
+        assert user.subject == "user-123"
+
+    def test_mixed_jwks(self, mixed_jwks, key, rsa_key, verifier):
+        for token in (_sign(key, _user_claims()), _sign_rsa(rsa_key, _user_claims())):
+            user = verifier.verify_user_token(token, audience=SERVICE_HOST)
+            assert user.subject == "user-123"
+
+    async def test_mixed_jwks_async(self, mixed_jwks, key, rsa_key, verifier):
+        for token in (_sign(key, _user_claims()), _sign_rsa(rsa_key, _user_claims())):
+            user = await verifier.averify_user_token(token, audience=SERVICE_HOST)
+            assert user.subject == "user-123"
+
+    def test_rejects_other_rsa_key(self, mixed_jwks, verifier):
+        other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        with pytest.raises(SandboxTokenVerificationError, match="invalid token"):
+            verifier.verify_user_token(
+                _sign_rsa(other, _user_claims()), audience=SERVICE_HOST
+            )
+
+    def test_rejects_eddsa_header_under_rsa_kid(self, mixed_jwks, key, verifier):
+        token = _sign(key, _user_claims(), kid=RSA_KID)
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    def test_rejects_rs256_header_under_ed25519_kid(
+        self, mixed_jwks, rsa_key, verifier
+    ):
+        token = _sign_rsa(rsa_key, _user_claims(), kid=KID)
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    @pytest.mark.parametrize("kid", [RSA_KID, KID])
+    def test_rejects_alg_none(self, primed, kid):
+        token = _unsigned({"alg": "none", "kid": kid}, _user_claims())
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            primed.verify_user_token(token, audience=SERVICE_HOST)
+
+    @pytest.mark.parametrize("encoding", ["pem", "jwk"])
+    def test_rejects_hs256_with_rsa_public_key(self, rsa_key, primed, encoding):
+        if encoding == "pem":
+            secret = rsa_key.public_key().public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        else:
+            secret = json.dumps(_rsa_jwk(rsa_key, RSA_KID)).encode()
+        token = _forge_hs256(_user_claims(), secret)
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            primed.verify_user_token(token, audience=SERVICE_HOST)
+
+    @pytest.mark.parametrize("alg", ["RS384", "RS512", "PS256"])
+    def test_rejects_other_rsa_algorithms(self, rsa_key, primed, alg):
+        token = _sign_rsa(rsa_key, _user_claims(), alg=alg)
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            primed.verify_user_token(token, audience=SERVICE_HOST)
+
+    def test_rejects_es256(self, primed):
+        token = _unsigned({"alg": "ES256", "kid": RSA_KID}, _user_claims(), b"x" * 64)
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            primed.verify_user_token(token, audience=SERVICE_HOST)
+
+    def test_skips_rsa_1024(self, httpx_mock: HTTPXMock, key, verifier):
+        weak = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+        httpx_mock.add_response(
+            url=JWKS_URL,
+            json={"keys": [_rsa_jwk(weak, "weak"), _jwk(key, KID)]},
+            is_reusable=True,
+        )
+        assert verifier.verify_user_token(
+            _sign(key, _user_claims()), audience=SERVICE_HOST
+        )
+        token = _sign_rsa(weak, _user_claims(), kid="weak")
+        with pytest.raises(SandboxTokenVerificationError, match="unknown signing key"):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param({"alg": "RS512"}, id="alg RS512"),
+            pytest.param({"alg": "EdDSA"}, id="alg EdDSA"),
+            pytest.param({"use": "enc"}, id="use enc"),
+        ],
+    )
+    def test_skips_mismatched_jwk(
+        self, httpx_mock: HTTPXMock, key, rsa_key, verifier, overrides
+    ):
+        httpx_mock.add_response(
+            url=JWKS_URL,
+            json={"keys": [_rsa_jwk(rsa_key, RSA_KID, **overrides), _jwk(key, KID)]},
+            is_reusable=True,
+        )
+        assert verifier.verify_user_token(
+            _sign(key, _user_claims()), audience=SERVICE_HOST
+        )
+        with pytest.raises(SandboxTokenVerificationError, match="unknown signing key"):
+            verifier.verify_user_token(
+                _sign_rsa(rsa_key, _user_claims()), audience=SERVICE_HOST
+            )
+
+    def test_skips_ed25519_jwk_with_rs256_alg(
+        self, httpx_mock: HTTPXMock, key, rsa_key, verifier
+    ):
+        httpx_mock.add_response(
+            url=JWKS_URL,
+            json={
+                "keys": [
+                    {**_jwk(key, KID), "alg": "RS256"},
+                    _rsa_jwk(rsa_key, RSA_KID),
+                ]
+            },
+            is_reusable=True,
+        )
+        with pytest.raises(SandboxTokenVerificationError, match="unknown signing key"):
+            verifier.verify_user_token(
+                _sign(key, _user_claims()), audience=SERVICE_HOST
+            )
+
+    def test_callback_stays_eddsa_only(self, rsa_key, primed):
+        body = _callback_body()
+        signature = _sign_rsa(rsa_key, _callback_claims(body))
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            primed.verify_callback(body=body, signature=signature, aud=CALLBACK_URL)
+
+    def test_callback_rejects_eddsa_header_under_rsa_kid(
+        self, mixed_jwks, key, verifier
+    ):
+        body = _callback_body()
+        signature = _sign(key, _callback_claims(body), kid=RSA_KID)
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            verifier.verify_callback(body=body, signature=signature, aud=CALLBACK_URL)
 
 
 class TestJWKSFetch:
