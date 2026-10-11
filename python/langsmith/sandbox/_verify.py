@@ -17,12 +17,15 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 from urllib.parse import urlsplit
 
 from langsmith import utils as ls_utils
 from langsmith._openapi_client._httpx import httpx
 from langsmith.sandbox._exceptions import SandboxClientError
+
+if TYPE_CHECKING:
+    from jwt import PyJWKSet
 
 AudienceMatcher = Union[str, Callable[[str], bool]]
 
@@ -30,32 +33,17 @@ USER_TOKEN_HEADER = "X-Langsmith-User-Token"
 CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
 
 _CALLBACK_SUBJECT = "langsmith-sandbox-callback"
+_USER_TOKEN_ALGORITHMS = ["EdDSA", "RS256"]
+_CALLBACK_ALGORITHMS = ["EdDSA"]
 _JWKS_PATH = "/.well-known/jwks.json"
 _JWKS_TTL_SECONDS = 300.0
 # Bounds refetches when a token names a kid the cached set lacks.
 _JWKS_MIN_REFRESH_SECONDS = 30.0
 _LEEWAY_SECONDS = 30
 
-_EDDSA = "EdDSA"
-_RS256 = "RS256"
-# User tokens may be signed by an Ed25519 or an RSA key; the key the token's kid
-# names decides which one applies.
-_USER_TOKEN_ALGORITHMS = frozenset({_EDDSA, _RS256})
-# Proxy callbacks are signed only by the Ed25519 sandbox callback key.
-_CALLBACK_ALGORITHMS = frozenset({_EDDSA})
-_MIN_RSA_BITS = 2048
-
 
 class SandboxTokenVerificationError(SandboxClientError):
     """Raised when a sandbox user token or callback signature fails verification."""
-
-
-@dataclass(frozen=True)
-class _SigningKey:
-    """A JWKS key and the one algorithm tokens under its kid must use."""
-
-    algorithm: str
-    key: Any
 
 
 @dataclass(frozen=True)
@@ -154,9 +142,7 @@ def _service_host(audience: str) -> str:
 class SandboxTokenVerifier:
     """Verifies tokens LangSmith signs for code running in or behind a sandbox.
 
-    Keys are fetched from LangSmith's JWKS endpoint and cached. User tokens are
-    signed with EdDSA (Ed25519) or RS256, chosen from the JWKS key the token's
-    ``kid`` names; proxy callback signatures are always EdDSA (Ed25519).
+    Keys are fetched from LangSmith's JWKS endpoint and cached.
 
     Example:
         verifier = SandboxTokenVerifier()
@@ -207,7 +193,7 @@ class SandboxTokenVerifier:
         self._fetch_lock = threading.Lock()
         self._afetch_lock: Optional[asyncio.Lock] = None
         self._afetch_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._keys: Optional[dict[str, _SigningKey]] = None
+        self._keys: Optional[PyJWKSet] = None
         self._fetched_at = 0.0
 
     def verify_user_token(
@@ -227,17 +213,16 @@ class SandboxTokenVerifier:
                 ``request.headers["Host"]``. A full service URL is also accepted.
             issuer: If set, the LangSmith app URL the token must be issued by.
         """
-        kid, alg = self._header(token, _USER_TOKEN_ALGORITHMS)
-        key = self._key_sync(kid)
-        return self._decode_user_token(token, alg, key, audience, issuer)
+        kid = self._kid(token, _USER_TOKEN_ALGORITHMS)
+        return self._decode_user_token(token, self._key_sync(kid), audience, issuer)
 
     async def averify_user_token(
         self, token: str, *, audience: str, issuer: Optional[str] = None
     ) -> SandboxUser:
         """Async version of :meth:`verify_user_token`."""
-        kid, alg = self._header(token, _USER_TOKEN_ALGORITHMS)
+        kid = self._kid(token, _USER_TOKEN_ALGORITHMS)
         key = await self._key_async(kid)
-        return self._decode_user_token(token, alg, key, audience, issuer)
+        return self._decode_user_token(token, key, audience, issuer)
 
     def verify_callback(
         self,
@@ -259,9 +244,8 @@ class SandboxTokenVerifier:
             issuer: If set, the LangSmith OAuth issuer the signature must be
                 issued by.
         """
-        kid, alg = self._header(signature, _CALLBACK_ALGORITHMS)
-        key = self._key_sync(kid)
-        return self._decode_callback(signature, alg, key, body, aud, issuer)
+        kid = self._kid(signature, _CALLBACK_ALGORITHMS)
+        return self._decode_callback(signature, self._key_sync(kid), body, aud, issuer)
 
     async def averify_callback(
         self,
@@ -272,48 +256,40 @@ class SandboxTokenVerifier:
         issuer: Optional[str] = None,
     ) -> SandboxCallback:
         """Async version of :meth:`verify_callback`."""
-        kid, alg = self._header(signature, _CALLBACK_ALGORITHMS)
+        kid = self._kid(signature, _CALLBACK_ALGORITHMS)
         key = await self._key_async(kid)
-        return self._decode_callback(signature, alg, key, body, aud, issuer)
+        return self._decode_callback(signature, key, body, aud, issuer)
 
-    def _header(self, token: str, algorithms: frozenset[str]) -> tuple[str, str]:
-        """Return the token's kid and alg, rejecting algorithms never accepted."""
+    def _kid(self, token: str, algorithms: list[str]) -> str:
         if not token:
             raise SandboxTokenVerificationError("token is empty")
         try:
             header = self._jwt.get_unverified_header(token)
         except self._jwt.PyJWTError as e:
             raise SandboxTokenVerificationError(f"malformed token: {e}") from e
-        alg = header.get("alg")
-        if alg not in algorithms:
+        if header.get("alg") not in algorithms:
             raise SandboxTokenVerificationError(
-                f"unexpected signing algorithm: {alg!r}"
+                f"unexpected signing algorithm: {header.get('alg')!r}"
             )
         kid = header.get("kid")
         if not isinstance(kid, str) or not kid:
             raise SandboxTokenVerificationError("token has no kid")
-        return kid, alg
+        return kid
 
     def _decode(
         self,
         token: str,
-        alg: str,
-        key: _SigningKey,
+        key: Any,
         audience: Optional[str],
         issuer: Optional[str],
         required: list[str],
+        algorithms: list[str],
     ) -> dict[str, Any]:
-        # The key, not the token, decides the algorithm: an RS256 header under an
-        # Ed25519 kid (or the reverse) is rejected here.
-        if alg != key.algorithm:
-            raise SandboxTokenVerificationError(
-                f"unexpected signing algorithm: {alg!r} for a {key.algorithm} key"
-            )
         try:
             return self._jwt.decode(
                 token,
-                key.key,
-                algorithms=[key.algorithm],
+                key,
+                algorithms=algorithms,
                 audience=audience,
                 issuer=issuer.rstrip("/") if issuer else None,
                 leeway=_LEEWAY_SECONDS,
@@ -323,20 +299,15 @@ class SandboxTokenVerifier:
             raise SandboxTokenVerificationError(f"invalid token: {e}") from e
 
     def _decode_user_token(
-        self,
-        token: str,
-        alg: str,
-        key: _SigningKey,
-        audience: str,
-        issuer: Optional[str],
+        self, token: str, key: Any, audience: str, issuer: Optional[str]
     ) -> SandboxUser:
         claims = self._decode(
             token,
-            alg,
             key,
             _service_host(audience),
             issuer,
             ["exp", "iat", "iss", "aud", "sub"],
+            _USER_TOKEN_ALGORITHMS,
         )
         subject = claims["sub"]
         if not isinstance(subject, str) or not subject or subject == _CALLBACK_SUBJECT:
@@ -351,19 +322,18 @@ class SandboxTokenVerifier:
     def _decode_callback(
         self,
         signature: str,
-        alg: str,
-        key: _SigningKey,
+        key: Any,
         body: Union[bytes, str],
         aud: Optional[AudienceMatcher],
         issuer: Optional[str],
     ) -> SandboxCallback:
         claims = self._decode(
             signature,
-            alg,
             key,
             aud if isinstance(aud, str) else None,
             issuer,
             ["exp", "iat", "iss", "aud", "sub", "body_sha256"],
+            _CALLBACK_ALGORITHMS,
         )
         if callable(aud):
             audiences = claims["aud"]
@@ -380,68 +350,32 @@ class SandboxTokenVerifier:
             raise SandboxTokenVerificationError("body does not match signature")
         return _parse_callback(raw)
 
-    def _cached_key(self, kid: str, now: float) -> tuple[Optional[_SigningKey], bool]:
+    def _cached_key(self, kid: str, now: float) -> tuple[Any, bool]:
         with self._lock:
             keys = self._keys
             fresh = now - self._fetched_at < _JWKS_TTL_SECONDS
             may_refresh = now - self._fetched_at >= _JWKS_MIN_REFRESH_SECONDS
-        key = keys.get(kid) if keys is not None else None
+        key = _find_key(keys, kid) if keys is not None else None
         if key is not None and fresh:
             return key, False
         return key, keys is None or not fresh or may_refresh
 
-    def _store(self, data: Any, now: float) -> dict[str, _SigningKey]:
+    def _store(self, data: Any, now: float) -> Any:
         if not isinstance(data, dict) or not isinstance(data.get("keys"), list):
             raise SandboxTokenVerificationError(
                 "invalid JWKS: expected an object with a keys array"
             )
-        keys: dict[str, _SigningKey] = {}
-        for jwk in data["keys"]:
-            parsed = self._parse_jwk(jwk)
-            # The first key for a kid wins, as with PyJWKSet.
-            if parsed is not None and parsed[0] not in keys:
-                keys[parsed[0]] = parsed[1]
-        if not keys:
-            raise SandboxTokenVerificationError(
-                "invalid JWKS: The JWK Set did not contain any usable keys"
-            )
+        usable = [k for k in data["keys"] if isinstance(k, dict)]
+        try:
+            keys = self._jwt.PyJWKSet.from_dict({"keys": usable})
+        except (self._jwt.PyJWTError, KeyError, TypeError, ValueError) as e:
+            raise SandboxTokenVerificationError(f"invalid JWKS: {e}") from e
         with self._lock:
             self._keys = keys
             self._fetched_at = now
         return keys
 
-    def _parse_jwk(self, jwk: Any) -> Optional[tuple[str, _SigningKey]]:
-        """Return the kid and key of a usable JWKS entry, or None to skip it."""
-        if not isinstance(jwk, dict):
-            return None
-        if "use" in jwk and jwk["use"] != "sig":
-            return None
-        kid = jwk.get("kid")
-        if not isinstance(kid, str) or not kid:
-            return None
-        kty = jwk.get("kty")
-        # Only the public members are passed on, so a stray private member
-        # never turns into a private key object.
-        public: dict[str, str]
-        if kty == "OKP" and jwk.get("crv") == "Ed25519" and _nonempty(jwk, "x"):
-            alg = _EDDSA
-            public = {"kty": "OKP", "crv": "Ed25519", "x": jwk["x"]}
-        elif kty == "RSA" and _nonempty(jwk, "n") and _nonempty(jwk, "e"):
-            alg = _RS256
-            public = {"kty": "RSA", "n": jwk["n"], "e": jwk["e"]}
-        else:
-            return None
-        if "alg" in jwk and jwk["alg"] != alg:
-            return None
-        try:
-            key = self._jwt.PyJWK(public, algorithm=alg).key
-        except (self._jwt.PyJWTError, KeyError, TypeError, ValueError):
-            return None
-        if alg == _RS256 and key.key_size < _MIN_RSA_BITS:
-            return None
-        return kid, _SigningKey(alg, key)
-
-    def _key_sync(self, kid: str) -> _SigningKey:
+    def _key_sync(self, kid: str) -> Any:
         key, refresh = self._cached_key(kid, time.monotonic())
         if refresh:
             # Serialized and re-checked so concurrent misses share one fetch.
@@ -457,7 +391,7 @@ class SandboxTokenVerifier:
                         raise SandboxTokenVerificationError(
                             f"failed to fetch JWKS from {self._jwks_url}: {e}"
                         ) from e
-                    key = self._store(data, now).get(kid)
+                    key = _find_key(self._store(data, now), kid)
         return _require_key(key, kid)
 
     def _async_fetch_lock(self) -> asyncio.Lock:
@@ -468,7 +402,7 @@ class SandboxTokenVerifier:
                 self._afetch_loop = loop
             return self._afetch_lock
 
-    async def _key_async(self, kid: str) -> _SigningKey:
+    async def _key_async(self, kid: str) -> Any:
         key, refresh = self._cached_key(kid, time.monotonic())
         if refresh:
             async with self._async_fetch_lock():
@@ -484,16 +418,18 @@ class SandboxTokenVerifier:
                         raise SandboxTokenVerificationError(
                             f"failed to fetch JWKS from {self._jwks_url}: {e}"
                         ) from e
-                    key = self._store(data, now).get(kid)
+                    key = _find_key(self._store(data, now), kid)
         return _require_key(key, kid)
 
 
-def _nonempty(jwk: Mapping[str, Any], member: str) -> bool:
-    value = jwk.get(member)
-    return isinstance(value, str) and bool(value)
+def _find_key(keys: Any, kid: str) -> Any:
+    for k in keys.keys:
+        if k.key_id == kid:
+            return k
+    return None
 
 
-def _require_key(key: Optional[_SigningKey], kid: str) -> _SigningKey:
+def _require_key(key: Any, kid: str) -> Any:
     if key is None:
         raise SandboxTokenVerificationError(f"unknown signing key: {kid}")
     return key

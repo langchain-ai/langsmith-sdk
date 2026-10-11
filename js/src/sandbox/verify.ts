@@ -13,25 +13,6 @@ const JWKS_TTL_MS = 300_000;
 // Bounds refetches when a token names a kid the cached set lacks.
 const JWKS_MIN_REFRESH_MS = 30_000;
 const LEEWAY_SECONDS = 30;
-const MIN_RSA_BITS = 2048;
-
-type SigningAlgorithm = "EdDSA" | "RS256";
-
-// User tokens may be signed by an Ed25519 or an RSA key; the key the token's
-// kid names decides which one applies.
-const USER_TOKEN_ALGORITHMS: readonly SigningAlgorithm[] = ["EdDSA", "RS256"];
-// Proxy callbacks are signed only by the Ed25519 sandbox callback key.
-const CALLBACK_ALGORITHMS: readonly SigningAlgorithm[] = ["EdDSA"];
-
-const VERIFY_PARAMS: Record<SigningAlgorithm, AlgorithmIdentifier> = {
-  EdDSA: { name: "Ed25519" },
-  RS256: { name: "RSASSA-PKCS1-v1_5" },
-};
-
-const KEY_TYPE_NAMES: Record<SigningAlgorithm, string> = {
-  EdDSA: "Ed25519",
-  RS256: "RSA",
-};
 
 /** The LangSmith user a service URL request was made by. */
 export interface SandboxUser {
@@ -115,21 +96,21 @@ type Claims = Record<string, unknown>;
 export type AudienceMatcher = string | ((aud: string) => boolean);
 
 interface Jwk {
-  kty?: unknown;
-  crv?: unknown;
-  kid?: unknown;
-  x?: unknown;
-  n?: unknown;
-  e?: unknown;
-  alg?: unknown;
-  use?: unknown;
+  kty?: string;
+  crv?: string;
+  kid?: string;
+  x?: string;
+  n?: string;
+  e?: string;
 }
 
-/** A JWKS key and the one algorithm tokens under its kid must use. */
-interface SigningKey {
-  alg: SigningAlgorithm;
+interface VerificationKey {
+  alg: "EdDSA" | "RS256";
   key: Promise<CryptoKey>;
 }
+
+const USER_TOKEN_ALGORITHMS = ["EdDSA", "RS256"];
+const CALLBACK_ALGORITHMS = ["EdDSA"];
 
 function fail(message: string): never {
   throw new LangSmithSandboxTokenVerificationError(message);
@@ -191,61 +172,6 @@ function toBytes(
   return new Uint8Array(body);
 }
 
-function nonEmpty(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-function bitLength(bytes: Uint8Array): number {
-  let i = 0;
-  while (i < bytes.length && bytes[i] === 0) i++;
-  if (i === bytes.length) return 0;
-  return (bytes.length - i - 1) * 8 + (32 - Math.clz32(bytes[i]));
-}
-
-function rsaModulusBits(n: string): number {
-  try {
-    return bitLength(base64UrlDecode(n));
-  } catch {
-    return 0;
-  }
-}
-
-/** Import a usable JWKS entry, or return undefined to skip it. */
-function importJwk(jwk: Jwk): SigningKey | undefined {
-  if (jwk.use !== undefined && jwk.use !== "sig") return undefined;
-  if (!nonEmpty(jwk.kid)) return undefined;
-  let alg: SigningAlgorithm;
-  let key: Promise<CryptoKey>;
-  // Only the public members are imported, so a stray private member never
-  // turns into a private key.
-  if (jwk.kty === "OKP" && jwk.crv === "Ed25519" && nonEmpty(jwk.x)) {
-    alg = "EdDSA";
-    if (jwk.alg !== undefined && jwk.alg !== alg) return undefined;
-    key = subtle().importKey(
-      "jwk",
-      { kty: "OKP", crv: "Ed25519", x: jwk.x },
-      { name: "Ed25519" },
-      false,
-      ["verify"],
-    );
-  } else if (jwk.kty === "RSA" && nonEmpty(jwk.n) && nonEmpty(jwk.e)) {
-    alg = "RS256";
-    if (jwk.alg !== undefined && jwk.alg !== alg) return undefined;
-    if (rsaModulusBits(jwk.n) < MIN_RSA_BITS) return undefined;
-    key = subtle().importKey(
-      "jwk",
-      { kty: "RSA", n: jwk.n, e: jwk.e },
-      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-      false,
-      ["verify"],
-    );
-  } else {
-    return undefined;
-  }
-  key.catch(() => undefined);
-  return { alg, key };
-}
-
 function hex(buf: ArrayBuffer): string {
   return Array.from(new Uint8Array(buf), (b) =>
     b.toString(16).padStart(2, "0"),
@@ -262,10 +188,8 @@ function timingSafeEqual(a: string, b: string): boolean {
 /**
  * Verifies tokens LangSmith signs for code running in or behind a sandbox.
  *
- * Keys are fetched from LangSmith's JWKS endpoint and cached. User tokens are
- * signed with EdDSA (Ed25519) or RS256, chosen from the JWKS key the token's
- * `kid` names; proxy callback signatures are always EdDSA (Ed25519). Requires
- * Web Crypto Ed25519 support (Node.js 20+, Deno, Bun, Cloudflare Workers).
+ * Keys are fetched from LangSmith's JWKS endpoint and cached. Requires Web
+ * Crypto Ed25519 support (Node.js 20+, Deno, Bun, Cloudflare Workers).
  *
  * @example
  * ```typescript
@@ -288,7 +212,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 export class SandboxTokenVerifier {
   private readonly jwksUrl: string;
   private readonly timeoutMs: number;
-  private keys = new Map<string, SigningKey>();
+  private keys = new Map<string, VerificationKey>();
   private fetchedAt = 0;
   private inflight?: Promise<void>;
 
@@ -381,7 +305,7 @@ export class SandboxTokenVerifier {
 
   private async verify(
     token: string,
-    algorithms: readonly SigningAlgorithm[],
+    algorithms: string[],
     audience: AudienceMatcher | undefined,
     issuer: string | undefined,
   ): Promise<Claims> {
@@ -397,24 +321,20 @@ export class SandboxTokenVerifier {
     } catch (e) {
       fail(`malformed token: ${(e as Error).message}`);
     }
-    const alg = header.alg;
-    if (!algorithms.includes(alg as SigningAlgorithm)) {
-      fail(`unexpected signing algorithm: ${JSON.stringify(alg)}`);
+    if (!algorithms.includes(header.alg as string)) {
+      fail(`unexpected signing algorithm: ${JSON.stringify(header.alg)}`);
     }
     if (typeof header.kid !== "string" || !header.kid) fail("token has no kid");
 
-    const { alg: keyAlg, key } = await this.key(header.kid);
-    // The key, not the token, decides the algorithm: an RS256 header under an
-    // Ed25519 kid (or the reverse) is rejected here.
-    if (alg !== keyAlg) {
-      fail(
-        `unexpected signing algorithm: ${JSON.stringify(alg)} for a ${keyAlg} key`,
-      );
+    const { alg, key } = await this.key(header.kid);
+    // The key was imported for one algorithm; the token must claim that one.
+    if (header.alg !== alg) {
+      fail(`unexpected signing algorithm: ${JSON.stringify(header.alg)}`);
     }
     const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-    if (
-      !(await subtle().verify(VERIFY_PARAMS[keyAlg], key, signature, signed))
-    ) {
+    const algorithm =
+      alg === "RS256" ? { name: "RSASSA-PKCS1-v1_5" } : { name: "Ed25519" };
+    if (!(await subtle().verify(algorithm, key, signature, signed))) {
       fail("invalid signature");
     }
 
@@ -448,7 +368,7 @@ export class SandboxTokenVerifier {
 
   private async key(
     kid: string,
-  ): Promise<{ alg: SigningAlgorithm; key: CryptoKey }> {
+  ): Promise<{ alg: VerificationKey["alg"]; key: CryptoKey }> {
     const age = Date.now() - this.fetchedAt;
     const fresh = this.keys.has(kid) && age < JWKS_TTL_MS;
     if (!fresh && (this.fetchedAt === 0 || age >= JWKS_MIN_REFRESH_MS)) {
@@ -462,9 +382,7 @@ export class SandboxTokenVerifier {
     try {
       return { alg: entry.alg, key: await entry.key };
     } catch (e) {
-      fail(
-        `signing key ${kid} is not a usable ${KEY_TYPE_NAMES[entry.alg]} key: ${(e as Error).message}`,
-      );
+      fail(`signing key ${kid} is not usable: ${(e as Error).message}`);
     }
   }
 
@@ -485,11 +403,37 @@ export class SandboxTokenVerifier {
     if (!Array.isArray(entries)) {
       fail("invalid JWKS: expected an object with a keys array");
     }
-    const keys = new Map<string, SigningKey>();
+    const keys = new Map<string, VerificationKey>();
     for (const jwk of entries as (Jwk | null)[]) {
-      if (typeof jwk !== "object" || jwk === null) continue;
-      const imported = importJwk(jwk);
-      if (imported) keys.set(jwk.kid as string, imported);
+      if (typeof jwk !== "object" || jwk === null || !jwk.kid) continue;
+      let entry: VerificationKey;
+      if (jwk.kty === "OKP" && jwk.crv === "Ed25519" && jwk.x) {
+        entry = {
+          alg: "EdDSA",
+          key: subtle().importKey(
+            "jwk",
+            { kty: "OKP", crv: "Ed25519", x: jwk.x },
+            { name: "Ed25519" },
+            false,
+            ["verify"],
+          ),
+        };
+      } else if (jwk.kty === "RSA" && jwk.n && jwk.e) {
+        entry = {
+          alg: "RS256",
+          key: subtle().importKey(
+            "jwk",
+            { kty: "RSA", n: jwk.n, e: jwk.e },
+            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+            false,
+            ["verify"],
+          ),
+        };
+      } else {
+        continue;
+      }
+      entry.key.catch(() => undefined);
+      keys.set(jwk.kid, entry);
     }
     this.keys = keys;
     this.fetchedAt = Date.now();
