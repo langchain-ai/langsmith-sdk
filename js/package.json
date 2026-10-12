@@ -482,6 +482,12 @@
   },
   "pnpm": {
     "overrides": {
+      "@grpc/grpc-js": "1.14.5",
+      "@modelcontextprotocol/sdk": "1.31.0",
+      "proxy-addr": "2.0.8",
+      "source-map-js": "1.2.2",
+      "tinypool": "2.1.2",
+      "handlebars": "4.7.10",
       "@hono/node-server": "2.0.10",
       "brace-expansion@<1.1.16": "1.1.16",
       "brace-expansion@>=2.0.0 <2.1.2": "2.1.2",

@@ -10,4 +10,5 @@ minimumReleaseAgeExclude:
     "@ai-sdk/sandbox-just-bash",
     "@ai-sdk/sandbox-vercel",
     "smol-toml",
+    "handlebars",
   ]
