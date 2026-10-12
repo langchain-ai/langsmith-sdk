@@ -489,52 +489,55 @@ def test_get_otlp_tracer_provider_honors_env_overrides(mock_utils, mock_import):
 
 
 @pytest.mark.parametrize(
-    ("env", "expected_headers"),
+    ("send_key", "env", "expected_headers"),
     [
-        ({}, {"x-api-key": "lsv2_pt_test123", "Langsmith-Project": "my-project"}),
+        # Default endpoint is LangSmith: key is always sent.
+        (False, {}, {"x-api-key": "lsv2_pt_test123", "Langsmith-Project": "p"}),
+        (True, {}, {"x-api-key": "lsv2_pt_test123", "Langsmith-Project": "p"}),
+        # Custom endpoint: key only when the caller allows it.
         (
-            {"OTEL_EXPORTER_OTLP_HEADERS": "x-source=a"},
-            {
-                "x-api-key": "lsv2_pt_test123",
-                "Langsmith-Project": "my-project",
-                "x-source": "a",
-            },
+            True,
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"},
+            {"x-api-key": "lsv2_pt_test123", "Langsmith-Project": "p"},
         ),
         (
-            {"OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=override"},
-            {"x-api-key": "override", "Langsmith-Project": "my-project"},
+            False,
+            {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"},
+            {"Langsmith-Project": "p"},
         ),
-        ({"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"}, {}),
-        ({"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector/v1/traces"}, {}),
         (
+            False,
+            {"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector/v1/traces"},
+            {"Langsmith-Project": "p"},
+        ),
+        # User headers still replace the defaults.
+        (
+            False,
             {
                 "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318",
-                "OTEL_EXPORTER_OTLP_HEADERS": "x-source=a",
+                "OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=theirs",
             },
-            {"x-source": "a"},
+            {"x-api-key": "theirs"},
         ),
     ],
 )
 @patch("langsmith._internal.otel._otel_client._import_otel_client")
 @patch("langsmith._internal.otel._otel_client.ls_utils")
-def test_get_otlp_tracer_provider_api_key_only_for_default_endpoint(
-    mock_utils, mock_import, env, expected_headers
+def test_get_otlp_tracer_provider_api_key_on_custom_endpoint(
+    mock_utils, mock_import, send_key, env, expected_headers
 ):
-    """LangSmith key is only sent to the SDK-chosen endpoint; custom headers merge."""
     mocks = _make_mock_otel_imports()
     mock_import.return_value = mocks
     MockExporter = mocks[0]
     mock_utils.get_api_url.return_value = "https://api.smith.langchain.com"
     mock_utils.get_api_key.return_value = "lsv2_pt_test123"
-    mock_utils.get_tracer_project.return_value = "my-project"
+    mock_utils.get_tracer_project.return_value = "p"
 
     from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 
-    clean = {
-        k: v for k, v in os.environ.items() if not k.startswith("OTEL_EXPORTER_OTLP_")
-    }
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("OTEL_")}
     with patch.dict(os.environ, {**clean, **env}, clear=True):
-        get_otlp_tracer_provider()
+        get_otlp_tracer_provider(send_api_key_to_custom_endpoint=send_key)
 
     assert MockExporter.call_args.kwargs["headers"] == expected_headers
 

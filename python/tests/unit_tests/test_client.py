@@ -3451,6 +3451,33 @@ def _make_mock_otel():
     return mock_otel_trace, mock_set_span, mock_get_provider, mock_exporter_cls
 
 
+@pytest.mark.parametrize(("mode", "expected"), [("otel", True), ("hybrid", False)])
+@mock.patch("langsmith.client.requests.Session")
+@mock.patch.dict(
+    os.environ,
+    {"LANGSMITH_API_KEY": "lsv2_pt_fake", "LANGSMITH_TRACING": "true"},
+    clear=True,
+)
+def test_hybrid_mode_keeps_api_key_off_custom_otlp_endpoint(
+    _mock_session: mock.Mock, mode: str, expected: bool
+):
+    """Hybrid already sends runs to LangSmith; its OTLP copy goes elsewhere."""
+    _clear_env_cache()
+    otel_trace, set_span, get_provider, exporter_cls = _make_mock_otel()
+    # No provider configured yet, so the client builds its own.
+    otel_trace.ProxyTracerProvider = type("ProxyTracerProvider", (), {})
+    otel_trace.NoOpTracer = type("NoOpTracer", (), {})
+    proxy = otel_trace.ProxyTracerProvider()
+    proxy.get_tracer = lambda _name: SimpleNamespace(_tracer=otel_trace.NoOpTracer())
+    otel_trace.get_tracer_provider.return_value = proxy
+    with mock.patch(
+        "langsmith.client._import_otel",
+        return_value=(otel_trace, set_span, get_provider, exporter_cls),
+    ):
+        Client(api_url="http://localhost:1984", tracing_mode=mode)
+    get_provider.assert_called_once_with(send_api_key_to_custom_endpoint=expected)
+
+
 class TestClientTracingMode:
     """Tests for Client(tracing_mode=...) via explicit arg and env var."""
 

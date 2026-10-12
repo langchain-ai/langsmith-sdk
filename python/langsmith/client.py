@@ -1414,7 +1414,9 @@ class Client:
                     ):
                         otel_tracer_provider = cast(TracerProvider, existing_provider)
                     else:
-                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_tracer_provider = get_otlp_tracer_provider(
+                            send_api_key_to_custom_endpoint=(resolved_mode != "hybrid")
+                        )
                         otel_trace.set_tracer_provider(otel_tracer_provider)
 
                 self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)

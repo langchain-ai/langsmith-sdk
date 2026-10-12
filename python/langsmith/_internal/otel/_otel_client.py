@@ -57,25 +57,31 @@ def _warn_legacy_traces_endpoint() -> None:
     )
 
 
-def get_otlp_tracer_provider() -> "TracerProvider":
+def get_otlp_tracer_provider(
+    *, send_api_key_to_custom_endpoint: bool = True
+) -> "TracerProvider":
     """Get the OTLP tracer provider for LangSmith.
 
     This function creates a tracer provider that exports spans using the OTLP protocol
     with LangSmith-specific defaults:
 
     - OTEL_EXPORTER_OTLP_ENDPOINT: https://api.smith.langchain.com/otel
-    - Headers: x-api-key from LangSmith API key and Langsmith-Project header
-      if project is configured. Only sent when neither
-      OTEL_EXPORTER_OTLP_ENDPOINT nor OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is
-      set, so LangSmith credentials never reach a custom collector.
-      OTEL_EXPORTER_OTLP_HEADERS is merged on top.
+    - OTEL_EXPORTER_OTLP_HEADERS: Contains x-api-key from LangSmith API key and
+      Langsmith-Project header if project is configured
 
-    The endpoint can be overridden by setting the environment variables before
+    These defaults can be overridden by setting the environment variables before
     calling this function. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes precedence as
     a full traces URL; OTEL_EXPORTER_OTLP_ENDPOINT is a base URL to which
     /v1/traces is appended unless it already ends in /traces for compatibility.
     Resolved values are passed to the exporter constructor
     rather than written to os.environ.
+
+    Args:
+        send_api_key_to_custom_endpoint: When False and the OTLP endpoint is
+            user-set, the LangSmith API key is not added to the default
+            headers. Hybrid mode passes False: its runs already reach
+            LangSmith natively, so a custom OTLP endpoint is another backend
+            and must not receive the key.
 
     Returns:
         TracerProvider: The OTLP tracer provider.
@@ -97,10 +103,7 @@ def get_otlp_tracer_provider() -> "TracerProvider":
 
     endpoint = os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
     base_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    # Only send LangSmith credentials to the endpoint we picked ourselves.
-    # A user-set endpoint may be any collector; auth goes in
-    # OTEL_EXPORTER_OTLP_HEADERS.
-    is_langsmith_default = not endpoint and not base_endpoint
+    is_custom_endpoint = bool(endpoint or base_endpoint)
     if not endpoint:
         if not base_endpoint:
             base_endpoint = f"{ls_utils.get_api_url(None)}/otel"
@@ -110,23 +113,24 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         else:
             endpoint = f"{base_endpoint.rstrip('/')}/v1/traces"
 
+    # Configure headers with API key and project if available.
     # Build a dict because OTLPSpanExporter expects a mapping, not a string.
-    headers: dict[str, str] = {}
-    if is_langsmith_default:
-        headers["x-api-key"] = ls_utils.get_api_key(None) or ""
+    headers_env = os.environ.get("OTEL_EXPORTER_OTLP_HEADERS")
+    if headers_env:
+        headers = {
+            k.strip(): v.strip()
+            for k, v in (
+                pair.split("=", 1) for pair in headers_env.split(",") if "=" in pair
+            )
+        }
+    else:
+        headers = {}
+        if send_api_key_to_custom_endpoint or not is_custom_endpoint:
+            headers["x-api-key"] = ls_utils.get_api_key(None) or ""
+
         project = ls_utils.get_tracer_project()
         if project:
             headers["Langsmith-Project"] = project
-    headers_env = os.environ.get("OTEL_EXPORTER_OTLP_HEADERS")
-    if headers_env:
-        headers.update(
-            {
-                k.strip(): v.strip()
-                for k, v in (
-                    pair.split("=", 1) for pair in headers_env.split(",") if "=" in pair
-                )
-            }
-        )
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "langsmith")
     resource = Resource(
