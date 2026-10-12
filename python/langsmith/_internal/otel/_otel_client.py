@@ -125,7 +125,8 @@ def get_otlp_tracer_provider(
         }
     else:
         headers = {}
-        if send_api_key_to_custom_endpoint or not is_custom_endpoint:
+        skip_api_key = is_custom_endpoint and not send_api_key_to_custom_endpoint
+        if not skip_api_key:
             headers["x-api-key"] = ls_utils.get_api_key(None) or ""
 
         project = ls_utils.get_tracer_project()
