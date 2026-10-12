@@ -3442,6 +3442,12 @@ class Client:
                 self._multipart_disabled = True
                 # Filter out feedback operations as they're not supported in non-multipart mode
                 run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+                if len(run_ops) != len(ops):
+                    logger.warning(
+                        "Multipart endpoint returned 404; dropping %d feedback "
+                        "operation(s) that /runs/batch cannot carry.",
+                        len(ops) - len(run_ops),
+                    )
                 if run_ops:
                     self._batch_ingest_run_ops(
                         run_ops,
@@ -3668,6 +3674,7 @@ class Client:
                 for target_api_url, target_api_key in self._write_api_urls.items()
             ]
 
+        not_found: Optional[ls_utils.LangSmithNotFoundError] = None
         for target_api_url, headers_for_endpoint in endpoints:
             for idx in range(1, attempts + 1):
                 try:
@@ -3696,6 +3703,11 @@ class Client:
                     )
                     break
                 except ls_utils.LangSmithConflictError:
+                    break
+                except ls_utils.LangSmithNotFoundError as exc:
+                    # Remember it so _multipart_ingest_ops can fall back to
+                    # /runs/batch, but still try the remaining endpoints.
+                    not_found = not_found or exc
                     break
                 except (
                     ls_utils.LangSmithConnectionError,
@@ -3726,6 +3738,9 @@ class Client:
                 )
                 self._invoke_tracing_error_callback(_fail_exc)
                 break
+
+        if not_found is not None:
+            raise not_found
 
     def _send_compressed_multipart_req(
         self,
