@@ -17,7 +17,6 @@ const SERVICE_HOST =
   "0190aaaa-0000-7000-8000-000000000001--8080.svc.example.com";
 const CALLBACK_URL = "https://integrator.example.com/sandbox-callback";
 const KID = "test-kid";
-const RSA_KID = "rsa-kid";
 
 const b64url = (data: string | Uint8Array) =>
   Buffer.from(data).toString("base64url");
@@ -50,113 +49,6 @@ async function sign(
     new TextEncoder().encode(input),
   );
   return `${input}.${b64url(new Uint8Array(sig))}`;
-}
-
-async function newRsaKey(): Promise<CryptoKeyPair> {
-  return (await crypto.subtle.generateKey(
-    {
-      name: "RSASSA-PKCS1-v1_5",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
-    },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
-}
-
-async function rsaJwk(pair: CryptoKeyPair, kid: string) {
-  return {
-    ...(await crypto.subtle.exportKey("jwk", pair.publicKey)),
-    kid,
-    alg: "RS256",
-    use: "sig",
-  };
-}
-
-async function signRs256(
-  pair: CryptoKeyPair,
-  claims: Record<string, unknown>,
-  kid: string = RSA_KID,
-): Promise<string> {
-  const header = { alg: "RS256", kid };
-  const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claims))}`;
-  const sig = await crypto.subtle.sign(
-    { name: "RSASSA-PKCS1-v1_5" },
-    pair.privateKey,
-    new TextEncoder().encode(input),
-  );
-  return `${input}.${b64url(new Uint8Array(sig))}`;
-}
-
-interface AlgCase {
-  alg: string;
-  generate: RsaHashedKeyGenParams | EcKeyGenParams | { name: string };
-  sign: AlgorithmIdentifier | RsaPssParams | EcdsaParams;
-  // The `alg` the JWKS publishes; omitted to exercise derivation from the key type.
-  published?: string;
-}
-
-const RSA_GEN = {
-  modulusLength: 2048,
-  publicExponent: new Uint8Array([1, 0, 1]),
-};
-
-const ALG_CASES: AlgCase[] = [
-  {
-    alg: "RS256",
-    generate: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", ...RSA_GEN },
-    sign: { name: "RSASSA-PKCS1-v1_5" },
-  },
-  {
-    alg: "RS512",
-    generate: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-512", ...RSA_GEN },
-    sign: { name: "RSASSA-PKCS1-v1_5" },
-    published: "RS512",
-  },
-  {
-    alg: "PS256",
-    generate: { name: "RSA-PSS", hash: "SHA-256", ...RSA_GEN },
-    sign: { name: "RSA-PSS", saltLength: 32 },
-    published: "PS256",
-  },
-  {
-    alg: "ES256",
-    generate: { name: "ECDSA", namedCurve: "P-256" },
-    sign: { name: "ECDSA", hash: "SHA-256" },
-    published: "ES256",
-  },
-  {
-    alg: "ES384",
-    generate: { name: "ECDSA", namedCurve: "P-384" },
-    sign: { name: "ECDSA", hash: "SHA-384" },
-  },
-  { alg: "EdDSA", generate: { name: "Ed25519" }, sign: { name: "Ed25519" } },
-];
-
-async function algKey(c: AlgCase, kid: string) {
-  const pair = (await crypto.subtle.generateKey(c.generate, true, [
-    "sign",
-    "verify",
-  ])) as CryptoKeyPair;
-  const published = await crypto.subtle.exportKey("jwk", pair.publicKey);
-  return {
-    pair,
-    jwk: { ...published, kid, use: "sig", alg: c.published },
-    signToken: async (
-      claims: Record<string, unknown>,
-      alg = c.alg,
-      k = kid,
-    ) => {
-      const input = `${b64url(JSON.stringify({ alg, kid: k }))}.${b64url(JSON.stringify(claims))}`;
-      const sig = await crypto.subtle.sign(
-        c.sign,
-        pair.privateKey,
-        new TextEncoder().encode(input),
-      );
-      return `${input}.${b64url(new Uint8Array(sig))}`;
-    },
-  };
 }
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -271,63 +163,6 @@ describe("SandboxTokenVerifier", () => {
       await expect(
         verifier().verifyUserToken(token, { audience: SERVICE_HOST }),
       ).rejects.toThrow("algorithm");
-    });
-
-    it("accepts RS256 under an RSA key", async () => {
-      const rsa = await newRsaKey();
-      serveKeys(await jwk(pair, KID), await rsaJwk(rsa, RSA_KID));
-      const user = await verifier().verifyUserToken(
-        await signRs256(rsa, userClaims()),
-        { audience: SERVICE_HOST },
-      );
-      expect(user.subject).toBe("user-123");
-    });
-
-    it("rejects an algorithm that does not match the key type", async () => {
-      const rsa = await newRsaKey();
-      serveKeys(await jwk(pair, KID), await rsaJwk(rsa, RSA_KID));
-      const eddsaUnderRsaKid = await sign(pair, userClaims(), {
-        alg: "EdDSA",
-        kid: RSA_KID,
-      });
-      const rs256UnderEdKid = await signRs256(rsa, userClaims(), KID);
-      for (const token of [eddsaUnderRsaKid, rs256UnderEdKid]) {
-        await expect(
-          verifier().verifyUserToken(token, { audience: SERVICE_HOST }),
-        ).rejects.toThrow("algorithm");
-      }
-    });
-
-    it.each(ALG_CASES)(
-      "accepts $alg under a key that selects it",
-      async (c) => {
-        const k = await algKey(c, "alg-kid");
-        serveKeys(k.jwk);
-        const user = await verifier().verifyUserToken(
-          await k.signToken(userClaims()),
-          { audience: SERVICE_HOST },
-        );
-        expect(user.subject).toBe("user-123");
-      },
-    );
-
-    it("rejects an algorithm the key does not select", async () => {
-      const [rs256, rs512, , es256] = ALG_CASES;
-      const rsa = await algKey(rs256, RSA_KID);
-      const pinned = await algKey(rs512, "pinned");
-      const ec = await algKey(es256, "ec");
-      serveKeys(rsa.jwk, pinned.jwk, ec.jwk);
-      const tokens = [
-        // ES256 header under an RSA kid.
-        await ec.signToken(userClaims(), "ES256", RSA_KID),
-        // RS256 header under a key published with alg RS512.
-        await pinned.signToken(userClaims(), "RS256"),
-      ];
-      for (const token of tokens) {
-        await expect(
-          verifier().verifyUserToken(token, { audience: SERVICE_HOST }),
-        ).rejects.toThrow("algorithm");
-      }
     });
 
     it("rejects a tampered payload", async () => {
@@ -458,30 +293,6 @@ describe("SandboxTokenVerifier", () => {
       expect(cb.host).toBe("api.github.com");
       expect(cb.port).toBe(443);
       expect(cb.identity.sandbox_id).toBe(JSON.parse(body).identity.sandbox_id);
-    });
-
-    it("rejects an RS256 callback signature", async () => {
-      const rsa = await newRsaKey();
-      serveKeys(await jwk(pair, KID), await rsaJwk(rsa, RSA_KID));
-      const body = callbackBody();
-      await expect(
-        verifier().verifyCallback({
-          body,
-          signature: await signRs256(rsa, callbackClaims(body)),
-        }),
-      ).rejects.toThrow("algorithm");
-    });
-
-    it("rejects an ES256 callback signature", async () => {
-      const ec = await algKey(ALG_CASES[3], "ec");
-      serveKeys(await jwk(pair, KID), ec.jwk);
-      const body = callbackBody();
-      await expect(
-        verifier().verifyCallback({
-          body,
-          signature: await ec.signToken(callbackClaims(body)),
-        }),
-      ).rejects.toThrow("algorithm");
     });
 
     it("accepts a byte body", async () => {

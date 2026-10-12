@@ -676,9 +676,8 @@ try {
 
 ## Verifying Requests from LangSmith
 
-`SandboxTokenVerifier` checks signatures against LangSmith's JWKS (derived from
-`LANGSMITH_ENDPOINT`, cached); user tokens may use any JOSE asymmetric algorithm
-(RS*, PS*, ES*, EdDSA), chosen by the JWKS key. It uses Web Crypto, so it needs a
+`SandboxTokenVerifier` checks EdDSA signatures against LangSmith's JWKS
+(derived from `LANGSMITH_ENDPOINT`, cached) using Web Crypto, so it needs a
 runtime with Ed25519 support (Node.js 20+, Deno, Bun, Cloudflare Workers). The
 JWKS must be served over HTTPS (localhost is exempt); for a plain-HTTP
 self-hosted deployment on a trusted network, pass `allowInsecureJwks: true`.
