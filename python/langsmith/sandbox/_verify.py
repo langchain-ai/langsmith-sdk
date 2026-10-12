@@ -33,6 +33,20 @@ USER_TOKEN_HEADER = "X-Langsmith-User-Token"
 CALLBACK_SIGNATURE_HEADER = "X-LangSmith-Signature-JWT"
 
 _CALLBACK_SUBJECT = "langsmith-sandbox-callback"
+# Any JOSE asymmetric algorithm; PyJWK binds the algorithm to the key the kid selects.
+_USER_TOKEN_ALGORITHMS = [
+    "RS256",
+    "RS384",
+    "RS512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "EdDSA",
+]
+_CALLBACK_ALGORITHMS = ["EdDSA"]
 _JWKS_PATH = "/.well-known/jwks.json"
 _JWKS_TTL_SECONDS = 300.0
 # Bounds refetches when a token names a kid the cached set lacks.
@@ -211,14 +225,14 @@ class SandboxTokenVerifier:
                 ``request.headers["Host"]``. A full service URL is also accepted.
             issuer: If set, the LangSmith app URL the token must be issued by.
         """
-        kid = self._kid(token)
+        kid = self._kid(token, _USER_TOKEN_ALGORITHMS)
         return self._decode_user_token(token, self._key_sync(kid), audience, issuer)
 
     async def averify_user_token(
         self, token: str, *, audience: str, issuer: Optional[str] = None
     ) -> SandboxUser:
         """Async version of :meth:`verify_user_token`."""
-        kid = self._kid(token)
+        kid = self._kid(token, _USER_TOKEN_ALGORITHMS)
         key = await self._key_async(kid)
         return self._decode_user_token(token, key, audience, issuer)
 
@@ -242,7 +256,7 @@ class SandboxTokenVerifier:
             issuer: If set, the LangSmith OAuth issuer the signature must be
                 issued by.
         """
-        kid = self._kid(signature)
+        kid = self._kid(signature, _CALLBACK_ALGORITHMS)
         return self._decode_callback(signature, self._key_sync(kid), body, aud, issuer)
 
     async def averify_callback(
@@ -254,18 +268,18 @@ class SandboxTokenVerifier:
         issuer: Optional[str] = None,
     ) -> SandboxCallback:
         """Async version of :meth:`verify_callback`."""
-        kid = self._kid(signature)
+        kid = self._kid(signature, _CALLBACK_ALGORITHMS)
         key = await self._key_async(kid)
         return self._decode_callback(signature, key, body, aud, issuer)
 
-    def _kid(self, token: str) -> str:
+    def _kid(self, token: str, algorithms: list[str]) -> str:
         if not token:
             raise SandboxTokenVerificationError("token is empty")
         try:
             header = self._jwt.get_unverified_header(token)
         except self._jwt.PyJWTError as e:
             raise SandboxTokenVerificationError(f"malformed token: {e}") from e
-        if header.get("alg") != "EdDSA":
+        if header.get("alg") not in algorithms:
             raise SandboxTokenVerificationError(
                 f"unexpected signing algorithm: {header.get('alg')!r}"
             )
@@ -281,12 +295,13 @@ class SandboxTokenVerifier:
         audience: Optional[str],
         issuer: Optional[str],
         required: list[str],
+        algorithms: list[str],
     ) -> dict[str, Any]:
         try:
             return self._jwt.decode(
                 token,
                 key,
-                algorithms=["EdDSA"],
+                algorithms=algorithms,
                 audience=audience,
                 issuer=issuer.rstrip("/") if issuer else None,
                 leeway=_LEEWAY_SECONDS,
@@ -304,6 +319,7 @@ class SandboxTokenVerifier:
             _service_host(audience),
             issuer,
             ["exp", "iat", "iss", "aud", "sub"],
+            _USER_TOKEN_ALGORITHMS,
         )
         subject = claims["sub"]
         if not isinstance(subject, str) or not subject or subject == _CALLBACK_SUBJECT:
@@ -329,6 +345,7 @@ class SandboxTokenVerifier:
             aud if isinstance(aud, str) else None,
             issuer,
             ["exp", "iat", "iss", "aud", "sub", "body_sha256"],
+            _CALLBACK_ALGORITHMS,
         )
         if callable(aud):
             audiences = claims["aud"]
@@ -420,7 +437,7 @@ class SandboxTokenVerifier:
 def _find_key(keys: Any, kid: str) -> Any:
     for k in keys.keys:
         if k.key_id == kid:
-            return k.key
+            return k
     return None
 
 
