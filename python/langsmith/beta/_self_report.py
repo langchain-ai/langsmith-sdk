@@ -362,6 +362,21 @@ def self_report(
 
     Returns:
         Whether the report was recorded.
+
+    Example:
+        ```python
+        from langsmith import traceable
+        from langsmith.beta import self_report
+
+
+        @traceable(run_type="tool")
+        def search_docs(query: str) -> list[dict]:
+            results = docs_index.search(query)
+            if not results:
+                # Filed on this search_docs run.
+                self_report("missing_context", f"No docs matched {query!r}.")
+            return results
+        ```
     """
     run_tree = run_tree or run_helpers.get_current_run_tree()
     if run_tree is None:
