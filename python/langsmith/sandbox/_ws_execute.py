@@ -60,9 +60,9 @@ WS_PING_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_PING", 60)
 # through the proxy chain. websockets answers the server's close frame as soon as
 # it arrives (with "exit") and starts this deadline then, so by the time run()
 # closes there is nothing left to wait for but that FIN: any wait here is paid by
-# every command. 1 ms still lets a close the client starts flush its own frame,
-# which websockets sends and drains before waiting.
-WS_CLOSE_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_CLOSE", 0.001)
+# every command. It also covers sending a close the client starts itself, which
+# the sync client must finish within this deadline, so keep a few ms of headroom.
+WS_CLOSE_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_CLOSE", 0.01)
 # Ceiling on the whole connect phase. Without it, retrying a blackholed handshake
 # costs MAX_AUTO_RECONNECTS + 1 full open timeouts plus backoff.
 WS_CONNECT_BUDGET = _env_timeout("SANDBOX_WS_TIMEOUT_CONNECT_BUDGET", 120)
