@@ -488,6 +488,57 @@ def test_get_otlp_tracer_provider_honors_env_overrides(mock_utils, mock_import):
     mock_utils.get_api_url.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("env", "expected_headers"),
+    [
+        ({}, {"x-api-key": "lsv2_pt_test123", "Langsmith-Project": "my-project"}),
+        (
+            {"OTEL_EXPORTER_OTLP_HEADERS": "x-source=a"},
+            {
+                "x-api-key": "lsv2_pt_test123",
+                "Langsmith-Project": "my-project",
+                "x-source": "a",
+            },
+        ),
+        (
+            {"OTEL_EXPORTER_OTLP_HEADERS": "x-api-key=override"},
+            {"x-api-key": "override", "Langsmith-Project": "my-project"},
+        ),
+        ({"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"}, {}),
+        ({"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://collector/v1/traces"}, {}),
+        (
+            {
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318",
+                "OTEL_EXPORTER_OTLP_HEADERS": "x-source=a",
+            },
+            {"x-source": "a"},
+        ),
+    ],
+)
+@patch("langsmith._internal.otel._otel_client._import_otel_client")
+@patch("langsmith._internal.otel._otel_client.ls_utils")
+def test_get_otlp_tracer_provider_api_key_only_for_default_endpoint(
+    mock_utils, mock_import, env, expected_headers
+):
+    """LangSmith key is only sent to the SDK-chosen endpoint; custom headers merge."""
+    mocks = _make_mock_otel_imports()
+    mock_import.return_value = mocks
+    MockExporter = mocks[0]
+    mock_utils.get_api_url.return_value = "https://api.smith.langchain.com"
+    mock_utils.get_api_key.return_value = "lsv2_pt_test123"
+    mock_utils.get_tracer_project.return_value = "my-project"
+
+    from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+
+    clean = {
+        k: v for k, v in os.environ.items() if not k.startswith("OTEL_EXPORTER_OTLP_")
+    }
+    with patch.dict(os.environ, {**clean, **env}, clear=True):
+        get_otlp_tracer_provider()
+
+    assert MockExporter.call_args.kwargs["headers"] == expected_headers
+
+
 @patch("langsmith._internal.otel._otel_client._import_otel_client")
 @patch("langsmith._internal.otel._otel_client.ls_utils")
 def test_get_otlp_tracer_provider_no_project(mock_utils, mock_import):
