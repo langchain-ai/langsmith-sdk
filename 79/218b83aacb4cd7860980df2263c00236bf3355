@@ -1,0 +1,21 @@
+js/src/experimental/otel/exporter.ts
+  s_111b5f8a4beaf8::t_f16b166db1ef9f 143,147-148
+js/src/tests/otel_exporter.test.ts
+  s_111b5f8a4beaf8::t_2f557b38f0a76b 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79218b83aacb4cd7860980df2263c00236bf3355",
+  "prompts": {},
+  "sessions": {
+    "s_111b5f8a4beaf8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7f87b209-fbce-49bc-a337-bbca768f905e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Kiewan Villatel <kiewan@langchain.dev>"
+    }
+  }
+}
