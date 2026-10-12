@@ -41,7 +41,7 @@ class RewindableMultipartBody:
     ``MultipartEncoder`` is single-use: it reads every file-backed part to EOF
     and exposes neither ``seek`` nor ``tell``, so no retry layer can replay it.
     urllib3 retries the statuses in ``_default_retry_config``'s
-    ``status_forcelist`` beneath our own retry loop, and it resends the *same*
+    ``status_forcelist`` beneath the single app attempt, and it resends the *same*
     body object -- an exhausted encoder, i.e. an empty body under the
     already-declared ``Content-Length``. The server accepts that as a
     complete request, so the entire payload is silently dropped with an HTTP 200.

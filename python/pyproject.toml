@@ -26,6 +26,7 @@ keywords = [
 dependencies = [
     "pydantic>=2,<3",
     "requests>=2.0.0",
+    "urllib3>=1.26",
     "orjson>=3.9.14; platform_python_implementation != 'PyPy'",
     "httpx2>=2,<3",
     "requests-toolbelt>=1.0.0",
