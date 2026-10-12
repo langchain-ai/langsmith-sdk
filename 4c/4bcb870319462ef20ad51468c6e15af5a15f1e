@@ -1,0 +1,25 @@
+python/langsmith/beta/_self_report.py
+  s_63b7659d6a0f17::t_df12a29dbdfa82 430-432,434-437,439,441-442
+  s_63b7659d6a0f17::t_53b71bdc305c71 1-429,433,438,440,443
+python/tests/unit_tests/test_beta_self_report.py
+  s_63b7659d6a0f17::t_45a6fb03251616 1-230
+  s_63b7659d6a0f17::t_372f0d6443e513 231-232
+python/langsmith/beta/__init__.py
+  s_63b7659d6a0f17::t_f83f2cdbbc5fc5 5-12,14-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c4bcb870319462ef20ad51468c6e15af5a15f1e",
+  "prompts": {},
+  "sessions": {
+    "s_63b7659d6a0f17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bf539e09-97ab-4ce8-b096-9d25021241e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Bagatur Askaryan <baskaryan@gmail.com>"
+    }
+  }
+}
