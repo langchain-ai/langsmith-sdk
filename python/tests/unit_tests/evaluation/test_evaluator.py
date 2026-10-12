@@ -393,8 +393,8 @@ async def test_evaluator_raises_for_bad_output(response: Any):
         await abad_evaluator.aevaluate_run(fake_run, fake_example)
 
 
-@pytest.mark.parametrize("keyword_only", [False, True])
-def test_summary_evaluator_with_defaulted_parameter(run_1, example_1, keyword_only):
+@pytest.mark.parametrize("kind", ["positional", "keyword_only", "var_keyword"])
+def test_summary_evaluator_with_extra_parameter(run_1, example_1, kind):
     def summary(outputs, reference_outputs, threshold=0.5):
         assert outputs == [run_1.outputs]
         assert reference_outputs == [example_1.outputs]
@@ -404,8 +404,27 @@ def test_summary_evaluator_with_defaulted_parameter(run_1, example_1, keyword_on
     def keyword_summary(outputs, reference_outputs, *, threshold=0.5):
         return summary(outputs, reference_outputs, threshold)
 
-    evaluator = keyword_summary if keyword_only else summary
+    def var_keyword_summary(outputs, reference_outputs, **kwargs):
+        return summary(outputs, reference_outputs)
+
+    evaluator = {
+        "positional": summary,
+        "keyword_only": keyword_summary,
+        "var_keyword": var_keyword_summary,
+    }[kind]
     assert _normalize_summary_evaluator(evaluator)([run_1], [example_1]) == {
+        "key": "summary",
+        "score": 1.0,
+    }
+
+
+def test_summary_evaluator_single_arg_with_keyword_only_default(run_1, example_1):
+    def summary(outputs, *, threshold=0.5):
+        assert outputs == [run_1.outputs]
+        assert threshold == 0.5
+        return {"key": "summary", "score": 1.0}
+
+    assert _normalize_summary_evaluator(summary)([run_1], [example_1]) == {
         "key": "summary",
         "score": 1.0,
     }
@@ -418,8 +437,10 @@ def test_summary_evaluator_legacy_arguments_with_default(run_1, example_1):
         assert threshold == 0.5
         return {"key": "summary", "score": 1.0}
 
-    assert _normalize_summary_evaluator(summary) is summary
-    assert summary([run_1], [example_1]) == {"key": "summary", "score": 1.0}
+    assert _normalize_summary_evaluator(summary)([run_1], [example_1]) == {
+        "key": "summary",
+        "score": 1.0,
+    }
 
 
 def test_check_value_non_numeric(caplog):

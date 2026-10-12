@@ -972,7 +972,7 @@ SUMMARY_EVALUATOR_T = Union[
 def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
     supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    all_args = [pname for pname, p in sig.parameters.items()]
+    all_args = [pname for pname, p in sig.parameters.items() if p.kind != p.VAR_KEYWORD]
     args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
