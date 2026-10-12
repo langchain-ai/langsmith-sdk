@@ -1,0 +1,19 @@
+python/langsmith/beta/_self_report.py
+  s_63b7659d6a0f17::t_593a0a210459d2 365-379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1391718d6e01498420ac0a4673289482a93ec6d2",
+  "prompts": {},
+  "sessions": {
+    "s_63b7659d6a0f17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bf539e09-97ab-4ce8-b096-9d25021241e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Bagatur Askaryan <baskaryan@gmail.com>"
+    }
+  }
+}
