@@ -24,6 +24,7 @@ __all__ = [
     "MountConfigMountSandboxapiS3BucketMountSpecS3",
     "MountConfigMountSandboxapiS3BucketMountSpecCache",
     "MountConfigMountSandboxapiS3BucketMountSpecContexthub",
+    "MountConfigMountSandboxapiS3BucketMountSpecEncryption",
     "MountConfigMountSandboxapiS3BucketMountSpecGcs",
     "MountConfigMountSandboxapiS3BucketMountSpecGit",
     "MountConfigMountSandboxapiS3BucketMountSpecGitRef",
@@ -31,6 +32,7 @@ __all__ = [
     "MountConfigMountSandboxapiGcsBucketMountSpecGcs",
     "MountConfigMountSandboxapiGcsBucketMountSpecCache",
     "MountConfigMountSandboxapiGcsBucketMountSpecContexthub",
+    "MountConfigMountSandboxapiGcsBucketMountSpecEncryption",
     "MountConfigMountSandboxapiGcsBucketMountSpecGit",
     "MountConfigMountSandboxapiGcsBucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpecS3",
@@ -39,11 +41,13 @@ __all__ = [
     "MountConfigMountSandboxapiGitRepoMountSpecGitRef",
     "MountConfigMountSandboxapiGitRepoMountSpecCache",
     "MountConfigMountSandboxapiGitRepoMountSpecContexthub",
+    "MountConfigMountSandboxapiGitRepoMountSpecEncryption",
     "MountConfigMountSandboxapiGitRepoMountSpecGcs",
     "MountConfigMountSandboxapiGitRepoMountSpecS3",
     "MountConfigMountSandboxapiContextHubRepoMountSpec",
     "MountConfigMountSandboxapiContextHubRepoMountSpecContexthub",
     "MountConfigMountSandboxapiContextHubRepoMountSpecCache",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecEncryption",
     "MountConfigMountSandboxapiContextHubRepoMountSpecGcs",
     "MountConfigMountSandboxapiContextHubRepoMountSpecGit",
     "MountConfigMountSandboxapiContextHubRepoMountSpecGitRef",
@@ -255,6 +259,14 @@ class MountConfigMountSandboxapiS3BucketMountSpecContexthub(TypedDict, total=Fal
     """
 
 
+class MountConfigMountSandboxapiS3BucketMountSpecEncryption(TypedDict, total=False):
+    kms_key: Required[str]
+    """KMSKey is the key to encrypt uploads with.
+
+    S3 mounts take a KMS key ARN in the mount's region.
+    """
+
+
 class MountConfigMountSandboxapiS3BucketMountSpecGcs(TypedDict, total=False):
     bucket: Required[str]
 
@@ -288,6 +300,8 @@ class MountConfigMountSandboxapiS3BucketMountSpec(TypedDict, total=False):
 
     contexthub: MountConfigMountSandboxapiS3BucketMountSpecContexthub
 
+    encryption: MountConfigMountSandboxapiS3BucketMountSpecEncryption
+
     gcs: MountConfigMountSandboxapiS3BucketMountSpecGcs
 
     git: MountConfigMountSandboxapiS3BucketMountSpecGit
@@ -319,6 +333,14 @@ class MountConfigMountSandboxapiGcsBucketMountSpecContexthub(TypedDict, total=Fa
     """
     InitialPullOnly syncs the repo once at startup instead of polling for updates
     for the sandbox's lifetime.
+    """
+
+
+class MountConfigMountSandboxapiGcsBucketMountSpecEncryption(TypedDict, total=False):
+    kms_key: Required[str]
+    """KMSKey is the key to encrypt uploads with.
+
+    S3 mounts take a KMS key ARN in the mount's region.
     """
 
 
@@ -360,6 +382,8 @@ class MountConfigMountSandboxapiGcsBucketMountSpec(TypedDict, total=False):
     cache: MountConfigMountSandboxapiGcsBucketMountSpecCache
 
     contexthub: MountConfigMountSandboxapiGcsBucketMountSpecContexthub
+
+    encryption: MountConfigMountSandboxapiGcsBucketMountSpecEncryption
 
     git: MountConfigMountSandboxapiGcsBucketMountSpecGit
 
@@ -403,6 +427,14 @@ class MountConfigMountSandboxapiGitRepoMountSpecContexthub(TypedDict, total=Fals
     """
 
 
+class MountConfigMountSandboxapiGitRepoMountSpecEncryption(TypedDict, total=False):
+    kms_key: Required[str]
+    """KMSKey is the key to encrypt uploads with.
+
+    S3 mounts take a KMS key ARN in the mount's region.
+    """
+
+
 class MountConfigMountSandboxapiGitRepoMountSpecGcs(TypedDict, total=False):
     bucket: Required[str]
 
@@ -434,6 +466,8 @@ class MountConfigMountSandboxapiGitRepoMountSpec(TypedDict, total=False):
 
     contexthub: MountConfigMountSandboxapiGitRepoMountSpecContexthub
 
+    encryption: MountConfigMountSandboxapiGitRepoMountSpecEncryption
+
     gcs: MountConfigMountSandboxapiGitRepoMountSpecGcs
 
     read_only: bool
@@ -460,6 +494,14 @@ class MountConfigMountSandboxapiContextHubRepoMountSpecCache(TypedDict, total=Fa
     max_size_bytes: int
 
     writeback_seconds: int
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecEncryption(TypedDict, total=False):
+    kms_key: Required[str]
+    """KMSKey is the key to encrypt uploads with.
+
+    S3 mounts take a KMS key ARN in the mount's region.
+    """
 
 
 class MountConfigMountSandboxapiContextHubRepoMountSpecGcs(TypedDict, total=False):
@@ -504,6 +546,8 @@ class MountConfigMountSandboxapiContextHubRepoMountSpec(TypedDict, total=False):
     type: Required[Literal["s3", "gcs", "git", "contexthub"]]
 
     cache: MountConfigMountSandboxapiContextHubRepoMountSpecCache
+
+    encryption: MountConfigMountSandboxapiContextHubRepoMountSpecEncryption
 
     gcs: MountConfigMountSandboxapiContextHubRepoMountSpecGcs
 
