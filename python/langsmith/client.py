@@ -3698,7 +3698,7 @@ class Client:
                 except ls_utils.LangSmithConflictError:
                     break
                 except ls_utils.LangSmithNotFoundError:
-                    # Caller falls back to /runs/batch; no dump, batch is resent.
+                    # Caller falls back to /runs/batch
                     raise
                 except (
                     ls_utils.LangSmithConnectionError,
