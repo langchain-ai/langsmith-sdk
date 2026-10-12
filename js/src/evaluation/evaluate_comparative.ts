@@ -340,12 +340,13 @@ export async function evaluateComparative(
     example: Example,
     evaluator: ComparativeEvaluator,
   ) {
+    runs = [...runs];
     const expectedRunIds = new Set(runs.map((r) => r.id));
     // Check if evaluator expects an object parameter
     const result =
       evaluator.length === 1
         ? await (evaluator as _ComparativeEvaluator)({
-            runs: options.randomizeOrder ? shuffle(runs) : runs,
+            runs,
             example,
             inputs: example.inputs,
             outputs: runs.map((run) => run.outputs || {}),
@@ -381,11 +382,12 @@ export async function evaluateComparative(
         runs: Run[],
         example: Example,
       ): Promise<ComparisonEvaluationResultRow> => {
+        if (options.randomizeOrder) shuffle(runs);
         const evaluatorRun = getCurrentRunTree();
         const result =
           evaluator.length === 1
             ? await (evaluator as _ComparativeEvaluator)({
-                runs: options.randomizeOrder ? shuffle(runs) : runs,
+                runs,
                 example,
                 inputs: example.inputs,
                 outputs: runs.map((run) => run.outputs || {}),

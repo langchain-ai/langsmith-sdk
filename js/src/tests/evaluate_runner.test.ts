@@ -8,7 +8,10 @@ import {
   _reorderResultRowsByExampleIndex,
   evaluate,
 } from "../evaluation/_runner.js";
-import { loadTracesForExperiment } from "../evaluation/evaluate_comparative.js";
+import {
+  evaluateComparative,
+  loadTracesForExperiment,
+} from "../evaluation/evaluate_comparative.js";
 import { getCurrentRunTree } from "../singletons/traceable.js";
 import { PQueue } from "../utils/p-queue.js";
 import { Example, Run, TracerSession } from "../schemas.js";
@@ -30,6 +33,86 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   }
   return results;
 }
+
+test("concurrent comparative evaluators keep their own run order", async () => {
+  const projectIds = ["a", "b"];
+  const example = {
+    id: "example",
+    inputs: { question: "answer" },
+    outputs: { answer: "correct" },
+  } as Example;
+  const projects = projectIds.map((id) => ({
+    id,
+    name: id,
+    reference_dataset_id: "dataset",
+  })) as TracerSession[];
+  const runs = projectIds.map((id, index) => ({
+    id,
+    session_id: id,
+    reference_example_id: example.id,
+    outputs: { answer: index === 0 ? "correct" : "wrong" },
+  })) as Run[];
+  const feedback: { runId: string; key: string; score: number }[] = [];
+  const client = {
+    debug: false,
+    readProject: async ({ projectName }: { projectName: string }) =>
+      projects.find((project) => project.name === projectName),
+    createComparativeExperiment: async (args: { id: string }) => ({
+      id: args.id,
+      reference_dataset_id: "dataset",
+    }),
+    getProjectUrl: async () => "https://example.com/projects/p/a",
+    _supportsSDBQuery: async () => false,
+    _listRuns: async ({ projectId }: { projectId: string }) =>
+      fromArray(runs.filter((run) => run.session_id === projectId)),
+    listExamples: () => fromArray([example]),
+    createFeedback: async (
+      runId: string,
+      key: string,
+      args: { score: number },
+    ) => {
+      feedback.push({ runId, key, score: args.score });
+    },
+    awaitPendingTraceBatches: async () => {},
+  } as unknown as Client;
+  let releaseFirst!: () => void;
+  const firstStarted = new Promise<void>((resolve) => (releaseFirst = resolve));
+  let releaseSecond!: () => void;
+  const secondFinished = new Promise<void>(
+    (resolve) => (releaseSecond = resolve),
+  );
+  const random = jest.spyOn(Math, "random").mockReturnValue(0);
+
+  try {
+    await evaluateComparative(projectIds, {
+      client,
+      randomizeOrder: true,
+      evaluators: [
+        async ({ runs }: { runs: Run[] }) => {
+          const firstRun = runs[0];
+          releaseFirst();
+          await secondFinished;
+          return {
+            key: "first",
+            scores: { [firstRun.id]: 1, [runs[1].id]: 0 },
+          };
+        },
+        async ({ runs }: { runs: Run[] }) => {
+          await firstStarted;
+          releaseSecond();
+          return { key: "second", scores: { [runs[0].id]: 1 } };
+        },
+      ],
+    });
+  } finally {
+    random.mockRestore();
+  }
+
+  expect(feedback.filter(({ key }) => key === "first")).toEqual([
+    { runId: "b", key: "first", score: 1 },
+    { runId: "a", key: "first", score: 0 },
+  ]);
+});
 
 describe("evaluation runner internals", () => {
   test("mapWithConcurrency with concurrency Infinity runs all tasks at once", async () => {
