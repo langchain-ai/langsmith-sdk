@@ -1,11 +1,11 @@
 ---
 type: ingestion workflow
 title: Trace Capture, Transformation, and Ingestion
-description: End-to-end Python and JavaScript trace lifecycle, including direct, queued JSON, multipart, compressed, SDK-to-OpenTelemetry, and native OpenTelemetry ingestion routes. Compares routing, transformation, execution context, retries, failures, and flush behavior.
+description: End-to-end Python and JavaScript trace lifecycle across direct, queued, compressed, SDK OpenTelemetry, and native OpenTelemetry ingestion routes, including endpoint resolution, I/O ownership, retries, failures, flush, and shutdown.
 tags: [tracing, ingestion, batching, opentelemetry, reliability, javascript, python]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T09:58:29.947Z
+    at: 2026-10-12T08:42:50.524Z
 sources:
   - id: openwiki-source-c27c18f68326f94a1c4b2695
     resource: repo://js/src/client.ts
@@ -13,14 +13,14 @@ sources:
     resource: repo://js/src/experimental/otel/exporter.ts
   - id: openwiki-source-7f921b56a955da8dd8f06dcc
     resource: repo://js/src/experimental/otel/processor.ts
-  - id: openwiki-source-18cc3ec28ef2ab143a56b403
-    resource: repo://js/src/experimental/otel/setup.ts
   - id: openwiki-source-c156abba15b3ca798389df29
     resource: repo://js/src/experimental/otel/translator.ts
   - id: openwiki-source-6b18c642805899d866009953
     resource: repo://js/src/run_trees.ts
   - id: openwiki-source-0d80da815aa13fd6edfcc70d
     resource: repo://js/src/tests/batch_client.test.ts
+  - id: openwiki-source-a049403bba8d6637d891b6cb
+    resource: repo://js/src/tests/otel_exporter.test.ts
   - id: openwiki-source-446e132caa27ba5c1fd6d320
     resource: repo://js/src/traceable.ts
   - id: openwiki-source-ab43484268d3173d8b30c2bc
@@ -55,7 +55,7 @@ sources:
     resource: repo://python/tests/unit_tests/test_operations.py
   - id: openwiki-source-1edc900ad0c3c273f57c6434
     resource: repo://python/tests/unit_tests/test_otel_exporter.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T09:52:25.586Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-12T08:42:50.524Z" }
 ---
 
 # Trace Capture, Transformation, and Ingestion
@@ -78,19 +78,19 @@ Endpoints below are relative to the configured API base. The hosted default base
 | Queued multipart in either SDK | Main run and large fields become named JSON parts; attachments become binary parts | `POST /runs/multipart` | Python tracing control or scaled drain subthread; JavaScript event loop | Replayable Client retries. A `404` disables multipart and retries run operations through `/runs/batch`; feedback has no JSON fallback. |
 | Python zstd multipart | Operations are appended to a locked compressed frame and sent at count, byte, or time threshold | `POST /runs/multipart` with `Content-Encoding: zstd` | Shared `LANGSMITH_CLIENT_THREAD_POOL` worker; compression-thread synchronous fallback if the pool is shut down | Three outer attempts with rewind; terminal failures may be persisted. `flush()` drains the frame and waits tracked futures within its timeout. |
 | JavaScript gzip multipart | Multipart stream is piped through `CompressionStream("gzip")` when advertised and enabled | `POST /runs/multipart` with `Content-Encoding: gzip` | JavaScript event loop | Same multipart request queue and failure handling; this is not the Python zstd frame path. |
-| Python `tracing_mode="otel"` | **First** queues serialized run operations, coalesces them, translates create/patch into spans, then ends spans into an OTEL processor | The configured OTLP HTTP exporter endpoint; the internal provider passes the complete default `https://api.smith.langchain.com/otel`, so its request is exactly `POST /otel` | Queue translation on Python drain thread; OTLP network I/O on OpenTelemetry `BatchSpanProcessor` worker thread | No `/runs` call. Client queue completion covers translation, while OTLP delivery belongs to the processor and requires provider force-flush/shutdown. |
-| Python `tracing_mode="hybrid"` | One coalesced operation set feeds the LangSmith leg and then the OTEL translator | LangSmith `/runs/multipart` or `/runs/batch`, plus OTLP trace endpoint | LangSmith I/O on the current drain thread; OTLP I/O on the OpenTelemetry batch worker after translated spans end | Each leg isolates errors. No helper thread per batch; every queue item is completed exactly once. Compression is disabled. |
-| JavaScript `tracingMode: "otel"` | Trace-aware operations still traverse `AutoBatchQueue`; the translator updates/ends active OTEL spans rather than calling run ingestion | Exporter default `https://api.smith.langchain.com/otel/v1/traces` | Queue and processor/exporter callbacks run on the JavaScript event loop; no LangSmith queue thread | OTLP exporter behavior, not Client multipart/replay behavior. `awaitPendingTraceBatches()` also force-flushes the default OTEL processor. |
-| Public Python `OtelSpanProcessor` | Receives native spans and wraps an OpenTelemetry `BatchSpanProcessor`; bypasses `Client.tracing_queue` | `https://api.smith.langchain.com/otel/v1/traces` | OpenTelemetry `BatchSpanProcessor` worker thread | Processor/exporter policy only. `force_flush()` and `shutdown()` delegate to the inner processor. |
-| Public JS `LangSmithOTLPSpanProcessor` | Receives native spans, filters for LangSmith-related spans, and uses its inherited OTEL batch buffer; bypasses `AutoBatchQueue` | `https://api.smith.langchain.com/otel/v1/traces` | OpenTelemetry callbacks, timers, exporter promises, and `fetch` on the JavaScript event loop | OTEL processor/exporter policy only. `shutdown()` waits the shared Client's pending batches, then the inherited processor shutdown. |
+| Python `tracing_mode="otel"` | **First** queues serialized run operations, coalesces them, translates create/patch into spans, then ends spans into an OTEL processor | Internal-provider default `POST https://api.smith.langchain.com/otel/v1/traces`; OTLP environment overrides can select another complete trace URL | Queue translation on Python drain thread; OTLP network I/O on OpenTelemetry `BatchSpanProcessor` worker thread | No `/runs` call. Client queue completion covers translation, while OTLP delivery belongs to the processor and requires provider force-flush/shutdown. |
+| Python `tracing_mode="hybrid"` | One coalesced operation set feeds the LangSmith leg and then the OTEL translator | LangSmith `POST /runs/multipart` or `POST /runs/batch`, plus default `POST /otel/v1/traces` | LangSmith I/O on the current drain thread; OTLP I/O on the OpenTelemetry batch worker after translated spans end | Each leg isolates errors. No helper thread per batch; every queue item is completed exactly once. Compression is disabled. |
+| JavaScript `tracingMode: "otel"` | Trace-aware operations still traverse `AutoBatchQueue`; the translator updates/ends active OTEL spans rather than calling run ingestion | Exporter default `POST https://api.smith.langchain.com/otel/v1/traces` | Queue and processor/exporter callbacks run on the JavaScript event loop; no LangSmith queue thread | OTLP exporter behavior, not Client multipart/replay behavior. `awaitPendingTraceBatches()` also force-flushes the default OTEL processor. |
+| Public Python `OtelSpanProcessor` | Receives native spans and wraps an OpenTelemetry `BatchSpanProcessor`; bypasses `Client.tracing_queue` entirely | Default `POST https://api.smith.langchain.com/otel/v1/traces` | OpenTelemetry `BatchSpanProcessor` worker thread | Processor/exporter policy only. `force_flush()` and `shutdown()` delegate to the inner processor. |
+| Public JS `LangSmithOTLPSpanProcessor` | Receives native spans, filters for LangSmith-related spans, and uses its inherited OTEL batch buffer; bypasses `AutoBatchQueue` entirely | Default `POST https://api.smith.langchain.com/otel/v1/traces` | OpenTelemetry callbacks, timers, exporter promises, and `fetch` on the JavaScript event loop | OTEL processor/exporter policy only. `shutdown()` waits the shared Client's pending batches, then the inherited processor shutdown. |
 
 Explicit `batchIngestRuns` / `batch_ingest_runs` and `multipartIngestRuns` / `multipart_ingest` calls perform the same preparation and endpoint-specific assembly without waiting for automatic queue selection. Python versions are synchronous and do I/O on the caller thread; JavaScript versions return promises and perform I/O on the event loop.
 
 ### How the measured lab maps to production routes
 
-The bulk trace-lab capture uses a fake backend and 60 runs, producing 120 create/update operations. Its route named `/otel` targets the **complete lab URL** ending in `/otel`, so the observed request is `POST /otel`. That is also the internal Python provider's hosted default path. It is not shorthand for the public native-span integrations: public Python `OtelSpanProcessor` and JavaScript `LangSmithOTLPTraceExporter` default to the distinct `POST /otel/v1/traces` endpoint.
+The historical bulk trace-lab capture uses a fake backend and 60 runs, producing 120 create/update operations. Its route named `/otel` was configured with a **complete lab URL** ending in `/otel`, so that capture observed `POST /otel`. Do not infer the current default from that route label: the current internal Python provider, public Python processor, and JavaScript exporter all default to LangSmith's `POST /otel/v1/traces` endpoint.
 
-The lab's `hybrid` result is correspondingly two LangSmith multipart calls plus one `POST /otel`: coalescing and the LangSmith request occur on tracing drain execution, while ending translated spans transfers delivery ownership to the OTEL processor. The capture explicitly shows `Client.flush()` returning with spans still owned by OTEL, which is why application shutdown must flush or shut down that processor separately. See [Trace Ingestion Measured](/openwiki/workflows/trace-ingestion-measured.md) for the maintained measurements rather than treating one capture's timings as a performance guarantee.
+The lab's `hybrid` result is correspondingly two LangSmith multipart calls plus one explicitly configured `POST /otel`: coalescing and the LangSmith request occur on tracing drain execution, while ending translated spans transfers delivery ownership to the OTEL processor. The capture explicitly shows `Client.flush()` returning with spans still owned by OTEL, which is why application shutdown must flush or shut down that processor separately. See [Trace Ingestion Measured](/openwiki/workflows/trace-ingestion-measured.md) for the maintained historical measurements rather than treating one capture's endpoint or timings as a current default or performance guarantee.
 
 ## Routing boundaries
 
@@ -112,10 +112,9 @@ flowchart TD
     Hybrid --> Trans
     Native["Native OpenTelemetry spans"] --> Public["Public OTEL processor buffer"]
     Trans --> OProc["Configured OTEL processor buffer"]
-    OProc --> Internal["Python internal default POST /otel"]
-    OProc --> JsDefault["JavaScript exporter default POST /otel/v1/traces"]
-    OProc --> Custom["Custom provider endpoint"]
-    Public --> PublicEndpoint["Public default POST /otel/v1/traces"]
+    OProc --> Internal["SDK OTEL default POST /otel/v1/traces"]
+    OProc --> Custom["Resolved custom traces endpoint"]
+    Public --> PublicEndpoint["Native processor default POST /otel/v1/traces"]
 ```
 
 *Caption: Client-created OTEL spans cross the operation queue and use the configured provider, while native-span processors bypass that queue and default to `/otel/v1/traces`.*
@@ -185,6 +184,8 @@ Python's order is `_run_transform`, `_insert_runtime_env`, then operation serial
 
 A queued create followed by an update for the same run can become one create; unmatched updates remain patches. Update values replace create values, so omission differs from an explicit empty value. Python ignores `None` in the main update object, replaces separately serialized fields only when present, and merges attachments.
 
+Duplicate creates with the same run ID collapse by **last create wins** before matching updates are merged. This is unsafe when replicas preserve an ID but target different destinations, so both SDKs warn rather than silently presenting the collision as valid fan-out. JavaScript compares `session_name` and warns that only one project will keep the run. Python compares the non-secret routing fields `session_name`, `session_id`, and `address`, logs both destinations, and sends only the last create. Credentials are deliberately excluded from that warning. Proper non-primary replica remapping avoids the collision by deriving destination-stable run, trace, parent, and dotted-order IDs; replicas marked `primary` preserve the original IDs.
+
 Python `SerializedRunOperation` keeps the main object and hot fields such as `inputs`, `outputs`, `events`, `extra`, `error`, `serialized`, and `attachments` separately. Multipart gives these values named parts. Byte attachments are supported, and filesystem attachments require explicit permission; names containing `.` and unavailable files are skipped. `RewindableMultipartBody` rebuilds and rewinds file-backed encoders for complete retries.
 
 JavaScript keeps prepared objects in `AutoBatchQueue` and serializes during assembly. A process-wide, `unref()`'d Node worker may serialize payloads dominated by large strings. It is **CPU-only and never performs network I/O**. Manual flush mode, unsupported runtimes, structural payloads, clone failures, and worker failures use synchronous serialization instead.
@@ -213,7 +214,7 @@ Mode resolution is explicit `tracing_mode`, deprecated `otel_enabled`, `LANGSMIT
 
 The internal translator is reachable from the automatic tracing queue. In `"otel"`, the drain combines serialized operations, restores captured OTEL context, creates or updates spans with deterministic IDs and LangSmith/GenAI attributes, and ends spans when `end_time` arrives. Ending a span hands it to the provider's processors. Thus translation happens on the tracing drain thread, but the default Python `BatchSpanProcessor` performs OTLP network export on its worker thread. With auto-batching disabled, direct run calls do not take this translator route.
 
-The internal provider chooses the LangSmith API plus `/otel` when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset and passes that value as the OTLP HTTP trace exporter's complete `endpoint`; the resulting hosted request is exactly `POST /otel`. `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` replace these defaults and may point at any compatible collector—not every custom target is LangSmith. A supplied `otel_tracer_provider` or an already installed global provider can likewise export elsewhere. This internal SDK route must not be conflated with the public native-span processor default of `/otel/v1/traces`.
+The internal provider resolves the trace exporter URL with standard OTLP precedence. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is already a complete traces URL and wins. Otherwise `OTEL_EXPORTER_OTLP_ENDPOINT` is a base and `/v1/traces` is appended. As a temporary compatibility exception, a base value ending in `/traces` is preserved unchanged and emits a warning directing users to `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; that exception is scheduled for removal in the SDK's v1 release. With neither variable set, the base is `{LANGSMITH_ENDPOINT}/otel`, so the hosted default is exactly `POST https://api.smith.langchain.com/otel/v1/traces`. `OTEL_EXPORTER_OTLP_HEADERS` replaces the generated API-key/project headers. Overrides may target any compatible collector, and a supplied `otel_tracer_provider` or installed global provider can likewise export elsewhere.
 
 In `"hybrid"`, compression is disabled. The current drain thread coalesces once, synchronously sends the LangSmith leg to `/runs/multipart` or `/runs/batch`, then feeds the same operations to OTEL translation. The translated span's eventual OTLP request belongs to the processor worker. Each leg catches its own errors; the implementation starts no helper thread per batch and calls queue `task_done()` exactly once per original item.
 
@@ -237,7 +238,7 @@ These are peer ingestion routes, not branches beneath `/runs/batch`.
 
 `initializeOTEL()` constructs `LangSmithOTLPTraceExporter` and `LangSmithOTLPSpanProcessor` or attaches the processor to a supplied provider. The processor tracks native span ancestry, exports only spans marked LangSmith-traceable or carrying recognized AI SDK operation attributes, and annotates the nearest traceable parent relationship. These spans never enter `AutoBatchQueue`.
 
-The exporter defaults to `${LANGSMITH_ENDPOINT}/otel/v1/traces`; otherwise the hosted URL above is used. `OTEL_EXPORTER_OTLP_ENDPOINT` or `exporterConfig.url` supplies a complete exporter URL, while `OTEL_EXPORTER_OTLP_HEADERS`, constructor headers, API key, and project options control headers and project attribution. The exporter also normalizes selected AI SDK attributes before delegating to `OTLPTraceExporter`. A custom endpoint can be an arbitrary OTLP collector and should not be described as LangSmith unless it is one.
+The exporter defaults to `${LANGSMITH_ENDPOINT}/otel/v1/traces`. Its URL precedence is explicit `exporterConfig.url`, then the complete `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT` with `/v1/traces` appended. As in Python, a base ending in `/traces` is temporarily preserved unchanged with a compatibility warning. `OTEL_EXPORTER_OTLP_HEADERS`, constructor headers, API key, and project options control headers and project attribution. The exporter also normalizes selected AI SDK attributes before delegating to `OTLPTraceExporter`. A custom endpoint can be an arbitrary OTLP collector and should not be described as LangSmith unless it is one.
 
 ## Backpressure, retries, and terminal failure
 
@@ -275,4 +276,4 @@ Safe changes preserve these boundaries:
 7. Hybrid sends both legs on the existing drain thread without a helper thread per batch.
 8. Native OTEL processors remain independent of Client queue, multipart, and replay-file behavior.
 
-Focused coverage includes `js/src/tests/batch_client.test.ts` for coalescing, endpoint selection, gzip, retries, limits, and waiting; `js/src/tests/otel_translator.vitesttest.ts` for operation-to-span attributes and end behavior; `python/tests/unit_tests/test_operations.py` for serialized merge and attachments; `python/tests/unit_tests/test_background_thread.py` for no per-batch hybrid threads and exactly-once completion; and `python/tests/unit_tests/test_otel_exporter.py` for translator concurrency, internal provider endpoint/header overrides, TTL cleanup, and public processor metadata.
+Focused coverage includes `js/src/tests/batch_client.test.ts` for coalescing, endpoint selection, gzip, retries, limits, and waiting; `js/src/tests/otel_exporter.test.ts` for real-request OTLP URL precedence and the legacy `/traces` warning; `js/src/tests/otel_translator.vitesttest.ts` for operation-to-span attributes and end behavior; `python/tests/unit_tests/test_operations.py` for serialized merge, duplicate-destination warnings, and attachments; `python/tests/unit_tests/test_background_thread.py` for no per-batch hybrid threads and exactly-once completion; and `python/tests/unit_tests/test_otel_exporter.py` for translator concurrency, real-exporter endpoint/header resolution, legacy warnings, TTL cleanup, and public processor metadata.
