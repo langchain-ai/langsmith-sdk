@@ -15,6 +15,7 @@ from langsmith.evaluation.evaluator import (
     EvaluationResults,
     Example,
     Run,
+    _normalize_summary_evaluator,
     run_evaluator,
 )
 from langsmith.run_helpers import tracing_context
@@ -390,6 +391,35 @@ async def test_evaluator_raises_for_bad_output(response: Any):
 
     with pytest.raises(ValueError, match="Expected"):
         await abad_evaluator.aevaluate_run(fake_run, fake_example)
+
+
+@pytest.mark.parametrize("keyword_only", [False, True])
+def test_summary_evaluator_with_defaulted_parameter(run_1, example_1, keyword_only):
+    def summary(outputs, reference_outputs, threshold=0.5):
+        assert outputs == [run_1.outputs]
+        assert reference_outputs == [example_1.outputs]
+        assert threshold == 0.5
+        return {"key": "summary", "score": 1.0}
+
+    def keyword_summary(outputs, reference_outputs, *, threshold=0.5):
+        return summary(outputs, reference_outputs, threshold)
+
+    evaluator = keyword_summary if keyword_only else summary
+    assert _normalize_summary_evaluator(evaluator)([run_1], [example_1]) == {
+        "key": "summary",
+        "score": 1.0,
+    }
+
+
+def test_summary_evaluator_legacy_arguments_with_default(run_1, example_1):
+    def summary(custom_runs, custom_examples, threshold=0.5):
+        assert custom_runs == [run_1]
+        assert custom_examples == [example_1]
+        assert threshold == 0.5
+        return {"key": "summary", "score": 1.0}
+
+    assert _normalize_summary_evaluator(summary) is summary
+    assert summary([run_1], [example_1]) == {"key": "summary", "score": 1.0}
 
 
 def test_check_value_non_numeric(caplog):
