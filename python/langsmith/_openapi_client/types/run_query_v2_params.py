@@ -50,10 +50,28 @@ class RunQueryV2Params(TypedDict, total=False):
     is_root: bool
     """`is_root` returns only root runs (true) or only non-root runs (false)."""
 
+    max_feedback_modified_at: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """
+    `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on feedback
+    `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+    or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+    least one feedback condition. Runs must still fall within the `start_time`
+    window.
+    """
+
     max_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
     """`max_start_time` is the upper bound for run `start_time` (RFC3339).
 
     Defaults to now.
+    """
+
+    min_feedback_modified_at: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]
+    """
+    `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on feedback
+    `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+    or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+    least one feedback condition. Runs must still fall within the `start_time`
+    window.
     """
 
     min_start_time: Annotated[Union[str, datetime], PropertyInfo(format="iso8601")]

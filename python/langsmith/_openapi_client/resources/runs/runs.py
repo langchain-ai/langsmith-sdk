@@ -132,7 +132,9 @@ class RunsResource(SyncAPIResource):
         has_error: bool | Omit = omit,
         ids: SequenceNotStr[str] | Omit = omit,
         is_root: bool | Omit = omit,
+        max_feedback_modified_at: Union[str, datetime] | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
+        min_feedback_modified_at: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_ids: SequenceNotStr[str] | Omit = omit,
@@ -184,8 +186,20 @@ class RunsResource(SyncAPIResource):
 
           is_root: `is_root` returns only root runs (true) or only non-root runs (false).
 
+          max_feedback_modified_at: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
+
           max_start_time: `max_start_time` is the upper bound for run `start_time` (RFC3339). Defaults to
               now.
+
+          min_feedback_modified_at: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
 
           min_start_time: `min_start_time` is the lower bound for run `start_time` (RFC3339). Defaults to
               1 day ago.
@@ -248,7 +262,9 @@ class RunsResource(SyncAPIResource):
                     "has_error": has_error,
                     "ids": ids,
                     "is_root": is_root,
+                    "max_feedback_modified_at": max_feedback_modified_at,
                     "max_start_time": max_start_time,
+                    "min_feedback_modified_at": min_feedback_modified_at,
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_ids": project_ids,
@@ -477,7 +493,9 @@ class AsyncRunsResource(AsyncAPIResource):
         has_error: bool | Omit = omit,
         ids: SequenceNotStr[str] | Omit = omit,
         is_root: bool | Omit = omit,
+        max_feedback_modified_at: Union[str, datetime] | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
+        min_feedback_modified_at: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_ids: SequenceNotStr[str] | Omit = omit,
@@ -529,8 +547,20 @@ class AsyncRunsResource(AsyncAPIResource):
 
           is_root: `is_root` returns only root runs (true) or only non-root runs (false).
 
+          max_feedback_modified_at: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
+
           max_start_time: `max_start_time` is the upper bound for run `start_time` (RFC3339). Defaults to
               now.
+
+          min_feedback_modified_at: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
 
           min_start_time: `min_start_time` is the lower bound for run `start_time` (RFC3339). Defaults to
               1 day ago.
@@ -593,7 +623,9 @@ class AsyncRunsResource(AsyncAPIResource):
                     "has_error": has_error,
                     "ids": ids,
                     "is_root": is_root,
+                    "max_feedback_modified_at": max_feedback_modified_at,
                     "max_start_time": max_start_time,
+                    "min_feedback_modified_at": min_feedback_modified_at,
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_ids": project_ids,

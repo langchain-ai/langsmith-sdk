@@ -913,10 +913,28 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   is_root?: boolean;
 
   /**
+   * Body param: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  max_feedback_modified_at?: string;
+
+  /**
    * Body param: `max_start_time` is the upper bound for run `start_time` (RFC3339).
    * Defaults to now.
    */
   max_start_time?: string;
+
+  /**
+   * Body param: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  min_feedback_modified_at?: string;
 
   /**
    * Body param: `min_start_time` is the lower bound for run `start_time` (RFC3339).
@@ -1173,10 +1191,28 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   is_root?: boolean;
 
   /**
+   * Body param: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  max_feedback_modified_at?: string;
+
+  /**
    * Body param: `max_start_time` is the upper bound for run `start_time` (RFC3339).
    * Defaults to now.
    */
   max_start_time?: string;
+
+  /**
+   * Body param: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  min_feedback_modified_at?: string;
 
   /**
    * Body param: `min_start_time` is the lower bound for run `start_time` (RFC3339).
