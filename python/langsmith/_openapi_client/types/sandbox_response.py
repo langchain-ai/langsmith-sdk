@@ -15,11 +15,20 @@ __all__ = [
     "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfig",
     "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigAccessKeyID",
     "MountConfigAuthAwsSandboxesSandboxAwsMountStaticAuthConfigSecretAccessKey",
+    "MountConfigAuthAzure",
+    "MountConfigAuthAzureSandboxesSandboxAzureMountWorkloadIdentityAuthConfig",
+    "MountConfigAuthAzureSandboxesSandboxAzureMountAccountKeyAuthConfig",
+    "MountConfigAuthAzureSandboxesSandboxAzureMountAccountKeyAuthConfigAccountKey",
+    "MountConfigAuthAzureSandboxesSandboxAzureMountSasAuthConfig",
+    "MountConfigAuthAzureSandboxesSandboxAzureMountSasAuthConfigSasToken",
     "MountConfigAuthGcp",
-    "MountConfigAuthGcpServiceAccountJson",
+    "MountConfigAuthGcpSandboxesSandboxGcpMountWorkloadIdentityAuthConfig",
+    "MountConfigAuthGcpSandboxesSandboxGcpMountServiceAccountAuthConfig",
+    "MountConfigAuthGcpSandboxesSandboxGcpMountServiceAccountAuthConfigServiceAccountJson",
     "MountConfigMount",
     "MountConfigMountSandboxapiS3BucketMountSpec",
     "MountConfigMountSandboxapiS3BucketMountSpecS3",
+    "MountConfigMountSandboxapiS3BucketMountSpecAzureBlob",
     "MountConfigMountSandboxapiS3BucketMountSpecCache",
     "MountConfigMountSandboxapiS3BucketMountSpecContexthub",
     "MountConfigMountSandboxapiS3BucketMountSpecEncryption",
@@ -28,6 +37,7 @@ __all__ = [
     "MountConfigMountSandboxapiS3BucketMountSpecGitRef",
     "MountConfigMountSandboxapiGcsBucketMountSpec",
     "MountConfigMountSandboxapiGcsBucketMountSpecGcs",
+    "MountConfigMountSandboxapiGcsBucketMountSpecAzureBlob",
     "MountConfigMountSandboxapiGcsBucketMountSpecCache",
     "MountConfigMountSandboxapiGcsBucketMountSpecContexthub",
     "MountConfigMountSandboxapiGcsBucketMountSpecEncryption",
@@ -37,6 +47,7 @@ __all__ = [
     "MountConfigMountSandboxapiGitRepoMountSpec",
     "MountConfigMountSandboxapiGitRepoMountSpecGit",
     "MountConfigMountSandboxapiGitRepoMountSpecGitRef",
+    "MountConfigMountSandboxapiGitRepoMountSpecAzureBlob",
     "MountConfigMountSandboxapiGitRepoMountSpecCache",
     "MountConfigMountSandboxapiGitRepoMountSpecContexthub",
     "MountConfigMountSandboxapiGitRepoMountSpecEncryption",
@@ -44,12 +55,22 @@ __all__ = [
     "MountConfigMountSandboxapiGitRepoMountSpecS3",
     "MountConfigMountSandboxapiContextHubRepoMountSpec",
     "MountConfigMountSandboxapiContextHubRepoMountSpecContexthub",
+    "MountConfigMountSandboxapiContextHubRepoMountSpecAzureBlob",
     "MountConfigMountSandboxapiContextHubRepoMountSpecCache",
     "MountConfigMountSandboxapiContextHubRepoMountSpecEncryption",
     "MountConfigMountSandboxapiContextHubRepoMountSpecGcs",
     "MountConfigMountSandboxapiContextHubRepoMountSpecGit",
     "MountConfigMountSandboxapiContextHubRepoMountSpecGitRef",
     "MountConfigMountSandboxapiContextHubRepoMountSpecS3",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpec",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecAzureBlob",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecCache",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecContexthub",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecEncryption",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecGcs",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecGit",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecGitRef",
+    "MountConfigMountSandboxapiAzureBlobContainerMountSpecS3",
     "ProxyConfig",
     "ProxyConfigAccessControl",
     "ProxyConfigCallback",
@@ -60,6 +81,12 @@ __all__ = [
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig",
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID",
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey",
+    "ProxyConfigRuleAzure",
+    "ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey",
+    "ProxyConfigRuleAzureSandboxesProxyAzureSasConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken",
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
@@ -131,7 +158,31 @@ MountConfigAuthAws: TypeAlias = Union[
 ]
 
 
-class MountConfigAuthGcpServiceAccountJson(BaseModel):
+class MountConfigAuthAzureSandboxesSandboxAzureMountWorkloadIdentityAuthConfig(BaseModel):
+    client_id: str
+    """
+    ClientID is the application (client) ID, a GUID, of the app registration or
+    user-assigned managed identity whose federated identity credential trusts
+    LangSmith's issuer. Required with tenant_id.
+    """
+
+    tenant_id: str
+    """TenantID is the Entra tenant (directory) ID, a GUID.
+
+    Setting it selects workload identity: LangSmith signs an OIDC token for this
+    workspace and exchanges it at Entra ID for storage access tokens of client_id.
+    Cannot be changed after creation.
+    """
+
+    subject_scope: Optional[str] = None
+    """
+    SubjectScope picks the token subject the federated credential trusts:
+    "workspace" (the default) or "tag:<tag value id>", which must be one of the
+    sandbox's tag_value_ids. Only valid with tenant_id.
+    """
+
+
+class MountConfigAuthAzureSandboxesSandboxAzureMountAccountKeyAuthConfigAccountKey(BaseModel):
     type: Literal["plaintext", "opaque", "workspace_secret"]
 
     is_set: Optional[bool] = None
@@ -139,15 +190,44 @@ class MountConfigAuthGcpServiceAccountJson(BaseModel):
     value: Optional[str] = None
 
 
-class MountConfigAuthGcp(BaseModel):
+class MountConfigAuthAzureSandboxesSandboxAzureMountAccountKeyAuthConfig(BaseModel):
+    account_key: MountConfigAuthAzureSandboxesSandboxAzureMountAccountKeyAuthConfigAccountKey
+
+
+class MountConfigAuthAzureSandboxesSandboxAzureMountSasAuthConfigSasToken(BaseModel):
+    type: Literal["plaintext", "opaque", "workspace_secret"]
+
+    is_set: Optional[bool] = None
+
+    value: Optional[str] = None
+
+
+class MountConfigAuthAzureSandboxesSandboxAzureMountSasAuthConfig(BaseModel):
+    sas_token: MountConfigAuthAzureSandboxesSandboxAzureMountSasAuthConfigSasToken
+
+
+MountConfigAuthAzure: TypeAlias = Union[
+    MountConfigAuthAzureSandboxesSandboxAzureMountWorkloadIdentityAuthConfig,
+    MountConfigAuthAzureSandboxesSandboxAzureMountAccountKeyAuthConfig,
+    MountConfigAuthAzureSandboxesSandboxAzureMountSasAuthConfig,
+]
+
+
+class MountConfigAuthGcpSandboxesSandboxGcpMountWorkloadIdentityAuthConfig(BaseModel):
+    workload_identity_provider: str
+    """
+    WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
+    workspace through Workload Identity Federation instead of a service account key:
+    //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+    Mutually exclusive with service_account_json. Cannot be changed after creation.
+    """
+
     service_account_email: Optional[str] = None
     """
     ServiceAccountEmail is the service account to impersonate with the federated
     token. Omit it to use the federated principal directly. Only valid with
     workload_identity_provider.
     """
-
-    service_account_json: Optional[MountConfigAuthGcpServiceAccountJson] = None
 
     subject_scope: Optional[str] = None
     """
@@ -156,17 +236,29 @@ class MountConfigAuthGcp(BaseModel):
     tag_value_ids. Only valid with workload_identity_provider.
     """
 
-    workload_identity_provider: Optional[str] = None
-    """
-    WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
-    workspace through Workload Identity Federation instead of a service account key:
-    //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
-    Mutually exclusive with service_account_json. Cannot be changed after creation.
-    """
+
+class MountConfigAuthGcpSandboxesSandboxGcpMountServiceAccountAuthConfigServiceAccountJson(BaseModel):
+    type: Literal["plaintext", "opaque", "workspace_secret"]
+
+    is_set: Optional[bool] = None
+
+    value: Optional[str] = None
+
+
+class MountConfigAuthGcpSandboxesSandboxGcpMountServiceAccountAuthConfig(BaseModel):
+    service_account_json: MountConfigAuthGcpSandboxesSandboxGcpMountServiceAccountAuthConfigServiceAccountJson
+
+
+MountConfigAuthGcp: TypeAlias = Union[
+    MountConfigAuthGcpSandboxesSandboxGcpMountWorkloadIdentityAuthConfig,
+    MountConfigAuthGcpSandboxesSandboxGcpMountServiceAccountAuthConfig,
+]
 
 
 class MountConfigAuth(BaseModel):
     aws: Optional[MountConfigAuthAws] = None
+
+    azure: Optional[MountConfigAuthAzure] = None
 
     gcp: Optional[MountConfigAuthGcp] = None
 
@@ -179,6 +271,18 @@ class MountConfigMountSandboxapiS3BucketMountSpecS3(BaseModel):
     endpoint_url: Optional[str] = None
 
     path_style: Optional[bool] = None
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiS3BucketMountSpecAzureBlob(BaseModel):
+    container: str
+
+    storage_account: str
+    """
+    StorageAccount is the storage account name: 3 to 24 lowercase letters and
+    digits.
+    """
 
     prefix: Optional[str] = None
 
@@ -239,7 +343,9 @@ class MountConfigMountSandboxapiS3BucketMountSpec(BaseModel):
 
     s3: MountConfigMountSandboxapiS3BucketMountSpecS3
 
-    type: Literal["s3", "gcs", "git", "contexthub"]
+    type: Literal["s3", "gcs", "azure_blob", "git", "contexthub"]
+
+    azure_blob: Optional[MountConfigMountSandboxapiS3BucketMountSpecAzureBlob] = None
 
     cache: Optional[MountConfigMountSandboxapiS3BucketMountSpecCache] = None
 
@@ -256,6 +362,18 @@ class MountConfigMountSandboxapiS3BucketMountSpec(BaseModel):
 
 class MountConfigMountSandboxapiGcsBucketMountSpecGcs(BaseModel):
     bucket: str
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiGcsBucketMountSpecAzureBlob(BaseModel):
+    container: str
+
+    storage_account: str
+    """
+    StorageAccount is the storage account name: 3 to 24 lowercase letters and
+    digits.
+    """
 
     prefix: Optional[str] = None
 
@@ -322,7 +440,9 @@ class MountConfigMountSandboxapiGcsBucketMountSpec(BaseModel):
 
     mount_path: str
 
-    type: Literal["s3", "gcs", "git", "contexthub"]
+    type: Literal["s3", "gcs", "azure_blob", "git", "contexthub"]
+
+    azure_blob: Optional[MountConfigMountSandboxapiGcsBucketMountSpecAzureBlob] = None
 
     cache: Optional[MountConfigMountSandboxapiGcsBucketMountSpecCache] = None
 
@@ -349,6 +469,18 @@ class MountConfigMountSandboxapiGitRepoMountSpecGit(BaseModel):
     ref: Optional[MountConfigMountSandboxapiGitRepoMountSpecGitRef] = None
 
     refresh_interval_seconds: Optional[int] = None
+
+
+class MountConfigMountSandboxapiGitRepoMountSpecAzureBlob(BaseModel):
+    container: str
+
+    storage_account: str
+    """
+    StorageAccount is the storage account name: 3 to 24 lowercase letters and
+    digits.
+    """
+
+    prefix: Optional[str] = None
 
 
 class MountConfigMountSandboxapiGitRepoMountSpecCache(BaseModel):
@@ -405,7 +537,9 @@ class MountConfigMountSandboxapiGitRepoMountSpec(BaseModel):
 
     mount_path: str
 
-    type: Literal["s3", "gcs", "git", "contexthub"]
+    type: Literal["s3", "gcs", "azure_blob", "git", "contexthub"]
+
+    azure_blob: Optional[MountConfigMountSandboxapiGitRepoMountSpecAzureBlob] = None
 
     cache: Optional[MountConfigMountSandboxapiGitRepoMountSpecCache] = None
 
@@ -433,6 +567,18 @@ class MountConfigMountSandboxapiContextHubRepoMountSpecContexthub(BaseModel):
     InitialPullOnly syncs the repo once at startup instead of polling for updates
     for the sandbox's lifetime.
     """
+
+
+class MountConfigMountSandboxapiContextHubRepoMountSpecAzureBlob(BaseModel):
+    container: str
+
+    storage_account: str
+    """
+    StorageAccount is the storage account name: 3 to 24 lowercase letters and
+    digits.
+    """
+
+    prefix: Optional[str] = None
 
 
 class MountConfigMountSandboxapiContextHubRepoMountSpecCache(BaseModel):
@@ -488,7 +634,9 @@ class MountConfigMountSandboxapiContextHubRepoMountSpec(BaseModel):
 
     mount_path: str
 
-    type: Literal["s3", "gcs", "git", "contexthub"]
+    type: Literal["s3", "gcs", "azure_blob", "git", "contexthub"]
+
+    azure_blob: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecAzureBlob] = None
 
     cache: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecCache] = None
 
@@ -503,11 +651,109 @@ class MountConfigMountSandboxapiContextHubRepoMountSpec(BaseModel):
     s3: Optional[MountConfigMountSandboxapiContextHubRepoMountSpecS3] = None
 
 
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecAzureBlob(BaseModel):
+    container: str
+
+    storage_account: str
+    """
+    StorageAccount is the storage account name: 3 to 24 lowercase letters and
+    digits.
+    """
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecCache(BaseModel):
+    max_size_bytes: Optional[int] = None
+
+    writeback_seconds: Optional[int] = None
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecContexthub(BaseModel):
+    repo: str
+    """Repo is the Context Hub repository to sync, as "owner/repo" (e.g.
+
+    "-/my-agent", where "-" is the current workspace). The repo's latest commit tree
+    is mirrored into the mount path.
+    """
+
+    initial_pull_only: Optional[bool] = None
+    """
+    InitialPullOnly syncs the repo once at startup instead of polling for updates
+    for the sandbox's lifetime.
+    """
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecEncryption(BaseModel):
+    kms_key: str
+    """KMSKey is the key to encrypt uploads with.
+
+    S3 mounts take a KMS key ARN in the mount's region.
+    """
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecGcs(BaseModel):
+    bucket: str
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecGitRef(BaseModel):
+    name: str
+
+    type: Literal["branch", "tag"]
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecGit(BaseModel):
+    remote_url: str
+
+    ref: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecGitRef] = None
+
+    refresh_interval_seconds: Optional[int] = None
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpecS3(BaseModel):
+    bucket: str
+
+    region: str
+
+    endpoint_url: Optional[str] = None
+
+    path_style: Optional[bool] = None
+
+    prefix: Optional[str] = None
+
+
+class MountConfigMountSandboxapiAzureBlobContainerMountSpec(BaseModel):
+    id: str
+
+    azure_blob: MountConfigMountSandboxapiAzureBlobContainerMountSpecAzureBlob
+
+    mount_path: str
+
+    type: Literal["s3", "gcs", "azure_blob", "git", "contexthub"]
+
+    cache: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecCache] = None
+
+    contexthub: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecContexthub] = None
+
+    encryption: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecEncryption] = None
+
+    gcs: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecGcs] = None
+
+    git: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecGit] = None
+
+    read_only: Optional[bool] = None
+
+    s3: Optional[MountConfigMountSandboxapiAzureBlobContainerMountSpecS3] = None
+
+
 MountConfigMount: TypeAlias = Union[
     MountConfigMountSandboxapiS3BucketMountSpec,
     MountConfigMountSandboxapiGcsBucketMountSpec,
     MountConfigMountSandboxapiGitRepoMountSpec,
     MountConfigMountSandboxapiContextHubRepoMountSpec,
+    MountConfigMountSandboxapiAzureBlobContainerMountSpec,
 ]
 
 
@@ -599,6 +845,94 @@ ProxyConfigRuleAws: TypeAlias = Union[
 ]
 
 
+class ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig(BaseModel):
+    client_id: str
+    """
+    ClientID is the application (client) ID, a GUID, of the app registration or
+    user-assigned managed identity whose federated identity credential trusts
+    LangSmith's issuer. Required with tenant_id.
+    """
+
+    tenant_id: str
+    """TenantID is the Entra tenant (directory) ID, a GUID.
+
+    Setting it selects workload identity: LangSmith signs an OIDC token for this
+    workspace and exchanges it at Entra ID for access tokens of client_id, so no
+    secret is stored. Cannot be changed after creation.
+    """
+
+    resources: Optional[
+        List[
+            Literal[
+                "https://storage.azure.com",
+                "https://vault.azure.net",
+                "https://management.azure.com",
+                "https://cognitiveservices.azure.com",
+            ]
+        ]
+    ] = None
+    """
+    Resources narrows the Entra resources access tokens are obtained for, from
+    https://storage.azure.com, https://vault.azure.net, https://management.azure.com
+    and https://cognitiveservices.azure.com. Defaults to all of them. Only valid
+    with tenant_id.
+    """
+
+    subject_scope: Optional[str] = None
+    """
+    SubjectScope picks the token subject the federated credential trusts:
+    "workspace" (the default) or "tag:<tag value id>", which must be one of the
+    sandbox's tag_value_ids. Only valid with tenant_id.
+    """
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey(BaseModel):
+    type: Literal["plaintext", "opaque", "workspace_secret"]
+
+    is_set: Optional[bool] = None
+
+    value: Optional[str] = None
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig(BaseModel):
+    account_key: ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey
+
+    storage_account: str
+    """
+    StorageAccount is the storage account static credentials authenticate to:
+    requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+    of account_key (requests are signed with SharedKey) or sas_token (appended to
+    each request).
+    """
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken(BaseModel):
+    type: Literal["plaintext", "opaque", "workspace_secret"]
+
+    is_set: Optional[bool] = None
+
+    value: Optional[str] = None
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureSasConfig(BaseModel):
+    sas_token: ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken
+
+    storage_account: str
+    """
+    StorageAccount is the storage account static credentials authenticate to:
+    requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+    of account_key (requests are signed with SharedKey) or sas_token (appended to
+    each request).
+    """
+
+
+ProxyConfigRuleAzure: TypeAlias = Union[
+    ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig,
+    ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig,
+    ProxyConfigRuleAzureSandboxesProxyAzureSasConfig,
+]
+
+
 class ProxyConfigRuleGcpServiceAccountJson(BaseModel):
     type: Literal["plaintext", "opaque", "workspace_secret"]
 
@@ -653,6 +987,8 @@ class ProxyConfigRule(BaseModel):
     name: str
 
     aws: Optional[ProxyConfigRuleAws] = None
+
+    azure: Optional[ProxyConfigRuleAzure] = None
 
     description: Optional[str] = None
     """

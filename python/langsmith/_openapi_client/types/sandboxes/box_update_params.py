@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Union, Iterable
+from typing import Dict, List, Union, Iterable
 from typing_extensions import Literal, Required, Annotated, TypeAlias, TypedDict
 
 from ..._types import SequenceNotStr
@@ -20,6 +20,12 @@ __all__ = [
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig",
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID",
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey",
+    "ProxyConfigRuleAzure",
+    "ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey",
+    "ProxyConfigRuleAzureSandboxesProxyAzureSasConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken",
     "ProxyConfigRuleGcp",
     "ProxyConfigRuleGcpServiceAccountJson",
     "ProxyConfigRuleHeader",
@@ -141,6 +147,92 @@ ProxyConfigRuleAws: TypeAlias = Union[
 ]
 
 
+class ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig(TypedDict, total=False):
+    client_id: Required[str]
+    """
+    ClientID is the application (client) ID, a GUID, of the app registration or
+    user-assigned managed identity whose federated identity credential trusts
+    LangSmith's issuer. Required with tenant_id.
+    """
+
+    tenant_id: Required[str]
+    """TenantID is the Entra tenant (directory) ID, a GUID.
+
+    Setting it selects workload identity: LangSmith signs an OIDC token for this
+    workspace and exchanges it at Entra ID for access tokens of client_id, so no
+    secret is stored. Cannot be changed after creation.
+    """
+
+    resources: List[
+        Literal[
+            "https://storage.azure.com",
+            "https://vault.azure.net",
+            "https://management.azure.com",
+            "https://cognitiveservices.azure.com",
+        ]
+    ]
+    """
+    Resources narrows the Entra resources access tokens are obtained for, from
+    https://storage.azure.com, https://vault.azure.net, https://management.azure.com
+    and https://cognitiveservices.azure.com. Defaults to all of them. Only valid
+    with tenant_id.
+    """
+
+    subject_scope: str
+    """
+    SubjectScope picks the token subject the federated credential trusts:
+    "workspace" (the default) or "tag:<tag value id>", which must be one of the
+    sandbox's tag_value_ids. Only valid with tenant_id.
+    """
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey(TypedDict, total=False):
+    type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
+
+    is_set: bool
+
+    value: str
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig(TypedDict, total=False):
+    account_key: Required[ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey]
+
+    storage_account: Required[str]
+    """
+    StorageAccount is the storage account static credentials authenticate to:
+    requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+    of account_key (requests are signed with SharedKey) or sas_token (appended to
+    each request).
+    """
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken(TypedDict, total=False):
+    type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
+
+    is_set: bool
+
+    value: str
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureSasConfig(TypedDict, total=False):
+    sas_token: Required[ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken]
+
+    storage_account: Required[str]
+    """
+    StorageAccount is the storage account static credentials authenticate to:
+    requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+    of account_key (requests are signed with SharedKey) or sas_token (appended to
+    each request).
+    """
+
+
+ProxyConfigRuleAzure: TypeAlias = Union[
+    ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig,
+    ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig,
+    ProxyConfigRuleAzureSandboxesProxyAzureSasConfig,
+]
+
+
 class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
@@ -195,6 +287,8 @@ class ProxyConfigRule(TypedDict, total=False):
     name: Required[str]
 
     aws: ProxyConfigRuleAws
+
+    azure: ProxyConfigRuleAzure
 
     description: str
     """

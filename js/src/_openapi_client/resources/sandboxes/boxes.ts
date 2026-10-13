@@ -328,6 +328,7 @@ export namespace BoxCreateParams {
       | MountConfig.SandboxapiGcsBucketMountSpec
       | MountConfig.SandboxapiGitRepoMountSpec
       | MountConfig.SandboxapiContextHubRepoMountSpec
+      | MountConfig.SandboxapiAzureBlobContainerMountSpec
     >;
   }
 
@@ -335,7 +336,14 @@ export namespace BoxCreateParams {
     export interface Auth {
       aws?: Auth.SandboxesSandboxAwsMountRoleAuthConfig | Auth.SandboxesSandboxAwsMountStaticAuthConfig;
 
-      gcp?: Auth.Gcp;
+      azure?:
+        | Auth.SandboxesSandboxAzureMountWorkloadIdentityAuthConfig
+        | Auth.SandboxesSandboxAzureMountAccountKeyAuthConfig
+        | Auth.SandboxesSandboxAzureMountSasAuthConfig;
+
+      gcp?:
+        | Auth.SandboxesSandboxGcpMountWorkloadIdentityAuthConfig
+        | Auth.SandboxesSandboxGcpMountServiceAccountAuthConfig;
     }
 
     export namespace Auth {
@@ -390,7 +398,67 @@ export namespace BoxCreateParams {
         }
       }
 
-      export interface Gcp {
+      export interface SandboxesSandboxAzureMountWorkloadIdentityAuthConfig {
+        /**
+         * ClientID is the application (client) ID, a GUID, of the app registration or
+         * user-assigned managed identity whose federated identity credential trusts
+         * LangSmith's issuer. Required with tenant_id.
+         */
+        client_id: string;
+
+        /**
+         * TenantID is the Entra tenant (directory) ID, a GUID. Setting it selects workload
+         * identity: LangSmith signs an OIDC token for this workspace and exchanges it at
+         * Entra ID for storage access tokens of client_id. Cannot be changed after
+         * creation.
+         */
+        tenant_id: string;
+
+        /**
+         * SubjectScope picks the token subject the federated credential trusts:
+         * "workspace" (the default) or "tag:<tag value id>", which must be one of the
+         * sandbox's tag_value_ids. Only valid with tenant_id.
+         */
+        subject_scope?: string;
+      }
+
+      export interface SandboxesSandboxAzureMountAccountKeyAuthConfig {
+        account_key: SandboxesSandboxAzureMountAccountKeyAuthConfig.AccountKey;
+      }
+
+      export namespace SandboxesSandboxAzureMountAccountKeyAuthConfig {
+        export interface AccountKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface SandboxesSandboxAzureMountSasAuthConfig {
+        sas_token: SandboxesSandboxAzureMountSasAuthConfig.SasToken;
+      }
+
+      export namespace SandboxesSandboxAzureMountSasAuthConfig {
+        export interface SasToken {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface SandboxesSandboxGcpMountWorkloadIdentityAuthConfig {
+        /**
+         * WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
+         * workspace through Workload Identity Federation instead of a service account key:
+         * //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+         * Mutually exclusive with service_account_json. Cannot be changed after creation.
+         */
+        workload_identity_provider: string;
+
         /**
          * ServiceAccountEmail is the service account to impersonate with the federated
          * token. Omit it to use the federated principal directly. Only valid with
@@ -398,25 +466,19 @@ export namespace BoxCreateParams {
          */
         service_account_email?: string;
 
-        service_account_json?: Gcp.ServiceAccountJson;
-
         /**
          * SubjectScope picks the token subject the provider trusts: "workspace" (the
          * default) or "tag:<tag value id>", which must be one of the sandbox's
          * tag_value_ids. Only valid with workload_identity_provider.
          */
         subject_scope?: string;
-
-        /**
-         * WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
-         * workspace through Workload Identity Federation instead of a service account key:
-         * //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
-         * Mutually exclusive with service_account_json. Cannot be changed after creation.
-         */
-        workload_identity_provider?: string;
       }
 
-      export namespace Gcp {
+      export interface SandboxesSandboxGcpMountServiceAccountAuthConfig {
+        service_account_json: SandboxesSandboxGcpMountServiceAccountAuthConfig.ServiceAccountJson;
+      }
+
+      export namespace SandboxesSandboxGcpMountServiceAccountAuthConfig {
         export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
@@ -434,7 +496,9 @@ export namespace BoxCreateParams {
 
       s3: SandboxapiS3BucketMountSpec.S3;
 
-      type: 's3' | 'gcs' | 'git' | 'contexthub';
+      type: 's3' | 'gcs' | 'azure_blob' | 'git' | 'contexthub';
+
+      azure_blob?: SandboxapiS3BucketMountSpec.AzureBlob;
 
       cache?: SandboxapiS3BucketMountSpec.Cache;
 
@@ -458,6 +522,18 @@ export namespace BoxCreateParams {
         endpoint_url?: string;
 
         path_style?: boolean;
+
+        prefix?: string;
+      }
+
+      export interface AzureBlob {
+        container: string;
+
+        /**
+         * StorageAccount is the storage account name: 3 to 24 lowercase letters and
+         * digits.
+         */
+        storage_account: string;
 
         prefix?: string;
       }
@@ -521,7 +597,9 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git' | 'contexthub';
+      type: 's3' | 'gcs' | 'azure_blob' | 'git' | 'contexthub';
+
+      azure_blob?: SandboxapiGcsBucketMountSpec.AzureBlob;
 
       cache?: SandboxapiGcsBucketMountSpec.Cache;
 
@@ -539,6 +617,18 @@ export namespace BoxCreateParams {
     export namespace SandboxapiGcsBucketMountSpec {
       export interface Gcs {
         bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface AzureBlob {
+        container: string;
+
+        /**
+         * StorageAccount is the storage account name: 3 to 24 lowercase letters and
+         * digits.
+         */
+        storage_account: string;
 
         prefix?: string;
       }
@@ -608,7 +698,9 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git' | 'contexthub';
+      type: 's3' | 'gcs' | 'azure_blob' | 'git' | 'contexthub';
+
+      azure_blob?: SandboxapiGitRepoMountSpec.AzureBlob;
 
       cache?: SandboxapiGitRepoMountSpec.Cache;
 
@@ -638,6 +730,18 @@ export namespace BoxCreateParams {
 
           type: 'branch' | 'tag';
         }
+      }
+
+      export interface AzureBlob {
+        container: string;
+
+        /**
+         * StorageAccount is the storage account name: 3 to 24 lowercase letters and
+         * digits.
+         */
+        storage_account: string;
+
+        prefix?: string;
       }
 
       export interface Cache {
@@ -695,7 +799,9 @@ export namespace BoxCreateParams {
 
       mount_path: string;
 
-      type: 's3' | 'gcs' | 'git' | 'contexthub';
+      type: 's3' | 'gcs' | 'azure_blob' | 'git' | 'contexthub';
+
+      azure_blob?: SandboxapiContextHubRepoMountSpec.AzureBlob;
 
       cache?: SandboxapiContextHubRepoMountSpec.Cache;
 
@@ -726,10 +832,123 @@ export namespace BoxCreateParams {
         initial_pull_only?: boolean;
       }
 
+      export interface AzureBlob {
+        container: string;
+
+        /**
+         * StorageAccount is the storage account name: 3 to 24 lowercase letters and
+         * digits.
+         */
+        storage_account: string;
+
+        prefix?: string;
+      }
+
       export interface Cache {
         max_size_bytes?: number;
 
         writeback_seconds?: number;
+      }
+
+      export interface Encryption {
+        /**
+         * KMSKey is the key to encrypt uploads with. S3 mounts take a KMS key ARN in the
+         * mount's region.
+         */
+        kms_key: string;
+      }
+
+      export interface Gcs {
+        bucket: string;
+
+        prefix?: string;
+      }
+
+      export interface Git {
+        remote_url: string;
+
+        ref?: Git.Ref;
+
+        refresh_interval_seconds?: number;
+      }
+
+      export namespace Git {
+        export interface Ref {
+          name: string;
+
+          type: 'branch' | 'tag';
+        }
+      }
+
+      export interface S3 {
+        bucket: string;
+
+        region: string;
+
+        endpoint_url?: string;
+
+        path_style?: boolean;
+
+        prefix?: string;
+      }
+    }
+
+    export interface SandboxapiAzureBlobContainerMountSpec {
+      id: string;
+
+      azure_blob: SandboxapiAzureBlobContainerMountSpec.AzureBlob;
+
+      mount_path: string;
+
+      type: 's3' | 'gcs' | 'azure_blob' | 'git' | 'contexthub';
+
+      cache?: SandboxapiAzureBlobContainerMountSpec.Cache;
+
+      contexthub?: SandboxapiAzureBlobContainerMountSpec.Contexthub;
+
+      encryption?: SandboxapiAzureBlobContainerMountSpec.Encryption;
+
+      gcs?: SandboxapiAzureBlobContainerMountSpec.Gcs;
+
+      git?: SandboxapiAzureBlobContainerMountSpec.Git;
+
+      read_only?: boolean;
+
+      s3?: SandboxapiAzureBlobContainerMountSpec.S3;
+    }
+
+    export namespace SandboxapiAzureBlobContainerMountSpec {
+      export interface AzureBlob {
+        container: string;
+
+        /**
+         * StorageAccount is the storage account name: 3 to 24 lowercase letters and
+         * digits.
+         */
+        storage_account: string;
+
+        prefix?: string;
+      }
+
+      export interface Cache {
+        max_size_bytes?: number;
+
+        writeback_seconds?: number;
+      }
+
+      export interface Contexthub {
+        /**
+         * Repo is the Context Hub repository to sync, as "owner/repo" (e.g. "-/my-agent",
+         * where "-" is the current workspace). The repo's latest commit tree is mirrored
+         * into the mount path.
+         */
+        repo: string;
+
+        /**
+         * InitialPullOnly syncs the repo once at startup instead of polling for updates
+         * for the sandbox's lifetime.
+         */
+        initial_pull_only?: boolean;
       }
 
       export interface Encryption {
@@ -828,6 +1047,11 @@ export namespace BoxCreateParams {
 
       aws?: Rule.SandboxesProxyAwsRoleConfig | Rule.SandboxesProxyAwsStaticConfig;
 
+      azure?:
+        | Rule.SandboxesProxyAzureWorkloadIdentityConfig
+        | Rule.SandboxesProxyAzureAccountKeyConfig
+        | Rule.SandboxesProxyAzureSasConfig;
+
       /**
        * Description says what this rule lets the sandbox reach, so an agent driving the
        * sandbox can be told its capabilities. At most 1024 characters.
@@ -914,6 +1138,87 @@ export namespace BoxCreateParams {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface SandboxesProxyAzureWorkloadIdentityConfig {
+        /**
+         * ClientID is the application (client) ID, a GUID, of the app registration or
+         * user-assigned managed identity whose federated identity credential trusts
+         * LangSmith's issuer. Required with tenant_id.
+         */
+        client_id: string;
+
+        /**
+         * TenantID is the Entra tenant (directory) ID, a GUID. Setting it selects workload
+         * identity: LangSmith signs an OIDC token for this workspace and exchanges it at
+         * Entra ID for access tokens of client_id, so no secret is stored. Cannot be
+         * changed after creation.
+         */
+        tenant_id: string;
+
+        /**
+         * Resources narrows the Entra resources access tokens are obtained for, from
+         * https://storage.azure.com, https://vault.azure.net, https://management.azure.com
+         * and https://cognitiveservices.azure.com. Defaults to all of them. Only valid
+         * with tenant_id.
+         */
+        resources?: Array<
+          | 'https://storage.azure.com'
+          | 'https://vault.azure.net'
+          | 'https://management.azure.com'
+          | 'https://cognitiveservices.azure.com'
+        >;
+
+        /**
+         * SubjectScope picks the token subject the federated credential trusts:
+         * "workspace" (the default) or "tag:<tag value id>", which must be one of the
+         * sandbox's tag_value_ids. Only valid with tenant_id.
+         */
+        subject_scope?: string;
+      }
+
+      export interface SandboxesProxyAzureAccountKeyConfig {
+        account_key: SandboxesProxyAzureAccountKeyConfig.AccountKey;
+
+        /**
+         * StorageAccount is the storage account static credentials authenticate to:
+         * requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+         * of account_key (requests are signed with SharedKey) or sas_token (appended to
+         * each request).
+         */
+        storage_account: string;
+      }
+
+      export namespace SandboxesProxyAzureAccountKeyConfig {
+        export interface AccountKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface SandboxesProxyAzureSasConfig {
+        sas_token: SandboxesProxyAzureSasConfig.SasToken;
+
+        /**
+         * StorageAccount is the storage account static credentials authenticate to:
+         * requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+         * of account_key (requests are signed with SharedKey) or sas_token (appended to
+         * each request).
+         */
+        storage_account: string;
+      }
+
+      export namespace SandboxesProxyAzureSasConfig {
+        export interface SasToken {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
@@ -1074,6 +1379,11 @@ export namespace BoxUpdateParams {
 
       aws?: Rule.SandboxesProxyAwsRoleConfig | Rule.SandboxesProxyAwsStaticConfig;
 
+      azure?:
+        | Rule.SandboxesProxyAzureWorkloadIdentityConfig
+        | Rule.SandboxesProxyAzureAccountKeyConfig
+        | Rule.SandboxesProxyAzureSasConfig;
+
       /**
        * Description says what this rule lets the sandbox reach, so an agent driving the
        * sandbox can be told its capabilities. At most 1024 characters.
@@ -1160,6 +1470,87 @@ export namespace BoxUpdateParams {
         }
 
         export interface SecretAccessKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface SandboxesProxyAzureWorkloadIdentityConfig {
+        /**
+         * ClientID is the application (client) ID, a GUID, of the app registration or
+         * user-assigned managed identity whose federated identity credential trusts
+         * LangSmith's issuer. Required with tenant_id.
+         */
+        client_id: string;
+
+        /**
+         * TenantID is the Entra tenant (directory) ID, a GUID. Setting it selects workload
+         * identity: LangSmith signs an OIDC token for this workspace and exchanges it at
+         * Entra ID for access tokens of client_id, so no secret is stored. Cannot be
+         * changed after creation.
+         */
+        tenant_id: string;
+
+        /**
+         * Resources narrows the Entra resources access tokens are obtained for, from
+         * https://storage.azure.com, https://vault.azure.net, https://management.azure.com
+         * and https://cognitiveservices.azure.com. Defaults to all of them. Only valid
+         * with tenant_id.
+         */
+        resources?: Array<
+          | 'https://storage.azure.com'
+          | 'https://vault.azure.net'
+          | 'https://management.azure.com'
+          | 'https://cognitiveservices.azure.com'
+        >;
+
+        /**
+         * SubjectScope picks the token subject the federated credential trusts:
+         * "workspace" (the default) or "tag:<tag value id>", which must be one of the
+         * sandbox's tag_value_ids. Only valid with tenant_id.
+         */
+        subject_scope?: string;
+      }
+
+      export interface SandboxesProxyAzureAccountKeyConfig {
+        account_key: SandboxesProxyAzureAccountKeyConfig.AccountKey;
+
+        /**
+         * StorageAccount is the storage account static credentials authenticate to:
+         * requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+         * of account_key (requests are signed with SharedKey) or sas_token (appended to
+         * each request).
+         */
+        storage_account: string;
+      }
+
+      export namespace SandboxesProxyAzureAccountKeyConfig {
+        export interface AccountKey {
+          type: 'plaintext' | 'opaque' | 'workspace_secret';
+
+          is_set?: boolean;
+
+          value?: string;
+        }
+      }
+
+      export interface SandboxesProxyAzureSasConfig {
+        sas_token: SandboxesProxyAzureSasConfig.SasToken;
+
+        /**
+         * StorageAccount is the storage account static credentials authenticate to:
+         * requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+         * of account_key (requests are signed with SharedKey) or sas_token (appended to
+         * each request).
+         */
+        storage_account: string;
+      }
+
+      export namespace SandboxesProxyAzureSasConfig {
+        export interface SasToken {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
           is_set?: boolean;
