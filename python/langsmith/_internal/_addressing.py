@@ -151,6 +151,23 @@ def _both_at_one_level(
     )
 
 
+def otlp_destination_headers(
+    project: Optional[str], address: Optional[AgentAddress]
+) -> dict[str, str]:
+    """Return the OTLP headers that send an export to a project or an agent.
+
+    The values come only from a validated `AgentAddress`, so a caller's string
+    never reaches a header unchecked. The backend rejects an export that names
+    both, so `address` wins here rather than sending both.
+    """
+    if address is not None:
+        return {
+            "Langsmith-Agent-Id": address.id,
+            "Langsmith-Agent-Environment": address.environment,
+        }
+    return {"Langsmith-Project": project} if project else {}
+
+
 def log_untraced(error: EnvAddressError) -> None:
     """Log, once per distinct cause, that calls run untraced for a bad env."""
     _log_untraced_once(str(error))
