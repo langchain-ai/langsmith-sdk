@@ -770,6 +770,10 @@ class LiveKitLangSmithSpanProcessor(BaseLangSmithSpanProcessor):
         output = get_content_attribute(tspan, "function_tool.output")
         if output is not None:
             tspan.set_tool_output(output)
+        # LiveKit flags a failed call (a raised ``ToolError`` or any other
+        # exception) with this attribute and leaves the span status unset.
+        if tspan.attributes.get("lk.function_tool.is_error"):
+            tspan.set_tool_error("" if output is None else str(output))
 
     def _handle_root(self, tspan: TranslatedSpan, trace_id: int) -> None:
         tspan.set_kind("chain")
