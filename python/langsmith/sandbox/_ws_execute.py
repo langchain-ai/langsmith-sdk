@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import math
 import random
+import ssl
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Any, Callable, Optional
@@ -99,6 +101,23 @@ def _ensure_websockets_async():
     if not WEBSOCKETS_AVAILABLE:
         raise ImportError(_MISSING_WEBSOCKETS_MSG)
     return _ws_connect_async, ConnectionClosed, InvalidHandshake
+
+
+@functools.lru_cache(maxsize=1)
+def _default_ssl_context() -> ssl.SSLContext:
+    """One TLS context for every exec WebSocket.
+
+    websockets builds a fresh default context for each ``wss://`` connect, and
+    loading the CA bundle into it takes 10-50ms of CPU per command on Linux.
+    """
+    return ssl.create_default_context()
+
+
+def _tls_options(ws_url: str) -> dict[str, ssl.SSLContext]:
+    """Connect options that reuse the shared TLS context for a ``wss://`` URL."""
+    if ws_url.startswith("wss://"):
+        return {"ssl": _default_ssl_context()}
+    return {}
 
 
 def _build_ws_url(dataplane_url: str) -> str:
@@ -424,6 +443,7 @@ def run_ws_stream(
                 close_timeout=WS_CLOSE_TIMEOUT,
                 ping_interval=WS_PING_INTERVAL,
                 ping_timeout=WS_PING_TIMEOUT,
+                **_tls_options(ws_url),
             ) as ws:
                 control._bind(ws)
 
@@ -533,6 +553,7 @@ def reconnect_ws_stream(
                 close_timeout=WS_CLOSE_TIMEOUT,
                 ping_interval=WS_PING_INTERVAL,
                 ping_timeout=WS_PING_TIMEOUT,
+                **_tls_options(ws_url),
             ) as ws:
                 control._bind(ws)
 
@@ -627,6 +648,7 @@ async def run_ws_stream_async(
                 close_timeout=WS_CLOSE_TIMEOUT,
                 ping_interval=WS_PING_INTERVAL,
                 ping_timeout=WS_PING_TIMEOUT,
+                **_tls_options(ws_url),
             ) as ws:
                 control._bind(ws)
                 await control._flush_pending()
@@ -718,6 +740,7 @@ async def reconnect_ws_stream_async(
                 close_timeout=WS_CLOSE_TIMEOUT,
                 ping_interval=WS_PING_INTERVAL,
                 ping_timeout=WS_PING_TIMEOUT,
+                **_tls_options(ws_url),
             ) as ws:
                 control._bind(ws)
                 await control._flush_pending()
