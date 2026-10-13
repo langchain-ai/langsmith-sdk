@@ -90,9 +90,18 @@ class ProxyConfigCallback(TypedDict, total=False):
 class ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig(TypedDict, total=False):
     role_arn: Required[str]
     """
-    RoleARN selects automatically renewed IAM-role credentials instead of static
-    keys. Access follows the role's effective AWS permissions, not the sandbox's
-    mount scope. Configure at creation; the role cannot be changed afterward.
+    IAM role to assume with AssumeRoleWithWebIdentity, using a short-lived OIDC
+    token LangSmith signs for this workspace. The role's trust policy must trust
+    LangSmith's issuer for the token subject. Credentials renew automatically, and
+    access follows the role's effective AWS permissions. Mutually exclusive with
+    static keys, and cannot be changed after creation.
+    """
+
+    subject_scope: str
+    """
+    SubjectScope picks the token subject the role trusts: "workspace" (the default)
+    or "tag:<tag value id>", which must be one of the sandbox's tag_value_ids. Only
+    valid with role_arn.
     """
 
 
@@ -119,9 +128,11 @@ class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig(TypedDict, total=False):
 
     role_arn: Literal[""]
     """
-    RoleARN selects automatically renewed IAM-role credentials instead of static
-    keys. Access follows the role's effective AWS permissions, not the sandbox's
-    mount scope. Configure at creation; the role cannot be changed afterward.
+    IAM role to assume with AssumeRoleWithWebIdentity, using a short-lived OIDC
+    token LangSmith signs for this workspace. The role's trust policy must trust
+    LangSmith's issuer for the token subject. Credentials renew automatically, and
+    access follows the role's effective AWS permissions. Mutually exclusive with
+    static keys, and cannot be changed after creation.
     """
 
 
@@ -139,9 +150,35 @@ class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):
 
 
 class ProxyConfigRuleGcp(TypedDict, total=False):
-    scopes: Required[SequenceNotStr[str]]
+    scopes: SequenceNotStr[str]
+    """Scopes are the OAuth scopes requested for the access token.
 
-    service_account_json: Required[ProxyConfigRuleGcpServiceAccountJson]
+    Omit them to use https://www.googleapis.com/auth/cloud-platform.
+    """
+
+    service_account_email: str
+    """
+    ServiceAccountEmail is the service account to impersonate with the federated
+    token. Omit it to use the federated principal directly.
+    """
+
+    service_account_json: ProxyConfigRuleGcpServiceAccountJson
+
+    subject_scope: str
+    """
+    SubjectScope picks the token subject the provider trusts: "workspace" (the
+    default) or "tag:<tag value id>", which must be one of the sandbox's
+    tag_value_ids. Only valid with workload_identity_provider.
+    """
+
+    workload_identity_provider: str
+    """
+    WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
+    workspace through Workload Identity Federation instead of a service account key.
+    Use the full resource name:
+    //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+    Cannot be changed after creation.
+    """
 
 
 class ProxyConfigRuleHeader(TypedDict, total=False):
