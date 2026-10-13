@@ -482,6 +482,7 @@
   },
   "pnpm": {
     "overrides": {
+      "@grpc/grpc-js": "1.14.6",
       "@hono/node-server": "2.0.10",
       "brace-expansion@<1.1.16": "1.1.16",
       "brace-expansion@>=2.0.0 <2.1.2": "2.1.2",
