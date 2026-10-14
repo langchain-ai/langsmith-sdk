@@ -260,10 +260,10 @@ async def test_aevaluate_feedback_includes_experiment_id_and_start_time() -> Non
 
 
 @pytest.mark.parametrize("disable_evaluator_tracing", [True, False])
-def test_evaluate_upload_results_callable_samples_runs_but_scores_all(
+def test_evaluate_upload_runs_callable_samples_runs_but_scores_all(
     disable_evaluator_tracing: bool,
 ) -> None:
-    """`upload_results` as a callable controls which runs are persisted, but
+    """`upload_runs` as a callable controls which runs are persisted, but
     summary evaluators must still see -- and score -- every run/repetition."""
     NUM_EXAMPLES = 3
     NUM_REPETITIONS = 4
@@ -303,7 +303,7 @@ def test_evaluate_upload_results_callable_samples_runs_but_scores_all(
         evaluators=[score],
         summary_evaluators=[summary_eval],
         num_repetitions=NUM_REPETITIONS,
-        upload_results=upload_every_other,
+        upload_runs=upload_every_other,
         disable_evaluator_tracing=disable_evaluator_tracing,
         max_concurrency=0,
     )
@@ -343,7 +343,7 @@ def test_evaluate_upload_results_callable_samples_runs_but_scores_all(
 
 @pytest.mark.parametrize("disable_evaluator_tracing", [True, False])
 @pytest.mark.parametrize("max_concurrency", [2, None])
-def test_evaluate_upload_results_callable_out_of_order(
+def test_evaluate_upload_runs_callable_out_of_order(
     max_concurrency, disable_evaluator_tracing: bool
 ) -> None:
     """Keep upload decisions tied to runs when predictions finish out of order."""
@@ -394,7 +394,7 @@ def test_evaluate_upload_results_callable_out_of_order(
                 data=examples,
                 evaluators=[score],
                 summary_evaluators=[summary_eval],
-                upload_results=upload_every_other,
+                upload_runs=upload_every_other,
                 disable_evaluator_tracing=disable_evaluator_tracing,
                 max_concurrency=max_concurrency,
             )
@@ -446,17 +446,43 @@ def test_evaluate_upload_results_callable_out_of_order(
         ),
     ],
 )
-def test_evaluate_rejects_callable_upload_results_for_experiment_targets(
+@pytest.mark.parametrize("upload_parameter", ["upload_runs", "upload_results"])
+def test_evaluate_rejects_callable_upload_runs_for_experiment_targets(
     target: Any,
+    upload_parameter: str,
 ) -> None:
     """A per-run callable only makes sense when new runs are being created.
 
     Re-evaluating an existing experiment, or comparing two existing
-    experiments, doesn't create any new runs, so a callable `upload_results`
+    experiments, doesn't create any new runs, so a callable `upload_runs`
     must be rejected rather than silently ignored.
     """
-    with pytest.raises(ValueError, match="upload_results"):
-        evaluate(target, upload_results=lambda example: True)
+    with pytest.raises(ValueError, match="upload_runs"):
+        evaluate(target, **{upload_parameter: lambda example: True})
+
+
+@pytest.mark.parametrize("upload_runs", [True, False, lambda example: True])
+def test_evaluate_rejects_both_upload_names(upload_runs) -> None:
+    with pytest.raises(ValueError, match="only one of upload_runs and upload_results"):
+        evaluate(lambda inputs: inputs, upload_runs=upload_runs, upload_results=True)
+
+
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        ({}, True),
+        ({"upload_runs": None}, True),
+        ({"upload_runs": True}, True),
+        ({"upload_runs": False}, False),
+        ({"upload_results": False}, False),
+    ],
+)
+def test_evaluate_upload_runs_default_and_alias(options, expected) -> None:
+    assert inspect.signature(evaluate).parameters["upload_runs"].default is None
+    example, _ = _create_example(0)
+    with mock.patch("langsmith.evaluation._runner._evaluate") as run_evaluate:
+        evaluate(lambda inputs: inputs, data=[example], **options)
+    assert run_evaluate.call_args.kwargs["upload_runs"] is expected
 
 
 def _evaluator_run_ids(fake_request: FakeRequest) -> set:
