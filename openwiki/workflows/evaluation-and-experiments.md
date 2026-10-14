@@ -1,11 +1,11 @@
 ---
 type: workflow guide
 title: Evaluation and Experiment Workflows
-description: How LangSmith SDK evaluation turns datasets or existing experiments into prediction runs, row and summary feedback, comparative scores, and streamed or uploaded results.
+description: How LangSmith SDK evaluation resolves datasets and experiments, schedules predictions and scoring, aligns results, records feedback, and finalizes evaluation projects.
 tags: [evaluation, experiments, datasets, evaluators, feedback, concurrency]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-12T08:42:50.524Z
 sources:
   - id: openwiki-source-6b53dee6ef8edda8f32f4408
     resource: repo://js/src/evaluation/_runner.ts
@@ -27,22 +27,22 @@ sources:
     resource: repo://python/tests/evaluation/test_evaluation.py
   - id: openwiki-source-900167ca06ecc631da50ca86
     resource: repo://python/tests/unit_tests/evaluation/test_runner.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-12T08:42:50.524Z" }
 ---
 
 # Evaluation and Experiment Workflows
 
-Evaluation is an orchestration layer around traces. It resolves examples, creates or reuses an experiment (a tracing project), runs a target when necessary, associates each root run with its reference example, executes evaluators, and records their outputs as feedback. Python exposes synchronous `evaluate`, asynchronous `aevaluate`, and explicit existing-experiment helpers; JavaScript exports `evaluate`, which dispatches callable targets and arrays of experiments, plus the deprecated direct `evaluateComparative` entrypoint.
+Evaluation is orchestration around traces. It resolves examples, creates or reuses an experiment (a tracing project), runs a target when needed, keeps each root run paired with its reference example, invokes evaluators, and records normalized evaluator output as feedback. Python exposes synchronous `evaluate`, asynchronous `aevaluate`, and explicit existing-experiment helpers. JavaScript exports `evaluate` for callable targets and comparative experiment arrays; direct `evaluateComparative` remains available but is deprecated.
 
-The important distinction is what creates the runs:
+## Choose the path by who owns the runs
 
-| Path | Input | Prediction phase | Result destination |
+| Path | Input | Prediction phase | Destination |
 | --- | --- | --- | --- |
-| New target | Callable or LangChain `Runnable`, plus dataset data | Runs the target once per expanded example and traces each call into a newly created experiment, or into the advanced `experiment` supplied in Python | Per-run feedback is attached to target runs; summary feedback is attached to the experiment |
-| Existing experiment | One experiment name, ID, or `TracerSession` (public in Python) | None; loads existing root runs by default, reconstructs their examples at the experiment's recorded dataset version, then scores them | Adds feedback to the existing experiment and runs |
-| Comparative | Two existing experiments in Python, or at least two experiment names/results in JavaScript | None; loads runs from each experiment, intersects them by `reference_example_id`, and compares corresponding outputs | Creates a comparative experiment and feedback linked to it |
+| New target | Callable or LangChain `Runnable`, plus dataset data | Invokes the target for every expanded example and traces each call into a newly created experiment, or the advanced `experiment` supplied in Python | Row feedback targets prediction runs; summary feedback targets the experiment |
+| Existing experiment | One experiment name, ID, or `TracerSession` in Python | No prediction; loads the experiment's runs and reconstructs their examples at the recorded dataset version | Adds row and summary feedback to the existing runs and experiment |
+| Comparative | Two existing experiments through Python `evaluate`, or at least two experiment names/results in JavaScript | No prediction; loads each experiment and compares runs sharing a `reference_example_id` | Creates a comparative experiment and per-run preference feedback linked to it |
 
-An “existing experiment” is therefore not another dataset selector: its recorded runs and `reference_dataset_id` define what is evaluated. `load_nested` / `loadNested` controls whether child traces are reconstructed under roots for evaluator inspection; scoring is still grouped by reference example.
+An existing experiment is not another dataset selector. Its runs and `reference_dataset_id` determine the evaluation population. `load_nested` / `loadNested` controls whether child traces are reconstructed beneath roots for evaluator inspection; roots remain the scoring units.
 
 ```mermaid
 sequenceDiagram
@@ -54,26 +54,26 @@ sequenceDiagram
     participant SummaryEval as Summary Evaluators
 
     Caller->>Runner: evaluate target and options
-    Runner->>Client: resolve dataset examples or experiment runs
+    Runner->>Client: resolve examples or experiment runs
     alt new target
         Runner->>Client: create experiment
         loop each expanded example
             Runner->>Target: invoke example inputs
             Target-->>Runner: traced prediction run
             Runner->>RowEval: score run and example
-            RowEval-->>Runner: evaluation results
-            Runner->>Client: create per-run feedback
-            Runner-->>Caller: result row when streaming is enabled
+            RowEval-->>Runner: normalized results
+            Runner->>Client: create run feedback
+            Runner-->>Caller: publish row when Python streams
         end
     else existing experiment
         Runner->>Client: load runs and versioned examples
-        loop each run and example
+        loop each aligned run and example
             Runner->>RowEval: score existing run
-            RowEval-->>Runner: evaluation results
-            Runner->>Client: create per-run feedback
+            RowEval-->>Runner: normalized results
+            Runner->>Client: create run feedback
         end
     else comparative experiments
-        Runner->>Client: load projects and intersect example IDs
+        Runner->>Client: load projects and common example IDs
         loop each common example and comparator
             Runner->>RowEval: compare corresponding runs
             RowEval-->>Runner: scores keyed by run ID
@@ -81,80 +81,103 @@ sequenceDiagram
         end
     end
     opt summary evaluators
-        Runner->>SummaryEval: score all runs and examples
+        Runner->>SummaryEval: score aligned runs and examples
         SummaryEval-->>Runner: aggregate results
         Runner->>Client: create experiment feedback
     end
     Runner->>Client: finalize metadata and flush traces
-    Runner-->>Caller: rows and summary results
+    Runner-->>Caller: completed results
 ```
 
-*Caption: The three evaluation paths share feedback normalization, but only a new-target evaluation invokes predictions and only a comparative evaluation creates run-to-run scores.*
+*Caption: New-target, existing-experiment, and comparative evaluation differ in run selection, while sharing example alignment and normalized feedback handling.*
 
-## Data and experiment lifecycle
+## New-target lifecycle
 
-For a new target, `data` may be a dataset name, dataset UUID, an iterable/list of `Example` values, or the corresponding async form. The client fetches attachments only when the target or evaluators declare that they consume them. The manager materializes or tees the example stream as needed, and `num_repetitions` expands it in repetition-major order: every source example appears once per pass. The experiment records the source example count, repetition count, and best-effort evaluator keys for progress reporting.
+`data` can resolve from a dataset name, dataset UUID, a Python `Dataset`, or supplied synchronous/asynchronous examples as supported by the entrypoint. Attachments are fetched only when the target or evaluators declare an attachments parameter. When the same attachment can be consumed repeatedly, Python preserves its bytes and recreates readers. `num_repetitions` expands examples in repetition-major order: one full pass over the source examples for each repetition.
 
-Starting the manager requires at least one example. It chooses a generated name or appends a random suffix to `experiment_prefix`, creates a project tied to the first example's dataset, and retries naming conflicts up to ten times. User metadata is augmented with revision and Git information. At prediction completion, the runner updates experiment metadata with the newest example modification time as `dataset_version` and the encountered dataset splits. This version is later used to reload the same reference state when an existing or comparative experiment is evaluated.
+Starting a manager requires a first example. The runner generates a name or adds a random suffix to `experiment_prefix`, creates a project tied to that example's dataset, and retries naming conflicts up to ten times. It includes source example count, repetition count, best-effort evaluator keys, revision metadata, and Git metadata when available. When prediction finishes, the manager updates the project with the newest example modification time as `dataset_version` and the observed dataset splits. Existing and comparative evaluation later use that version to recover the same reference state.
 
-<!-- openwiki: broken internal link [/openwiki/concepts/run-tree-and-context] file "/openwiki/concepts/run-tree-and-context" does not exist. Fix the href or restore the target, then delete this comment. -->
-<!-- openwiki: broken internal link [/openwiki/concepts/platform-client] file "/openwiki/concepts/platform-client" does not exist. Fix the href or restore the target, then delete this comment. -->
-Each prediction is wrapped as a traceable call under the experiment project. The wrapper passes example inputs, optionally attachments, and tags the root run with `reference_example_id` and `example_version`. This is the join key that lets later workflows recover the correct example. For the relationship between that wrapper and tracing context, see [Run Tree and Context](/openwiki/concepts/run-tree-and-context); client project, run, and feedback operations are covered by [Platform Client](/openwiki/concepts/platform-client).
+Each prediction is wrapped as a traceable call under the experiment project. The wrapper passes example inputs and optional attachments, and associates the root run with `reference_example_id` plus `example_version`. That reference ID is the durable join between traces and examples. See [Run Tree and Context](/openwiki/concepts/run-tree-and-context.md) for trace construction and [Platform Client](/openwiki/concepts/platform-client.md) for project, run, dataset, and feedback operations.
 
-Python supports `upload_results=False` for a new-target run. In that mode it does not create or update a remote experiment and skips row and summary feedback uploads while still returning rows and scores; the synchronous runner explicitly uses local tracing context. It is deliberately invalid for existing and comparative targets, whose identity and destination are remote experiments. JavaScript's evaluation runner always uses the client-backed experiment and feedback path.
+Evaluation deliberately owns these trace destinations. Target runs explicitly name the experiment project, while evaluator runs explicitly name `evaluators`; in Python the evaluator context also clears an ambient structured `address` when changing the project. This prevents a surrounding agent or tracing context from redirecting evaluation traces away from the experiment that will own their feedback. This is a workflow-specific override, not a replacement for the general [Trace Destinations and Addressing](/openwiki/concepts/trace-destinations-and-addressing.md) precedence rules.
 
-## Prediction and evaluation scheduling
+Python supports `upload_results=False` only for a new target. It skips explicit remote experiment creation and all row and summary feedback uploads but still returns local rows and scores. The synchronous target path also selects local tracing, and evaluator tracing uses local mode unless disabled. Existing and comparative paths reject this option because their identity and destination are remote experiments. JavaScript evaluation always follows the client-backed experiment and feedback path.
 
-`num_repetitions` controls work quantity, while concurrency controls how much of that work may be active:
+## Scheduling, concurrency, and ordering
 
-- In both SDKs, zero means sequential execution. Python uses `None` for no explicit limit; JavaScript queue limits use positive numbers.
-- Python's synchronous runner uses a context-propagating thread pool. Its async runner pipelines prediction and all row evaluators for one example as a task, so `max_concurrency` bounds the number of whole per-example pipelines active at once.
-- JavaScript permits `targetConcurrency` and `evaluationConcurrency`. If both are explicitly supplied, prediction and evaluation use separate queues. Otherwise a positive `maxConcurrency` creates one shared queue, bounding the combined pipeline; each more-specific value falls back to `maxConcurrency` and then zero.
-- Concurrent workers emit internally as they complete rather than in dataset order. JavaScript retains each example index and restores dataset order before publishing final rows and before invoking summary evaluators. Python's streaming iterators expose completion order.
+Work quantity and active work are separate concerns:
 
-Prediction and row evaluation are intentionally interleaved. A fast prediction can be evaluated while a slower example is still in flight; the runner does not require all predictions to finish before row scoring begins. Within one row, evaluators are invoked in the configured sequence.
+- `num_repetitions` controls how many prediction rows are created. Concurrency controls only how those rows progress.
+- In both SDKs, a concurrency value of zero means sequential execution. Python uses `None` for no explicit caller-supplied limit. JavaScript creates a shared queue only for a positive `maxConcurrency`; a stage without a supplied queue creates its own one-at-a-time queue when its resolved limit is zero.
+- Python synchronous evaluation uses separate context-propagating thread pools for prediction and row scoring. Both receive the same `max_concurrency`, but they are independent pools; the lazy generators let completed predictions enter scoring while other predictions remain active.
+- For a Python async callable with row evaluators, one task performs prediction and then all evaluators for an example. `max_concurrency` therefore caps whole per-example pipelines. Rescoring already-existing runs uses only the evaluator scheduler.
+- JavaScript uses independent target and evaluator queues only when both `targetConcurrency` and `evaluationConcurrency` are explicitly supplied. Otherwise a positive `maxConcurrency` creates one shared queue for prediction and evaluation. If no shared queue is created, each stage constructs its own queue from its resolved stage limit.
+- Evaluators for one row run in configured order. Concurrency is across rows, not across the evaluators attached to the same row.
 
-## Evaluator contracts and feedback
+Prediction and row evaluation are intentionally interleaved. Completion-order schedulers emit a fast prediction for evaluation without waiting for a slower prediction. Python preserves that completion order in its result stream; runs and examples stay aligned because each pipeline carries the pair together. Python summary evaluators consume the same aligned completion-order collections.
 
-A row evaluator receives the prediction `Run` and reference `Example`. Function adapters additionally support object/unpacked views such as `inputs`, `outputs`, `reference_outputs` / `referenceOutputs`, and attachments. A result names a feedback `key` and may contain a numeric/boolean `score`, categorical or structured `value`, `comment`, correction, feedback configuration, and source/target run IDs. An evaluator may return one result, a list, or an `EvaluationResults` batch; dynamic evaluator adapters normalize these forms and trace the evaluator itself in the `evaluators` project. The evaluator trace ID becomes `source_run_id`, linking feedback to the computation that produced it.
+JavaScript also processes internal rows in completion order, but every row retains its original `exampleIndex`. `ExperimentResults.processData` drains all rows, sorts rows and the corresponding run array by that index, and only then invokes summary evaluators. Consequently returned JavaScript rows and summary arrays follow expanded dataset order even though prediction and scoring did not.
 
-`RunEvaluator` is the principal extension boundary. Plain functions are wrapped into it, while custom classes can implement `evaluate_run` / `aevaluate_run` (Python) or `evaluateRun` (JavaScript). Python's `LLMEvaluator` is also a `RunEvaluator` and maps run/example values into a structured-output judge, but it is deprecated in favor of `openevals`.
+## Evaluator contracts and feedback normalization
 
-Row feedback targets a run and is also associated with the experiment. Summary evaluators run only after all rows are available. They receive the complete aligned runs/examples collections, or object-style arrays of inputs, outputs, and reference outputs. Their normalized feedback uses `run_id=None` / `null` and the project ID, making it experiment-level rather than run-level. Failure of one row or summary evaluator is logged and does not stop later evaluators. Python additionally synthesizes error feedback—with `extra.error` and the exception in `comment`—when the evaluator's feedback keys can be inferred; JavaScript logs the evaluator failure and leaves that evaluator's row result absent.
+A row evaluator receives a prediction `Run` and reference `Example`. Function adapters also support object or unpacked views such as `inputs`, `outputs`, `reference_outputs` / `referenceOutputs`, and attachments. A result identifies a feedback `key` and can carry a numeric or boolean `score`, categorical or structured `value`, `comment`, correction, feedback configuration, and source or target run IDs. Evaluators may return one result, a list, or an `EvaluationResults` batch; adapters normalize these forms.
 
-## Existing and comparative selection
+`RunEvaluator` is the main row-level extension boundary. Plain functions are wrapped into it; custom implementations provide `evaluate_run` / `aevaluate_run` in Python or `evaluateRun` in JavaScript. Evaluator invocations are normally traced in the `evaluators` project, and that evaluator trace ID becomes `source_run_id` / `sourceRunId`, linking feedback to the computation that produced it. When evaluator tracing is disabled, upload payloads omit that source link rather than pointing to a nonexistent evaluator run.
 
-Python's `evaluate(existing_experiment, ...)` delegates to `evaluate_existing`; `aevaluate` similarly delegates to `aevaluate_existing`. The helper loads root runs unless `load_nested=True`, loads examples from the project's reference dataset at its stored `dataset_version`, aligns each run through `reference_example_id`, and applies ordinary row and summary evaluators. No new predictions or repetitions occur.
+Row feedback targets the scored run and is associated with the owning experiment. Summary evaluators do not run until all row results have been collected into aligned run/example arrays. They receive those arrays directly or normalized arrays of inputs, outputs, and reference outputs. Summary feedback strips any target run ID and is uploaded with `run_id=None` / `null` plus the project ID, so it belongs to the experiment rather than one trace.
 
-Comparative evaluation has stricter invariants. The experiments must use the same reference dataset, there must be at least two experiments and at least one comparator, and only example IDs present in every experiment are considered. JavaScript also rejects an empty intersection and warns when stored dataset versions differ. For every common example, a comparative evaluator receives the corresponding runs (optionally shuffled to reduce positional bias) and returns one key plus a score map keyed by run ID. JavaScript validates that every returned ID belongs to the supplied run set. Scores are uploaded once per run with the comparative experiment ID and evaluator source trace.
+Ordinary row and summary evaluator exceptions are isolated per evaluator: they are logged and later evaluators continue. JavaScript leaves the failed evaluator's result absent. Python attempts to infer the evaluator's feedback keys; when successful, it adds and, when enabled, uploads error results whose `comment` contains the exception and whose `extra.error` is true. If key inference also fails, Python logs without adding a result.
 
-The comparative call creates a separate comparative-experiment record containing the source experiment IDs, metadata, and reference dataset, and returns both that record and a comparison URL when one can be built. This is not a summary evaluator: it produces per-example, per-run preference feedback.
+Feedback completion differs by path. JavaScript awaits row and summary feedback calls in the processing flow, then waits for pending trace batches before `evaluate` resolves. Python synchronous row and summary uploads are submitted to executors whose context managers wait for scheduled work; async summary uploads are awaited, while async row uploads use a dedicated feedback executor. Comparative JavaScript awaits evaluator and feedback promises as one aggregate operation. Comparative Python schedules feedback on its executor and waits for executor shutdown before returning.
+
+## Existing experiments and comparative alignment
+
+Python `evaluate(existing_experiment, ...)` delegates to `evaluate_existing`; `aevaluate` delegates to `aevaluate_existing`. The helper loads root runs by default. With `load_nested=True`, it loads all runs, attaches children sorted by `dotted_order`, and still returns roots. It reloads examples from the project's reference dataset with `as_of=project.metadata["dataset_version"]`, then maps each run through `reference_example_id`. There are no new predictions or repetitions.
+
+Comparative evaluation applies stricter invariants:
+
+1. At least two experiments and one comparator are required by the direct comparative runners. Python's top-level tuple form is exactly two; JavaScript accepts two or more.
+2. Every experiment must reference the same dataset. JavaScript also requires a nonempty common-example intersection and warns when project dataset versions differ.
+3. Only example IDs represented in every experiment are compared. Examples are fetched in batches at the first project's stored dataset version.
+4. A comparator receives the corresponding runs and example. Optional randomization reduces positional bias, but returned scores remain keyed by run ID.
+5. JavaScript rejects score IDs outside the supplied run set. Each accepted score becomes feedback on that run with the comparative experiment ID and evaluator source trace.
+
+The call creates a separate comparative-experiment record containing source experiment IDs, metadata, and the reference dataset, and returns that record plus a comparison URL when one can be constructed. Comparative feedback is per example and per run; it is not summary feedback.
 
 ### Invalid combinations
 
-Validate the path before starting expensive work:
+Validate the selected path before expensive work begins:
 
-- A new callable requires `data`. Python rejects unsupported extra keyword arguments, async callables passed to synchronous `evaluate`, and specifying both `experiment` and `experiment_prefix`.
-- For a single existing experiment, Python rejects `data`, `num_repetitions > 1`, `experiment`, `experiment_prefix`, and `upload_results=False`.
-- For a comparative tuple, Python requires exactly two experiment identifiers and rejects `data`, repetitions, `experiment`, `summary_evaluators`, and `upload_results=False`. Asynchronous comparative evaluation is not supported by `aevaluate`; use synchronous `evaluate` and synchronous comparators.
-- Direct comparative runners reject too few experiments, no evaluators, negative concurrency, different reference datasets, and (in JavaScript) no common examples. JavaScript's top-level `evaluate` requires evaluators whenever its target is an experiment array.
+- A new callable requires `data`. Python rejects unsupported extra keyword arguments, asynchronous callables passed to synchronous `evaluate`, and simultaneous `experiment` and `experiment_prefix`.
+- A single existing experiment rejects `data`, `num_repetitions > 1`, `experiment`, `experiment_prefix`, and `upload_results=False`.
+- A Python comparative tuple requires exactly two experiment identifiers and rejects `data`, repetitions, `experiment`, `summary_evaluators`, `disable_evaluator_tracing`, and `upload_results=False`. `aevaluate` does not support comparative targets; use synchronous `evaluate` with synchronous comparators.
+- Direct comparative runners reject too few experiments, no evaluators, negative concurrency, and different reference datasets. JavaScript additionally rejects no common examples, and its top-level comparative dispatch requires evaluators.
 
-These are configuration errors and fail the whole call. Comparative evaluator failures also fail the aggregate comparison (`Promise.all` in JavaScript and future result propagation in Python), unlike ordinary row evaluator failures.
+These validation failures abort the call. Comparative comparator failures are also aggregate failures: JavaScript's `Promise.all` rejects, and Python calls `future.result()` after waiting. This differs from ordinary row evaluator isolation.
 
-## Per-item target errors and result consumption
+## Target failures, result consumption, and finalization
 
-Target exceptions are caught and logged so other examples can continue. In Python, `error_handling="log"` assigns the example ID before invocation, so a failed traced run remains counted in the experiment; `"ignore"` assigns it only on success, so failed runs are not counted as experiment examples. An unrecognized mode is rejected. JavaScript likewise logs a target exception, but then requires the tracing wrapper to have created a run; absent tracing produces a hard “Run not created” error. Project finalization is attempted even when JavaScript prediction processing fails.
+Target exceptions are caught and logged so other examples can continue. In Python, `error_handling="log"` sets `reference_example_id` before invocation, so a failed traced run remains associated with the example; `"ignore"` sets it only after success. Any other mode is rejected. JavaScript also logs target exceptions but then requires the tracing wrapper to have produced a run; if no run exists it raises “Run not created.” Its prediction generator attempts project metadata finalization in `finally`; when prediction and finalization both fail, the prediction error remains primary and the finalization error is logged.
 
-Python's `blocking=True` consumes all rows before `evaluate` returns. With `blocking=False`, `ExperimentResults` processes in a background thread and its iterator yields queued rows as they arrive; `wait()` joins and rethrows processing errors. `AsyncExperimentResults` always owns a processing task, supports `async for`, and `await results.wait()` waits for completion. Summary results become available after row consumption.
+Python synchronous `blocking=True` consumes rows and summaries before returning. With `blocking=False`, a background thread appends rows and wakes iterators as rows arrive. Iteration and `wait()` rethrow stored processing failures. The async result always owns a processing task; `async for` receives rows as the task appends them, and `await results.wait()` propagates task failure. Summary results appear only after all rows are consumed.
 
-JavaScript currently resolves the `evaluate` promise only after `processData` has consumed all rows, restored their input order, computed summaries, and awaited pending trace batches. Its returned `ExperimentResults` implements `AsyncIterable`, but iteration reads the already collected rows rather than providing caller-visible live streaming. Comparative JavaScript similarly waits for all evaluator/feedback promises and pending trace batches.
+JavaScript does not provide caller-visible live streaming even though the returned object implements `AsyncIterable`. `evaluate` awaits `processData`, which collects and reorders every row, computes summaries, and then awaits pending trace batches. Iteration afterward reads the completed in-memory result array. Processing, feedback, and flush failures therefore reject the original `evaluate` promise.
 
-## Focused verification
+Project finalization records dataset version and splits after prediction consumption, not after a later rescore of an existing experiment. Python skips finalization when uploads are disabled. JavaScript always attempts it for its new-target prediction path.
 
-The tests that protect this workflow emphasize behavior rather than just return types:
+## Focused verification and safe-change checklist
 
-- Python runner tests cover synchronous and asynchronous targets, local versus uploaded execution, blocking versus streaming consumption, repetitions, evaluator result normalization, interleaving, summary scores, and rescoring an uploaded experiment.
-- Python argument tests pin the invalid combinations for existing and comparative targets, while integration tests verify that evaluator exceptions become keyed error feedback without dropping result rows.
-- JavaScript runner tests measure independent target/evaluator concurrency and prove that fast rows are scored before a slow prediction completes. Integration tests verify summary evaluator signatures and that concurrent completion is reordered before summaries and returned rows.
+The focused tests protect observable workflow behavior:
 
-When changing the manager pipeline, preserve the three central invariants: each row keeps the correct run/example pairing, summary collections remain aligned, and feedback is attached to the intended run or experiment even when work completes out of order.
+- Python runner tests exercise sync and async targets, uploaded versus local execution, blocking versus streaming consumption, repetitions, evaluator normalization, prediction/scoring interleaving, summaries, and rescoring an uploaded experiment.
+- Python argument tests pin invalid existing and comparative combinations. Integration tests verify that inferable evaluator failures become keyed error feedback without dropping result rows.
+- JavaScript runner tests prove completion-order mapping, independent target/evaluator limits, early scoring of fast predictions, stable final reordering, and sequential zero concurrency. Integration tests verify that rows, evaluations, and summary inputs all return to dataset order.
+
+When changing this pipeline, preserve these invariants:
+
+- every row carries the correct run/example pair even when completion order changes;
+- summary runs and examples have identical ordering;
+- JavaScript performs its final index reorder before summaries;
+- experiment-owned target and evaluator destinations cannot leak to an ambient trace address;
+- feedback targets the intended run, project, or comparative experiment;
+- ordinary evaluator failures remain isolated while configuration, processing, and comparator failures remain observable to the caller.

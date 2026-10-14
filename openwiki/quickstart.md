@@ -1,12 +1,14 @@
 ---
 type: repository quickstart
 title: LangSmith SDK Repository Quickstart
-description: Task-oriented map for the Python and JavaScript/TypeScript SDKs implemented in this repository, with external pointers to the supported Java and Go SDKs. Routes agents to architecture, tracing, platform concepts, workflows, tests, integrations, and operations.
-tags: [quickstart, sdk, python, javascript, typescript, java, go, tracing, evaluation, development]
+description: Concise task-oriented entrypoint for engineers changing the Python and JavaScript/TypeScript LangSmith SDK implementations. Routes work to the relevant architecture, concepts, workflows, integrations, testing, and operations guidance.
+tags: [quickstart, sdk, python, javascript, typescript, tracing, evaluation, development]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-16T06:53:56.756Z
+    at: 2026-10-12T08:42:50.524Z
 sources:
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-b2d60e3aedc0d5c768840e9a
     resource: repo://.github/workflows/protect-openapi-client.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
@@ -33,87 +35,78 @@ sources:
     resource: repo://python/README.md
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.2", at: "2026-09-16T06:53:56.756Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-12T08:42:50.524Z" }
 ---
 
 # LangSmith SDK Repository Quickstart
 
-This repository owns two independently implemented `langsmith` packages for the same LangSmith observability and evaluation platform: Python under `python/` and JavaScript/TypeScript under `js/`. They cover parallel product concepts, but they are not bindings over shared runtime code and do not guarantee identical API shape. Before making a “cross-SDK” change, verify the behavior, naming, lifecycle, and tests in both languages.
+This source tree contains two independent `langsmith` implementations for the same observability and evaluation platform: Python under `python/` and JavaScript/TypeScript under `js/`. They share product concepts, not runtime code or an identical API shape. Java and Go SDKs live in their separate repositories.
 
-> **Supported SDK ecosystem**
->
-> - **Python:** implemented here in [`python/`](../python/).
-> - **JavaScript/TypeScript:** implemented here in [`js/`](../js/).
-> - **Java:** maintained externally at [langchain-ai/langsmith-java](https://github.com/langchain-ai/langsmith-java); Java source is not in this repository.
-> - **Go:** maintained externally at [langchain-ai/langsmith-go](https://github.com/langchain-ai/langsmith-go); Go source is not in this repository.
->
-> Scope changes, implementation work, and local validation accordingly: this repository owns only the Python and JavaScript/TypeScript implementations.
+> **Check the contribution destination before editing.** The presence of both implementations here does not mean this repository is the right destination for new work. Read the current root `CONTRIBUTING.md` and `.github/workflows/ci.yml`: split-repository migration is in progress, the freeze guard can reject changes to moved language folders, and merges from this repository are mirrored to staging repositories with package manifests and lockfiles excluded. At this snapshot `js/` is frozen, but the configured folders and routing can change. Internal and external contributors are directed differently by the guard, so verify current routing, freeze labels, and mirroring exceptions rather than relying on this page.
 
-> **Authority rule:** source code and tests are authoritative. The generated OpenWiki pages linked below are optional, just-in-time context—not required startup reading and not a substitute for checking the current implementation and focused tests.
+> **Authority rule:** current source and focused tests are authoritative. These pages are just-in-time orientation, not a substitute for following the implementation and its tests.
 
-## Start with the contract you are changing
+## Route the task
 
-Choose the user-visible task first, then select the language implementation. Do not begin by mechanically mirroring a file from the other SDK: Python has distinct synchronous and asynchronous clients, while JavaScript uses promise-based methods on one principal `Client`; runtime types, packaging, and integration support also differ.
+Choose the user-visible contract first, then the implementation and repository. Do not mechanically mirror the other language: Python deliberately has distinct synchronous and asynchronous surfaces (`Client`, `AsyncClient`, `evaluate`/`aevaluate`, sync/async caches), while JavaScript exposes promise-based APIs through one principal `Client`.
 
-| If the task is… | Start here | Then read |
+| If the task is… | Begin at | Detailed page |
 |---|---|---|
-| Understand SDK layers, public imports, sync/async differences, or parity | Python `langsmith/__init__.py`; TypeScript package root and subpath exports | [Dual-SDK Architecture and Public Surfaces](/openwiki/architecture/sdk-architecture.md) |
-| Change endpoint, API key, workspace, profile, headers, retries, or browser behavior | The relevant handwritten client constructor and configuration helpers | [Client Configuration, Endpoints, and Authentication](/openwiki/concepts/client-configuration-and-auth.md) |
-| Add or change runs, projects, datasets, examples, feedback, prompts, queues, threads, or sharing | The public handwritten client and its generated-resource bridge | [LangSmith Platform Client Domains](/openwiki/concepts/platform-client.md) |
-| Change run identity, parent/child nesting, propagation, streaming completion, tags, or metadata | `RunTree` and tracing-context helpers | [Run Trees, Trace Identity, and Context Propagation](/openwiki/concepts/run-tree-and-context.md) |
-| Change sampling, privacy transforms, batching, compression, replicas, retries, flush, or dropped traces | Follow capture through `RunTree` into the client ingestion path | [Trace Capture, Transformation, and Ingestion](/openwiki/workflows/trace-capture-and-ingestion.md) |
-| Investigate ingestion-path timing, HTTP-call count, wire size, or application-thread occupancy | Compare the trace lab's durable direct, batched, multipart, compressed, OTEL, and hybrid capture | [Measured Trace Ingestion Paths](/openwiki/workflows/trace-ingestion-measured.md) |
-| Change dataset evaluation, experiment execution, concurrency, repetitions, or evaluators | The language's evaluation entrypoint and runner | [Evaluation and Experiment Workflows](/openwiki/workflows/evaluation-and-experiments.md) |
-| Change pytest, Jest, or Vitest tracking and assertions | The test-framework adapter plus reporter/plugin lifecycle | [LangSmith Test Tracking and Evaluation Assertions](/openwiki/testing/test-tracking-and-assertions.md) |
-| Add or repair a model, agent, realtime, LangChain, or OpenTelemetry integration | The matching wrapper/integration, its provider normalization, and focused tests | [Provider Wrappers, Agent Integrations, and OpenTelemetry](/openwiki/integrations/provider-wrappers-and-opentelemetry.md) |
-| Change sandbox creation, files, commands, tunnels, mounts, auth proxies, reconnect, or cleanup | The public sandbox client/handle and transport boundary | [Sandbox Lifecycle, Files, Tunnels, and Command Execution](/openwiki/workflows/sandbox-lifecycle-and-execution.md) |
-| Choose tests or diagnose CI/export compatibility | Start with the narrowest test that proves the changed contract | [Repository Test Strategy and Safe Validation](/openwiki/testing/repository-test-strategy.md) |
-| Build, add a package entrypoint, update generated APIs, or release | Follow repository-owned scripts and protected workflows | [Development, Generated Code, Builds, and Releases](/openwiki/operations/development-and-release.md) |
+| Understand layers, handwritten/generated boundaries, imports, packaging, or cross-SDK parity | The language package root and owning implementation | [Dual-SDK Architecture and Public Surfaces](/openwiki/architecture/sdk-architecture.md) |
+| Change endpoints, profiles, API keys/OAuth, workspace headers, retries, timeouts, or runtime constraints | The handwritten client constructor and configuration helpers | [Client Configuration, Endpoints, and Authentication](/openwiki/concepts/client-configuration-and-auth.md) |
+| Change runs, projects, datasets, examples, feedback, prompts, annotation queues, threads, sharing, or pagination | The public client method or generated-resource accessor | [LangSmith Platform Client Domains](/openwiki/concepts/platform-client.md) |
+| Change run identity, nesting, propagation, ordering, streaming completion, attachments, or replica IDs | `RunTree` and tracing-context helpers | [Run Trees, Trace Identity, and Context Propagation](/openwiki/concepts/run-tree-and-context.md) |
+| Send a trace to a project or `AgentAddress`, resolve a feature address, or change destination precedence/inheritance | Address and destination types plus their `RunTree`/client integration | [Trace Destinations and Feature Addresses](/openwiki/concepts/trace-destinations-and-addressing.md) |
+| Change capture, sampling, privacy transforms, batching, compression, replicas, retries, flush, shutdown, or failed traces | Follow `RunTree` into the client ingestion path | [Trace Capture, Transformation, and Ingestion](/openwiki/workflows/trace-capture-and-ingestion.md) |
+| Interpret committed ingestion timing, call-count, wire-size, or application-thread measurements | The trace-lab scenarios and their captured conditions | [Measured Trace Ingestion Paths](/openwiki/workflows/trace-ingestion-measured.md) |
+| Change evaluation targets, experiments, comparative evaluation, concurrency, repetitions, or evaluator normalization | The language evaluation entrypoint and runner | [Evaluation and Experiment Workflows](/openwiki/workflows/evaluation-and-experiments.md) |
+| Add or repair a model, agent, realtime, voice, LangChain, or OpenTelemetry integration | The matching wrapper/integration and focused tests | [Provider Wrappers, Agent Integrations, and OpenTelemetry](/openwiki/integrations/provider-wrappers-and-opentelemetry.md) |
+| Change sandbox creation, files, mounts, snapshots, services, commands, tunnels, reconnect, or cleanup | The sandbox client/handle and transport boundary | [Sandbox Lifecycle and Execution Transports](/openwiki/workflows/sandbox-lifecycle-and-execution.md) |
+| Choose validation, debug CI, or test export/runtime compatibility | The narrowest test proving the changed contract | [Repository Test Strategy and Safe Validation](/openwiki/testing/repository-test-strategy.md) |
+| Build, add an entrypoint, update generated APIs, understand mirroring/freeze controls, benchmark, or release | Repository scripts and protected workflows | [Development, Generated Code, Builds, Mirroring, and Releases](/openwiki/operations/development-and-release.md) |
 
-## Public entrypoints and ownership
+## Public entrypoints
 
 ### Python
 
-`python/langsmith/__init__.py` is the curated package facade. It lazily resolves public names through module `__getattr__` and records the supported root surface in `__all__`. Important root-level families include `Client`, `AsyncClient`, `RunTree`, `traceable`, tracing-context helpers, sync/async evaluation functions, testing helpers, prompt caches, and stable SDK exceptions. Follow the lazy import to the owning module before editing behavior.
+`python/langsmith/__init__.py` is a curated lazy facade. Its `__getattr__` resolves public clients, tracing, addresses, evaluation, testing, cache, UUID, secret, and exception APIs on demand, and `__all__` records the supported root-level names. Follow the lazy import to the owning module before changing behavior.
 
-Use `Client` for the mature synchronous and tracing-oriented surface and `AsyncClient` for asynchronous HTTP and lifecycle use. Do not assume they are exact mirrors. Python is packaged with Hatchling, requires Python 3.10 or later, and exposes a pytest plugin through the `langsmith_plugin` entry point.
+Python exposes separate `Client` and `AsyncClient` types and explicit sync/async API pairs. They are not guaranteed to be complete mirrors; inspect the actual owner and tests for the surface being changed. Packaging is configured in `python/pyproject.toml` with Hatchling and Python 3.10+.
 
-### TypeScript / JavaScript
+### JavaScript / TypeScript
 
-`js/src/index.ts` intentionally exposes a compact root including `Client`, selected schema types, `RunTree`, cache and UUID utilities, generated error classes, and version metadata. Tracing, evaluation, wrappers, sandbox, Jest/Vitest support, and experimental OpenTelemetry APIs are primarily public package subpaths such as `langsmith/traceable`, `langsmith/evaluation`, `langsmith/wrappers`, and `langsmith/sandbox`.
+`js/src/index.ts` is the compact package root: it exports the principal `Client`, selected schemas, `RunTree`, feature-address types, utilities, cache APIs, generated error classes, and version metadata. Tracing, evaluation, Jest/Vitest support, wrappers, OpenTelemetry, and sandbox APIs also use public package subpaths.
 
-The subpath registry is `js/scripts/create-entrypoints.js`. It generates ESM, CommonJS, and declaration shims and synchronizes `package.json` `exports` and `files`; do not maintain just one module format by hand. A public-surface change is incomplete until the package builds and the relevant consumer/export check passes.
+`js/scripts/create-entrypoints.js` is the subpath registry and generator. It creates ESM, CommonJS, and declaration shims and synchronizes `package.json` exports/files. Change the registry and rebuild rather than maintaining one module format by hand. JavaScript client operations are promise-based; do not introduce a Python-style second async client merely for naming parity.
 
-## The generated-code boundary
+## Generated OpenAPI boundary
 
-The directories below are generated from the LangSmith OpenAPI contract through Stainless:
+> **DO NOT EDIT GENERATED CLIENTS BY HAND**
+>
+> - `python/langsmith/_openapi_client/`
+> - `js/src/_openapi_client/`
+>
+> Stainless generates both trees from the LangSmith OpenAPI contract. Only the authorized external synchronization workflow may update them, and `protect-openapi-client.yml` blocks ordinary pull requests that touch either tree. Endpoint-schema changes belong in the upstream OpenAPI/Stainless process, not in a local patch that will be overwritten.
 
-- `python/langsmith/_openapi_client/`
-- `js/src/_openapi_client/`
+The handwritten clients are the composition boundary around generated resources. They adapt base URLs, authentication/workspace values, caller and SDK headers, timeouts/transports, and backend-version checks while retaining higher-level compatibility and tracing behavior. When exposing or changing a generated resource, validate both this adapter and the generated call—not just one side.
 
-**Never edit either directory manually.** Authorized generated changes arrive through the external SDK synchronization workflow, and repository CI rejects ordinary pull requests that touch these trees. Put tracing policy, compatibility, configuration adaptation, orchestration, and higher-level behavior in handwritten code outside them. If the endpoint/resource contract itself must change, use the upstream OpenAPI/Stainless process.
-
-The handwritten clients remain the composition boundary: they own established configuration and tracing behavior and expose selected generated resource families. Therefore, when adding a generated resource to a public client, verify the adapter's base URL, API key, workspace headers, timeout, custom transport/header behavior, backend compatibility policy, and public typing—not only the generated method.
-
-Generated build artifacts are a separate concern. In TypeScript, root shims and `dist/` are recreated by build scripts; change the entrypoint registry and rebuild. In Python, lint/type configuration deliberately excludes or suppresses generated-client diagnostics; that is an ownership signal, not permission to patch generated output.
+Generated build output is separate from generated OpenAPI source. TypeScript `dist/` and entrypoint shims are recreated by build scripts; Python tooling suppressing generated-client diagnostics is an ownership signal, not permission to patch generated code.
 
 ## Safe change loop
 
-Work from the SDK directory and first run a focused, offline test for the behavior you changed. Python's Makefile supplies network isolation and its managed `uv` environment:
+Work from the selected SDK directory. Start with the smallest offline test that demonstrates the contract:
 
 ```bash
 cd python
 TEST=tests/unit_tests/test_client.py make tests
 ```
 
-TypeScript's documented focused Jest invocation is:
-
 ```bash
 cd js
 NODE_OPTIONS=--experimental-vm-modules npx jest src/tests/context.test.ts
 ```
 
-Then run the complete baseline for every SDK touched:
+Then run the required baseline for each implementation touched:
 
 ```bash
 # from python/
@@ -129,8 +122,14 @@ pnpm lint
 pnpm test
 ```
 
-Escalate only when the changed boundary requires it: use credentialed integration tests for deployed API/provider behavior, `make test-wheel-imports` for Python packaging/runtime dependencies, and `pnpm build` plus the relevant environment/export suite for TypeScript entrypoints, declarations, ESM/CJS, browser, or bundler behavior. Preserve complete failure output and do not weaken network isolation merely to make an offline test pass.
+Escalate according to the boundary: use credentialed integration tests only for deployed API/provider behavior, `make test-wheel-imports` for Python wheel dependencies, and `pnpm build` plus the relevant environment/export tests for TypeScript declarations, ESM/CommonJS, browser, or bundler changes. Preserve complete failure output and do not weaken network isolation to make an offline test pass.
 
-## Release guardrails
+## Before opening or releasing a change
 
-Python and TypeScript versions and publication workflows are independent. The exclusive release procedure is the “Cutting a release” section of `CONTRIBUTING.md`: create separate version-bump PRs against `main`, use `uv run bump2version` for Python or `pnpm run bump-version` for TypeScript, and do not hand-edit version files, publish locally, or push release tags. See [Development, Generated Code, Builds, and Releases](/openwiki/operations/development-and-release.md) before any release-related change.
+1. Recheck contribution routing and the current `FROZEN` value in `.github/workflows/ci.yml`.
+2. Confirm whether manifest or lockfile edits require a manual port because staging mirroring excludes them.
+3. Keep generated OpenAPI directories out of ordinary changes.
+4. Run focused tests, then the touched SDK's required baseline and boundary-specific checks.
+5. For an external contributor PR, follow the maintainer takeover process; do not authorize its workflows directly.
+
+Python and JavaScript releases are independent. The exclusive procedure is **Cutting a release** in `CONTRIBUTING.md`: separate version-bump PRs against `main`, `uv run bump2version` for Python, and `pnpm run bump-version` for JavaScript. Do not hand-edit version files, publish locally, or push release tags. See [Development, Generated Code, Builds, Mirroring, and Releases](/openwiki/operations/development-and-release.md) for the operational details.

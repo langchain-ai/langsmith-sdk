@@ -1,3 +1,3 @@
 # Files
 
-- [Dual-SDK Architecture and Public Surfaces](sdk-architecture.md) - How the Python and TypeScript LangSmith SDKs divide handwritten behavior from generated OpenAPI resources, expose their public APIs, and diverge around asynchronous execution and runtime packaging.
+- [Dual-SDK Architecture and Public Surfaces](sdk-architecture.md) - Explains how the independent Python and JavaScript/TypeScript LangSmith SDKs combine handwritten clients with generated OpenAPI resources, and how their public imports, transports, addressing, packaging, and async models differ.

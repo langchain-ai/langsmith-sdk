@@ -1,3 +1,3 @@
 # Files
 
-- [Development, Generated Code, Builds, and Releases](development-and-release.md) - Contributor workflows for validating, building, and releasing the Python and TypeScript SDKs, including generated-code ownership, version synchronization, CI selection, and publication controls.
+- [Development, Generated Code, Builds, Mirroring, and Releases](development-and-release.md) - Operational guide to contributor routing, generated-code ownership, local builds, CI and freeze controls, split-repository mirroring, Python benchmarks, and independent Python and JavaScript releases.

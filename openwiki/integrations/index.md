@@ -1,3 +1,3 @@
 # Files
 
-- [Provider Wrappers, Agent Integrations, and OpenTelemetry](provider-wrappers-and-opentelemetry.md) - How LangSmith adapts provider SDK calls, agent and realtime lifecycles, and native OpenTelemetry spans into normalized, traceable runs with streaming output and usage metadata.
+- [Provider Wrappers, Agent Integrations, and OpenTelemetry](provider-wrappers-and-opentelemetry.md) - Explains how provider, agent, realtime, voice, and OpenTelemetry integrations preserve third-party lifecycles while producing LangSmith runs or OTLP spans.
