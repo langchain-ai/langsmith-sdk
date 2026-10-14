@@ -530,16 +530,12 @@ describe("sandbox proxy config helpers", () => {
     },
   );
 
-  it("proxyConfig rejects GCP auth without scopes", () => {
-    expect(() =>
-      proxyConfig({
-        rules: [
-          gcpAuth({
-            serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
-          }),
-        ],
-      }),
-    ).toThrow(/scopes/i);
+  it("proxyConfig accepts GCP auth without scopes", () => {
+    const rule = gcpAuth({
+      serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+    });
+    expect(rule.gcp).not.toHaveProperty("scopes");
+    expect(proxyConfig({ rules: [rule] })).toEqual({ rules: [rule] });
   });
 });
 
