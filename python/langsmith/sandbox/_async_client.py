@@ -7,11 +7,16 @@ import os
 import posixpath
 import uuid
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, overload
 
 from langsmith import utils as ls_utils
 from langsmith._openapi_client import AsyncLangsmith
 from langsmith._openapi_client._httpx import httpx
+from langsmith.client import _get_openapi_base_url
+from langsmith.sandbox._access_delegation import (
+    AccessDelegation,
+    _validate_access_delegation,
+)
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 from langsmith.sandbox._client import (
     SandboxClient,
@@ -42,14 +47,19 @@ from langsmith.sandbox._models import (
     DownloadContentDisposition,
     DownloadURL,
     ResourceStatus,
+    RunConfig,
+    ServiceAccess,
+    ServiceLoginURL,
     Snapshot,
     SnapshotTag,
+    _run_config_payload,
 )
 from langsmith.sandbox._mounts import (
     SandboxMountConfig,
     validate_mount_config_proxy_config,
 )
 from langsmith.sandbox._proxy_config import SandboxProxyConfig
+from langsmith.sandbox._tracing import add_sandbox_metadata
 from langsmith.sandbox._transport import AsyncRetryTransport
 
 if TYPE_CHECKING:
@@ -64,7 +74,7 @@ def _get_default_api_endpoint() -> str:
     Derives the endpoint from LANGSMITH_ENDPOINT (or LANGCHAIN_ENDPOINT).
     """
     base = ls_utils.get_env_var("ENDPOINT", default="https://api.smith.langchain.com")
-    return f"{base.rstrip('/')}/v2/sandboxes"
+    return f"{_get_openapi_base_url(base)}/api/v2/sandboxes"
 
 
 def _get_default_api_key() -> Optional[str]:
@@ -119,6 +129,7 @@ class AsyncSandboxClient:
         self._api_key = resolved_api_key
         self._timeout = timeout
         self._max_retries = max_retries
+        self._sandbox_ids: dict[str, str] = {}
         self._default_headers: dict[str, str] = dict(headers) if headers else {}
         client_headers: dict[str, str] = {}
         if resolved_api_key:
@@ -131,11 +142,30 @@ class AsyncSandboxClient:
         )
         self._registries_client: Optional[AsyncLangsmith] = None
 
+    def _trace_sandbox(self, name: str) -> Optional[str]:
+        """Attach metadata when the sandbox ID is already known."""
+        sandbox_id = self._sandbox_ids.get(name)
+        if sandbox_id is None:
+            try:
+                sandbox_id = str(uuid.UUID(name))
+            except ValueError:
+                pass
+        add_sandbox_metadata(sandbox_id)
+        return sandbox_id
+
+    def _forget_sandbox(self, name: str) -> None:
+        sandbox_id = self._sandbox_ids.get(name, name)
+        self._sandbox_ids = {
+            cached_name: cached_id
+            for cached_name, cached_id in self._sandbox_ids.items()
+            if cached_name != name and cached_id != sandbox_id
+        }
+
     def _api_root(self) -> str:
         """Return the API root URL, without the ``/v2/sandboxes`` suffix."""
         suffix = "/v2/sandboxes"
         if self._base_url.endswith(suffix):
-            return self._base_url[: -len(suffix)]
+            return _get_openapi_base_url(self._base_url[: -len(suffix)])
         return self._base_url
 
     @property
@@ -265,6 +295,7 @@ class AsyncSandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a sandbox and return an AsyncSandbox instance.
@@ -311,7 +342,7 @@ class AsyncSandboxClient:
                 conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
-                ``{"rules": [...], "no_proxy": [...], "access_control":
+                ``{"rules": [...], "access_control":
                 {"allow_list": [...]}}`` or ``{"access_control":
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
@@ -343,6 +374,7 @@ class AsyncSandboxClient:
             fs_capacity_bytes=fs_capacity_bytes,
             mount_config=mount_config,
             proxy_config=proxy_config,
+            run_config=run_config,
             headers=headers,
         )
         sb._auto_delete = True
@@ -364,6 +396,8 @@ class AsyncSandboxClient:
         fs_capacity_bytes: Optional[int] = None,
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
+        access_delegation: Optional[AccessDelegation] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Create a new Sandbox.
@@ -404,7 +438,7 @@ class AsyncSandboxClient:
                 conflict with mount auth for the same provider.
             proxy_config: Per-sandbox proxy configuration forwarded to the
                 server as-is. Shape matches the backend `proxy_config` field:
-                ``{"rules": [...], "no_proxy": [...], "access_control":
+                ``{"rules": [...], "access_control":
                 {"allow_list": [...]}}`` or ``{"access_control":
                 {"deny_list": [...]}}``. Use ``access_control.allow_list`` to
                 restrict outbound HTTPS to a set of host patterns (exact
@@ -412,6 +446,14 @@ class AsyncSandboxClient:
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
                 such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
+
+            access_delegation: Optional grant letting code inside the sandbox
+                call the LangSmith API as you, with no API key of its own.
+                ``{"mode": "INHERIT"}`` grants everything you can do;
+                ``{"mode": "EXPLICIT", "permissions": [...]}`` grants only the
+                permissions listed, each of which you must already hold. The
+                grant belongs to the sandbox, so anyone who can exec into it
+                can make calls under it. Omit for no access.
 
         Returns:
             Created AsyncSandbox. When wait_for_ready=False, the sandbox will have
@@ -464,6 +506,12 @@ class AsyncSandboxClient:
             payload["mount_config"] = mount_config
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
+        if access_delegation is not None:
+            payload["access_delegation"] = _validate_access_delegation(
+                access_delegation
+            )
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 
@@ -475,9 +523,13 @@ class AsyncSandboxClient:
                 headers=self._request_headers(headers),
             )
             response.raise_for_status()
-            return AsyncSandbox.from_dict(
+            sandbox = AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
             )
+            if sandbox.id:
+                self._sandbox_ids[sandbox.name] = sandbox.id
+            add_sandbox_metadata(sandbox.id)
+            return sandbox
         except httpx.HTTPStatusError as e:
             handle_sandbox_creation_error(e)
             raise  # pragma: no cover
@@ -499,14 +551,19 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name)
 
         try:
             response = await self._http.get(url, headers=self._request_headers(headers))
             response.raise_for_status()
-            return AsyncSandbox.from_dict(
+            sandbox = AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
             )
+            if sandbox.id:
+                self._sandbox_ids[sandbox.name] = sandbox.id
+            add_sandbox_metadata(sandbox.id)
+            return sandbox
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -550,6 +607,7 @@ class AsyncSandboxClient:
         idle_ttl_seconds: Optional[int] = None,
         delete_after_stop_seconds: Optional[int] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         headers: RequestHeaders = None,
     ) -> AsyncSandbox:
         """Update a sandbox's properties.
@@ -586,6 +644,7 @@ class AsyncSandboxClient:
         validate_ttl(idle_ttl_seconds, "idle_ttl_seconds")
         validate_ttl(delete_after_stop_seconds, "delete_after_stop_seconds")
 
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name)
         payload: dict[str, Any] = {}
         if new_name is not None:
@@ -596,15 +655,22 @@ class AsyncSandboxClient:
             payload["delete_after_stop_seconds"] = delete_after_stop_seconds
         if proxy_config is not None:
             payload["proxy_config"] = proxy_config
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = await self._http.patch(
                 url, json=payload, headers=self._request_headers(headers)
             )
             response.raise_for_status()
-            return AsyncSandbox.from_dict(
+            self._forget_sandbox(name)
+            sandbox = AsyncSandbox.from_dict(
                 response.json(), client=self, auto_delete=False
             )
+            if sandbox.id:
+                self._sandbox_ids[sandbox.name] = sandbox.id
+            add_sandbox_metadata(sandbox.id)
+            return sandbox
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -632,6 +698,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name)
 
         try:
@@ -639,6 +706,7 @@ class AsyncSandboxClient:
                 url, headers=self._request_headers(headers)
             )
             response.raise_for_status()
+            self._forget_sandbox(name)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -665,6 +733,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "status")
 
         try:
@@ -679,14 +748,37 @@ class AsyncSandboxClient:
             handle_client_http_error(e)
             raise  # pragma: no cover
 
+    @overload
     async def service(
         self,
         name: str,
         port: int,
         *,
         expires_in_seconds: int = 600,
+        access: None = None,
         headers: RequestHeaders = None,
-    ) -> AsyncServiceURL:
+    ) -> AsyncServiceURL: ...
+
+    @overload
+    async def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: ServiceAccess,
+        headers: RequestHeaders = None,
+    ) -> ServiceLoginURL: ...
+
+    async def service(
+        self,
+        name: str,
+        port: int,
+        *,
+        expires_in_seconds: int = 600,
+        access: Optional[ServiceAccess] = None,
+        headers: RequestHeaders = None,
+    ) -> Union[AsyncServiceURL, ServiceLoginURL]:
         """Get an authenticated URL for a service running inside a sandbox.
 
         Returns an :class:`AsyncServiceURL` whose async accessors
@@ -699,6 +791,13 @@ class AsyncSandboxClient:
             name: Sandbox name.
             port: Port the service is listening on inside the sandbox.
             expires_in_seconds: Token TTL in seconds (1--86400, default 600).
+            access: Gate the URL behind LangSmith login instead of a token,
+                returning a :class:`ServiceLoginURL`. ``"restricted"`` admits
+                anyone with ``sandboxes:read`` on the sandbox, ``"workspace"``
+                any member of the owning workspace. Neither carries a token or
+                expires, so ``expires_in_seconds`` does not apply. Omit for
+                token mode; a login grant is durable, so token mode is refused
+                with 409 while one is in place.
             headers: Optional per-request header overrides.
 
         Returns:
@@ -710,8 +809,18 @@ class AsyncSandboxClient:
             SandboxClientError: For other errors.
         """
         validate_service_params(port, expires_in_seconds)
+        if access is not None and access not in ("restricted", "workspace"):
+            raise ValueError(
+                f'access must be "restricted" or "workspace", got {access!r}'
+            )
+        login_mode = access is not None
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "service-url")
-        payload = {"port": port, "expires_in_seconds": expires_in_seconds}
+        payload: dict[str, Any] = {"port": port}
+        if not login_mode:
+            payload["expires_in_seconds"] = expires_in_seconds
+        if access is not None:
+            payload["access"] = access
 
         async def _refresher() -> AsyncServiceURL:
             return await self.service(
@@ -726,7 +835,11 @@ class AsyncSandboxClient:
                 url, json=payload, headers=self._request_headers(headers)
             )
             response.raise_for_status()
-            return AsyncServiceURL.from_dict(response.json(), _refresher=_refresher)
+            if login_mode:
+                return ServiceLoginURL.from_dict(response.json())
+            service = AsyncServiceURL.from_dict(response.json(), _refresher=_refresher)
+            service._sandbox_id = self._trace_sandbox(name)
+            return service
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(
@@ -781,6 +894,7 @@ class AsyncSandboxClient:
                 f"expires_in_seconds must be greater than 0 "
                 f"(got {expires_in_seconds}); omit it for a link that never expires"
             )
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "download-url")
         payload: dict[str, Any] = {"path": path}
         if expires_in_seconds is not None:
@@ -874,6 +988,7 @@ class AsyncSandboxClient:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "start")
 
         try:
@@ -900,6 +1015,7 @@ class AsyncSandboxClient:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(name)
         url = _box_url(self._base_url, name, "stop")
 
         try:
@@ -926,6 +1042,7 @@ class AsyncSandboxClient:
         *,
         tag: Optional[str] = None,
         registry_id: Optional[str] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -959,6 +1076,8 @@ class AsyncSandboxClient:
             payload["tag"] = tag
         if registry_id is not None:
             payload["registry_id"] = registry_id
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = await self._http.post(
@@ -1076,6 +1195,7 @@ class AsyncSandboxClient:
         tag: Optional[str] = None,
         docker_image: Optional[str] = None,
         fs_capacity_bytes: Optional[int] = None,
+        run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         timeout: int = 60,
         headers: RequestHeaders = None,
     ) -> Snapshot:
@@ -1100,6 +1220,7 @@ class AsyncSandboxClient:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
+        self._trace_sandbox(sandbox_name)
         url = _box_url(self._base_url, sandbox_name, "snapshot")
 
         payload: dict[str, Any] = {"name": name}
@@ -1109,6 +1230,8 @@ class AsyncSandboxClient:
             payload["docker_image"] = docker_image
         if fs_capacity_bytes is not None:
             payload["fs_capacity_bytes"] = fs_capacity_bytes
+        if run_config is not None:
+            payload["run_config"] = _run_config_payload(run_config)
 
         try:
             response = await self._http.post(

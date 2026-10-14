@@ -243,6 +243,13 @@ class Run(BaseModel):
     latency_seconds: Optional[float] = None
     """`latency_seconds` is wall-clock duration from start to end in seconds."""
 
+    ls_user_id: Optional[str] = None
+    """`ls_user_id` identifies the LangSmith user whose credential traced the run.
+
+    It is absent for runs traced with a service-account API key, which has no
+    associated user.
+    """
+
     manifest: Optional[Dict[str, object]] = None
     """
     `manifest` is the serialized configuration of the traced component (for example
@@ -298,6 +305,13 @@ class Run(BaseModel):
 
     prompt_tokens: Optional[int] = None
     """`prompt_tokens` is the prompt-side token count."""
+
+    query_metadata: Optional[object] = None
+    """
+    `query_metadata` describes this query result, including `sem_filter_score` when
+    a semantic filter is used. Returned automatically by run queries, or null when
+    unavailable.
+    """
 
     reference_dataset_id: Optional[str] = None
     """`reference_dataset_id` is the dataset UUID for the reference example, if any."""

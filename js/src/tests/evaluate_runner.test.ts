@@ -9,6 +9,7 @@ import {
   evaluate,
 } from "../evaluation/_runner.js";
 import { loadTracesForExperiment } from "../evaluation/evaluate_comparative.js";
+import { getCurrentRunTree } from "../singletons/traceable.js";
 import { PQueue } from "../utils/p-queue.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 
@@ -168,6 +169,180 @@ describe("evaluation runner internals", () => {
       }),
     ]);
   });
+
+  test.each([true, false])(
+    "evaluate with disableEvaluatorTracing=%s controls evaluator tracing and feedback links",
+    async (disableEvaluatorTracing) => {
+      const experimentId = "00000000-0000-0000-0000-000000000004";
+      const datasetId = "00000000-0000-0000-0000-000000000000";
+      const now = new Date().toISOString();
+      const feedbackCalls: any[] = [];
+      const summaryFeedbackCalls: any[] = [];
+      const mockClient = {
+        createProject: async () => ({
+          id: experimentId,
+          name: "test-project",
+          reference_dataset_id: datasetId,
+        }),
+        updateProject: async () => ({}),
+        logEvaluationFeedback: async (args: any) => {
+          feedbackCalls.push(args);
+          return [];
+        },
+        _selectEvalResults: (results: any) =>
+          "results" in results ? results.results : [results],
+        createFeedback: async (...args: any[]) => {
+          summaryFeedbackCalls.push(args);
+          return {};
+        },
+        awaitPendingTraceBatches: async () => undefined,
+        getDatasetUrl: async () => "http://test.com",
+      } as any;
+
+      const results = await evaluate(async () => ({ output: "ok" }), {
+        data: [
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            inputs: { input: "hello" },
+            outputs: {},
+            dataset_id: datasetId,
+            created_at: now,
+            modified_at: now,
+            runs: [],
+          },
+        ],
+        evaluators: [async () => ({ key: "quality", score: 1 })],
+        summaryEvaluators: [async () => ({ key: "count", score: 1 })],
+        client: mockClient,
+        disableEvaluatorTracing,
+      });
+      for await (const _ of results) {
+        // Drain the result stream.
+      }
+
+      // Feedback is created either way.
+      expect(feedbackCalls).toHaveLength(1);
+      expect(summaryFeedbackCalls).toHaveLength(1);
+
+      // The evaluator-run link is present only when evaluators are traced.
+      const response = feedbackCalls[0].evaluatorResponse;
+      const sourceRunId =
+        "results" in response
+          ? response.results[0].sourceRunId
+          : response.sourceRunId;
+      if (disableEvaluatorTracing) {
+        expect(sourceRunId).toBeUndefined();
+      } else {
+        expect(sourceRunId).toEqual(expect.any(String));
+      }
+    },
+  );
+
+  test("evaluate leaves evaluator tracing on by default", async () => {
+    const experimentId = "00000000-0000-0000-0000-000000000004";
+    const datasetId = "00000000-0000-0000-0000-000000000000";
+    const now = new Date().toISOString();
+    const feedbackCalls: any[] = [];
+    const mockClient = {
+      createProject: async () => ({
+        id: experimentId,
+        name: "test-project",
+        reference_dataset_id: datasetId,
+      }),
+      updateProject: async () => ({}),
+      logEvaluationFeedback: async (args: any) => {
+        feedbackCalls.push(args);
+        return [];
+      },
+      awaitPendingTraceBatches: async () => undefined,
+      getDatasetUrl: async () => "http://test.com",
+    } as any;
+
+    const results = await evaluate(async () => ({ output: "ok" }), {
+      data: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          inputs: { input: "hello" },
+          outputs: {},
+          dataset_id: datasetId,
+          created_at: now,
+          modified_at: now,
+          runs: [],
+        },
+      ],
+      evaluators: [async () => ({ key: "quality", score: 1 })],
+      client: mockClient,
+    });
+    for await (const _ of results) {
+      // Drain the result stream.
+    }
+
+    const response = feedbackCalls[0].evaluatorResponse;
+    const sourceRunId =
+      "results" in response
+        ? response.results[0].sourceRunId
+        : response.sourceRunId;
+    expect(sourceRunId).toEqual(expect.any(String));
+  });
+
+  test.each([
+    // [option value, expected tracingEnabled override on the summary evaluator]
+    [undefined, undefined],
+    [true, false],
+  ])(
+    "evaluate with disableEvaluatorTracing=%s sets the summary evaluator tracing override to %s",
+    async (disableEvaluatorTracing, expectedOverride) => {
+      const experimentId = "00000000-0000-0000-0000-000000000004";
+      const datasetId = "00000000-0000-0000-0000-000000000000";
+      const now = new Date().toISOString();
+      let override: boolean | undefined;
+      const mockClient = {
+        createProject: async () => ({
+          id: experimentId,
+          name: "test-project",
+          reference_dataset_id: datasetId,
+        }),
+        updateProject: async () => ({}),
+        createRun: async () => undefined,
+        updateRun: async () => undefined,
+        _selectEvalResults: (results: any) =>
+          "results" in results ? results.results : [results],
+        createFeedback: async () => ({}),
+        awaitPendingTraceBatches: async () => undefined,
+        getDatasetUrl: async () => "http://test.com",
+      } as any;
+
+      const results = await evaluate(async () => ({ output: "ok" }), {
+        data: [
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            inputs: { input: "hello" },
+            outputs: {},
+            dataset_id: datasetId,
+            created_at: now,
+            modified_at: now,
+            runs: [],
+          },
+        ],
+        summaryEvaluators: [
+          async () => {
+            override = getCurrentRunTree(true)?.tracingEnabled;
+            return { key: "count", score: 1 };
+          },
+        ],
+        client: mockClient,
+        disableEvaluatorTracing,
+      });
+      for await (const _ of results) {
+        // Drain the result stream.
+      }
+
+      // Omitting the option must leave the override unset so the environment
+      // still decides. Forcing `true` here would switch tracing on for callers
+      // who have it turned off.
+      expect(override).toBe(expectedOverride);
+    },
+  );
 
   test("evaluate resolves existing runs by session_id and logs routing fields", async () => {
     const experimentId = "00000000-0000-0000-0000-000000000004";

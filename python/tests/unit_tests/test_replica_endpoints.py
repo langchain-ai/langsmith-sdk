@@ -1264,3 +1264,122 @@ def test_baggage_parsing_uses_default_allowlist(monkeypatch):
         }
     finally:
         ls_utils.get_env_var.cache_clear()
+
+
+class _CaptureClient(Client):
+    """Records the id and project of every create/update a RunTree sends."""
+
+    def create_run(self, **kwargs):
+        _SENT.append(("post", kwargs["id"], kwargs.get("session_name")))
+
+    def update_run(self, run_id, **kwargs):
+        _SENT.append(("patch", run_id, kwargs.get("session_name")))
+
+
+_SENT: list = []
+
+
+def _capture_client() -> _CaptureClient:
+    _SENT.clear()
+    return _CaptureClient(
+        api_url="https://api.example.com",
+        api_key="test-key",
+        session=Mock(),
+        auto_batch_tracing=False,
+    )
+
+
+def _ids_by_project(operation: str) -> dict:
+    return {project: run_id for op, run_id, project in _SENT if op == operation}
+
+
+class TestPrimaryReplicaOwnsOriginalIds:
+    """A replica for the run's own project must not keep the original ids when
+    another replica is primary: the backend would see one run id in two
+    projects and route every run of the trace to only one of them.
+    """
+
+    OWN = "document-summarization"
+
+    def test_own_project_replica_is_remapped(self):
+        client = _capture_client()
+        run = RunTree(
+            name="agent",
+            inputs={},
+            client=client,
+            project_name=self.OWN,
+            replicas=[
+                WriteReplica(project_name="production", primary=True),
+                WriteReplica(project_name=self.OWN),
+            ],
+        )
+        run.post()
+        run.end(outputs={})
+        run.patch()
+
+        for operation in ("post", "patch"):
+            ids = _ids_by_project(operation)
+            assert ids["production"] == run.id
+            assert ids[self.OWN] == compute_run_id_for_secondary_replica(
+                run.id, self.OWN
+            )
+
+    def test_without_primary_own_project_keeps_original_ids(self):
+        client = _capture_client()
+        run = RunTree(
+            name="agent",
+            inputs={},
+            client=client,
+            project_name=self.OWN,
+            replicas=[
+                WriteReplica(project_name=self.OWN),
+                WriteReplica(project_name="audit"),
+            ],
+        )
+        run.post()
+
+        ids = _ids_by_project("post")
+        assert ids[self.OWN] == run.id
+        assert ids["audit"] == compute_run_id_for_secondary_replica(run.id, "audit")
+
+    @pytest.mark.parametrize(
+        "second_replica",
+        [
+            {},  # no project: inherits the run's own
+            {"project_name": "document-summarization"},  # == LANGSMITH_PROJECT
+        ],
+        ids=["replica-without-project", "replica-for-own-project"],
+    )
+    @pytest.mark.parametrize("langsmith_project", [None, "document-summarization"])
+    def test_env_config_does_not_reuse_ids(self, second_replica, langsmith_project):
+        endpoint = "https://api.smith.langchain.com"
+        replicas = [
+            {
+                "api_url": endpoint,
+                "api_key": "k",
+                "project_name": "production",
+                "primary": True,
+            },
+            {"api_url": endpoint, "api_key": "k", **second_replica},
+        ]
+        env = {
+            "LANGSMITH_RUNS_ENDPOINTS": json.dumps(replicas),
+            "LANGSMITH_ENDPOINT": "",
+            "LANGCHAIN_ENDPOINT": "",
+        }
+        if langsmith_project:
+            env["LANGSMITH_PROJECT"] = langsmith_project
+        client = _capture_client()
+        # Both readers are lru_cached, so a stale value would hide the config.
+        ls_utils.get_env_var.cache_clear()
+        ls_utils.get_tracer_project.cache_clear()
+        try:
+            with patch.dict(os.environ, env, clear=True):
+                run = RunTree(name="agent", inputs={}, client=client)
+                run.post()
+        finally:
+            ls_utils.get_env_var.cache_clear()
+            ls_utils.get_tracer_project.cache_clear()
+
+        ids = _ids_by_project("post")
+        assert len(set(ids.values())) == 2 and ids["production"] == run.id, _SENT

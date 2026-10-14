@@ -874,6 +874,203 @@ describe("OpenAIAgentsTracingProcessor", () => {
       }
     });
 
+    test("tags an agent as a subagent when the tool is further above it", async () => {
+      // When an agent runs as a tool, an extra run sits between the tool and
+      // the agent.
+      const outerTrace = createMockTrace("trace-nested-outer", "Outer");
+      const functionSpan = createMockSpan(
+        "trace-nested-outer",
+        "span-fn-nested",
+        null,
+        {
+          type: "function",
+          name: "invoke_subagent",
+          input: "{}",
+          output: "{}",
+        },
+      );
+      const innerTrace = createMockTrace("trace-nested-inner", "Inner");
+      const subagentSpan = createMockSpan(
+        "trace-nested-inner",
+        "span-agent-nested",
+        null,
+        { type: "agent", name: "NestedSubAgent" },
+      );
+
+      await processor.onTraceStart(outerTrace);
+      await processor.onSpanStart(functionSpan);
+      // The nested run is created as a child of the tool run.
+      await processor.onTraceStart(innerTrace);
+      await processor.onSpanStart(subagentSpan);
+      await processor.onSpanEnd(subagentSpan);
+      await processor.onTraceEnd(innerTrace);
+      await processor.onSpanEnd(functionSpan);
+      await processor.onTraceEnd(outerTrace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const subagentNode = tree.nodes.find((n) => n.includes("NestedSubAgent"));
+      expect(subagentNode).toBeDefined();
+      if (subagentNode) {
+        expect(tree.data[subagentNode].extra?.metadata?.ls_agent_type).toBe(
+          "subagent",
+        );
+      }
+    });
+
+    test("tags an agent handed off to inside a tool as a subagent", async () => {
+      // A handoff opens a new agent run beside the one it replaced, so the
+      // tool is still above it.
+      const outerTrace = createMockTrace("trace-handoff-sub", "Outer");
+      const functionSpan = createMockSpan(
+        "trace-handoff-sub",
+        "span-fn-handoff-sub",
+        null,
+        {
+          type: "function",
+          name: "invoke_subagent",
+          input: "{}",
+          output: "{}",
+        },
+      );
+      const innerTrace = createMockTrace("trace-handoff-sub-inner", "Inner");
+      const firstAgentSpan = createMockSpan(
+        "trace-handoff-sub-inner",
+        "span-agent-first",
+        null,
+        { type: "agent", name: "FirstAgent" },
+      );
+      const handedOffAgentSpan = createMockSpan(
+        "trace-handoff-sub-inner",
+        "span-agent-handed-off",
+        null,
+        { type: "agent", name: "HandedOffAgent" },
+      );
+
+      await processor.onTraceStart(outerTrace);
+      await processor.onSpanStart(functionSpan);
+      await processor.onTraceStart(innerTrace);
+      await processor.onSpanStart(firstAgentSpan);
+      await processor.onSpanEnd(firstAgentSpan);
+      await processor.onSpanStart(handedOffAgentSpan);
+      await processor.onSpanEnd(handedOffAgentSpan);
+      await processor.onTraceEnd(innerTrace);
+      await processor.onSpanEnd(functionSpan);
+      await processor.onTraceEnd(outerTrace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const handedOffNode = tree.nodes.find((n) =>
+        n.includes("HandedOffAgent"),
+      );
+      expect(handedOffNode).toBeDefined();
+      if (handedOffNode) {
+        expect(tree.data[handedOffNode].extra?.metadata?.ls_agent_type).toBe(
+          "subagent",
+        );
+      }
+    });
+
+    test("stamps guardrail spans as middleware", async () => {
+      const trace = createMockTrace("trace-guard-1", "Test Agent");
+      const guardrailSpan = createMockSpan(
+        "trace-guard-1",
+        "span-guard",
+        null,
+        {
+          type: "guardrail",
+          name: "entry_guardrail",
+          triggered: false,
+        },
+      );
+
+      await processor.onTraceStart(trace);
+      await processor.onSpanStart(guardrailSpan);
+      await processor.onSpanEnd(guardrailSpan);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const guardNode = tree.nodes.find((n) => n.includes("entry_guardrail"));
+      expect(guardNode).toBeDefined();
+      if (guardNode) {
+        expect(tree.data[guardNode].extra?.metadata?.ls_agent_type).toBe(
+          "middleware",
+        );
+      }
+    });
+
+    test("guardrail middleware stamp overrides inherited root", async () => {
+      const trace = createMockTrace("trace-guard-2", "Test Agent", {
+        metadata: { ls_agent_type: "root" },
+      });
+      const guardrailSpan = createMockSpan(
+        "trace-guard-2",
+        "span-guard-2",
+        null,
+        {
+          type: "guardrail",
+          name: "exit_guardrail",
+          triggered: false,
+        },
+      );
+
+      await processor.onTraceStart(trace);
+      await processor.onSpanStart(guardrailSpan);
+      await processor.onSpanEnd(guardrailSpan);
+      await processor.onTraceEnd(trace);
+      await client.awaitPendingTraceBatches();
+
+      const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+      const guardNode = tree.nodes.find((n) => n.includes("exit_guardrail"));
+      expect(guardNode).toBeDefined();
+      if (guardNode) {
+        expect(tree.data[guardNode].extra?.metadata?.ls_agent_type).toBe(
+          "middleware",
+        );
+      }
+    });
+
+    test.each(["middleware", "subagent", "compaction"] as const)(
+      "guardrail keeps a user-supplied '%s' tag",
+      async (userTag) => {
+        const trace = createMockTrace(
+          `trace-guard-3-${userTag}`,
+          "Test Agent",
+          {
+            metadata: { ls_agent_type: userTag },
+          },
+        );
+        const guardrailSpan = createMockSpan(
+          `trace-guard-3-${userTag}`,
+          `span-guard-3-${userTag}`,
+          null,
+          {
+            type: "guardrail",
+            name: `named_guardrail_${userTag}`,
+            triggered: false,
+          },
+        );
+
+        await processor.onTraceStart(trace);
+        await processor.onSpanStart(guardrailSpan);
+        await processor.onSpanEnd(guardrailSpan);
+        await processor.onTraceEnd(trace);
+        await client.awaitPendingTraceBatches();
+
+        const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+        const guardNode = tree.nodes.find((n) =>
+          n.includes(`named_guardrail_${userTag}`),
+        );
+        expect(guardNode).toBeDefined();
+        if (guardNode) {
+          expect(tree.data[guardNode].extra?.metadata?.ls_agent_type).toBe(
+            userTag,
+          );
+        }
+      },
+    );
+
     test("does not mark handoff agents as subagents", async () => {
       const trace = createMockTrace("trace-11c", "Test Agent");
 

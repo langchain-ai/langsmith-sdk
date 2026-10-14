@@ -10,6 +10,13 @@ __all__ = ["Trace"]
 
 
 class Trace(BaseModel):
+    query_metadata: Optional[object] = None
+    """
+    `query_metadata` describes why this trace matched the query, including
+    `sem_filter_score` when a semantic filter is used. Returned automatically, or
+    null when unavailable.
+    """
+
     root_run: Optional[Run] = None
     """`root_run` is the trace's root run.
 

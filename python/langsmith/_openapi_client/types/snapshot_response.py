@@ -4,7 +4,21 @@ from typing import Dict, List, Optional
 
 from .._models import BaseModel
 
-__all__ = ["SnapshotResponse"]
+__all__ = ["SnapshotResponse", "RunConfig"]
+
+
+class RunConfig(BaseModel):
+    """RunConfig is what sandboxes from this snapshot boot with.
+
+    Absent on
+    snapshots built before it was recorded, which run as root with their own env.
+    """
+
+    env_vars: Optional[Dict[str, str]] = None
+
+    user: Optional[str] = None
+
+    work_dir: Optional[str] = None
 
 
 class SnapshotResponse(BaseModel):
@@ -13,6 +27,12 @@ class SnapshotResponse(BaseModel):
     created_at: Optional[str] = None
 
     created_by: Optional[str] = None
+
+    description: Optional[str] = None
+    """
+    Description says what this snapshot's image can do, so a caller can hand it to
+    an agent as a capability summary.
+    """
 
     docker_image: Optional[str] = None
 
@@ -34,6 +54,13 @@ class SnapshotResponse(BaseModel):
     name: Optional[str] = None
 
     registry_id: Optional[str] = None
+
+    run_config: Optional[RunConfig] = None
+    """RunConfig is what sandboxes from this snapshot boot with.
+
+    Absent on snapshots built before it was recorded, which run as root with their
+    own env.
+    """
 
     source_sandbox_id: Optional[str] = None
 

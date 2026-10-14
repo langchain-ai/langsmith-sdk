@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, overload
 
 
 class SandboxProxySecret(TypedDict):
@@ -88,12 +89,27 @@ def _normalize_proxy_rules(
 
 
 def _validate_proxy_provider_rule(rule: SandboxProxyRule) -> None:
+    if rule.get("type") == "aws":
+        aws = rule.get("aws")
+        if isinstance(aws, dict):
+            _get_aws_role_arn(aws)
+        return
     if rule.get("type") != "gcp":
         return
     gcp = rule.get("gcp")
     if not isinstance(gcp, dict) or "scopes" not in gcp:
         raise ValueError("gcp proxy auth rules require scopes")
     _require_non_empty_string_list(gcp["scopes"], "scopes")
+
+
+def _get_aws_role_arn(aws: dict[str, Any]) -> str | None:
+    """Validate role-only descriptors without tightening legacy static inputs."""
+    if "role_arn" not in aws or aws["role_arn"] == "":
+        return None
+    role_arn = _require_non_empty_string(aws["role_arn"], "role_arn")
+    if set(aws) != {"role_arn"}:
+        raise ValueError("AWS role auth must contain only role_arn")
+    return role_arn
 
 
 def proxy_config(
@@ -106,10 +122,19 @@ def proxy_config(
 
     Use provider-specific rule helpers such as ``aws_auth`` and ``gcp_auth``
     when a sandbox needs multiple auth flows.
+
+    Args:
+        no_proxy: Deprecated and ignored. The sandbox runtime intercepts
+            egress transparently and has no proxy bypass list.
     """
-    config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
     if no_proxy is not None:
-        config["no_proxy"] = _require_non_empty_string_list(no_proxy, "no_proxy")
+        warnings.warn(
+            "no_proxy is deprecated and ignored; the sandbox runtime has no "
+            "proxy bypass list",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    config: SandboxProxyConfig = {"rules": _normalize_proxy_rules(rules)}
     if access_control is not None:
         if not isinstance(access_control, dict):
             raise ValueError("access_control must be a dictionary")
@@ -117,10 +142,35 @@ def proxy_config(
     return config
 
 
+@overload
 def aws_auth(
     *,
     access_key_id: SandboxProxySecret,
     secret_access_key: SandboxProxySecret,
+    role_arn: Literal[""] | None = None,
+    name: str = "aws",
+    enabled: bool = True,
+    env_vars: Mapping[str, str] | None = None,
+) -> SandboxProxyRule: ...
+
+
+@overload
+def aws_auth(
+    *,
+    role_arn: str,
+    access_key_id: None = None,
+    secret_access_key: None = None,
+    name: str = "aws",
+    enabled: bool = True,
+    env_vars: Mapping[str, str] | None = None,
+) -> SandboxProxyRule: ...
+
+
+def aws_auth(
+    *,
+    access_key_id: SandboxProxySecret | None = None,
+    secret_access_key: SandboxProxySecret | None = None,
+    role_arn: str | None = None,
     name: str = "aws",
     enabled: bool = True,
     env_vars: Mapping[str, str] | None = None,
@@ -128,9 +178,15 @@ def aws_auth(
     """Build a sandbox proxy rule that signs AWS HTTPS requests.
 
     The sandbox proxy keeps the real AWS credentials outside the sandbox and
-    signs supported AWS requests with SigV4 on the sandbox's behalf. AWS
-    credentials must be supplied as ``workspace_secret`` or ``opaque`` values;
-    plaintext AWS credentials are intentionally not supported.
+    signs supported AWS requests with SigV4 on the sandbox's behalf.
+    Provide either ``role_arn`` or both static credentials, supplied as
+    ``workspace_secret`` or ``opaque`` values. IAM-role support must be enabled
+    on the backend. LangSmith supplies the workspace External ID and renews
+    credentials; clients must not provide temporary credentials or External IDs.
+
+    In ``proxy_config``, a role uses its effective IAM permissions. In
+    ``mount_config(auth=[...])``, it is restricted to the configured S3 mounts.
+    Role authentication is configured at sandbox creation, not through updates.
 
     Args:
         env_vars: Plaintext environment variables set for every command in the
@@ -139,14 +195,28 @@ def aws_auth(
             injects the real credential on the wire.
     """
     rule_name = _require_non_empty_string(name, "name")
+    aws: dict[str, Any] = {}
+    if role_arn is not None:
+        aws["role_arn"] = role_arn
+    if access_key_id is not None:
+        aws["access_key_id"] = access_key_id
+    if secret_access_key is not None:
+        aws["secret_access_key"] = secret_access_key
+    normalized_role = _get_aws_role_arn(aws)
+    if normalized_role is not None:
+        aws = {"role_arn": normalized_role}
+    else:
+        if access_key_id is None or secret_access_key is None:
+            raise ValueError("AWS auth requires role_arn or both static credentials")
+        aws = {
+            "access_key_id": access_key_id,
+            "secret_access_key": secret_access_key,
+        }
     rule: SandboxProxyRule = {
         "name": rule_name,
         "type": "aws",
         "enabled": enabled,
-        "aws": {
-            "access_key_id": access_key_id,
-            "secret_access_key": secret_access_key,
-        },
+        "aws": aws,
     }
     if env_vars is not None:
         rule["env_vars"] = _require_env_vars(env_vars)

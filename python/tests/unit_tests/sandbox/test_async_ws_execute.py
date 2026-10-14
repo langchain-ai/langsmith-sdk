@@ -148,6 +148,23 @@ class TestAsyncCommandHandle:
         assert result.exit_code == 0
 
     @pytest.mark.asyncio
+    async def test_result_finishes_stream_generator(self):
+        """The stream's cleanup runs before result returns, not at GC."""
+        closed = False
+
+        async def stream() -> AsyncIterator[dict]:
+            nonlocal closed
+            try:
+                yield _started_msg()
+                yield _exit_msg(0)
+            finally:
+                closed = True
+
+        handle = AsyncCommandHandle(stream(), None, self._make_sandbox_mock())
+        assert (await handle.result).exit_code == 0
+        assert closed
+
+    @pytest.mark.asyncio
     async def test_no_started_message(self):
         stream = _make_async_stream([_stdout_msg("data")])
         sandbox = self._make_sandbox_mock()
@@ -663,6 +680,8 @@ class TestAsyncCommandHandle:
             "cmd-123",
             stdout_offset=handle.last_stdout_offset,
             stderr_offset=handle.last_stderr_offset,
+            stdin_closed=handle._stdin_closed,
+            pty=handle._pty,
         )
 
 
@@ -914,6 +933,7 @@ class TestAsyncSandboxRunWs:
             kill_on_disconnect=False,
             ttl_seconds=600,
             pty=False,
+            close_stdin=True,
             open_timeout=ANY,
         )
 
@@ -949,24 +969,20 @@ class TestAsyncSandboxRunWs:
             )
 
     @pytest.mark.asyncio
-    async def test_run_fallback_to_http_when_ws_unavailable(self, monkeypatch):
-        """run() falls back to HTTP only when the websockets library is
-        unavailable."""
+    async def test_missing_websockets_names_both_ways_forward(self, monkeypatch):
+        """Without the library and without the SSE feature, run() has no
+        transport: it says so rather than silently degrading."""
+        monkeypatch.delenv("LANGSMITH_EXPERIMENTAL_FEATURES", raising=False)
         monkeypatch.setattr(
             "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
         )
         sandbox = self._make_sandbox()
 
-        with patch.object(sandbox, "_run_http", new_callable=AsyncMock) as mock_http:
-            mock_http.return_value = ExecutionResult(
-                stdout="http output",
-                stderr="",
-                exit_code=0,
-            )
-            result = await sandbox.run("echo hello")
+        with pytest.raises(ImportError) as excinfo:
+            await sandbox.run("echo hello")
 
-        assert result.stdout == "http output"
-        mock_http.assert_called_once()
+        assert "langsmith[sandbox]" in str(excinfo.value)
+        assert "LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec" in str(excinfo.value)
 
     @pytest.mark.parametrize(
         "exc",
@@ -976,18 +992,13 @@ class TestAsyncSandboxRunWs:
         ],
     )
     @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
-    async def test_run_ws_error_propagates_without_http_fallback(
-        self, mock_run_ws, exc
-    ):
-        """Any WS failure other than a missing library propagates; run() must
-        not silently fall back to the capacity-capped blocking HTTP endpoint."""
+    async def test_run_ws_error_propagates(self, mock_run_ws, exc):
+        """Any WS failure other than a missing library propagates."""
         mock_run_ws.side_effect = exc
         sandbox = self._make_sandbox()
 
-        with patch.object(sandbox, "_run_http", new_callable=AsyncMock) as mock_http:
-            with pytest.raises(type(exc)):
-                await sandbox.run("echo hello")
-        mock_http.assert_not_called()
+        with pytest.raises(type(exc)):
+            await sandbox.run("echo hello")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -998,8 +1009,8 @@ class TestAsyncSandboxRunWs:
         ],
     )
     @patch("langsmith.sandbox._ws_execute.run_ws_stream_async")
-    async def test_run_no_fallback_on_streaming(self, mock_run_ws, kwargs):
-        """wait=False or callbacks prevents HTTP fallback."""
+    async def test_run_streaming_errors_propagate(self, mock_run_ws, kwargs):
+        """wait=False or callbacks surfaces the WS failure."""
         mock_run_ws.side_effect = SandboxConnectionError("WS failed")
         sandbox = self._make_sandbox()
 
@@ -1162,5 +1173,32 @@ class TestAsyncHandshakeFailureWrapping:
                 "https://sb.example.com", "key", "cmd-123"
             )
             with pytest.raises(SandboxConnectionError, match="no valid HTTP response"):
+                async for _ in msg_stream:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_abrupt_execute_close_is_retryable(self):
+        from websockets.exceptions import ConnectionClosedError, InvalidHandshake
+
+        from langsmith.sandbox._exceptions import SandboxRetryableConnectionError
+
+        ws = MagicMock()
+        ws.send = AsyncMock()
+        ws.__aiter__.side_effect = ConnectionClosedError(None, None)
+        connect = MagicMock()
+        connect.return_value.__aenter__ = AsyncMock(return_value=ws)
+        connect.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "langsmith.sandbox._ws_execute._ensure_websockets_async",
+            return_value=(connect, ConnectionClosedError, InvalidHandshake),
+        ):
+            msg_stream, _ = await run_ws_stream_async(
+                "https://sb.example.com", "key", "echo hi"
+            )
+            with pytest.raises(
+                SandboxRetryableConnectionError,
+                match="no close frame received or sent",
+            ):
                 async for _ in msg_stream:
                     pass

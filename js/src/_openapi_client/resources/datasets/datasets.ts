@@ -2,6 +2,8 @@
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 import { APIResource } from '../../core/resource.js';
+import * as ExamplesAPI from './examples.js';
+import { ExampleDeleteParams, Examples } from './examples.js';
 import * as ExperimentRunsAPI from './experiment-runs.js';
 import {
   ExperimentRunQueryParams,
@@ -11,6 +13,7 @@ import {
 } from './experiment-runs.js';
 
 export class Datasets extends APIResource {
+  examples: ExamplesAPI.Examples = new ExamplesAPI.Examples(this._client);
   experimentRuns: ExperimentRunsAPI.ExperimentRuns = new ExperimentRunsAPI.ExperimentRuns(this._client);
 }
 
@@ -193,8 +196,14 @@ export interface Missing {
  * Enum for available dataset columns to sort by.
  */
 export type SortByDatasetColumn =
-  'name' | 'created_at' | 'last_session_start_time' | 'example_count' | 'session_count' | 'modified_at';
+  | 'name'
+  | 'created_at'
+  | 'last_session_start_time'
+  | 'example_count'
+  | 'session_count'
+  | 'modified_at';
 
+Datasets.Examples = Examples;
 Datasets.ExperimentRuns = ExperimentRuns;
 
 export declare namespace Datasets {
@@ -207,6 +216,8 @@ export declare namespace Datasets {
     type Missing as Missing,
     type SortByDatasetColumn as SortByDatasetColumn,
   };
+
+  export { Examples as Examples, type ExampleDeleteParams as ExampleDeleteParams };
 
   export {
     ExperimentRuns as ExperimentRuns,

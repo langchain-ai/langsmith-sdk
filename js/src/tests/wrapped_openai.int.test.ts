@@ -438,104 +438,6 @@ test("chat completions with tool calling", async () => {
   callSpy.mockClear();
 });
 
-test("completions", async () => {
-  const { client, callSpy } = mockClient();
-  const originalClient = new OpenAI();
-  const patchedClient = wrapOpenAI(new OpenAI(), {
-    client,
-    tracingEnabled: true,
-  });
-
-  const prompt = `Say 'Hi I'm ChatGPT' then stop.`;
-
-  // invoke
-  const original = await originalClient.completions.create({
-    prompt,
-    temperature: 0,
-    seed: 42,
-    model: "gpt-3.5-turbo-instruct",
-  });
-
-  const patched = await patchedClient.completions.create({
-    prompt,
-    temperature: 0,
-    seed: 42,
-    model: "gpt-3.5-turbo-instruct",
-  });
-
-  expect(patched.choices).toEqual(original.choices);
-
-  // stream
-  const originalStream = await originalClient.completions.create({
-    prompt,
-    temperature: 0,
-    seed: 42,
-    model: "gpt-3.5-turbo-instruct",
-    stream: true,
-  });
-
-  const originalChoices: unknown[] = [];
-  for await (const chunk of originalStream) {
-    originalChoices.push(chunk.choices);
-    // @ts-expect-error Should type check streamed output
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _test = chunk.invalidPrompt;
-  }
-
-  const patchedStream = await patchedClient.completions.create({
-    prompt,
-    temperature: 0,
-    seed: 42,
-    model: "gpt-3.5-turbo-instruct",
-    stream: true,
-  });
-
-  const patchedChoices: unknown[] = [];
-  for await (const chunk of patchedStream) {
-    patchedChoices.push(chunk.choices);
-    // @ts-expect-error Should type check streamed output
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _test = chunk.invalidPrompt;
-  }
-
-  expect(patchedChoices).toEqual(originalChoices);
-  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
-  for (const call of callSpy.mock.calls) {
-    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
-  }
-
-  const patchedStream2 = await patchedClient.completions.create(
-    {
-      prompt,
-      temperature: 0,
-      seed: 42,
-      model: "gpt-3.5-turbo-instruct",
-      stream: true,
-    },
-    {
-      langsmithExtra: {
-        metadata: {
-          thing1: "thing2",
-        },
-      },
-    },
-  );
-
-  const patchedChoices2: unknown[] = [];
-  for await (const chunk of patchedStream2) {
-    patchedChoices2.push(chunk.choices);
-    // @ts-expect-error Should type check streamed output
-    const _test = chunk.invalidPrompt;
-  }
-
-  expect(patchedChoices2).toEqual(originalChoices);
-  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
-  for (const call of callSpy.mock.calls) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
-  }
-});
-
 test.skip("with initialization time config", async () => {
   const patchedClient = wrapOpenAI(new OpenAI(), {
     project_name: "alternate_project",
@@ -686,7 +588,7 @@ test("chat.completions.parse", async () => {
   callSpy.mockClear();
 });
 
-test("responses.create and retrieve workflow", async () => {
+test("responses.create without storage traces creation but not failed retrieval", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
@@ -697,6 +599,7 @@ test("responses.create and retrieve workflow", async () => {
   // Create a response (this should be traced)
   const createResponse = await openai.responses.create({
     model: "gpt-5-nano",
+    store: false,
     reasoning: {
       effort: "low",
     },
@@ -713,6 +616,7 @@ test("responses.create and retrieve workflow", async () => {
 
   expect(createResponse).toBeDefined();
   expect(createResponse.id).toBeDefined();
+  await client.awaitPendingTraceBatches();
 
   // Verify that create was traced
   const createCalls = callSpy.mock.calls.filter(
@@ -723,10 +627,13 @@ test("responses.create and retrieve workflow", async () => {
   const createCallCount = callSpy.mock.calls.length;
 
   // Retrieve the response (this should NOT be traced)
-  const retrieveResponse = await openai.responses.retrieve(createResponse.id);
-
-  expect(retrieveResponse).toBeDefined();
-  expect(retrieveResponse.id).toBe(createResponse.id);
+  await expect(
+    openai.responses.retrieve(createResponse.id),
+  ).rejects.toMatchObject({
+    status: 404,
+    message: expect.stringContaining(createResponse.id),
+  });
+  await client.awaitPendingTraceBatches();
 
   // Verify that retrieve did NOT add any new tracing calls
   expect(callSpy.mock.calls.length).toBe(createCallCount);
@@ -749,6 +656,7 @@ test("responses.create and retrieve workflow", async () => {
   const updateCalls = callSpy.mock.calls.filter(
     (call: any) => (call[1] as any).method === "PATCH",
   );
+  expect(updateCalls.length).toBeGreaterThanOrEqual(1);
   for (const call of updateCalls) {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.outputs.usage_metadata).toBeDefined();

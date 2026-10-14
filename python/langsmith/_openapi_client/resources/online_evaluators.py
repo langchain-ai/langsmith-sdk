@@ -44,6 +44,8 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return OnlineEvaluatorsResourceWithRawResponse(self)
 
@@ -51,6 +53,8 @@ class OnlineEvaluatorsResource(SyncAPIResource):
     def with_streaming_response(self) -> OnlineEvaluatorsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return OnlineEvaluatorsResourceWithStreamingResponse(self)
 
@@ -146,6 +150,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
     ) -> UpdateOnlineEvaluatorResponse:
         """
         Update an existing evaluator's name, LLM configuration, or code configuration.
+        Returns 409 when a code evaluator build is ENQUEUED or BUILDING.
 
         Args:
           extra_headers: Send extra headers
@@ -177,6 +182,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
     def list(
         self,
         *,
+        agent_id: str | Omit = omit,
         feedback_key: str | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
@@ -198,6 +204,8 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         name, tag, feedback key, or resource ID.
 
         Args:
+          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets
+
           feedback_key: Filter by feedback key
 
           limit: Maximum number of results (1-100)
@@ -234,6 +242,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "agent_id": agent_id,
                         "feedback_key": feedback_key,
                         "limit": limit,
                         "name_contains": name_contains,
@@ -264,10 +273,12 @@ class OnlineEvaluatorsResource(SyncAPIResource):
     ) -> None:
         """Delete an evaluator.
 
-        When delete_run_rules is true, all run rules referencing
-        this evaluator are deleted first (same tenant). Associated llm_evaluators and
-        code_evaluators rows are removed by foreign-key cascade when the evaluator row
-        is deleted.
+        Returns 409 when a code evaluator build is ENQUEUED or
+        BUILDING, or when run rules still reference the evaluator and delete_run_rules
+        is false. When delete_run_rules is true, all run rules referencing this
+        evaluator are deleted first (same tenant) if the build is not in flight.
+        Associated llm_evaluators and code_evaluators rows are removed by foreign-key
+        cascade when the evaluator row is deleted.
 
         Args:
           delete_run_rules: When true, delete all run rules for this evaluator before deleting the evaluator
@@ -432,6 +443,8 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         """
         This property can be used as a prefix for any HTTP method call to return
         the raw response object instead of the parsed content.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#accessing-raw-response-data-eg-headers
         """
         return AsyncOnlineEvaluatorsResourceWithRawResponse(self)
 
@@ -439,6 +452,8 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
     def with_streaming_response(self) -> AsyncOnlineEvaluatorsResourceWithStreamingResponse:
         """
         An alternative to `.with_raw_response` that doesn't eagerly read the response body.
+
+        For more information, see https://www.github.com/langchain-ai/langsmith-python#with_streaming_response
         """
         return AsyncOnlineEvaluatorsResourceWithStreamingResponse(self)
 
@@ -534,6 +549,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
     ) -> UpdateOnlineEvaluatorResponse:
         """
         Update an existing evaluator's name, LLM configuration, or code configuration.
+        Returns 409 when a code evaluator build is ENQUEUED or BUILDING.
 
         Args:
           extra_headers: Send extra headers
@@ -565,6 +581,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
     def list(
         self,
         *,
+        agent_id: str | Omit = omit,
         feedback_key: str | Omit = omit,
         limit: int | Omit = omit,
         name_contains: str | Omit = omit,
@@ -586,6 +603,8 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         name, tag, feedback key, or resource ID.
 
         Args:
+          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets
+
           feedback_key: Filter by feedback key
 
           limit: Maximum number of results (1-100)
@@ -622,6 +641,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
                 timeout=timeout,
                 query=maybe_transform(
                     {
+                        "agent_id": agent_id,
                         "feedback_key": feedback_key,
                         "limit": limit,
                         "name_contains": name_contains,
@@ -652,10 +672,12 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
     ) -> None:
         """Delete an evaluator.
 
-        When delete_run_rules is true, all run rules referencing
-        this evaluator are deleted first (same tenant). Associated llm_evaluators and
-        code_evaluators rows are removed by foreign-key cascade when the evaluator row
-        is deleted.
+        Returns 409 when a code evaluator build is ENQUEUED or
+        BUILDING, or when run rules still reference the evaluator and delete_run_rules
+        is false. When delete_run_rules is true, all run rules referencing this
+        evaluator are deleted first (same tenant) if the build is not in flight.
+        Associated llm_evaluators and code_evaluators rows are removed by foreign-key
+        cascade when the evaluator row is deleted.
 
         Args:
           delete_run_rules: When true, delete all run rules for this evaluator before deleting the evaluator

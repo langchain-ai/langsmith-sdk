@@ -41,6 +41,20 @@ pip install langsmith
 > The `langsmith[sandbox]` extra is still accepted for backward
 > compatibility, but it no longer installs anything extra.
 
+## Tracing metadata
+
+Sandbox operations add `sandbox_id` to the active LangSmith run's metadata,
+without creating additional spans. This applies to both sync and async clients,
+including command execution, file operations, lifecycle calls, and service HTTP
+requests. Existing unrelated metadata is preserved; if one run uses multiple
+sandboxes, `sandbox_id` identifies the most recently used sandbox.
+
+The SDK uses the sandbox's ID, never its display name or dataplane URL. Client
+methods that accept names use IDs learned from create, get, or update responses;
+call `get_sandbox()` first when attaching by name. No lookup requests are added
+just for tracing. Operations without an active run or a known ID, and listing
+sandboxes, leave metadata unchanged.
+
 ## Configuration
 
 The client automatically uses LangSmith environment variables:
@@ -863,6 +877,58 @@ async with await client.sandbox(snapshot_id=snapshot_id) as sb:
     token = await svc.get_token()
     url = await svc.get_service_url()
 ```
+
+## Verifying Requests from LangSmith
+
+Install the extra: `pip install "langsmith[sandbox-auth]"`. `SandboxTokenVerifier`
+checks signatures against LangSmith's JWKS (derived from `LANGSMITH_ENDPOINT`,
+cached); user tokens may use any JOSE asymmetric algorithm (RS*, PS*, ES*,
+EdDSA), chosen by the JWKS key. The JWKS must be served over HTTPS (localhost
+is exempt); for a plain-HTTP self-hosted deployment on a trusted network, pass
+`allow_insecure_jwks=True`.
+
+### Service URL Users
+
+Apps served from a service URL with LangSmith login receive the caller's
+identity in `X-Langsmith-User-Id` / `X-Langsmith-User-Email`. The sandbox
+runtime strips these from inbound requests and sets them itself, so code that
+knows it is running in a sandbox can trust them as-is. This holds only for
+requests that arrive through the service URL: TCP tunnels and other processes in
+the sandbox calling the port over localhost reach the app with whatever headers
+they choose. Otherwise, verify the signed `X-Langsmith-User-Token` header, which
+carries the same identity:
+
+```python
+from langsmith.sandbox import USER_TOKEN_HEADER, SandboxTokenVerifier
+
+verifier = SandboxTokenVerifier()
+
+user = verifier.verify_user_token(
+    request.headers[USER_TOKEN_HEADER],
+    audience=request.headers["Host"],  # the service URL host
+)
+print(user.subject, user.email)
+```
+
+### Proxy Callbacks
+
+Callback endpoints receive a body signed via the `X-LangSmith-Signature-JWT`
+header. Pass the raw body. Optionally pass `aud` to check the signature was
+minted for this endpoint: either the callback URL exactly as configured, or a
+predicate called with the signature's audience:
+
+```python
+from langsmith.sandbox import CALLBACK_SIGNATURE_HEADER
+
+callback = await verifier.averify_callback(
+    body=await request.body(),
+    signature=request.headers[CALLBACK_SIGNATURE_HEADER],
+    aud="https://example.com/sandbox-callback",
+)
+print(callback.identity.sandbox_id, callback.host)
+```
+
+Both raise `SandboxTokenVerificationError` on failure.
 
 ## Snapshots
 

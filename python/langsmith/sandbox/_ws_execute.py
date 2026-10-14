@@ -55,8 +55,14 @@ def _env_timeout(name: str, default: float) -> Optional[float]:
 WS_OPEN_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_OPEN", 30)
 WS_PING_INTERVAL = _env_timeout("SANDBOX_WS_TIMEOUT_PING_INTERVAL", 30)
 WS_PING_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_PING", 60)
-# Kept short: a dead peer would otherwise stall teardown for the full duration.
-WS_CLOSE_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_CLOSE", 10)
+# Bounds the wait for the server's TCP close after the close handshake. The
+# server closes right after "exit", but its FIN trails the close frame by ~1s
+# through the proxy chain. websockets answers the server's close frame as soon as
+# it arrives (with "exit") and starts this deadline then, so by the time run()
+# closes there is nothing left to wait for but that FIN: any wait here is paid by
+# every command. It also covers sending a close the client starts itself, which
+# the sync client must finish within this deadline, so keep a few ms of headroom.
+WS_CLOSE_TIMEOUT = _env_timeout("SANDBOX_WS_TIMEOUT_CLOSE", 0.01)
 # Ceiling on the whole connect phase. Without it, retrying a blackholed handshake
 # costs MAX_AUTO_RECONNECTS + 1 full open timeouts plus backoff.
 WS_CONNECT_BUDGET = _env_timeout("SANDBOX_WS_TIMEOUT_CONNECT_BUDGET", 120)
@@ -134,10 +140,14 @@ class _WSStreamControl:
         self._ws: Any = None
         self._closed = False
         self._killed = False
+        self._close_stdin_pending = False
 
     def _bind(self, ws: Any) -> None:
         """Bind to the active WebSocket. Called inside the generator."""
         self._ws = ws
+        if self._close_stdin_pending:
+            self._close_stdin_pending = False
+            self.send_close_stdin()
 
     def _unbind(self) -> None:
         """Mark as closed. Called when the generator exits."""
@@ -148,6 +158,11 @@ class _WSStreamControl:
     def killed(self) -> bool:
         """True if kill() has been called on this stream."""
         return self._killed
+
+    @property
+    def resumes_itself(self) -> bool:
+        """False: the handle owns reattaching a broken WebSocket."""
+        return False
 
     def send_kill(self) -> None:
         """Send a kill message and immediately close the WebSocket."""
@@ -168,6 +183,20 @@ class _WSStreamControl:
         if self._ws and not self._closed:
             self._ws.send(json.dumps({"type": "input", "data": data}))
 
+    def send_close_stdin(self) -> None:
+        """Half-close the command's stdin so it reads EOF.
+
+        A reconnected stream binds its socket only once iteration starts, so a
+        close arriving before that is queued and sent on bind -- dropping it
+        would leave the command waiting for an EOF that never comes.
+        """
+        if self._closed:
+            return
+        if self._ws is None:
+            self._close_stdin_pending = True
+            return
+        self._ws.send(json.dumps({"type": "close_stdin"}))
+
 
 class _AsyncWSStreamControl:
     """Async equivalent of _WSStreamControl."""
@@ -176,9 +205,16 @@ class _AsyncWSStreamControl:
         self._ws: Any = None
         self._closed = False
         self._killed = False
+        self._close_stdin_pending = False
 
     def _bind(self, ws: Any) -> None:
         self._ws = ws
+
+    async def _flush_pending(self) -> None:
+        """Send anything queued while no socket was bound."""
+        if self._close_stdin_pending:
+            self._close_stdin_pending = False
+            await self.send_close_stdin()
 
     def _unbind(self) -> None:
         self._closed = True
@@ -187,6 +223,10 @@ class _AsyncWSStreamControl:
     @property
     def killed(self) -> bool:
         return self._killed
+
+    @property
+    def resumes_itself(self) -> bool:
+        return False
 
     async def send_kill(self) -> None:
         self._killed = True
@@ -204,6 +244,14 @@ class _AsyncWSStreamControl:
     async def send_input(self, data: str) -> None:
         if self._ws and not self._closed:
             await self._ws.send(json.dumps({"type": "input", "data": data}))
+
+    async def send_close_stdin(self) -> None:
+        if self._closed:
+            return
+        if self._ws is None:
+            self._close_stdin_pending = True
+            return
+        await self._ws.send(json.dumps({"type": "close_stdin"}))
 
 
 # =============================================================================
@@ -340,6 +388,8 @@ def run_ws_stream(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[dict[str, Any]] = None,
+    close_stdin: bool = False,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -397,6 +447,10 @@ def run_ws_stream(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
+                if close_stdin:
+                    payload["close_stdin"] = True
                 if pty:
                     payload["pty"] = True
                 ws.send(json.dumps(payload))
@@ -433,7 +487,7 @@ def run_ws_stream(
                 raise SandboxServerReloadError(
                     "Server is reloading, reconnect to resume"
                 ) from e
-            raise SandboxConnectionError(
+            raise SandboxRetryableConnectionError(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
@@ -547,6 +601,8 @@ async def run_ws_stream_async(
     timeout: int = 60,
     env: Optional[dict[str, str]] = None,
     cwd: Optional[str] = None,
+    run_config: Optional[dict[str, Any]] = None,
+    close_stdin: bool = False,
     shell: str = "/bin/bash",
     on_stdout: Optional[Callable[[str], Any]] = None,
     on_stderr: Optional[Callable[[str], Any]] = None,
@@ -577,6 +633,7 @@ async def run_ws_stream_async(
                 ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
+                await control._flush_pending()
 
                 payload: dict[str, Any] = {
                     "type": "execute",
@@ -593,6 +650,10 @@ async def run_ws_stream_async(
                     payload["env"] = env
                 if cwd:
                     payload["cwd"] = cwd
+                if run_config:
+                    payload["run_config"] = run_config
+                if close_stdin:
+                    payload["close_stdin"] = True
                 if pty:
                     payload["pty"] = True
                 await ws.send(json.dumps(payload))
@@ -624,7 +685,7 @@ async def run_ws_stream_async(
                 raise SandboxServerReloadError(
                     "Server is reloading, reconnect to resume"
                 ) from e
-            raise SandboxConnectionError(
+            raise SandboxRetryableConnectionError(
                 f"WebSocket connection closed unexpectedly: {e}"
             ) from e
         except (OSError, RuntimeError) as e:
@@ -663,6 +724,7 @@ async def reconnect_ws_stream_async(
                 ping_timeout=WS_PING_TIMEOUT,
             ) as ws:
                 control._bind(ws)
+                await control._flush_pending()
 
                 await ws.send(
                     json.dumps(

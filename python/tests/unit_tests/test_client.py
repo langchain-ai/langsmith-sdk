@@ -15,9 +15,11 @@ import ssl
 import sys
 import threading
 import time
+import urllib.parse
 import uuid
 import warnings
 import weakref
+from collections.abc import Generator
 from datetime import date, datetime, timezone
 from enum import Enum
 from io import BytesIO
@@ -48,7 +50,11 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
-from langsmith._internal import _orjson
+from langsmith._internal import _addressing, _operations, _orjson
+from langsmith._internal._beta_decorator import (
+    LangSmithBetaWarning,
+    _warn_once,
+)
 from langsmith._internal._beta_decorator import (
     suppress_deprecation_warning as _suppress_deprecation_warning,
 )
@@ -279,6 +285,29 @@ def _clear_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LANGSMITH_PROFILE",
     ):
         monkeypatch.delenv(key, raising=False)
+
+
+def test_client_logs_where_api_url_came_from(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog
+) -> None:
+    _clear_profile_env(monkeypatch)
+    monkeypatch.setenv("LANGSMITH_CONFIG_FILE", str(tmp_path / "missing.json"))
+
+    with caplog.at_level(logging.DEBUG, logger="langsmith.client"):
+        Client(api_key="123")
+    assert (
+        "LangSmith API URL https://api.smith.langchain.com "
+        "resolved from built-in default"
+    ) in caplog.messages
+
+    caplog.clear()
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://eu.api.smith.langchain.com")
+    with caplog.at_level(logging.DEBUG, logger="langsmith.client"):
+        Client(api_key="123")
+    assert (
+        "LangSmith API URL https://eu.api.smith.langchain.com resolved from "
+        "LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT environment variable"
+    ) in caplog.messages
 
 
 def test_profile_config_loads_api_key_and_workspace(
@@ -2912,6 +2941,102 @@ def test_sampling_and_batching():
     assert [post["id"] for post in batch_data.get("post", [])] == [str(SAMPLED_RUN_ID)]
 
 
+def test_sample_rate_is_reported_on_created_runs() -> None:
+    """The configured rate has to ride out on the run, not just gate it.
+
+    Without it the sampled subset cannot be scaled back up to the customer's
+    total trace potential, and nothing anywhere reports the omission.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, tracing_sampling_rate=0.5)
+
+    client.create_run(
+        "sampled_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=SAMPLED_RUN_ID,
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    metadata = (payload.get("extra") or {}).get("metadata") or {}
+    assert metadata["ls_tracing_sample_rate"] == 0.5
+
+
+def test_sample_rate_overrides_an_inherited_value() -> None:
+    """The client's own rate wins over one already on the run.
+
+    ``RunTree.create_child`` copies the parent's metadata onto every child, so a
+    run traced by a client at one rate can arrive carrying another's -- and a
+    caller can set the key directly. Either way the reported rate has to be the
+    rate this client actually sampled at, or the extrapolation is wrong rather
+    than merely missing.
+    """
+    session = mock.MagicMock(spec=requests.Session)
+    client = _client(session, tracing_sampling_rate=0.5)
+
+    client.create_run(
+        "sampled_run",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=SAMPLED_RUN_ID,
+        extra={"metadata": {"ls_tracing_sample_rate": 0.9, "user": "x"}},
+    )
+
+    payload = _find_request_payload(session, "POST", "/runs")
+    metadata = payload["extra"]["metadata"]
+    assert metadata["ls_tracing_sample_rate"] == 0.5
+    assert metadata["user"] == "x"
+
+
+def test_sample_rate_survives_multipart_batching() -> None:
+    """The rate must ride out through the multipart batch path too.
+
+    ``test_sample_rate_is_reported_on_created_runs`` covers the single-run POST
+    path (``auto_batch_tracing=False``). This covers the other one: runs queued
+    through the auto-batcher and flushed to ``/runs/multipart`` as separate
+    multipart parts must carry the rate on each posted run, not just on the
+    dict handed to ``create_run``.
+    """
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_sampling_rate=1.0,
+        session=mock_session,
+    )
+
+    run_ids = [uuid.uuid4() for _ in range(2)]
+    for run_id in run_ids:
+        client.create_run(
+            **_sampling_run(run_id),
+            extra={"metadata": {"user_id": f"user-{run_id}"}},
+        )
+    client.flush()
+
+    post_calls = [
+        call
+        for call in mock_session.request.mock_calls
+        if call.args
+        and call.args[0] == "POST"
+        and call.args[1].endswith("/runs/multipart")
+    ]
+    assert len(post_calls) == 1
+    data = post_calls[0].kwargs["data"]
+    if isinstance(data, bytes):
+        data = data.decode("utf-8")
+    batch_data = parse_request_data(data)
+    posted = batch_data.get("post", [])
+    assert {post["id"] for post in posted} == {str(run_id) for run_id in run_ids}
+    for post in posted:
+        metadata = post["extra"]["metadata"]
+        assert metadata["ls_tracing_sample_rate"] == 1.0
+        assert metadata["user_id"] == f"user-{post['id']}"
+
+
 # Golden decisions at rate 0.5. The JS SDK asserts this exact table in
 # js/src/tests/client.test.ts: both must agree, or a trace sampled in by one
 # SDK is dropped by the other. Regenerate both sides together, never one.
@@ -3202,14 +3327,13 @@ def test_validate_api_key_if_hosted_without_tracing(
     from langsmith import utils as ls_utils
 
     ls_utils.get_env_var.cache_clear()
-    with warnings.catch_warnings(record=True) as w:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ls_utils.LangSmithMissingAPIKeyWarning)
         client_cls(api_url="https://api.smith.langchain.com")
-        if len(w) != 0:
-            e = AssertionError(
-                f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
-            )
-            if "unclosed event loop" not in str(w[0].message):
-                raise e
+    assert not any(
+        issubclass(warning.category, ls_utils.LangSmithMissingAPIKeyWarning)
+        for warning in caught
+    )
 
 
 class TestResolveTracingMode:
@@ -4600,6 +4724,88 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
         "Expected the request body to start with zstd magic bytes; "
         "it appears runs were not compressed."
     )
+
+
+@patch("langsmith.client.requests.Session")
+def test_sample_rate_survives_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """The compression path must carry the sampling rate like any other send path.
+
+    ``_insert_runtime_env`` stamps ``ls_tracing_sample_rate`` into ``extra.metadata``
+    before the run is handed to the compressor. Decompress the exact bytes posted
+    over the wire and parse the multipart body to prove the rate survives the
+    zstd round trip, not just the pre-compression dict.
+    """
+    import zstandard
+
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+            tracing_sampling_rate=1.0,
+        )
+
+        run_id = uuid.uuid4()
+        client.create_run(
+            name="my_test_run",
+            run_type="llm",
+            inputs={"some_key": "some_val" * 1000},
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=str(run_id),
+            extra={"metadata": {"user_id": "user-123"}},
+        )
+
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    time.sleep(0.1)
+
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) >= 1, (
+        "Expected at least one POST to the compression endpoint"
+    )
+
+    call_data = post_calls[0][2]["data"]
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    decompressed = zstandard.ZstdDecompressor().decompress(
+        call_data, max_output_size=10_000_000
+    )
+    batch_data = parse_request_data(decompressed)
+    posted = [run for run in batch_data.get("post", []) if run.get("id") == str(run_id)]
+    assert len(posted) == 1
+    metadata = posted[0]["extra"]["metadata"]
+    assert metadata["ls_tracing_sample_rate"] == 1.0
+    assert metadata["user_id"] == "user-123"
 
 
 @patch("langsmith.client.requests.Session")
@@ -6469,6 +6675,50 @@ def test_list_runs_child_run_ids_deprecation_warning(
     assert not any("child_run_ids" in str(w.message) for w in warning_list)
 
 
+def _runs_query_bodies(mock_session: mock.Mock) -> list[dict]:
+    return [
+        json.loads(c.kwargs["data"])
+        for c in mock_session.request.call_args_list
+        if "/runs/query" in str(c)
+    ]
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_runs_default_select_includes_s3_urls(
+    mock_session_cls: mock.Mock,
+) -> None:
+    """run.attachments is built from s3_urls; the server only returns it when selected."""
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+    mock_session.request.return_value.json.return_value = {"runs": []}
+
+    client = Client()
+    with pytest.warns(DeprecationWarning):
+        list(client.list_runs(project_id=uuid.uuid4()))
+
+    bodies = _runs_query_bodies(mock_session)
+    assert bodies
+    assert "s3_urls" in bodies[0]["select"]
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_threads_select_includes_s3_urls(
+    mock_session_cls: mock.Mock,
+) -> None:
+    """Thread runs get attachments from s3_urls; the server only returns it when selected."""
+    mock_session = mock.Mock()
+    mock_session_cls.return_value = mock_session
+    mock_session.request.return_value.json.return_value = {"runs": []}
+
+    client = Client()
+    with pytest.warns(DeprecationWarning):
+        client.list_threads(project_id=uuid.uuid4())
+
+    bodies = _runs_query_bodies(mock_session)
+    assert bodies
+    assert "s3_urls" in bodies[0]["select"]
+
+
 def test_tracing_error_callback_on_429():
     """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
     mock_session = MagicMock()
@@ -7895,3 +8145,360 @@ def test_compression_threads_default(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         monkeypatch.undo()
         _reload()
+
+
+def _clear_agent_addressing_caches() -> None:
+    ls_utils.get_env_var.cache_clear()
+    ls_utils.get_tracer_project.cache_clear()
+    # The beta warning fires once per process, so without this the first test
+    # to address a run to an agent would silence every test after it.
+    _warn_once.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_addressing_caches() -> Generator[None, None, None]:
+    """Keep a patched environment from outliving the test that set it.
+
+    `monkeypatch` restores `os.environ`, but these caches hold what was read
+    while it was in place, so the next test sees the previous one's values.
+    """
+    yield
+    _clear_agent_addressing_caches()
+
+
+def _clean_agent_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    for name in (
+        "LANGSMITH_AGENT_ID",
+        "LANGSMITH_AGENT_ENVIRONMENT",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    _clear_agent_addressing_caches()
+
+
+def _multipart_parts(session: mock.Mock) -> dict:
+    """Collect the `post.<id>` / `patch.<id>` JSON parts sent so far, by kind."""
+    parts: dict = {}
+    for call in session.request.mock_calls:
+        if not (call.args and call.args[1].endswith("runs/multipart")):
+            continue
+        headers, data = call[2]["headers"], call[2]["data"]
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        for part in MultipartParser(io.BytesIO(data), boundary).parts():
+            kind, _, rest = part.name.partition(".")
+            if kind in ("post", "patch") and "." not in rest:
+                parts[kind] = json.loads(part.value)
+    return parts
+
+
+def _wait_for_part(session: mock.Mock, kind: str, attempts: int = 50) -> dict:
+    """Wait for a `post`/`patch` part to be flushed by the background thread.
+
+    A patch queued before its post has flushed is merged into the post part, so
+    tests that need both have to wait for the first before sending the second.
+    """
+    for _ in range(attempts):
+        time.sleep(0.1)
+        if (part := _multipart_parts(session).get(kind)) is not None:
+            return part
+    raise AssertionError(f"No {kind} part found")
+
+
+def _multipart_client(session: mock.Mock) -> Client:
+    return Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit_bytes=None,
+                size_limit=1,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+
+def _minimal_run() -> dict:
+    """The smallest `create_run` call that reaches the multipart payload."""
+    run_id = uuid.uuid4()
+    return {
+        "id": run_id,
+        "name": "r",
+        "inputs": {"a": 1},
+        "run_type": "llm",
+        "trace_id": run_id,
+        "dotted_order": run_trees._create_current_dotted_order(
+            datetime.now(timezone.utc), run_id
+        ),
+    }
+
+
+def test_agent_addressed_run_sends_no_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point: agent-addressed payloads carry no session at all.
+
+    Both parts have to agree -- a patch addressed by project while its post
+    went to the agent would land the two halves of one run in two places.
+    """
+    _clean_agent_env(
+        monkeypatch,
+        LANGSMITH_AGENT_ID="my-agent",
+        LANGSMITH_AGENT_ENVIRONMENT="staging",
+    )
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    run = run_trees.RunTree(name="my_run", inputs={"a": 1}, ls_client=client)
+    run.post()
+    post_body = _wait_for_part(session, "post")
+    run.end(outputs={"b": 2})
+    run.patch()
+    patch_body = _wait_for_part(session, "patch")
+
+    for kind, body in (("post", post_body), ("patch", patch_body)):
+        assert body.get("address") == "lrn:agents/my-agent/environments/staging", kind
+        assert "agent_id" not in body, kind
+        assert "agent_environment" not in body, kind
+        assert "session_name" not in body, kind
+        assert "session_id" not in body, kind
+
+
+def test_project_addressed_run_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The legacy path keeps sending a project and no agent fields."""
+    _clean_agent_env(monkeypatch)
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    run = run_trees.RunTree(name="my_run", inputs={"a": 1}, ls_client=client)
+    run.post()
+
+    body = _wait_for_part(session, "post")
+    assert body.get("session_name") == "default"
+    assert "address" not in body
+
+
+class TestAConfiguredProjectTravelsWithTheAgent:
+    """`LANGSMITH_AGENT_ID` beside `LANGSMITH_PROJECT` must not relocate a trace.
+
+    Only the `"default"` project the SDK would invent on its own is suppressed.
+    A project the caller configured goes out alongside the agent, so the
+    endpoint reports the conflict instead of the SDK silently picking one.
+    """
+
+    def test_a_per_call_project_still_wins(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An argument beats the environment, so the agent drops out entirely."""
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+            LANGSMITH_PROJECT="my-proj",
+        )
+        session = mock.Mock()
+        session.request = mock.Mock()
+        client = _multipart_client(session)
+        client.create_run(**_minimal_run(), project_name="explicit")
+
+        body = _wait_for_part(session, "post")
+        assert body.get("session_name") == "explicit"
+        assert "address" not in body
+
+    def test_the_client_warns_once_at_construction(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The endpoint's 400 lands in a background thread, so it only logs.
+
+        Warning where the client is built is the one place the caller sees it.
+        """
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+            LANGSMITH_PROJECT="my-proj",
+        )
+        with pytest.warns(ls_utils.LangSmithWarning, match="LANGSMITH_AGENT_ID"):
+            Client(api_url="http://localhost:1984", api_key="123")
+
+
+class TestTheEnvGuardWarnsOnEitherHalf:
+    """Half a pair in the environment is refused, and the batch goes with it."""
+
+    def test_a_complete_pair_alone_stays_quiet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="my-agent",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ls_utils.LangSmithWarning)
+            Client(api_url="http://localhost:1984", api_key="123")
+
+
+class TestRunUrlOfAnAddressedRun:
+    """A run that carries a project needs no resolution.
+
+    One that names no project is located by its agent instead, rather than
+    falling through to the literal `default` project.
+    """
+
+    def test_a_resolved_project_is_enough(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Read back from the endpoint, the run carries a `session_id`."""
+        _clean_agent_env(monkeypatch)
+        client = Client(api_url="http://localhost:1984", api_key="123")
+        run = mock.Mock(
+            id=uuid.uuid4(),
+            session_id=uuid.uuid4(),
+            address="lrn:agents/my-agent/environments/staging",
+        )
+        with mock.patch.object(Client, "_get_tenant_id", return_value=uuid.uuid4()):
+            assert "/projects/p/" in client._construct_run_url(run=run)
+
+
+class TestRemoteInputNeverRaises:
+    """A `baggage` header is attacker-settable, so it is ignored, never raised on."""
+
+    def test_a_baggage_replica_naming_both_is_normalized(self) -> None:
+        """Otherwise a header could make the receiving service raise."""
+        replicas = json.dumps(
+            [
+                {
+                    "project_name": "p-remote",
+                    "address": "lrn:agents/ag-remote/environments/production",
+                }
+            ]
+        )
+        parsed = run_trees._Baggage.from_header(
+            f"{run_trees.LANGSMITH_REPLICAS}={urllib.parse.quote(replicas)}"
+        )
+        assert parsed.replicas == [{"project_name": "p-remote"}]
+
+
+class TestPatchInheritsThePostsTarget:
+    """A patch must not be addressed to the agent when its post named a project."""
+
+    def test_an_update_does_not_fill_the_agent_from_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The post established the target; the patch inherits it by omission.
+
+        An update carries a project only when the caller passed one, and most
+        callers don't -- so filling the agent in here addressed the two halves
+        of one run to two different projects.
+        """
+        _clean_agent_env(
+            monkeypatch,
+            LANGSMITH_AGENT_ID="ag",
+            LANGSMITH_AGENT_ENVIRONMENT="staging",
+        )
+        post: dict = {"session_name": "myproj"}
+        _addressing.apply_to_payload(post)
+        patch: dict = {"session_name": None, "session_id": None}
+        _addressing.apply_to_payload(patch, update=True)
+        assert post == {"session_name": "myproj"}
+        # No address added. The null session keys are left exactly as
+        # `update_run` built them, which is what `main` sends today.
+        assert "address" not in patch
+        assert patch == {"session_name": None, "session_id": None}
+
+
+def test_batch_update_does_not_resolve_the_ambient_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`multipart_ingest(update=...)` must inherit the post's target too.
+
+    Driven through the public method rather than `_apply_addressing`:
+    the first round of tests for this called the helper directly, which is why
+    they passed while `_run_transform` -- and so both batch paths -- stayed
+    broken.
+    """
+    _clean_agent_env(
+        monkeypatch, LANGSMITH_AGENT_ID="ag", LANGSMITH_AGENT_ENVIRONMENT="staging"
+    )
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = _multipart_client(session)
+    id_ = uuid.uuid4()
+    dotted = run_trees._create_current_dotted_order(datetime.now(timezone.utc), id_)
+    base: dict = {
+        "id": id_,
+        "trace_id": id_,
+        "dotted_order": dotted,
+        "name": "r",
+        "run_type": "llm",
+    }
+    # The post names a project, as an evaluation or an explicit caller would.
+    client.multipart_ingest(create=[{**base, "inputs": {"a": 1}, "session_name": "p"}])
+    post = _wait_for_part(session, "post")
+    client.multipart_ingest(update=[{**base, "outputs": {"b": 2}}])
+    patch = _wait_for_part(session, "patch")
+
+    assert post.get("session_name") == "p"
+    assert "address" not in post
+    # The patch inherits the post's target by naming nothing at all.
+    assert "address" not in patch
+
+
+class TestAgentAddressingWarnsOnce:
+    """The beta disclaimer has to reach a caller who never read a docstring.
+
+    Emitted where the addressing is settled, so it tracks runs that are
+    actually agent-addressed rather than an env var that may go unused.
+    """
+
+    def test_a_project_addressed_run_stays_quiet(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clean_agent_env(monkeypatch, LANGSMITH_PROJECT="proj")
+        payload: dict = {"session_name": "proj"}
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LangSmithBetaWarning)
+            _addressing.apply_to_payload(payload)
+        assert payload == {"session_name": "proj"}
+
+
+class TestFeedbackAgentAddressing:
+    """A `feedback.<id>` part is addressed by address or by project, never both."""
+
+    def test_an_unset_address_is_omitted_not_nulled(self) -> None:
+        """A null must not read as "provided" to the endpoint."""
+        serialized = _operations.serialize_feedback_dict(
+            {
+                "id": uuid.uuid4(),
+                "trace_id": uuid.uuid4(),
+                "key": "correctness",
+                "score": 1,
+            }
+        )
+        body = json.loads(serialized.feedback)
+        assert "address" not in body
+
+    def test_the_address_reaches_the_feedback_part_as_one_string(self) -> None:
+        serialized = _operations.serialize_feedback_dict(
+            {
+                "id": uuid.uuid4(),
+                "trace_id": uuid.uuid4(),
+                "key": "correctness",
+                "score": 1,
+                "address": "lrn:agents/my-agent/environments/staging",
+            }
+        )
+        body = json.loads(serialized.feedback)
+        assert body["address"] == "lrn:agents/my-agent/environments/staging"
+        assert "agent_id" not in body
+        assert "agent_environment" not in body
