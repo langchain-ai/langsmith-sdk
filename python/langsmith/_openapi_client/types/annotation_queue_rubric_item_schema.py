@@ -46,6 +46,12 @@ class FeedbackConfig(BaseModel):
 
     tenant_id: str
 
+    is_deleted: Optional[bool] = None
+
+    is_enforced: Optional[bool] = None
+
+    is_first: Optional[bool] = None
+
     is_lower_score_better: Optional[bool] = None
 
 

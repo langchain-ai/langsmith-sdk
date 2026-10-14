@@ -48,6 +48,12 @@ class FeedbackConfig(TypedDict, total=False):
 
     tenant_id: Required[str]
 
+    is_deleted: bool
+
+    is_enforced: bool
+
+    is_first: bool
+
     is_lower_score_better: Optional[bool]
 
 

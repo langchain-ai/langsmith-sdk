@@ -222,6 +222,12 @@ export namespace AnnotationQueueRubricItemSchema {
 
     tenant_id: string;
 
+    is_deleted?: boolean;
+
+    is_enforced?: boolean;
+
+    is_first?: boolean;
+
     is_lower_score_better?: boolean | null;
   }
 
