@@ -34,7 +34,6 @@ export { Sandbox } from "./sandbox.js";
 export { CommandHandle } from "./command_handle.js";
 export {
   awsAuth,
-  azureAuth,
   gcpAuth,
   opaqueSecret,
   proxyConfig,
@@ -62,7 +61,6 @@ export type {
   VerifyUserTokenOptions,
 } from "./verify.js";
 export {
-  azureBlobMount,
   contextHubMount,
   gcsMount,
   gitMount,
@@ -100,12 +98,8 @@ export type {
   SandboxAccessControl,
   SandboxAwsAuthRule,
   SandboxAwsMountAuthConfig,
-  SandboxAzureAuthRule,
-  SandboxAzureMountAuthConfig,
-  SandboxAzureResource,
   SandboxGcpAuthRule,
   SandboxGcpMountAuthConfig,
-  SandboxGcpMountWorkloadIdentityAuthConfig,
   SandboxMountAuth,
   SandboxMountAuthConfig,
   SandboxMountConfig,
@@ -114,8 +108,6 @@ export type {
   SandboxProxySecret,
   SandboxMount,
   MountCacheConfig,
-  AzureBlobMountConfig,
-  AzureBlobMountSpec,
   ContextHubMountConfig,
   ContextHubMountSpec,
   GCSMountConfig,

@@ -1,15 +1,11 @@
 import type {
-  AzureBlobMountSpec,
   ContextHubMountSpec,
   GCSMountSpec,
   GitMountRefSpec,
   GitMountSpec,
   MountCacheConfig,
   SandboxAwsAuthRule,
-  SandboxAzureAuthRule,
-  SandboxAzureMountAuthConfig,
   SandboxGcpAuthRule,
-  SandboxGcpMountWorkloadIdentityAuthConfig,
   S3MountSpec,
   SandboxMount,
   SandboxMountAuth,
@@ -19,9 +15,9 @@ import type {
   SandboxProxyRule,
   SandboxProxySecret,
 } from "./types.js";
-import { getAwsRoleConfig } from "./proxy_config.js";
+import { getAwsRoleArn } from "./proxy_config.js";
 
-function requireNonEmptyString(value: unknown, field: string): string {
+function requireNonEmptyString(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${field} must be a non-empty string`);
   }
@@ -204,44 +200,6 @@ export function gcsMount({
   return mount;
 }
 
-export function azureBlobMount({
-  id,
-  mountPath,
-  storageAccount,
-  container,
-  prefix,
-  readOnly,
-  cache,
-}: {
-  id: string;
-  mountPath: string;
-  storageAccount: string;
-  container: string;
-  prefix?: string;
-  readOnly?: boolean;
-  cache?: MountCacheConfig;
-}): AzureBlobMountSpec {
-  const mount: AzureBlobMountSpec = {
-    id: requireNonEmptyString(id, "id"),
-    type: "azure_blob",
-    mount_path: requireNonEmptyString(mountPath, "mountPath"),
-    azure_blob: {
-      storage_account: requireNonEmptyString(storageAccount, "storageAccount"),
-      container: requireNonEmptyString(container, "container"),
-    },
-  };
-  if (prefix !== undefined) {
-    mount.azure_blob.prefix = requireNonEmptyString(prefix, "prefix");
-  }
-  if (readOnly !== undefined) {
-    mount.read_only = readOnly;
-  }
-  if (cache !== undefined) {
-    mount.cache = { ...cache };
-  }
-  return mount;
-}
-
 /**
  * Build a read-only Context Hub mount. The sync is one-way: files written
  * under the mount path inside the sandbox are never pushed back to the repo,
@@ -283,12 +241,11 @@ function normalizeMounts(mounts: SandboxMount[]): SandboxMount[] {
     if (
       mount.type !== "s3" &&
       mount.type !== "gcs" &&
-      mount.type !== "azure_blob" &&
       mount.type !== "git" &&
       mount.type !== "contexthub"
     ) {
       throw new Error(
-        "mountConfig only supports s3, gcs, azure_blob, git, and contexthub mounts",
+        "mountConfig only supports s3, gcs, git, and contexthub mounts",
       );
     }
     rejectProviderCredentialsInMount(mount);
@@ -301,8 +258,6 @@ const FORBIDDEN_MOUNT_CREDENTIAL_FIELDS = new Set([
   "secret_access_key",
   "session_token",
   "service_account_json",
-  "account_key",
-  "sas_token",
   "access_token",
   "refresh_token",
   "credentials",
@@ -328,80 +283,6 @@ function rejectProviderCredentialsInMount(value: unknown): void {
   }
 }
 
-function gcpMountAuth(
-  gcp: SandboxGcpAuthRule["gcp"],
-): SandboxMountAuthConfig["gcp"] {
-  if (!gcp.workload_identity_provider) {
-    return {
-      service_account_json: copyMountSecret(
-        gcp.service_account_json,
-        "serviceAccountJson",
-      ),
-    };
-  }
-  if (gcp.service_account_json !== undefined) {
-    throw new Error(
-      "workloadIdentityProvider and serviceAccountJson are mutually exclusive",
-    );
-  }
-  const config: SandboxGcpMountWorkloadIdentityAuthConfig = {
-    workload_identity_provider: requireNonEmptyString(
-      gcp.workload_identity_provider,
-      "workloadIdentityProvider",
-    ),
-  };
-  if (gcp.service_account_email !== undefined) {
-    config.service_account_email = requireNonEmptyString(
-      gcp.service_account_email,
-      "serviceAccountEmail",
-    );
-  }
-  if (gcp.subject_scope !== undefined) {
-    config.subject_scope = requireNonEmptyString(
-      gcp.subject_scope,
-      "subjectScope",
-    );
-  }
-  return config;
-}
-
-/**
- * Keep only the fields mount_config.auth.azure accepts. A static block's
- * storage_account is checked against the mounts by mountConfig; resources do
- * not apply to mounts.
- */
-function azureMountAuth(
-  azure: Record<string, unknown>,
-): SandboxAzureMountAuthConfig {
-  if (azure.tenant_id || azure.client_id) {
-    if (azure.account_key !== undefined || azure.sas_token !== undefined) {
-      throw new Error(
-        "tenantId/clientId and accountKey or sasToken are mutually exclusive",
-      );
-    }
-    const config: SandboxAzureMountAuthConfig = {
-      tenant_id: requireNonEmptyString(azure.tenant_id, "tenantId"),
-      client_id: requireNonEmptyString(azure.client_id, "clientId"),
-    };
-    if (azure.subject_scope !== undefined) {
-      config.subject_scope = requireNonEmptyString(
-        azure.subject_scope,
-        "subjectScope",
-      );
-    }
-    return config;
-  }
-  const hasKey = azure.account_key !== undefined;
-  if (hasKey === (azure.sas_token !== undefined)) {
-    throw new Error(
-      "azure mount auth requires tenantId and clientId, or exactly one of accountKey or sasToken",
-    );
-  }
-  return hasKey
-    ? { account_key: copyMountSecret(azure.account_key, "accountKey") }
-    : { sas_token: copyMountSecret(azure.sas_token, "sasToken") };
-}
-
 function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
   if (!Array.isArray(auth)) {
     throw new Error("auth must be an array of provider auth blocks");
@@ -412,10 +293,8 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
       throw new Error("auth must be an array of provider auth blocks");
     }
     const provider = (block as unknown as Record<string, unknown>).type;
-    if (provider !== "aws" && provider !== "gcp" && provider !== "azure") {
-      throw new Error(
-        "mountConfig auth only supports aws, gcp, and azure blocks",
-      );
+    if (provider !== "aws" && provider !== "gcp") {
+      throw new Error("mountConfig auth only supports aws and gcp blocks");
     }
     if (byProvider[provider] !== undefined) {
       throw new Error(`duplicate ${provider} auth rule in mountConfig`);
@@ -425,13 +304,10 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
       if (aws === undefined) {
         throw new Error("aws mount auth must include an aws block");
       }
-      const role = getAwsRoleConfig(aws);
-      if (role !== undefined) {
-        byProvider.aws = role;
+      const roleArn = getAwsRoleArn(aws);
+      if (roleArn !== undefined) {
+        byProvider.aws = { role_arn: roleArn };
         continue;
-      }
-      if ("subject_scope" in aws && aws.subject_scope !== undefined) {
-        throw new Error("subjectScope requires roleArn");
       }
       byProvider.aws = {
         access_key_id: copyMountSecret(aws.access_key_id, "accessKeyId"),
@@ -440,47 +316,26 @@ function normalizeMountAuth(auth: SandboxMountAuth[]): SandboxMountAuthConfig {
           "secretAccessKey",
         ),
       };
-    } else if (provider === "gcp") {
+    } else {
       const gcp = (block as Partial<SandboxGcpAuthRule>).gcp;
       if (gcp === undefined) {
         throw new Error("gcp mount auth must include a gcp block");
       }
-      byProvider.gcp = gcpMountAuth(gcp);
-    } else {
-      const azure = (block as Partial<SandboxAzureAuthRule>).azure;
-      if (azure === undefined) {
-        throw new Error("azure mount auth must include an azure block");
-      }
-      byProvider.azure = azureMountAuth(
-        azure as unknown as Record<string, unknown>,
-      );
+      byProvider.gcp = {
+        service_account_json: copyMountSecret(
+          gcp.service_account_json,
+          "serviceAccountJson",
+        ),
+      };
     }
   }
   return byProvider;
 }
 
-function staticAzureAuthStorageAccount(
-  auth: SandboxMountAuth[],
-): string | undefined {
-  for (const block of auth) {
-    if (block?.type !== "azure") continue;
-    const azure = (block as SandboxAzureAuthRule).azure as unknown as
-      | Record<string, unknown>
-      | undefined;
-    if (azure && !azure.tenant_id && !azure.client_id) {
-      return typeof azure.storage_account === "string"
-        ? azure.storage_account
-        : undefined;
-    }
-  }
-  return undefined;
-}
-
 /**
- * Build mount-scoped auth, or use an enabled rule from proxyConfig: an AWS
- * rule for S3, a GCP workload identity rule for GCS, or an Azure rule for
- * Azure Blob. Pass the same proxyConfig to sandbox creation; that rule remains
- * general proxy auth and is not restricted to the mounts.
+ * Build mount-scoped auth, or use an enabled AWS rule from proxyConfig for S3.
+ * Pass the same proxyConfig to sandbox creation; its general IAM permissions
+ * remain unchanged. GCS mounts still require explicit GCP auth in this config.
  */
 export function mountConfig({
   auth = [],
@@ -494,16 +349,10 @@ export function mountConfig({
   const normalizedMounts = normalizeMounts(mounts);
   const authByProvider = normalizeMountAuth(auth);
   const mountProviders = new Set(normalizedMounts.map((mount) => mount.type));
-  const enabledRules = (proxyConfig?.rules ?? []).filter(
-    (rule) => rule?.enabled === true,
-  );
-  const proxyProviders = new Set(enabledRules.map((rule) => rule.type));
-  const hasGcpWorkloadIdentityRule = enabledRules.some(
-    (rule) =>
-      rule.type === "gcp" &&
-      Boolean(
-        (rule as Partial<SandboxGcpAuthRule>).gcp?.workload_identity_provider,
-      ),
+  const proxyProviders = new Set(
+    (proxyConfig?.rules ?? [])
+      .filter((rule) => rule?.enabled === true)
+      .map((rule) => rule.type),
   );
 
   if (
@@ -513,47 +362,14 @@ export function mountConfig({
   ) {
     throw new Error("s3 mounts require aws auth in mountConfig");
   }
-  if (
-    mountProviders.has("gcs") &&
-    authByProvider.gcp === undefined &&
-    !hasGcpWorkloadIdentityRule
-  ) {
-    throw new Error(
-      "gcs mounts require gcp auth in mountConfig or a GCP workload identity rule in proxyConfig",
-    );
-  }
-  if (
-    mountProviders.has("azure_blob") &&
-    authByProvider.azure === undefined &&
-    !proxyProviders.has("azure")
-  ) {
-    throw new Error("azure_blob mounts require azure auth in mountConfig");
+  if (mountProviders.has("gcs") && authByProvider.gcp === undefined) {
+    throw new Error("gcs mounts require gcp auth in mountConfig");
   }
   if (authByProvider.aws !== undefined && !mountProviders.has("s3")) {
     throw new Error("aws auth requires at least one s3 mount in mountConfig");
   }
   if (authByProvider.gcp !== undefined && !mountProviders.has("gcs")) {
     throw new Error("gcp auth requires at least one gcs mount in mountConfig");
-  }
-  if (authByProvider.azure !== undefined && !mountProviders.has("azure_blob")) {
-    throw new Error(
-      "azure auth requires at least one azure_blob mount in mountConfig",
-    );
-  }
-  const staticAccount = staticAzureAuthStorageAccount(auth);
-  if (staticAccount !== undefined) {
-    const accounts = new Set(
-      normalizedMounts
-        .filter(
-          (mount): mount is AzureBlobMountSpec => mount.type === "azure_blob",
-        )
-        .map((mount) => mount.azure_blob.storage_account),
-    );
-    if (accounts.size !== 1 || !accounts.has(staticAccount)) {
-      throw new Error(
-        "azure_blob mounts using an azure account key or SAS token must all use the auth's storageAccount",
-      );
-    }
   }
 
   const config: SandboxMountConfig = {
@@ -581,7 +397,7 @@ export function validateMountConfigProxyConfig(
     }
     const ruleType = (rule as SandboxProxyRule).type;
     if (
-      (ruleType === "aws" || ruleType === "gcp" || ruleType === "azure") &&
+      (ruleType === "aws" || ruleType === "gcp") &&
       mountConfig.auth[ruleType] !== undefined
     ) {
       throw new Error(

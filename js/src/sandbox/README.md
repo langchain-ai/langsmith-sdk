@@ -134,28 +134,6 @@ Do not put real AWS credentials in sandbox environment variables. Plaintext AWS
 credential values are not accepted directly by the AWS auth proxy; wrap
 short-lived write-only values with `opaqueSecret(...)`.
 
-To avoid static keys entirely, pass an IAM role. LangSmith assumes it with
-`AssumeRoleWithWebIdentity` using a short-lived OIDC token for your workspace,
-so the role's trust policy must trust LangSmith's OIDC issuer. `subjectScope`
-defaults to `"workspace"`; `"tag:<tag value id>"` puts a resource tag value in
-the token subject instead, and must name one of the `tagValueIds` the sandbox
-is created with. Workload identity is fixed at sandbox creation.
-
-```typescript
-const tagValueId = "7d3c0c1e-1b7a-4e0a-9b8f-2f4a1d2c3b4a";
-const sandbox = await client.createSandbox({
-  proxyConfig: proxyConfig({
-    rules: [
-      awsAuth({
-        roleArn: "arn:aws:iam::123456789012:role/LangSmithSandbox",
-        subjectScope: `tag:${tagValueId}`,
-      }),
-    ],
-  }),
-  tagValueIds: [tagValueId],
-});
-```
-
 ## GCP Auth Proxy
 
 Use the GCP auth proxy when sandbox code needs to call Google APIs. You
@@ -198,66 +176,7 @@ try {
 ```
 
 Use `opaqueSecret("...")` for short-lived write-only service account JSON.
-Plaintext service account JSON is not accepted directly. `scopes` is optional
-and defaults to `https://www.googleapis.com/auth/cloud-platform`.
-
-To use workload identity federation instead of a key, pass a workload identity
-provider that trusts LangSmith's OIDC issuer, and optionally a service account
-to impersonate. `subjectScope` works as for AWS. Workload identity is fixed at
-sandbox creation.
-
-```typescript
-const authConfig = proxyConfig({
-  rules: [
-    gcpAuth({
-      workloadIdentityProvider:
-        "//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/langsmith/providers/langsmith",
-      serviceAccountEmail: "vertex-ro@my-project.iam.gserviceaccount.com",
-    }),
-  ],
-});
-```
-
-## Azure Auth Proxy
-
-Use the Azure auth proxy when sandbox code needs to call Azure Storage, Key
-Vault, Resource Manager, or Azure AI services. With Entra workload identity,
-pass the tenant ID and the client ID of an app registration or user-assigned
-managed identity whose federated credential trusts LangSmith's OIDC issuer.
-`resources` limits which Azure resources tokens are requested for (all
-supported ones by default), and `subjectScope` works as for AWS. Workload
-identity is fixed at sandbox creation.
-
-```typescript
-import { azureAuth, proxyConfig } from "langsmith/sandbox";
-
-const authConfig = proxyConfig({
-  rules: [
-    azureAuth({
-      tenantId: "2c6a46a8-f9b3-4f58-8e5d-4bab8c1f9270",
-      clientId: "0b5a3f4e-8f1d-4c3a-9a63-1f6c2d8e7a10",
-      resources: ["https://storage.azure.com"],
-    }),
-  ],
-});
-```
-
-For a single storage account you can instead pass a storage account key
-(`accountKey`) or a SAS token (`sasToken`) as a workspace secret or opaque
-value:
-
-```typescript
-import { azureAuth, proxyConfig, workspaceSecret } from "langsmith/sandbox";
-
-const authConfig = proxyConfig({
-  rules: [
-    azureAuth({
-      storageAccount: "lsdata01",
-      sasToken: workspaceSecret("SANDBOX_AZURE_SAS_TOKEN"),
-    }),
-  ],
-});
-```
+Plaintext service account JSON is not accepted directly.
 
 ## Sandbox Mounts
 
@@ -266,11 +185,8 @@ object storage buckets or public Git repositories. Mount specs contain only the
 mount target. Provider credentials stay in `mountConfig.auth`; the backend
 expands them into runtime proxy auth rules. You can also pass `proxyConfig` for
 non-mount proxy behavior such as custom headers, callbacks, or access control.
-Explicit AWS/GCP/Azure proxy auth rules conflict with `mountConfig` auth for the
-same provider. Instead of mount auth, S3 mounts can use an enabled AWS proxy
-rule, GCS mounts a GCP workload identity proxy rule, and Azure Blob mounts an
-Azure proxy rule: pass the same `proxyConfig` to `mountConfig(...)` and to
-sandbox creation.
+Explicit AWS/GCP proxy auth rules conflict with `mountConfig` auth for the same
+provider.
 
 S3 mounts require AWS auth:
 
@@ -353,33 +269,6 @@ try {
 } finally {
   await sandbox.delete();
 }
-```
-
-Azure Blob mounts require Azure auth. Workload identity (`tenantId` and
-`clientId`) works for any storage account; a key or SAS token requires all
-Azure Blob mounts to use the same `storageAccount`:
-
-```typescript
-import { azureAuth, azureBlobMount, mountConfig } from "langsmith/sandbox";
-
-const mounts = mountConfig({
-  auth: [
-    azureAuth({
-      tenantId: "2c6a46a8-f9b3-4f58-8e5d-4bab8c1f9270",
-      clientId: "0b5a3f4e-8f1d-4c3a-9a63-1f6c2d8e7a10",
-    }),
-  ],
-  mounts: [
-    azureBlobMount({
-      id: "data",
-      mountPath: "/mnt/mounts/data",
-      storageAccount: "lsdata01",
-      container: "agent-data",
-      prefix: "runs/",
-      readOnly: true,
-    }),
-  ],
-});
 ```
 
 Public Git mounts do not require AWS or GCP auth:

@@ -495,17 +495,9 @@ interface AwsStaticAuthConfig {
   role_arn?: "";
 }
 
-/**
- * IAM role assumed with AssumeRoleWithWebIdentity and renewed by LangSmith,
- * outside the sandbox.
- */
+/** IAM role assumed and renewed by LangSmith, outside the sandbox. */
 interface AwsRoleAuthConfig {
   role_arn: string;
-  /**
-   * Workload identity token subject: `"workspace"` (default) or
-   * `"tag:<tag value id>"`, which must be one of the sandbox's tag value IDs.
-   */
-  subject_scope?: string;
   access_key_id?: never;
   secret_access_key?: never;
 }
@@ -548,103 +540,17 @@ export interface SandboxGcpAuthRule {
    * the wire.
    */
   env_vars?: Record<string, string>;
-  /** Service account key or workload identity federation, and OAuth scopes. */
-  gcp: GcpServiceAccountAuthConfig | GcpWorkloadIdentityAuthConfig;
-}
-
-/** GCP service account key credential. */
-interface GcpServiceAccountAuthConfig {
-  service_account_json: SandboxProxySecret;
-  /** OAuth scopes; the server defaults to cloud-platform when omitted. */
-  scopes?: string[];
-  workload_identity_provider?: never;
-  service_account_email?: never;
-  subject_scope?: never;
-}
-
-/** GCP workload identity federation through LangSmith's OIDC issuer. */
-interface GcpWorkloadIdentityAuthConfig {
-  /**
-   * Full provider name:
-   * `//iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`.
-   */
-  workload_identity_provider: string;
-  /** Service account to impersonate; omitted uses the federated principal. */
-  service_account_email?: string;
-  /** `"workspace"` (default) or `"tag:<tag value id>"`. */
-  subject_scope?: string;
-  /** OAuth scopes; the server defaults to cloud-platform when omitted. */
-  scopes?: string[];
-  service_account_json?: never;
-}
-
-/** Azure resources a workload identity rule requests tokens for. */
-export type SandboxAzureResource =
-  | "https://storage.azure.com"
-  | "https://vault.azure.net"
-  | "https://management.azure.com"
-  | "https://cognitiveservices.azure.com";
-
-/** Entra workload identity federation through LangSmith's OIDC issuer. */
-interface AzureWorkloadIdentityAuthConfig {
-  /** Entra tenant ID (GUID). */
-  tenant_id: string;
-  /** App registration or user-assigned managed identity client ID (GUID). */
-  client_id: string;
-  /** `"workspace"` (default) or `"tag:<tag value id>"`. */
-  subject_scope?: string;
-  /** Resources to request tokens for; all supported ones when omitted. */
-  resources?: SandboxAzureResource[];
-  storage_account?: never;
-  account_key?: never;
-  sas_token?: never;
-}
-
-/** Azure storage account shared key. */
-interface AzureAccountKeyAuthConfig {
-  storage_account: string;
-  account_key: SandboxProxySecret;
-  sas_token?: never;
-  tenant_id?: never;
-  client_id?: never;
-}
-
-/** Azure storage account SAS token. */
-interface AzureSasAuthConfig {
-  storage_account: string;
-  sas_token: SandboxProxySecret;
-  account_key?: never;
-  tenant_id?: never;
-  client_id?: never;
-}
-
-/** Azure auth rule for sandbox proxy Azure request authentication. */
-export interface SandboxAzureAuthRule {
-  /** Rule name. */
-  name: string;
-  /** Azure auth rules use the sandbox proxy's built-in Azure host matcher. */
-  type: "azure";
-  /** Whether the rule is enabled. */
-  enabled?: boolean;
-  /**
-   * Plaintext environment variables set for every command in the sandbox while
-   * the rule is enabled, for tools that refuse to run unless a credential
-   * variable is present even though the proxy injects the real credential on
-   * the wire.
-   */
-  env_vars?: Record<string, string>;
-  /** Exclusive workload identity, account key, or SAS token credential. */
-  azure:
-    | AzureWorkloadIdentityAuthConfig
-    | AzureAccountKeyAuthConfig
-    | AzureSasAuthConfig;
+  /** GCP service-account credential and OAuth scopes. */
+  gcp: {
+    service_account_json: SandboxProxySecret;
+    scopes?: string[];
+  };
 }
 
 /** Proxy rule accepted by the sandbox proxy config. */
 export type SandboxProxyRule =
   | SandboxAwsAuthRule
   | SandboxGcpAuthRule
-  | SandboxAzureAuthRule
   | Record<string, unknown>;
 
 /**
@@ -721,24 +627,6 @@ export interface GCSMountSpec extends SandboxBucketMountBase {
   gcs: GCSMountConfig;
 }
 
-/** Azure Blob container configuration for a sandbox mount. */
-export interface AzureBlobMountConfig {
-  /** Storage account name (3-24 lowercase letters and digits). */
-  storage_account: string;
-  /** Blob container name. */
-  container: string;
-  /** Optional blob prefix inside the container. */
-  prefix?: string;
-}
-
-/** Azure Blob container-backed sandbox mount specification. */
-export interface AzureBlobMountSpec extends SandboxBucketMountBase {
-  /** Mount type. */
-  type: "azure_blob";
-  /** Azure Blob mount configuration. */
-  azure_blob: AzureBlobMountConfig;
-}
-
 /** Git ref selected for a sandbox mount. */
 export interface GitMountRefSpec {
   /** Git ref type. */
@@ -796,7 +684,6 @@ export interface ContextHubMountSpec {
 export type SandboxMount =
   | S3MountSpec
   | GCSMountSpec
-  | AzureBlobMountSpec
   | GitMountSpec
   | ContextHubMountSpec;
 
@@ -812,32 +699,15 @@ export interface SandboxGcpMountAuthConfig {
   service_account_json: SandboxProxySecret;
 }
 
-/** GCP workload identity federation used to authenticate GCS mounts. */
-export interface SandboxGcpMountWorkloadIdentityAuthConfig {
-  workload_identity_provider: string;
-  service_account_email?: string;
-  subject_scope?: string;
-}
-
-/** Azure credentials used by the backend to authenticate Azure Blob mounts. */
-export type SandboxAzureMountAuthConfig =
-  | { tenant_id: string; client_id: string; subject_scope?: string }
-  | { account_key: SandboxProxySecret }
-  | { sas_token: SandboxProxySecret };
-
 /** Provider auth blocks for sandbox mounts. */
 export interface SandboxMountAuthConfig {
   /** IAM roles here are restricted to this sandbox's S3 mount scopes. */
   aws?: SandboxAwsMountAuthConfig | AwsRoleAuthConfig;
-  gcp?: SandboxGcpMountAuthConfig | SandboxGcpMountWorkloadIdentityAuthConfig;
-  azure?: SandboxAzureMountAuthConfig;
+  gcp?: SandboxGcpMountAuthConfig;
 }
 
 /** Provider auth helper output accepted by mountConfig. */
-export type SandboxMountAuth =
-  | SandboxAwsAuthRule
-  | SandboxGcpAuthRule
-  | SandboxAzureAuthRule;
+export type SandboxMountAuth = SandboxAwsAuthRule | SandboxGcpAuthRule;
 
 /** Public mount config sent to the sandbox API. */
 export interface SandboxMountConfig {
@@ -923,11 +793,6 @@ export interface CreateSandboxOptions {
    * no access.
    */
   accessDelegation?: AccessDelegation;
-  /**
-   * Resource tag value IDs to attach to the sandbox at creation. A workload
-   * identity `subjectScope` of `"tag:<tag value id>"` must name one of these.
-   */
-  tagValueIds?: string[];
 }
 
 /**
