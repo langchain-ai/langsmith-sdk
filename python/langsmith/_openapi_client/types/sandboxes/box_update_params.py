@@ -27,7 +27,9 @@ __all__ = [
     "ProxyConfigRuleAzureSandboxesProxyAzureSasConfig",
     "ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken",
     "ProxyConfigRuleGcp",
-    "ProxyConfigRuleGcpServiceAccountJson",
+    "ProxyConfigRuleGcpSandboxesProxyGcpWorkloadIdentityConfig",
+    "ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfig",
+    "ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfigServiceAccountJson",
     "ProxyConfigRuleHeader",
     "RunConfig",
 ]
@@ -233,15 +235,16 @@ ProxyConfigRuleAzure: TypeAlias = Union[
 ]
 
 
-class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):
-    type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
+class ProxyConfigRuleGcpSandboxesProxyGcpWorkloadIdentityConfig(TypedDict, total=False):
+    workload_identity_provider: Required[str]
+    """
+    WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
+    workspace through Workload Identity Federation instead of a service account key.
+    Use the full resource name:
+    //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+    Cannot be changed after creation.
+    """
 
-    is_set: bool
-
-    value: str
-
-
-class ProxyConfigRuleGcp(TypedDict, total=False):
     scopes: SequenceNotStr[str]
     """Scopes are the OAuth scopes requested for the access token.
 
@@ -254,8 +257,6 @@ class ProxyConfigRuleGcp(TypedDict, total=False):
     token. Omit it to use the federated principal directly.
     """
 
-    service_account_json: ProxyConfigRuleGcpServiceAccountJson
-
     subject_scope: str
     """
     SubjectScope picks the token subject the provider trusts: "workspace" (the
@@ -263,14 +264,28 @@ class ProxyConfigRuleGcp(TypedDict, total=False):
     tag_value_ids. Only valid with workload_identity_provider.
     """
 
-    workload_identity_provider: str
+
+class ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfigServiceAccountJson(TypedDict, total=False):
+    type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
+
+    is_set: bool
+
+    value: str
+
+
+class ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfig(TypedDict, total=False):
+    service_account_json: Required[ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfigServiceAccountJson]
+
+    scopes: SequenceNotStr[str]
+    """Scopes are the OAuth scopes requested for the access token.
+
+    Omit them to use https://www.googleapis.com/auth/cloud-platform.
     """
-    WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
-    workspace through Workload Identity Federation instead of a service account key.
-    Use the full resource name:
-    //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
-    Cannot be changed after creation.
-    """
+
+
+ProxyConfigRuleGcp: TypeAlias = Union[
+    ProxyConfigRuleGcpSandboxesProxyGcpWorkloadIdentityConfig, ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfig
+]
 
 
 class ProxyConfigRuleHeader(TypedDict, total=False):

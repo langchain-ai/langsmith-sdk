@@ -926,7 +926,7 @@ export namespace SandboxResponse {
        */
       env_vars?: { [key: string]: string };
 
-      gcp?: Rule.Gcp;
+      gcp?: Rule.SandboxesProxyGcpWorkloadIdentityConfig | Rule.SandboxesProxyGcpServiceAccountConfig;
 
       headers?: Array<Rule.Header>;
 
@@ -1083,7 +1083,16 @@ export namespace SandboxResponse {
         }
       }
 
-      export interface Gcp {
+      export interface SandboxesProxyGcpWorkloadIdentityConfig {
+        /**
+         * WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
+         * workspace through Workload Identity Federation instead of a service account key.
+         * Use the full resource name:
+         * //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+         * Cannot be changed after creation.
+         */
+        workload_identity_provider: string;
+
         /**
          * Scopes are the OAuth scopes requested for the access token. Omit them to use
          * https://www.googleapis.com/auth/cloud-platform.
@@ -1096,26 +1105,25 @@ export namespace SandboxResponse {
          */
         service_account_email?: string;
 
-        service_account_json?: Gcp.ServiceAccountJson;
-
         /**
          * SubjectScope picks the token subject the provider trusts: "workspace" (the
          * default) or "tag:<tag value id>", which must be one of the sandbox's
          * tag_value_ids. Only valid with workload_identity_provider.
          */
         subject_scope?: string;
-
-        /**
-         * WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
-         * workspace through Workload Identity Federation instead of a service account key.
-         * Use the full resource name:
-         * //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
-         * Cannot be changed after creation.
-         */
-        workload_identity_provider?: string;
       }
 
-      export namespace Gcp {
+      export interface SandboxesProxyGcpServiceAccountConfig {
+        service_account_json: SandboxesProxyGcpServiceAccountConfig.ServiceAccountJson;
+
+        /**
+         * Scopes are the OAuth scopes requested for the access token. Omit them to use
+         * https://www.googleapis.com/auth/cloud-platform.
+         */
+        scopes?: Array<string>;
+      }
+
+      export namespace SandboxesProxyGcpServiceAccountConfig {
         export interface ServiceAccountJson {
           type: 'plaintext' | 'opaque' | 'workspace_secret';
 
