@@ -1719,7 +1719,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
         else:
             with ls_utils.ContextThreadPoolExecutor(max_concurrency) as executor:
                 future_uploads = {}
-                futures = []
                 for example in self.examples:
                     upload = self._resolve_upload(example)
                     future = executor.submit(
@@ -1734,8 +1733,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._error_handling,
                     )
                     future_uploads[future] = upload
-                    futures.append(future)
-                for future in cf.as_completed(futures):
+                for future in cf.as_completed(future_uploads):
                     result = future.result()
                     self._upload_decisions[result["run"].id] = future_uploads[future]
                     yield result

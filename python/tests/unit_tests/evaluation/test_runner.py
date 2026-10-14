@@ -12,7 +12,7 @@ import time
 import uuid
 import warnings
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Event, Lock
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Tuple
 from unittest import mock
@@ -28,6 +28,7 @@ from langsmith.evaluation._runner import (
     ComparativeExperimentResults,
     _build_comparative_url,
     _collect_evaluator_keys,
+    _forward,
     _get_target_args,
     _load_traces_for_experiment,
 )
@@ -329,12 +330,94 @@ def test_evaluate_upload_results_callable_samples_runs_but_scores_all() -> None:
     per_run_feedback = [
         f for f in fake_request.feedbacks if f.get("run_id") is not None
     ]
-    aggregate_feedback = [
-        f for f in fake_request.feedbacks if f.get("run_id") is None
-    ]
+    aggregate_feedback = [f for f in fake_request.feedbacks if f.get("run_id") is None]
     assert len(per_run_feedback) == uploaded_runs
     assert len(aggregate_feedback) == 1
     assert aggregate_feedback[0]["score"] == total_runs
+
+
+@pytest.mark.parametrize("max_concurrency", [2, None])
+def test_evaluate_upload_results_callable_out_of_order(max_concurrency) -> None:
+    """Keep upload decisions tied to runs when predictions finish out of order."""
+    example_responses = [_create_example(i) for i in range(4)]
+    examples = [example for example, _ in example_responses]
+    client, fake_request = _fake_client_for_examples(
+        [response for _, response in example_responses],
+        "00886375-eb2a-4038-9032-efff60309896",
+        "my-dataset",
+    )
+    later_run_finished = Event()
+    completion_order = []
+    completion_lock = Lock()
+    predicate_examples = []
+    summary_counts = []
+
+    def upload_every_other(example):
+        predicate_examples.append(example.id)
+        return len(predicate_examples) % 2 == 1
+
+    def predict(inputs):
+        assert examples[inputs["in"]].id in predicate_examples
+        if inputs["in"] == 0:
+            assert later_run_finished.wait(timeout=10)
+        return {"output": inputs["in"] + 1}
+
+    def forward(*args, **kwargs):
+        result = _forward(*args, **kwargs)
+        value = result["example"].inputs["in"]
+        with completion_lock:
+            completion_order.append(value)
+        if value == 1:
+            later_run_finished.set()
+        return result
+
+    def score(run, example):
+        return {"key": "quality", "score": run.outputs["output"]}
+
+    def summary_eval(runs, examples):
+        summary_counts.append((len(runs), len(examples)))
+        return {"key": "count", "score": len(runs)}
+
+    with mock.patch("langsmith.evaluation._runner._forward", side_effect=forward):
+        rows = list(
+            evaluate(
+                predict,
+                client=client,
+                data=examples,
+                evaluators=[score],
+                summary_evaluators=[summary_eval],
+                upload_results=upload_every_other,
+                max_concurrency=max_concurrency,
+            )
+        )
+
+    assert completion_order.index(1) < completion_order.index(0)
+    assert predicate_examples == [example.id for example in examples]
+    assert len(rows) == len(examples)
+    assert summary_counts == [(4, 4)]
+    selected_runs = {
+        str(row["run"].id): row["example"].inputs["in"] + 1
+        for row in rows
+        if row["example"].id in {examples[0].id, examples[2].id}
+    }
+    _wait_until(lambda: len(fake_request.feedbacks) == 3)
+    assert {
+        feedback["run_id"]: feedback["score"]
+        for feedback in fake_request.feedbacks
+        if feedback.get("run_id") is not None
+    } == selected_runs
+    assert [
+        feedback["score"]
+        for feedback in fake_request.feedbacks
+        if feedback.get("run_id") is None
+    ] == [4]
+    _wait_until(lambda: len(fake_request.runs) == 5)
+    assert {
+        run_id
+        for run_id, run in fake_request.runs.items()
+        if run.get("reference_example_id")
+    } == set(selected_runs)
+    assert not fake_request.should_fail
 
 
 @pytest.mark.parametrize(
