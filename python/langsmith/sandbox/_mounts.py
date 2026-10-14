@@ -11,6 +11,8 @@ from langsmith.sandbox._proxy_config import (
     SandboxProxyRule,
     SandboxProxySecret,
     _aws_role_config,
+    _azure_config,
+    _gcp_config,
 )
 
 
@@ -520,77 +522,28 @@ def _reject_provider_credentials_in_mount(value: Any) -> None:
             _reject_provider_credentials_in_mount(child)
 
 
-def _gcp_mount_auth(gcp: dict[str, Any]) -> SandboxMountAuthConfig:
-    if not gcp.get("workload_identity_provider"):
-        return {
-            "gcp": {
-                "service_account_json": _copy_mount_secret(
-                    gcp.get("service_account_json"), "service_account_json"
-                )
-            }
-        }
-    if gcp.get("service_account_json") is not None:
-        raise ValueError(
-            "workload_identity_provider and service_account_json are mutually exclusive"
-        )
-    config: GCPMountWorkloadIdentityAuthConfig = {
-        "workload_identity_provider": _require_non_empty_string(
-            gcp["workload_identity_provider"], "workload_identity_provider"
-        )
-    }
-    if gcp.get("service_account_email") is not None:
-        config["service_account_email"] = _require_non_empty_string(
-            gcp["service_account_email"], "service_account_email"
-        )
-    if gcp.get("subject_scope") is not None:
-        config["subject_scope"] = _require_non_empty_string(
-            gcp["subject_scope"], "subject_scope"
-        )
-    return {"gcp": config}
-
-
-def _azure_mount_auth(azure: dict[str, Any]) -> SandboxMountAuthConfig:
-    """Keep only the fields mount_config.auth.azure accepts.
-
-    A static block's ``storage_account`` is checked against the mounts by
-    ``mount_config``; ``resources`` does not apply to mounts.
-    """
-    if azure.get("tenant_id") or azure.get("client_id"):
-        if azure.get("account_key") is not None or azure.get("sas_token") is not None:
-            raise ValueError(
-                "tenant_id/client_id and account_key or sas_token are mutually "
-                "exclusive"
-            )
-        config: AzureMountWorkloadIdentityAuthConfig = {
-            "tenant_id": _require_non_empty_string(azure.get("tenant_id"), "tenant_id"),
-            "client_id": _require_non_empty_string(azure.get("client_id"), "client_id"),
-        }
-        if azure.get("subject_scope") is not None:
-            config["subject_scope"] = _require_non_empty_string(
-                azure["subject_scope"], "subject_scope"
-            )
-        return {"azure": config}
-    has_key = azure.get("account_key") is not None
-    if has_key == (azure.get("sas_token") is not None):
-        raise ValueError(
-            "azure mount auth requires tenant_id and client_id, or exactly one "
-            "of account_key or sas_token"
-        )
-    if has_key:
-        return {
-            "azure": {
-                "account_key": _copy_mount_secret(azure["account_key"], "account_key")
-            }
-        }
-    return {"azure": {"sas_token": _copy_mount_secret(azure["sas_token"], "sas_token")}}
+# Fields each provider's mount auth accepts; rule-only fields (scopes,
+# resources, storage_account) are dropped.
+_MOUNT_AUTH_FIELDS = {
+    "gcp": (
+        "service_account_json",
+        "workload_identity_provider",
+        "service_account_email",
+        "subject_scope",
+    ),
+    "azure": ("tenant_id", "client_id", "subject_scope", "account_key", "sas_token"),
+}
+_MOUNT_AUTH_SECRETS = {"service_account_json", "account_key", "sas_token"}
 
 
 def _normalize_mount_auth(
     auth: Sequence[SandboxMountAuth],
-) -> SandboxMountAuthConfig:
+) -> tuple[SandboxMountAuthConfig, str | None]:
+    """Return mount auth by provider and a static azure block's storage account."""
     if isinstance(auth, dict) or isinstance(auth, str):
         raise ValueError("auth must be a list of provider auth blocks")
-    by_provider: SandboxMountAuthConfig = {}
+    by_provider: dict[str, Any] = {}
+    azure_static_account: str | None = None
     for block in auth:
         if not isinstance(block, dict) or not block:
             raise ValueError("auth must be a list of provider auth blocks")
@@ -609,37 +562,21 @@ def _normalize_mount_auth(
             )
         if provider == "aws":
             role = _aws_role_config(config)
-            if role is not None:
-                by_provider["aws"] = cast(AWSMountRoleAuthConfig, role)
-                continue
-            if config.get("subject_scope") is not None:
-                raise ValueError("subject_scope requires role_arn")
-            by_provider["aws"] = {
-                "access_key_id": _copy_mount_secret(
-                    config.get("access_key_id"), "access_key_id"
-                ),
-                "secret_access_key": _copy_mount_secret(
-                    config.get("secret_access_key"), "secret_access_key"
-                ),
+            by_provider["aws"] = role or {
+                field: _copy_mount_secret(config.get(field), field)
+                for field in ("access_key_id", "secret_access_key")
             }
-        elif provider == "gcp":
-            by_provider.update(_gcp_mount_auth(config))
-        else:
-            by_provider.update(_azure_mount_auth(config))
-    return by_provider
-
-
-def _static_azure_auth_storage_account(
-    auth: Sequence[SandboxMountAuth],
-) -> str | None:
-    for block in auth:
-        azure = block.get("azure") if block.get("type") == "azure" else None
-        if isinstance(azure, dict) and not (
-            azure.get("tenant_id") or azure.get("client_id")
-        ):
-            account = azure.get("storage_account")
-            return account if isinstance(account, str) else None
-    return None
+            continue
+        config = (_gcp_config if provider == "gcp" else _azure_config)(config)
+        azure_static_account = config.get("storage_account", azure_static_account)
+        by_provider[provider] = {
+            field: _copy_mount_secret(value, field)
+            if field in _MOUNT_AUTH_SECRETS
+            else value
+            for field, value in config.items()
+            if field in _MOUNT_AUTH_FIELDS[provider]
+        }
+    return cast(SandboxMountAuthConfig, by_provider), azure_static_account
 
 
 def mount_config(
@@ -660,7 +597,7 @@ def mount_config(
     auth or restricted to mount paths.
     """
     normalized_mounts = _normalize_mounts(mounts)
-    auth_by_provider = _normalize_mount_auth(auth)
+    auth_by_provider, azure_static_account = _normalize_mount_auth(auth)
     mount_providers = {mount["type"] for mount in normalized_mounts}
     enabled_rules = [
         rule
@@ -704,19 +641,15 @@ def mount_config(
         raise ValueError(
             "azure auth requires at least one azure_blob mount in mount_config"
         )
-    static_account = _static_azure_auth_storage_account(auth)
-    if static_account is not None:
-        accounts = {
-            mount["azure_blob"]["storage_account"]
-            for mount in normalized_mounts
-            if mount["type"] == "azure_blob"
-        }
-        if accounts != {static_account}:
-            raise ValueError(
-                "azure_blob mounts using an azure account key or SAS token must "
-                "all use the auth's storage_account"
-            )
-
+    if azure_static_account is not None and any(
+        mount["azure_blob"]["storage_account"] != azure_static_account
+        for mount in normalized_mounts
+        if mount["type"] == "azure_blob"
+    ):
+        raise ValueError(
+            "azure_blob mounts using an azure account key or SAS token must "
+            "all use the auth's storage_account"
+        )
     config: SandboxMountConfig = {
         "auth": auth_by_provider,
         "mounts": normalized_mounts,

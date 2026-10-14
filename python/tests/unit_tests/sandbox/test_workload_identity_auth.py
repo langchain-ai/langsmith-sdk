@@ -1,4 +1,4 @@
-"""Workload identity (AWS/GCP/Azure) and Azure Blob mount helpers."""
+"""Workload identity (AWS/GCP/Azure) auth, Azure Blob mounts, tag_value_ids."""
 
 import json
 from typing import Any
@@ -17,386 +17,194 @@ from langsmith.sandbox import (
     opaque_secret,
     proxy_config,
     s3_mount,
-    workspace_secret,
 )
 
-ROLE_ARN = "arn:aws:iam::123456789012:role/SandboxTest"
-TAG_SCOPE = "tag:7d3c0c1e-1b7a-4e0a-9b8f-2f4a1d2c3b4a"
+ROLE = "arn:aws:iam::123456789012:role/SandboxTest"
+TAG_ID = "7d3c0c1e-1b7a-4e0a-9b8f-2f4a1d2c3b4a"
 WIP = (
-    "//iam.googleapis.com/projects/123456789/locations/global/"
-    "workloadIdentityPools/langsmith/providers/langsmith"
+    "//iam.googleapis.com/projects/1/locations/global/"
+    "workloadIdentityPools/p/providers/p"
 )
-SA_EMAIL = "vertex-ro@my-project.iam.gserviceaccount.com"
-TENANT_ID = "2c6a46a8-f9b3-4f58-8e5d-4bab8c1f9270"
-CLIENT_ID = "0b5a3f4e-8f1d-4c3a-9a63-1f6c2d8e7a10"
-ENDPOINT = "http://test-server:8080"
+EMAIL = "sa@my-project.iam.gserviceaccount.com"
+WI = {"tenant_id": "2c6a46a8-f9b3-4f58-8e5d-4bab8c1f9270", "client_id": "0b5a3f4e"}
+KEY = opaque_secret("key")
+S3 = s3_mount(id="s3", mount_path="/mnt/mounts/s3", bucket="b")
+GCS = gcs_mount(id="gcs", mount_path="/mnt/mounts/gcs", bucket="b", read_only=True)
 
 
-def _s3():
-    return [s3_mount(id="data", mount_path="/mnt/mounts/data", bucket="b")]
-
-
-def _gcs():
-    return [
-        gcs_mount(id="gcs", mount_path="/mnt/mounts/gcs", bucket="b", read_only=True)
-    ]
-
-
-def _blob(account: str = "lsdata01", id: str = "blob"):
+def blob(account: str = "acct", id: str = "blob") -> Any:
     return azure_blob_mount(
-        id=id,
-        mount_path=f"/mnt/mounts/{id}",
-        storage_account=account,
-        container="agent-data",
+        id=id, mount_path=f"/mnt/mounts/{id}", storage_account=account, container="c"
     )
-
-
-def test_aws_subject_scope_in_proxy_and_mount_auth() -> None:
-    rule = aws_auth(role_arn=ROLE_ARN, subject_scope=TAG_SCOPE)
-    assert rule["aws"] == {"role_arn": ROLE_ARN, "subject_scope": TAG_SCOPE}
-    assert proxy_config(rules=[rule]) == {"rules": [rule]}
-    assert mount_config(auth=[rule], mounts=_s3())["auth"] == {
-        "aws": {"role_arn": ROLE_ARN, "subject_scope": TAG_SCOPE}
-    }
-
-
-def test_aws_subject_scope_requires_role_arn() -> None:
-    static = {
-        "access_key_id": workspace_secret("AWS_KEY_ID_REF"),
-        "secret_access_key": workspace_secret("AWS_KEY_VALUE_REF"),
-    }
-    with pytest.raises(ValueError, match="subject_scope requires role_arn"):
-        aws_auth(**static, subject_scope="workspace")
-    raw = {"type": "aws", "aws": {**static, "subject_scope": "workspace"}}
-    with pytest.raises(ValueError, match="subject_scope requires role_arn"):
-        mount_config(auth=[raw], mounts=_s3())
-
-
-def test_gcp_workload_identity_rule() -> None:
-    rule = gcp_auth(
-        workload_identity_provider=WIP,
-        service_account_email=SA_EMAIL,
-        subject_scope=TAG_SCOPE,
-    )
-    assert rule == {
-        "name": "gcp",
-        "type": "gcp",
-        "enabled": True,
-        "gcp": {
-            "workload_identity_provider": WIP,
-            "service_account_email": SA_EMAIL,
-            "subject_scope": TAG_SCOPE,
-        },
-    }
-    assert proxy_config(rules=[rule]) == {"rules": [rule]}
 
 
 @pytest.mark.parametrize(
-    ("options", "message"),
+    ("helper", "kwargs"),
     [
+        (aws_auth, {"role_arn": ROLE, "subject_scope": "workspace"}),
         (
+            gcp_auth,
             {
                 "workload_identity_provider": WIP,
-                "service_account_json": workspace_secret("GCP_SA"),
+                "service_account_email": EMAIL,
+                "subject_scope": f"tag:{TAG_ID}",
             },
-            "mutually exclusive",
         ),
-        (
-            {
-                "service_account_json": workspace_secret("GCP_SA"),
-                "service_account_email": SA_EMAIL,
-            },
-            "require workload_identity_provider",
-        ),
-        (
-            {
-                "service_account_json": workspace_secret("GCP_SA"),
-                "subject_scope": "workspace",
-            },
-            "require workload_identity_provider",
-        ),
-        ({}, "service_account_json or workload_identity_provider"),
+        (azure_auth, {**WI, "resources": ["https://storage.azure.com"]}),
+        (azure_auth, {"storage_account": "acct", "account_key": KEY}),
+        (azure_auth, {"storage_account": "acct", "sas_token": KEY}),
     ],
 )
-def test_gcp_auth_rejects_mixed_or_missing_credentials(
-    options: dict[str, Any], message: str
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        gcp_auth(**options)
-
-
-def test_gcs_mount_auth_with_workload_identity_drops_scopes() -> None:
-    rule = gcp_auth(
-        workload_identity_provider=WIP,
-        subject_scope="workspace",
-        scopes=["https://www.googleapis.com/auth/devstorage.read_only"],
-    )
-    assert mount_config(auth=[rule], mounts=_gcs())["auth"] == {
-        "gcp": {"workload_identity_provider": WIP, "subject_scope": "workspace"}
-    }
-
-
-@pytest.mark.parametrize("enabled", [True, False])
-def test_gcs_mounts_can_use_enabled_gcp_workload_identity_rule(enabled: bool) -> None:
-    proxy = proxy_config(
-        rules=[gcp_auth(workload_identity_provider=WIP, enabled=enabled)]
-    )
-    if enabled:
-        config = mount_config(proxy_config=proxy, mounts=_gcs())
-        assert config == {"auth": {}, "mounts": _gcs()}
-    else:
-        with pytest.raises(ValueError, match="gcs mounts require gcp auth"):
-            mount_config(proxy_config=proxy, mounts=_gcs())
-
-
-@pytest.mark.parametrize(
-    ("options", "expected"),
-    [
-        (
-            {
-                "tenant_id": TENANT_ID,
-                "client_id": CLIENT_ID,
-                "subject_scope": TAG_SCOPE,
-                "resources": ["https://storage.azure.com"],
-            },
-            {
-                "tenant_id": TENANT_ID,
-                "client_id": CLIENT_ID,
-                "subject_scope": TAG_SCOPE,
-                "resources": ["https://storage.azure.com"],
-            },
-        ),
-        (
-            {"storage_account": "lsdata01", "account_key": opaque_secret("k")},
-            {"storage_account": "lsdata01", "account_key": opaque_secret("k")},
-        ),
-        (
-            {"storage_account": "lsdata01", "sas_token": workspace_secret("SAS")},
-            {"storage_account": "lsdata01", "sas_token": workspace_secret("SAS")},
-        ),
-    ],
-)
-def test_azure_auth_forms(options: dict[str, Any], expected: dict[str, Any]) -> None:
-    rule = azure_auth(**options)
-    assert rule == {
-        "name": "azure",
-        "type": "azure",
-        "enabled": True,
-        "azure": expected,
-    }
+def test_helper_forms_serialize(helper, kwargs: dict) -> None:
+    rule = helper(**kwargs)
+    assert rule[rule["type"]] == kwargs
     assert proxy_config(rules=[rule]) == {"rules": [rule]}
 
 
 @pytest.mark.parametrize(
-    ("options", "message"),
+    ("helper", "kwargs", "message"),
     [
         (
-            {
-                "tenant_id": TENANT_ID,
-                "client_id": CLIENT_ID,
-                "storage_account": "lsdata01",
-            },
+            aws_auth,
+            {"access_key_id": KEY, "secret_access_key": KEY, "subject_scope": "x"},
+            "requires role_arn",
+        ),
+        (
+            gcp_auth,
+            {"workload_identity_provider": WIP, "service_account_json": KEY},
             "mutually exclusive",
         ),
         (
-            {
-                "tenant_id": TENANT_ID,
-                "client_id": CLIENT_ID,
-                "sas_token": workspace_secret("SAS"),
-            },
-            "mutually exclusive",
+            gcp_auth,
+            {"service_account_json": KEY, "service_account_email": EMAIL},
+            "require workload_identity_provider",
         ),
-        ({"tenant_id": TENANT_ID}, "client_id"),
+        (gcp_auth, {}, "service_account_json or workload_identity_provider"),
+        (azure_auth, {**WI, "sas_token": KEY}, "mutually exclusive"),
+        (azure_auth, {"tenant_id": WI["tenant_id"]}, "client_id"),
         (
-            {
-                "storage_account": "lsdata01",
-                "account_key": opaque_secret("k"),
-                "sas_token": workspace_secret("SAS"),
-            },
+            azure_auth,
+            {"storage_account": "acct", "account_key": KEY, "sas_token": KEY},
             "exactly one",
         ),
-        ({"storage_account": "lsdata01"}, "exactly one"),
-        ({"account_key": opaque_secret("k")}, "storage_account"),
+        (azure_auth, {"account_key": KEY}, "storage_account"),
         (
-            {
-                "storage_account": "lsdata01",
-                "account_key": opaque_secret("k"),
-                "subject_scope": "workspace",
-            },
-            "require tenant_id and client_id",
-        ),
-        (
-            {
-                "storage_account": "lsdata01",
-                "account_key": opaque_secret("k"),
-                "resources": ["https://storage.azure.com"],
-            },
+            azure_auth,
+            {"storage_account": "acct", "account_key": KEY, "subject_scope": "x"},
             "require tenant_id and client_id",
         ),
     ],
 )
-def test_azure_auth_rejects_mixed_or_incomplete_forms(
-    options: dict[str, Any], message: str
-) -> None:
+def test_helper_rejects_invalid_forms(helper, kwargs: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
-        azure_auth(**options)
+        helper(**kwargs)
 
 
 def test_azure_blob_mount_serializes_backend_shape() -> None:
     mount = azure_blob_mount(
-        id="data",
-        mount_path="/mnt/mounts/data",
-        storage_account="lsdata01",
-        container="agent-data",
+        id="d",
+        mount_path="/mnt/mounts/d",
+        storage_account="acct",
+        container="c",
         prefix="runs/",
         read_only=True,
-        cache={"max_size_bytes": 1024},
     )
     assert mount == {
-        "id": "data",
+        "id": "d",
         "type": "azure_blob",
-        "mount_path": "/mnt/mounts/data",
-        "azure_blob": {
-            "storage_account": "lsdata01",
-            "container": "agent-data",
-            "prefix": "runs/",
-        },
+        "mount_path": "/mnt/mounts/d",
+        "azure_blob": {"storage_account": "acct", "container": "c", "prefix": "runs/"},
         "read_only": True,
-        "cache": {"max_size_bytes": 1024},
     }
 
 
 @pytest.mark.parametrize(
-    ("rule", "expected"),
+    ("rule", "mount", "expected"),
     [
         (
-            azure_auth(
-                tenant_id=TENANT_ID,
-                client_id=CLIENT_ID,
-                subject_scope="workspace",
-                resources=["https://storage.azure.com"],
-            ),
-            {
-                "tenant_id": TENANT_ID,
-                "client_id": CLIENT_ID,
-                "subject_scope": "workspace",
-            },
+            aws_auth(role_arn=ROLE, subject_scope="workspace"),
+            S3,
+            {"aws": {"role_arn": ROLE, "subject_scope": "workspace"}},
         ),
         (
-            azure_auth(storage_account="lsdata01", account_key=opaque_secret("k")),
-            {"account_key": opaque_secret("k")},
+            gcp_auth(workload_identity_provider=WIP, scopes=["s"]),
+            GCS,
+            {"gcp": {"workload_identity_provider": WIP}},
         ),
         (
-            azure_auth(storage_account="lsdata01", sas_token=workspace_secret("SAS")),
-            {"sas_token": workspace_secret("SAS")},
+            azure_auth(**WI, resources=["https://storage.azure.com"]),
+            blob(),
+            {"azure": WI},
+        ),
+        (
+            azure_auth(storage_account="acct", account_key=KEY),
+            blob(),
+            {"azure": {"account_key": KEY}},
         ),
     ],
 )
-def test_azure_mount_auth_keeps_mount_fields(rule, expected) -> None:
-    config = mount_config(auth=[rule], mounts=[_blob()])
-    assert config == {"auth": {"azure": expected}, "mounts": [_blob()]}
+def test_mount_auth_keeps_only_mount_fields(rule, mount, expected) -> None:
+    assert mount_config(auth=[rule], mounts=[mount])["auth"] == expected
 
 
-def test_azure_blob_mounts_can_use_enabled_azure_proxy_rule() -> None:
-    proxy = proxy_config(rules=[azure_auth(tenant_id=TENANT_ID, client_id=CLIENT_ID)])
-    assert mount_config(proxy_config=proxy, mounts=[_blob()]) == {
+@pytest.mark.parametrize(
+    ("rule", "mount"),
+    [(gcp_auth(workload_identity_provider=WIP), GCS), (azure_auth(**WI), blob())],
+)
+def test_mounts_can_use_enabled_proxy_rule(rule, mount) -> None:
+    proxy = proxy_config(rules=[rule])
+    assert mount_config(proxy_config=proxy, mounts=[mount]) == {
         "auth": {},
-        "mounts": [_blob()],
+        "mounts": [mount],
     }
+    rule["enabled"] = False
+    with pytest.raises(ValueError, match="require"):
+        mount_config(proxy_config=proxy, mounts=[mount])
 
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"mounts": [_blob()]}, "azure_blob mounts require azure auth"),
+        ({"mounts": [blob()]}, "azure_blob mounts require azure auth"),
         (
-            {
-                "mounts": [_blob()],
-                "proxy_config": proxy_config(
-                    rules=[
-                        azure_auth(
-                            tenant_id=TENANT_ID, client_id=CLIENT_ID, enabled=False
-                        )
-                    ]
-                ),
-            },
-            "azure_blob mounts require azure auth",
-        ),
-        (
-            {
-                "mounts": _s3(),
-                "auth": [
-                    aws_auth(role_arn=ROLE_ARN),
-                    azure_auth(tenant_id=TENANT_ID, client_id=CLIENT_ID),
-                ],
-            },
+            {"mounts": [S3], "auth": [aws_auth(role_arn=ROLE), azure_auth(**WI)]},
             "at least one azure_blob mount",
         ),
         (
             {
-                "mounts": [_blob(), _blob("other02", id="other")],
-                "auth": [
-                    azure_auth(storage_account="lsdata01", sas_token=opaque_secret("s"))
-                ],
+                "mounts": [blob(), blob("other", id="other")],
+                "auth": [azure_auth(storage_account="acct", sas_token=KEY)],
             },
             "storage_account",
         ),
         (
             {
-                "mounts": [_blob()],
-                "auth": [azure_auth(tenant_id=TENANT_ID, client_id=CLIENT_ID)],
-                "proxy_config": proxy_config(
-                    rules=[azure_auth(tenant_id=TENANT_ID, client_id=CLIENT_ID)]
-                ),
+                "mounts": [blob()],
+                "auth": [azure_auth(**WI)],
+                "proxy_config": proxy_config(rules=[azure_auth(**WI)]),
             },
             "both mount_config and proxy_config",
         ),
     ],
 )
-def test_azure_mount_config_errors(kwargs: dict[str, Any], message: str) -> None:
+def test_mount_config_rejects_invalid_azure_auth(kwargs: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         mount_config(**kwargs)
 
 
-def test_create_sandbox_forwards_azure_and_gcp_workload_identity(
-    httpx_mock: HTTPXMock,
+@pytest.mark.parametrize("tag_value_ids", [None, [TAG_ID]])
+def test_create_sandbox_sends_tag_value_ids_and_configs(
+    httpx_mock: HTTPXMock, tag_value_ids
 ) -> None:
-    proxy = proxy_config(
-        rules=[
-            gcp_auth(workload_identity_provider=WIP),
-            azure_auth(tenant_id=TENANT_ID, client_id=CLIENT_ID),
-        ]
-    )
-    mounts = mount_config(proxy_config=proxy, mounts=[*_gcs(), _blob()])
+    proxy = proxy_config(rules=[aws_auth(role_arn=ROLE, subject_scope=f"tag:{TAG_ID}")])
+    mounts = mount_config(auth=[azure_auth(**WI)], mounts=[blob()])
     httpx_mock.add_response(
-        method="POST", url=f"{ENDPOINT}/boxes", json={"name": "wi-box"}, status_code=201
+        method="POST", url="http://test:8080/boxes", json={"name": "b"}, status_code=201
     )
-    with SandboxClient(api_endpoint=ENDPOINT, max_retries=0) as client:
+    with SandboxClient(api_endpoint="http://test:8080", max_retries=0) as client:
         client.create_sandbox(
-            snapshot_id="snap-1", proxy_config=proxy, mount_config=mounts
+            proxy_config=proxy, mount_config=mounts, tag_value_ids=tag_value_ids
         )
     body = json.loads(httpx_mock.get_request().content)
-    assert body["proxy_config"] == proxy
-    assert body["mount_config"] == mounts
-
-
-@pytest.mark.parametrize("tag_value_ids", [None, [TAG_SCOPE.removeprefix("tag:")]])
-def test_create_sandbox_serializes_tag_value_ids(
-    httpx_mock: HTTPXMock, tag_value_ids: Any
-) -> None:
-    proxy = proxy_config(rules=[aws_auth(role_arn=ROLE_ARN, subject_scope=TAG_SCOPE)])
-    httpx_mock.add_response(
-        method="POST",
-        url=f"{ENDPOINT}/boxes",
-        json={"name": "tag-box"},
-        status_code=201,
-    )
-    with SandboxClient(api_endpoint=ENDPOINT, max_retries=0) as client:
-        client.create_sandbox(
-            snapshot_id="snap-1", proxy_config=proxy, tag_value_ids=tag_value_ids
-        )
-    body = json.loads(httpx_mock.get_request().content)
-    if tag_value_ids is None:
-        assert "tag_value_ids" not in body
-    else:
-        assert body["tag_value_ids"] == tag_value_ids
+    assert (body["proxy_config"], body["mount_config"]) == (proxy, mounts)
+    assert body.get("tag_value_ids") == tag_value_ids

@@ -118,13 +118,103 @@ def _aws_role_config(aws: dict[str, Any]) -> dict[str, Any] | None:
     """Return the normalized role descriptor, or None for static credentials."""
     role_arn = _get_aws_role_arn(aws)
     if role_arn is None:
+        if aws.get("subject_scope") is not None:
+            raise ValueError("subject_scope requires role_arn")
         return None
-    config: dict[str, Any] = {"role_arn": role_arn}
-    if aws.get("subject_scope") is not None:
-        config["subject_scope"] = _require_non_empty_string(
-            aws["subject_scope"], "subject_scope"
+    return {"role_arn": role_arn, **_optional_strings(aws, "subject_scope")}
+
+
+def _optional_strings(source: Mapping[str, Any], *fields: str) -> dict[str, str]:
+    return {
+        field: _require_non_empty_string(source[field], field)
+        for field in fields
+        if source.get(field) is not None
+    }
+
+
+def _gcp_config(gcp: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate a gcp rule config: service account key or workload identity."""
+    wif_only = _optional_strings(gcp, "service_account_email", "subject_scope")
+    if gcp.get("workload_identity_provider") is not None:
+        if gcp.get("service_account_json") is not None:
+            raise ValueError(
+                "workload_identity_provider and service_account_json are "
+                "mutually exclusive"
+            )
+        config: dict[str, Any] = {
+            "workload_identity_provider": _require_non_empty_string(
+                gcp["workload_identity_provider"], "workload_identity_provider"
+            ),
+            **wif_only,
+        }
+    elif wif_only:
+        raise ValueError(
+            "service_account_email and subject_scope require workload_identity_provider"
         )
+    elif gcp.get("service_account_json") is None:
+        raise ValueError(
+            "GCP auth requires service_account_json or workload_identity_provider"
+        )
+    else:
+        config = {"service_account_json": gcp["service_account_json"]}
+    if gcp.get("scopes") is not None:
+        config["scopes"] = _require_non_empty_string_list(gcp["scopes"], "scopes")
     return config
+
+
+def _azure_config(azure: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate an azure rule config: workload identity, account key, or SAS."""
+    if azure.get("tenant_id") is not None or azure.get("client_id") is not None:
+        if any(
+            azure.get(field) is not None
+            for field in ("storage_account", "account_key", "sas_token")
+        ):
+            raise ValueError(
+                "tenant_id/client_id and storage_account, account_key or "
+                "sas_token are mutually exclusive"
+            )
+        config: dict[str, Any] = {
+            "tenant_id": _require_non_empty_string(azure.get("tenant_id"), "tenant_id"),
+            "client_id": _require_non_empty_string(azure.get("client_id"), "client_id"),
+            **_optional_strings(azure, "subject_scope"),
+        }
+        if azure.get("resources") is not None:
+            config["resources"] = _require_non_empty_string_list(
+                azure["resources"], "resources"
+            )
+        return config
+    if azure.get("subject_scope") is not None or azure.get("resources") is not None:
+        raise ValueError("subject_scope and resources require tenant_id and client_id")
+    if (azure.get("account_key") is None) == (azure.get("sas_token") is None):
+        raise ValueError(
+            "Azure auth requires tenant_id and client_id, or storage_account "
+            "with exactly one of account_key or sas_token"
+        )
+    secret = "account_key" if azure.get("account_key") is not None else "sas_token"
+    return {
+        "storage_account": _require_non_empty_string(
+            azure.get("storage_account"), "storage_account"
+        ),
+        secret: azure[secret],
+    }
+
+
+def _provider_rule(
+    provider: str,
+    config: dict[str, Any],
+    name: str,
+    enabled: bool,
+    env_vars: Mapping[str, str] | None,
+) -> SandboxProxyRule:
+    rule: SandboxProxyRule = {
+        "name": _require_non_empty_string(name, "name"),
+        "type": provider,
+        "enabled": enabled,
+        provider: config,
+    }
+    if env_vars is not None:
+        rule["env_vars"] = _require_env_vars(env_vars)
+    return rule
 
 
 def proxy_config(
@@ -217,7 +307,6 @@ def aws_auth(
             unless a credential variable is present even though the proxy
             injects the real credential on the wire.
     """
-    rule_name = _require_non_empty_string(name, "name")
     aws: dict[str, Any] = {}
     if role_arn is not None:
         aws["role_arn"] = role_arn
@@ -231,23 +320,13 @@ def aws_auth(
     if role_config is not None:
         aws = role_config
     else:
-        if subject_scope is not None:
-            raise ValueError("subject_scope requires role_arn")
         if access_key_id is None or secret_access_key is None:
             raise ValueError("AWS auth requires role_arn or both static credentials")
         aws = {
             "access_key_id": access_key_id,
             "secret_access_key": secret_access_key,
         }
-    rule: SandboxProxyRule = {
-        "name": rule_name,
-        "type": "aws",
-        "enabled": enabled,
-        "aws": aws,
-    }
-    if env_vars is not None:
-        rule["env_vars"] = _require_env_vars(env_vars)
-    return rule
+    return _provider_rule("aws", aws, name, enabled, env_vars)
 
 
 @overload
@@ -287,70 +366,30 @@ def gcp_auth(
 ) -> SandboxProxyRule:
     """Build a sandbox proxy rule that injects GCP OAuth bearer auth.
 
-    The sandbox proxy keeps credentials outside the sandbox and injects OAuth
-    bearer tokens for built-in Google API host matching. Provide exactly one of:
-
-    - ``service_account_json``, supplied as a ``workspace_secret`` or
-      ``opaque`` value; plaintext service account JSON is intentionally not
-      supported.
-    - ``workload_identity_provider``, the full
-      ``//iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>``
-      name of a provider that trusts LangSmith's OIDC issuer. Optionally
-      impersonate ``service_account_email``. Configured at sandbox creation,
-      not through updates.
+    Provide ``service_account_json`` (a ``workspace_secret`` or ``opaque``
+    value) or ``workload_identity_provider``, the full name of a workload
+    identity provider that trusts LangSmith's OIDC issuer, optionally with
+    ``service_account_email`` to impersonate. Workload identity is fixed at
+    sandbox creation.
 
     Args:
-        scopes: OAuth scopes. The server defaults to
-            ``https://www.googleapis.com/auth/cloud-platform`` when omitted.
-        subject_scope: Workload identity token subject, ``"workspace"``
-            (the default) or ``"tag:<tag value id>"``. Only valid with
-            ``workload_identity_provider``.
+        scopes: OAuth scopes; the server defaults to cloud-platform.
+        subject_scope: ``"workspace"`` (default) or ``"tag:<tag value id>"``.
         env_vars: Plaintext environment variables set for every command in the
             sandbox while this rule is enabled, for tools that refuse to run
             unless a credential variable is present even though the proxy
             injects the real credential on the wire.
     """
-    rule_name = _require_non_empty_string(name, "name")
-    gcp_config: dict[str, Any] = {}
-    if workload_identity_provider is not None:
-        if service_account_json is not None:
-            raise ValueError(
-                "workload_identity_provider and service_account_json "
-                "are mutually exclusive"
-            )
-        gcp_config["workload_identity_provider"] = _require_non_empty_string(
-            workload_identity_provider, "workload_identity_provider"
-        )
-        if service_account_email is not None:
-            gcp_config["service_account_email"] = _require_non_empty_string(
-                service_account_email, "service_account_email"
-            )
-        if subject_scope is not None:
-            gcp_config["subject_scope"] = _require_non_empty_string(
-                subject_scope, "subject_scope"
-            )
-    else:
-        if service_account_email is not None or subject_scope is not None:
-            raise ValueError(
-                "service_account_email and subject_scope require "
-                "workload_identity_provider"
-            )
-        if service_account_json is None:
-            raise ValueError(
-                "GCP auth requires service_account_json or workload_identity_provider"
-            )
-        gcp_config["service_account_json"] = service_account_json
-    if scopes is not None:
-        gcp_config["scopes"] = _require_non_empty_string_list(scopes, "scopes")
-    rule: SandboxProxyRule = {
-        "name": rule_name,
-        "type": "gcp",
-        "enabled": enabled,
-        "gcp": gcp_config,
-    }
-    if env_vars is not None:
-        rule["env_vars"] = _require_env_vars(env_vars)
-    return rule
+    config = _gcp_config(
+        {
+            "service_account_json": service_account_json,
+            "workload_identity_provider": workload_identity_provider,
+            "service_account_email": service_account_email,
+            "subject_scope": subject_scope,
+            "scopes": scopes,
+        }
+    )
+    return _provider_rule("gcp", config, name, enabled, env_vars)
 
 
 AzureResource = Literal[
@@ -411,72 +450,25 @@ def azure_auth(
 ) -> SandboxProxyRule:
     """Build a sandbox proxy rule that authenticates Azure requests.
 
-    The sandbox proxy keeps credentials outside the sandbox and authenticates
-    requests to built-in Azure hosts. Use exactly one form:
-
-    - Workload identity: ``tenant_id`` and ``client_id`` of an Entra app
-      registration or user-assigned managed identity whose federated
-      credential trusts LangSmith's OIDC issuer. ``resources`` limits the
-      Azure resources tokens are requested for (all supported ones when
-      omitted). Configured at sandbox creation, not through updates.
-    - Storage account key: ``storage_account`` and ``account_key``.
-    - SAS token: ``storage_account`` and ``sas_token``.
-
-    ``account_key`` and ``sas_token`` must be ``workspace_secret`` or
-    ``opaque`` values.
+    Use one form: workload identity (``tenant_id`` and ``client_id`` of an Entra
+    app or managed identity that trusts LangSmith's OIDC issuer; fixed at
+    sandbox creation), or ``storage_account`` with ``account_key`` or
+    ``sas_token`` (``workspace_secret`` or ``opaque`` values).
 
     Args:
-        subject_scope: Workload identity token subject, ``"workspace"``
-            (the default) or ``"tag:<tag value id>"``. Only valid with
-            ``tenant_id`` and ``client_id``.
-        env_vars: Plaintext environment variables set for every command in the
-            sandbox while this rule is enabled, for tools that refuse to run
-            unless a credential variable is present even though the proxy
-            injects the real credential on the wire.
+        subject_scope: ``"workspace"`` (default) or ``"tag:<tag value id>"``.
+        resources: Azure resources to request tokens for; all when omitted.
+        env_vars: See ``aws_auth``.
     """
-    rule_name = _require_non_empty_string(name, "name")
-    azure: dict[str, Any] = {}
-    if tenant_id is not None or client_id is not None:
-        if (
-            storage_account is not None
-            or account_key is not None
-            or sas_token is not None
-        ):
-            raise ValueError(
-                "tenant_id/client_id and storage_account, account_key or "
-                "sas_token are mutually exclusive"
-            )
-        azure["tenant_id"] = _require_non_empty_string(tenant_id, "tenant_id")
-        azure["client_id"] = _require_non_empty_string(client_id, "client_id")
-        if subject_scope is not None:
-            azure["subject_scope"] = _require_non_empty_string(
-                subject_scope, "subject_scope"
-            )
-        if resources is not None:
-            azure["resources"] = _require_non_empty_string_list(resources, "resources")
-    else:
-        if subject_scope is not None or resources is not None:
-            raise ValueError(
-                "subject_scope and resources require tenant_id and client_id"
-            )
-        if (account_key is None) == (sas_token is None):
-            raise ValueError(
-                "Azure auth requires tenant_id and client_id, or storage_account "
-                "with exactly one of account_key or sas_token"
-            )
-        azure["storage_account"] = _require_non_empty_string(
-            storage_account, "storage_account"
-        )
-        if account_key is not None:
-            azure["account_key"] = account_key
-        else:
-            azure["sas_token"] = sas_token
-    rule: SandboxProxyRule = {
-        "name": rule_name,
-        "type": "azure",
-        "enabled": enabled,
-        "azure": azure,
-    }
-    if env_vars is not None:
-        rule["env_vars"] = _require_env_vars(env_vars)
-    return rule
+    config = _azure_config(
+        {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "subject_scope": subject_scope,
+            "resources": resources,
+            "storage_account": storage_account,
+            "account_key": account_key,
+            "sas_token": sas_token,
+        }
+    )
+    return _provider_rule("azure", config, name, enabled, env_vars)
