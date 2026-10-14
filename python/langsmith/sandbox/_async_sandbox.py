@@ -64,6 +64,7 @@ from langsmith.sandbox._sse_execute import (
 from langsmith.sandbox._sse_execute import (
     start_payload as _sse_start_payload,
 )
+from langsmith.sandbox._tracing import add_sandbox_metadata
 from langsmith.sandbox._tunnel import AsyncTunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
@@ -230,6 +231,7 @@ class AsyncSandbox:
 
     async def __aenter__(self) -> AsyncSandbox:
         """Enter async context manager."""
+        add_sandbox_metadata(self.id)
         return self
 
     async def __aexit__(
@@ -239,6 +241,7 @@ class AsyncSandbox:
         exc_tb: Optional[Any],
     ) -> None:
         """Exit async context manager, optionally deleting the sandbox."""
+        add_sandbox_metadata(self.id)
         if self._auto_delete:
             try:
                 await self._client.delete_sandbox(self.name)
@@ -260,6 +263,7 @@ class AsyncSandbox:
         Raises:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
         """
+        add_sandbox_metadata(self.id)
         if not self.dataplane_url:
             raise DataplaneNotConfiguredError(
                 f"Sandbox '{self.name}' does not have a dataplane_url configured. "
@@ -1036,12 +1040,15 @@ class AsyncSandbox:
             ValueError: If port or expires_in_seconds is out of range.
             SandboxClientError: For other errors.
         """
-        return await self._client.service(
+        add_sandbox_metadata(self.id)
+        service = await self._client.service(
             self.name,
             port,
             expires_in_seconds=expires_in_seconds,
             headers=headers,
         )
+        service._sandbox_id = self.id
+        return service
 
     async def generate_download_url(
         self,
@@ -1081,6 +1088,7 @@ class AsyncSandbox:
             ValueError: If expires_in_seconds is not positive.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         return await self._client.generate_download_url(
             self.name,
             path,
@@ -1111,6 +1119,7 @@ class AsyncSandbox:
             ResourceTimeoutError: If sandbox doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         refreshed = await self._client.start_sandbox(
             self.name, timeout=timeout, headers=headers
         )
@@ -1127,6 +1136,7 @@ class AsyncSandbox:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         await self._client.stop_sandbox(self.name, headers=headers)
         # dataplane_url stays set: it is stable across stop/start and a request
         # on it resumes the sandbox.
@@ -1142,6 +1152,7 @@ class AsyncSandbox:
             ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         await self._client.delete_sandbox(self.name, headers=headers)
 
     async def capture_snapshot(
@@ -1171,6 +1182,7 @@ class AsyncSandbox:
             ResourceCreationError: If snapshot capture fails.
             SandboxClientError: For other errors.
         """
+        add_sandbox_metadata(self.id)
         return await self._client.capture_snapshot(
             self.name,
             name,

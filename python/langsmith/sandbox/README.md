@@ -41,6 +41,20 @@ pip install langsmith
 > The `langsmith[sandbox]` extra is still accepted for backward
 > compatibility, but it no longer installs anything extra.
 
+## Tracing metadata
+
+Sandbox operations add `sandbox_id` to the active LangSmith run's metadata,
+without creating additional spans. This applies to both sync and async clients,
+including command execution, file operations, lifecycle calls, and service HTTP
+requests. Existing unrelated metadata is preserved; if one run uses multiple
+sandboxes, `sandbox_id` identifies the most recently used sandbox.
+
+The SDK uses the sandbox's ID, never its display name or dataplane URL. Client
+methods that accept names use IDs learned from create, get, or update responses;
+call `get_sandbox()` first when attaching by name. No lookup requests are added
+just for tracing. Operations without an active run or a known ID, and listing
+sandboxes, leave metadata unchanged.
+
 ## Configuration
 
 The client automatically uses LangSmith environment variables:
@@ -867,9 +881,10 @@ async with await client.sandbox(snapshot_id=snapshot_id) as sb:
 ## Verifying Requests from LangSmith
 
 Install the extra: `pip install "langsmith[sandbox-auth]"`. `SandboxTokenVerifier`
-checks EdDSA signatures against LangSmith's JWKS (derived from
-`LANGSMITH_ENDPOINT`, cached). The JWKS must be served over HTTPS (localhost is
-exempt); for a plain-HTTP self-hosted deployment on a trusted network, pass
+checks signatures against LangSmith's JWKS (derived from `LANGSMITH_ENDPOINT`,
+cached); user tokens may use any JOSE asymmetric algorithm (RS*, PS*, ES*,
+EdDSA), chosen by the JWKS key. The JWKS must be served over HTTPS (localhost
+is exempt); for a plain-HTTP self-hosted deployment on a trusted network, pass
 `allow_insecure_jwks=True`.
 
 ### Service URL Users

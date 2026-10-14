@@ -125,12 +125,17 @@ export function getLangSmithEnvVarsMetadata(): Record<string, string> {
       !excluded.includes(key) &&
       !isSensitiveEnvVarName(key)
     ) {
-      if (key === "LANGCHAIN_REVISION_ID") {
-        envVars["revision_id"] = value;
-      } else {
+      // LANGCHAIN_REVISION_ID is the legacy name for LANGSMITH_REVISION_ID.
+      if (key !== "LANGSMITH_REVISION_ID" && key !== "LANGCHAIN_REVISION_ID") {
         envVars[key] = value;
       }
     }
+  }
+
+  const revisionId =
+    allEnvVars.LANGSMITH_REVISION_ID || allEnvVars.LANGCHAIN_REVISION_ID;
+  if (revisionId) {
+    envVars["revision_id"] = revisionId;
   }
 
   return envVars;

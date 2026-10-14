@@ -30,6 +30,19 @@ const res = await existingSb.run("python -c 'print(2 + 2)'");
 
 If you have a reusable snapshot ID, pass it to `client.createSandbox(snapshotId)`.
 
+## Tracing
+
+Sandbox operations add `sandbox_id` metadata to the current LangSmith run when
+called inside a traced function. They do not create additional runs or enable
+tracing. Existing metadata is preserved; when a run uses several sandboxes, the
+most recently used sandbox ID is recorded.
+
+The ID comes from the sandbox handle, a create/get/update response, or a UUID
+passed to a client method. Name-based client calls reuse IDs learned by that
+client from create/get/update. Unknown IDs are omitted rather than replaced with
+display names or resolved with extra requests; call `getSandbox()` first to
+resolve a name. Listing sandboxes does not annotate the active run.
+
 ## Configuration
 
 The client automatically uses LangSmith environment variables:

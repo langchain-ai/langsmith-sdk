@@ -204,8 +204,10 @@ def get_langchain_env_var_metadata() -> dict:
         and k not in excluded
         and not any(sub in k.lower() for sub in _EXCLUDED_SUBSTRINGS)
     }
-    env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
-    if env_revision_id:
+    # LANGCHAIN_REVISION_ID is the legacy name; pop both so neither stays as a raw key.
+    env_revision_id = langchain_metadata.pop("LANGSMITH_REVISION_ID", None)
+    legacy_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
+    if env_revision_id := env_revision_id or legacy_revision_id:
         langchain_metadata["revision_id"] = env_revision_id
     elif default_revision_id := _get_default_revision_id():
         langchain_metadata["revision_id"] = default_revision_id

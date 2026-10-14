@@ -21,6 +21,16 @@ class MountCacheConfig(TypedDict, total=False):
     writeback_seconds: int
 
 
+class MountEncryptionConfig(TypedDict):
+    """Customer-managed key that uploads through a mount are encrypted with.
+
+    For S3 mounts, ``kms_key`` is a KMS key ARN in the mount's region and uploads
+    use SSE-KMS with it.
+    """
+
+    kms_key: str
+
+
 class BucketMountSpecBase(TypedDict, total=False):
     """Optional fields applied per bucket-backed sandbox mount."""
 
@@ -43,7 +53,13 @@ class S3MountConfig(S3MountConfigRequired, total=False):
     path_style: bool
 
 
-class S3MountSpec(BucketMountSpecBase):
+class S3MountSpecBase(BucketMountSpecBase, total=False):
+    """Optional fields applied per S3 sandbox mount."""
+
+    encryption: MountEncryptionConfig
+
+
+class S3MountSpec(S3MountSpecBase):
     """S3-backed sandbox mount specification."""
 
     id: str
@@ -232,6 +248,7 @@ def s3_mount(
     path_style: bool = False,
     read_only: bool | None = None,
     cache: MountCacheConfig | None = None,
+    encryption: MountEncryptionConfig | None = None,
 ) -> S3MountSpec:
     """Build an S3-backed sandbox mount specification."""
     s3: S3MountConfig = {
@@ -253,6 +270,12 @@ def s3_mount(
         mount["read_only"] = read_only
     if cache is not None:
         mount["cache"] = _copy_cache_config(cache)
+    if encryption is not None:
+        mount["encryption"] = {
+            "kms_key": _require_non_empty_string(
+                encryption.get("kms_key", ""), "encryption.kms_key"
+            )
+        }
     return mount
 
 

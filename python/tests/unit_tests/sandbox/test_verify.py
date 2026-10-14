@@ -10,8 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from jwt.algorithms import OKPAlgorithm
+from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
 from pytest_httpx import HTTPXMock
 
 from langsmith import utils as ls_utils
@@ -27,6 +28,7 @@ APP_URL = "https://app.example.com"
 SERVICE_HOST = "0190aaaa-0000-7000-8000-000000000001--8080.svc.example.com"
 CALLBACK_URL = "https://integrator.example.com/sandbox-callback"
 KID = "test-kid"
+RSA_KID = "rsa-kid"
 
 
 @pytest.fixture(autouse=True)
@@ -54,15 +56,57 @@ def key():
 
 
 @pytest.fixture
+def rsa_key():
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@pytest.fixture
+def rsa_jwks(httpx_mock: HTTPXMock, key, rsa_key):
+    rsa_jwk = {
+        **json.loads(RSAAlgorithm.to_jwk(rsa_key.public_key())),
+        "kid": RSA_KID,
+        "alg": "RS256",
+        "use": "sig",
+    }
+    httpx_mock.add_response(
+        url=JWKS_URL, json={"keys": [_jwk(key, KID), rsa_jwk]}, is_reusable=True
+    )
+
+
+@pytest.fixture
+def ec_key():
+    return ec.generate_private_key(ec.SECP256R1())
+
+
+@pytest.fixture
+def mixed_jwks(httpx_mock: HTTPXMock, key, rsa_key, ec_key):
+    rsa_jwk = {
+        **json.loads(RSAAlgorithm.to_jwk(rsa_key.public_key())),
+        "kid": RSA_KID,
+        "alg": "PS256",
+    }
+    ec_jwk = {**json.loads(ECAlgorithm.to_jwk(ec_key.public_key())), "kid": "ec-kid"}
+    httpx_mock.add_response(
+        url=JWKS_URL, json={"keys": [_jwk(key, KID), rsa_jwk, ec_jwk]}, is_reusable=True
+    )
+
+
+@pytest.fixture
 def jwks(httpx_mock: HTTPXMock, key):
     httpx_mock.add_response(
         url=JWKS_URL, json={"keys": [_jwk(key, KID)]}, is_reusable=True
     )
 
 
-def _sign(key, claims: dict, kid: str = KID, headers: dict | None = None) -> str:
+def _sign(
+    key,
+    claims: dict,
+    kid: str = KID,
+    headers: dict | None = None,
+    algorithm: str = "EdDSA",
+) -> str:
     return jwt.encode(
-        claims, key, algorithm="EdDSA", headers={"kid": kid, **(headers or {})}
+        claims, key, algorithm=algorithm, headers={"kid": kid, **(headers or {})}
     )
 
 
@@ -165,6 +209,39 @@ class TestUserToken:
         with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
             verifier.verify_user_token(token, audience=SERVICE_HOST)
 
+    def test_accepts_rs256(self, rsa_jwks, rsa_key, verifier):
+        token = _sign(rsa_key, _user_claims(), RSA_KID, algorithm="RS256")
+        user = verifier.verify_user_token(token, audience=SERVICE_HOST)
+        assert user.subject == "user-123"
+
+    def test_rejects_algorithm_key_type_mismatch(
+        self, rsa_jwks, key, rsa_key, verifier
+    ):
+        eddsa_under_rsa_kid = _sign(key, _user_claims(), RSA_KID)
+        rs256_under_ed_kid = _sign(rsa_key, _user_claims(), KID, algorithm="RS256")
+        for token in (eddsa_under_rsa_kid, rs256_under_ed_kid):
+            with pytest.raises(SandboxTokenVerificationError):
+                verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    @pytest.mark.parametrize("algorithm", ["ES256", "PS256"])
+    def test_accepts_other_jose_algorithms(
+        self, mixed_jwks, rsa_key, ec_key, verifier, algorithm
+    ):
+        signer, kid = (ec_key, "ec-kid") if algorithm == "ES256" else (rsa_key, RSA_KID)
+        token = _sign(signer, _user_claims(), kid, algorithm=algorithm)
+        user = verifier.verify_user_token(token, audience=SERVICE_HOST)
+        assert user.subject == "user-123"
+
+    def test_rejects_es256_under_rsa_key(self, mixed_jwks, ec_key, verifier):
+        token = _sign(ec_key, _user_claims(), RSA_KID, algorithm="ES256")
+        with pytest.raises(SandboxTokenVerificationError):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
+
+    def test_rejects_alg_none(self, verifier):
+        token = jwt.encode(_user_claims(), None, algorithm="none", headers={"kid": KID})
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            verifier.verify_user_token(token, audience=SERVICE_HOST)
+
     def test_rejects_callback_signature(self, jwks, key, verifier):
         body = _callback_body()
         token = _sign(key, _callback_claims(body, aud=[SERVICE_HOST]))
@@ -261,6 +338,12 @@ class TestCallback:
         assert cb.port == 443
         assert cb.identity.sandbox_id == json.loads(body)["identity"]["sandbox_id"]
         assert cb.request is None
+
+    def test_rejects_rs256(self, rsa_key, verifier):
+        body = _callback_body()
+        signature = _sign(rsa_key, _callback_claims(body), RSA_KID, algorithm="RS256")
+        with pytest.raises(SandboxTokenVerificationError, match="algorithm"):
+            verifier.verify_callback(body=body, signature=signature)
 
     def test_full_request(self, jwks, key, verifier):
         body = _callback_body(

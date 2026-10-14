@@ -306,6 +306,13 @@ class Run(BaseModel):
     prompt_tokens: Optional[int] = None
     """`prompt_tokens` is the prompt-side token count."""
 
+    query_metadata: Optional[object] = None
+    """
+    `query_metadata` describes this query result, including `sem_filter_score` when
+    a semantic filter is used. Returned automatically by run queries, or null when
+    unavailable.
+    """
+
     reference_dataset_id: Optional[str] = None
     """`reference_dataset_id` is the dataset UUID for the reference example, if any."""
 

@@ -1,3 +1,5 @@
+import { addSandboxMetadata } from "./tracing.js";
+
 /** How a service URL is gated. Omit for a minted token. */
 export type ServiceAccess = "restricted" | "workspace";
 
@@ -27,7 +29,11 @@ export class ServiceUrl {
   private _expiresAt: string;
   private readonly _refresher?: () => Promise<ServiceUrl>;
 
-  constructor(data: ServiceUrlData, refresher?: () => Promise<ServiceUrl>) {
+  constructor(
+    data: ServiceUrlData,
+    refresher?: () => Promise<ServiceUrl>,
+    private readonly _sandboxId?: string,
+  ) {
     this._browserUrl = data.browser_url ?? "";
     this._serviceUrl = data.service_url ?? "";
     this._token = data.token ?? "";
@@ -77,6 +83,7 @@ export class ServiceUrl {
 
   /** Fetch a path on the service with the token header injected. */
   async fetch(path = "/", init: RequestInit = {}): Promise<Response> {
+    addSandboxMetadata(this._sandboxId);
     const base = (await this.serviceUrl()).replace(/\/+$/, "");
     const url = `${base}/${path.replace(/^\/+/, "")}`;
     const headers = new Headers(init.headers);

@@ -12,7 +12,7 @@ import time
 import uuid
 import warnings
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Event, Lock
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Tuple
 from unittest import mock
@@ -24,6 +24,7 @@ from langchain_core.runnables import chain as as_runnable
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
 from langsmith._internal._v2_migration_utils import _v2_run_to_schema
+from langsmith.evaluation import evaluate_comparative
 from langsmith.evaluation._runner import (
     ComparativeExperimentResults,
     _build_comparative_url,
@@ -1732,6 +1733,76 @@ def _make_comparative_experiment(tenant_id, dataset_id):
         created_at=datetime.now(timezone.utc),
         modified_at=datetime.now(timezone.utc),
     )
+
+
+def test_comparative_randomized_concurrent_evaluators_keep_run_ids() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    projects = [_make_session(None, tenant_id, dataset_id, name) for name in ("a", "b")]
+    example = ls_schemas.Example(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        inputs={"question": "answer"},
+        outputs={"answer": "correct"},
+        created_at=datetime.now(timezone.utc),
+    )
+    runs = [
+        ls_schemas.Run(
+            id=uuid.uuid4(),
+            name=project.name,
+            run_type="chain",
+            start_time=datetime.now(timezone.utc),
+            inputs=example.inputs,
+            outputs={"answer": answer},
+            reference_example_id=example.id,
+            session_id=project.id,
+            trace_id=uuid.uuid4(),
+            dotted_order="x",
+        )
+        for project, answer in zip(projects, ("correct", "wrong"))
+    ]
+    client = MagicMock()
+    client.info.instance_flags = {}
+    client.list_runs.side_effect = lambda project_id, **kwargs: [
+        run for run in runs if run.session_id == project_id
+    ]
+    client.list_examples.return_value = [example]
+    client.create_comparative_experiment.return_value = _make_comparative_experiment(
+        tenant_id, dataset_id
+    )
+    first_started = Event()
+    second_finished = Event()
+
+    def first_comparator(ordered_runs, _example):
+        first_run = ordered_runs[0]
+        first_started.set()
+        assert second_finished.wait(5)
+        return {"key": "first", "scores": {first_run.id: 1, ordered_runs[1].id: 0}}
+
+    def second_comparator(ordered_runs, _example):
+        assert first_started.wait(5)
+        second_finished.set()
+        return {"key": "second", "scores": {ordered_runs[0].id: 1}}
+
+    with mock.patch(
+        "langsmith.evaluation._runner.random.shuffle",
+        side_effect=lambda items: items.reverse(),
+    ):
+        result = evaluate_comparative(
+            projects,
+            evaluators=[first_comparator, second_comparator],
+            client=client,
+            randomize_order=True,
+            max_concurrency=2,
+        )
+
+    assert result[example.id]["runs"] == runs
+    first_scores = {
+        call.kwargs["run_id"]: call.kwargs["score"]
+        for call in client.create_feedback.call_args_list
+        if call.kwargs["key"] == "first"
+    }
+    assert first_scores == {runs[0].id: 0, runs[1].id: 1}
 
 
 def test_build_comparative_url() -> None:
