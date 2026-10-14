@@ -138,17 +138,21 @@ To avoid static keys entirely, pass an IAM role. LangSmith assumes it with
 `AssumeRoleWithWebIdentity` using a short-lived OIDC token for your workspace,
 so the role's trust policy must trust LangSmith's OIDC issuer. `subjectScope`
 defaults to `"workspace"`; `"tag:<tag value id>"` puts a resource tag value in
-the token subject instead, and must name one of the sandbox's tag values.
-Workload identity is fixed at sandbox creation.
+the token subject instead, and must name one of the `tagValueIds` the sandbox
+is created with. Workload identity is fixed at sandbox creation.
 
 ```typescript
-const authConfig = proxyConfig({
-  rules: [
-    awsAuth({
-      roleArn: "arn:aws:iam::123456789012:role/LangSmithSandbox",
-      subjectScope: "workspace",
-    }),
-  ],
+const tagValueId = "7d3c0c1e-1b7a-4e0a-9b8f-2f4a1d2c3b4a";
+const sandbox = await client.createSandbox({
+  proxyConfig: proxyConfig({
+    rules: [
+      awsAuth({
+        roleArn: "arn:aws:iam::123456789012:role/LangSmithSandbox",
+        subjectScope: `tag:${tagValueId}`,
+      }),
+    ],
+  }),
+  tagValueIds: [tagValueId],
 });
 ```
 

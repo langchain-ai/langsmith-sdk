@@ -923,6 +923,11 @@ export interface CreateSandboxOptions {
    * no access.
    */
   accessDelegation?: AccessDelegation;
+  /**
+   * Resource tag value IDs to attach to the sandbox at creation. A workload
+   * identity `subjectScope` of `"tag:<tag value id>"` must name one of these.
+   */
+  tagValueIds?: string[];
 }
 
 /**

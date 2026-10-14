@@ -378,3 +378,25 @@ def test_create_sandbox_forwards_azure_and_gcp_workload_identity(
     body = json.loads(httpx_mock.get_request().content)
     assert body["proxy_config"] == proxy
     assert body["mount_config"] == mounts
+
+
+@pytest.mark.parametrize("tag_value_ids", [None, [TAG_SCOPE.removeprefix("tag:")]])
+def test_create_sandbox_serializes_tag_value_ids(
+    httpx_mock: HTTPXMock, tag_value_ids: Any
+) -> None:
+    proxy = proxy_config(rules=[aws_auth(role_arn=ROLE_ARN, subject_scope=TAG_SCOPE)])
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{ENDPOINT}/boxes",
+        json={"name": "tag-box"},
+        status_code=201,
+    )
+    with SandboxClient(api_endpoint=ENDPOINT, max_retries=0) as client:
+        client.create_sandbox(
+            snapshot_id="snap-1", proxy_config=proxy, tag_value_ids=tag_value_ids
+        )
+    body = json.loads(httpx_mock.get_request().content)
+    if tag_value_ids is None:
+        assert "tag_value_ids" not in body
+    else:
+        assert body["tag_value_ids"] == tag_value_ids

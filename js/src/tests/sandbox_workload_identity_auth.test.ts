@@ -373,4 +373,31 @@ describe("sandbox workload identity auth", () => {
     expect(body.proxy_config).toEqual(proxy);
     expect(body.mount_config).toEqual(mounts);
   });
+
+  it.each([undefined, [tagScope.slice("tag:".length)]])(
+    "serializes tagValueIds at creation (%j)",
+    async (tagValueIds) => {
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ name: "tag-box", status: "ready" }), {
+          status: 201,
+        }),
+      );
+      const client = new SandboxClient({
+        apiEndpoint: "http://test-server:8080",
+      });
+      jest.spyOn(client, "_fetch").mockImplementation(mockFetch);
+      await client.createSandbox("snap-1", {
+        proxyConfig: proxyConfig({
+          rules: [awsAuth({ roleArn, subjectScope: tagScope })],
+        }),
+        tagValueIds,
+      });
+      const body = JSON.parse(mockFetch.mock.calls[0][1]?.body as string);
+      if (tagValueIds === undefined) {
+        expect(body).not.toHaveProperty("tag_value_ids");
+      } else {
+        expect(body.tag_value_ids).toEqual(tagValueIds);
+      }
+    },
+  );
 });

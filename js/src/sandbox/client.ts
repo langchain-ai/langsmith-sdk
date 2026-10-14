@@ -671,6 +671,7 @@ export class SandboxClient {
       proxyConfig,
       runConfig,
       accessDelegation,
+      tagValueIds,
     } = resolvedOptions;
 
     if (snapshotId && snapshotName) {
@@ -726,6 +727,15 @@ export class SandboxClient {
     }
     if (accessDelegation !== undefined) {
       payload.access_delegation = validateAccessDelegation(accessDelegation);
+    }
+    if (tagValueIds !== undefined) {
+      if (!Array.isArray(tagValueIds)) {
+        throw new LangSmithValidationError(
+          "tagValueIds must be an array of tag value IDs",
+          "tagValueIds",
+        );
+      }
+      payload.tag_value_ids = [...tagValueIds];
     }
 
     const httpTimeout = waitForReady ? (timeout + 30) * 1000 : 30 * 1000;
