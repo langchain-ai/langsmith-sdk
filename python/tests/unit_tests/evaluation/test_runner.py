@@ -461,12 +461,24 @@ def test_evaluate_rejects_callable_upload_runs_for_experiment_targets(
         evaluate(target, **{upload_parameter: lambda example: True})
 
 
+@pytest.mark.parametrize("via_client", [False, True])
 @pytest.mark.parametrize("upload_runs", [True, False, lambda example: True])
-def test_evaluate_rejects_both_upload_names(upload_runs) -> None:
+def test_evaluate_rejects_both_upload_names(upload_runs, via_client) -> None:
+    entrypoint = (
+        Client(
+            api_url="http://localhost:1984",
+            api_key="test",
+            info={},
+            auto_batch_tracing=False,
+        ).evaluate
+        if via_client
+        else evaluate
+    )
     with pytest.raises(ValueError, match="only one of upload_runs and upload_results"):
-        evaluate(lambda inputs: inputs, upload_runs=upload_runs, upload_results=True)
+        entrypoint(lambda inputs: inputs, upload_runs=upload_runs, upload_results=True)
 
 
+@pytest.mark.parametrize("via_client", [False, True])
 @pytest.mark.parametrize(
     "options, expected",
     [
@@ -477,11 +489,21 @@ def test_evaluate_rejects_both_upload_names(upload_runs) -> None:
         ({"upload_results": False}, False),
     ],
 )
-def test_evaluate_upload_runs_default_and_alias(options, expected) -> None:
-    assert inspect.signature(evaluate).parameters["upload_runs"].default is None
+def test_evaluate_upload_runs_default_and_alias(options, expected, via_client) -> None:
+    entrypoint = (
+        Client(
+            api_url="http://localhost:1984",
+            api_key="test",
+            info={},
+            auto_batch_tracing=False,
+        ).evaluate
+        if via_client
+        else evaluate
+    )
+    assert inspect.signature(entrypoint).parameters["upload_runs"].default is None
     example, _ = _create_example(0)
     with mock.patch("langsmith.evaluation._runner._evaluate") as run_evaluate:
-        evaluate(lambda inputs: inputs, data=[example], **options)
+        entrypoint(lambda inputs: inputs, data=[example], **options)
     assert run_evaluate.call_args.kwargs["upload_runs"] is expected
 
 
