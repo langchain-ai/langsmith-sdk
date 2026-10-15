@@ -1,4 +1,5 @@
 import * as uuid from "./utils/uuid/src/index.js";
+import { getOpenAPIBaseUrl } from "./utils/api_url.js";
 import type { OTELContext } from "./experimental/otel/types.js";
 import {
   LangSmithToOTELTranslator,
@@ -83,19 +84,25 @@ import { Datasets } from "./_openapi_client/resources/datasets/datasets.js";
 import { AnnotationQueues } from "./_openapi_client/resources/annotation-queues/annotation-queues.js";
 import { Threads } from "./_openapi_client/resources/threads.js";
 import { Traces } from "./_openapi_client/resources/traces.js";
+import { Sessions } from "./_openapi_client/resources/sessions.js";
 import { Public } from "./_openapi_client/resources/public/public.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { isSampledById } from "./utils/sampling.js";
 import { warnOnce } from "./utils/warn.js";
-import { type Address, EnvAddressError } from "./address.js";
+import {
+  type Address,
+  type AgentAddress,
+  EnvAddressError,
+  ensureAddress,
+  ensureAgent,
+} from "./address.js";
 import {
   applyToPayload,
-  checkAddress,
   logUntraced,
   rejectConflicting,
   resolveFromEnv,
   warnOnEnv,
-} from "./utils/agent_addressing.js";
+} from "./utils/addressing.js";
 import { getQueryBackend, QueryBackend } from "./utils/v2_migration.js";
 import { parseHubIdentifier } from "./utils/prompts.js";
 import {
@@ -543,7 +550,7 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   /** (beta) Send the run to this address instead of a project. */
-  address?: Address;
+  address?: AgentAddress;
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
@@ -615,7 +622,7 @@ export type CreateFeedbackParams = CreateFeedbackOptions &
         /** The run to provide feedback on. */
         runId: string;
         /** (beta) The address the run was sent to, e.g. `runTree.address`. */
-        address: Address;
+        address: AgentAddress;
         sessionId?: never;
         projectId?: never;
       }
@@ -1749,11 +1756,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private _getOpenAPIBaseUrl(): string {
-    const url = this.apiUrl.replace(/\/$/, "");
-    for (const suffix of ["/api/v1", "/api"]) {
-      if (url.endsWith(suffix)) return url.slice(0, -suffix.length);
-    }
-    return url;
+    return getOpenAPIBaseUrl(this.apiUrl);
   }
 
   /**
@@ -1846,6 +1849,15 @@ export class Client implements LangSmithTracingClientInterface {
   public get traces(): Traces {
     this._checkStainlessVersion("0.16.0");
     return this.openAPIClient.traces;
+  }
+
+  /**
+   * (beta) Access the sessions resource, which resolves an address to the
+   * project its traces go to: `client.sessions.resolve(address.toApiAddress())`.
+   */
+  public get sessions(): Sessions {
+    this._checkStainlessVersion("0.18.0");
+    return this.openAPIClient.sessions;
   }
 
   /** Access the public shared-run resource. */
@@ -2549,7 +2561,7 @@ export class Client implements LangSmithTracingClientInterface {
       ...this._mergedHeaders,
       "Content-Type": "application/json",
     };
-    const address = checkAddress(run.address);
+    const address = ensureAgent(run.address);
     // `RunTree.postRun` passes a built run body, carrying the wire `session_name`.
     const bodySessionName = (run as RunCreate).session_name;
     rejectConflicting(run.project_name ?? bodySessionName, address);
@@ -3153,8 +3165,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (run.events) {
       run.events = this._filterNewTokenEvents(run.events);
     }
-    // On `run` too: the direct path below serializes it.
-    applyToPayload(run, { update: true });
+    // Fail on a bad address now; the queued path validates again when built.
+    ensureAgent(run.address);
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
     if (!this._filterForSampling([data]).length) {
@@ -3205,15 +3217,17 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.workspaceId !== undefined) {
       headers["x-tenant-id"] = options.workspaceId;
     }
+    const wireRun = { ...run };
+    applyToPayload(wireRun, { update: true });
     const body = serializePayloadForTracing(
-      run.extra
+      wireRun.extra
         ? mergeRuntimeEnvIntoRun(
-            run,
+            wireRun,
             this.cachedLSEnvVarsForMetadata,
             this.omitTracedRuntimeInfo,
             this.tracingSampleRate,
           )
-        : run,
+        : wireRun,
       `Serializing payload to update run with id: ${runId}`,
     );
     await this.caller.call(async () => {
@@ -3271,10 +3285,19 @@ export class Client implements LangSmithTracingClientInterface {
     runId,
     run,
     projectOpts,
+    address: rawAddress,
   }: {
     runId?: string;
     run?: Run;
     projectOpts?: ProjectOptions;
+    /**
+     * (beta) An address that names the run's project, such as the
+     * `AgentAddress` the run was sent to or an `ExperimentAddress`, for a run
+     * that names no project. It is resolved to its project with one request,
+     * which needs LangSmith 0.18 or later. It must name the project the run is
+     * in. A run that carries its own `address` does not need it.
+     */
+    address?: Address;
   }): Promise<string> {
     warnOnce(
       "getRunUrl() is deprecated and will be removed after Jan 31, 2027. " +
@@ -3283,9 +3306,14 @@ export class Client implements LangSmithTracingClientInterface {
       { type: "DeprecationWarning", code: "LANGSMITH_DEPRECATED_GET_RUN_URL" },
     );
     if (run !== undefined) {
-      if (!run.session_id && (run as { address?: Address }).address) {
-        throw new Error("Addressed runs have no URL until read back.");
-      }
+      const argumentAddress = ensureAddress(rawAddress);
+      rejectConflicting(
+        projectOpts?.projectName ?? projectOpts?.projectId,
+        argumentAddress,
+      );
+      const address =
+        argumentAddress ??
+        ensureAgent((run as { address?: AgentAddress }).address);
       let sessionId: string;
       if (run.session_id) {
         sessionId = run.session_id;
@@ -3295,6 +3323,8 @@ export class Client implements LangSmithTracingClientInterface {
         ).id;
       } else if (projectOpts?.projectId) {
         sessionId = projectOpts?.projectId;
+      } else if (address) {
+        sessionId = await this._resolveAddress(address);
       } else {
         const project = await this.readProject({
           projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
@@ -3317,6 +3347,15 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide either runId or run");
     }
+  }
+
+  /** The ID of the project an address names, with one request. */
+  private async _resolveAddress(address: Address): Promise<string> {
+    const { session_id: sessionId } = await this.sessions.resolve(
+      address.toApiAddress(),
+    );
+    assertUuid(sessionId);
+    return sessionId;
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
@@ -5572,11 +5611,12 @@ export class Client implements LangSmithTracingClientInterface {
       runId?: string | null;
       sessionId?: string;
       projectId?: string;
-      address?: Address;
+      /** (beta) Send the feedback to this agent instead of a project. */
+      address?: AgentAddress;
     } = typeof runIdOrParams === "object" && runIdOrParams !== null
       ? runIdOrParams
       : { runId: runIdOrParams, key: keyArg as string, ...optionsArg };
-    const address = checkAddress(rawAddress);
+    const address = ensureAgent(rawAddress);
     rejectConflicting(sessionId ?? projectId, address);
     if (!runId && !projectId) {
       throw new Error("One of runId or projectId must be provided");
@@ -5624,7 +5664,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (samplingId != null && !this._shouldSample(samplingId)) {
       return feedback as Feedback;
     }
-    const body = JSON.stringify(address ? { ...feedback, address } : feedback);
+    const body = JSON.stringify(
+      address ? { ...feedback, address: address._toLrn() } : feedback,
+    );
     const url = `${this.apiUrl}/feedback`;
     await this.caller.call(async () => {
       const res = await this._fetch(url, {

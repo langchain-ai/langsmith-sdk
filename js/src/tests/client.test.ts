@@ -1122,6 +1122,46 @@ describe("Client", () => {
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
     });
+
+    it.each([
+      [{ LANGSMITH_REVISION_ID: "new" }, "new"],
+      [{ LANGCHAIN_REVISION_ID: "legacy" }, "legacy"],
+      [
+        { LANGSMITH_REVISION_ID: "new", LANGCHAIN_REVISION_ID: "legacy" },
+        "new",
+      ],
+      [
+        { LANGSMITH_REVISION_ID: "", LANGCHAIN_REVISION_ID: "legacy" },
+        "legacy",
+      ],
+    ])(
+      "should read the revision id from %o",
+      (env: Record<string, string>, expected: string) => {
+        const names = ["LANGSMITH_REVISION_ID", "LANGCHAIN_REVISION_ID"];
+        // eslint-disable-next-line no-process-env
+        const previous = names.map((name) => process.env[name]);
+        try {
+          for (const name of names) {
+            // eslint-disable-next-line no-process-env
+            delete process.env[name];
+          }
+          // eslint-disable-next-line no-process-env
+          Object.assign(process.env, env);
+
+          const metadata = getLangSmithEnvVarsMetadata();
+          expect(metadata.revision_id).toBe(expected);
+          expect(metadata).not.toHaveProperty("LANGSMITH_REVISION_ID");
+          expect(metadata).not.toHaveProperty("LANGCHAIN_REVISION_ID");
+        } finally {
+          names.forEach((name, i) => {
+            // eslint-disable-next-line no-process-env
+            if (previous[i] === undefined) delete process.env[name];
+            // eslint-disable-next-line no-process-env
+            else process.env[name] = previous[i];
+          });
+        }
+      },
+    );
   });
 
   describe("parseHubIdentifier", () => {

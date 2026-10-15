@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
-from langsmith._internal import _agent_addressing
+from langsmith._internal import _addressing
 from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 
@@ -694,4 +694,4 @@ def test_an_empty_project_variable_falls_back_to_default(
         fn.cache_clear()
 
     assert ls_utils.get_tracer_project() == ""
-    assert _agent_addressing.resolve()[0] == "default"
+    assert _addressing.resolve()[0] == "default"

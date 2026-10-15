@@ -1,9 +1,8 @@
 import {
-  type Address,
+  AgentAddress,
   EnvAddressError,
+  ensureAgent,
   envNames,
-  fromEnv as addressFromEnv,
-  parse,
 } from "../address.js";
 import {
   getEnvironmentVariable,
@@ -12,18 +11,13 @@ import {
 import { warnOnce } from "./warn.js";
 
 /** One precedence level: the `[project, address]` it names. */
-export type Tier = [string | undefined, Address | undefined];
-
-/** Validate and normalise an address at an entry point; the SDK carries the result. */
-export function checkAddress(address: unknown): Address | undefined {
-  return address == null ? undefined : parse(address as string);
-}
+export type Tier = [string | undefined, AgentAddress | undefined];
 
 export function rejectConflicting(project: unknown, address: unknown): void {
   if (project && address) {
     throw new Error(
       `A run is sent to a project (${JSON.stringify(project)}) or to an ` +
-        `address (${JSON.stringify(address)}), not both.`,
+        "address, not both.",
     );
   }
 }
@@ -53,7 +47,7 @@ function getEnvProject(): string | undefined {
  */
 export function resolveFromEnv(): Tier {
   const project = getEnvProject();
-  const address = addressFromEnv();
+  const address = AgentAddress.fromEnv();
   if (project && address) {
     throw new EnvAddressError(
       "LANGSMITH_AGENT_* and a project are both set in the environment.",
@@ -82,22 +76,34 @@ export function warnOnEnv(): void {
 }
 
 /**
- * Put the run's address in its payload field, as one lowercase string.
+ * Put the run's address in its payload field, in its wire form.
  * Without one, a create naming no project takes the env address.
  *
  * @throws {EnvAddressError} If the env names half an address.
  */
 export function applyToPayload(
-  run: { address?: Address; session_id?: string; session_name?: string },
+  run: { address?: AgentAddress; session_id?: string; session_name?: string },
   { update = false }: { update?: boolean } = {},
 ): void {
   const payload = run as Record<string, unknown>;
-  let address = checkAddress(payload.address);
+  let address: AgentAddress | undefined;
+  if (typeof payload.address === "string") {
+    // Wire data already applied: a queued run is applied again when its batch
+    // is sent. It is parsed again, so a malformed one cannot fail the whole
+    // batch in the backend.
+    try {
+      address = AgentAddress._fromLrn(payload.address);
+    } catch {
+      throw new Error("The run's `address` is not a valid agent address.");
+    }
+  } else {
+    address = ensureAgent(payload.address);
+  }
   delete payload.address;
   const namedProject =
     payload.session_id != null || payload.session_name != null;
   if (!address && !update && !namedProject) {
-    address = addressFromEnv();
+    address = AgentAddress.fromEnv();
   }
   if (!address) {
     return;
@@ -106,7 +112,7 @@ export function applyToPayload(
     "Sending runs to an `address` is in beta and enabled per workspace; a " +
       "workspace without it rejects the runs.",
   );
-  payload.address = address;
+  payload.address = address._toLrn();
   if (!namedProject) {
     delete payload.session_name;
     delete payload.session_id;

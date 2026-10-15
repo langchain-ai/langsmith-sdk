@@ -957,6 +957,7 @@ def evaluate_comparative(
         executor: cf.Executor,
     ) -> tuple[uuid.UUID, ComparisonEvaluationResult]:
         feedback_group_id = uuid.uuid4()
+        runs_list = list(runs_list)
         if randomize_order:
             random.shuffle(runs_list)
         with rh.tracing_context(project_name="evaluators", client=client):
