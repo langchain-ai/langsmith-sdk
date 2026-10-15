@@ -29,6 +29,13 @@ class SandboxListUsageCostsParams(TypedDict, total=False):
     start_time.
     """
 
+    include_totals: bool
+    """Include usage totals across the filtered interval (RESOURCE only).
+
+    Omitted when unrestricted resource access cannot be verified or the service does
+    not support totals.
+    """
+
     page_size: int
     """Maximum rows to return"""
 

@@ -1315,6 +1315,13 @@ export interface SandboxListUsageCostsParams extends ItemsCursorGetPaginationPar
   granularity?: 'HOUR' | 'RESOURCE';
 
   /**
+   * Include usage totals across the filtered interval (RESOURCE only). Omitted when
+   * unrestricted resource access cannot be verified or the service does not support
+   * totals.
+   */
+  include_totals?: boolean;
+
+  /**
    * Resource UUID filter; repeat this parameter up to 100 times
    */
   resource_ids?: Array<string>;

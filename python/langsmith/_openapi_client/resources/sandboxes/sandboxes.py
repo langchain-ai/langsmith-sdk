@@ -88,6 +88,7 @@ class SandboxesResource(SyncAPIResource):
         start_time: Union[str, datetime],
         cursor: str | Omit = omit,
         granularity: Literal["HOUR", "RESOURCE"] | Omit = omit,
+        include_totals: bool | Omit = omit,
         page_size: int | Omit = omit,
         resource_ids: SequenceNotStr[str] | Omit = omit,
         resource_type: Literal["SANDBOX", "SNAPSHOT"] | Omit = omit,
@@ -117,6 +118,10 @@ class SandboxesResource(SyncAPIResource):
           granularity: HOUR returns hourly buckets. RESOURCE sums each resource over the requested
               interval and sets period_start to start_time.
 
+          include_totals: Include usage totals across the filtered interval (RESOURCE only). Omitted when
+              unrestricted resource access cannot be verified or the service does not support
+              totals.
+
           page_size: Maximum rows to return
 
           resource_ids: Resource UUID filter; repeat this parameter up to 100 times
@@ -145,6 +150,7 @@ class SandboxesResource(SyncAPIResource):
                         "start_time": start_time,
                         "cursor": cursor,
                         "granularity": granularity,
+                        "include_totals": include_totals,
                         "page_size": page_size,
                         "resource_ids": resource_ids,
                         "resource_type": resource_type,
@@ -195,6 +201,7 @@ class AsyncSandboxesResource(AsyncAPIResource):
         start_time: Union[str, datetime],
         cursor: str | Omit = omit,
         granularity: Literal["HOUR", "RESOURCE"] | Omit = omit,
+        include_totals: bool | Omit = omit,
         page_size: int | Omit = omit,
         resource_ids: SequenceNotStr[str] | Omit = omit,
         resource_type: Literal["SANDBOX", "SNAPSHOT"] | Omit = omit,
@@ -224,6 +231,10 @@ class AsyncSandboxesResource(AsyncAPIResource):
           granularity: HOUR returns hourly buckets. RESOURCE sums each resource over the requested
               interval and sets period_start to start_time.
 
+          include_totals: Include usage totals across the filtered interval (RESOURCE only). Omitted when
+              unrestricted resource access cannot be verified or the service does not support
+              totals.
+
           page_size: Maximum rows to return
 
           resource_ids: Resource UUID filter; repeat this parameter up to 100 times
@@ -252,6 +263,7 @@ class AsyncSandboxesResource(AsyncAPIResource):
                         "start_time": start_time,
                         "cursor": cursor,
                         "granularity": granularity,
+                        "include_totals": include_totals,
                         "page_size": page_size,
                         "resource_ids": resource_ids,
                         "resource_type": resource_type,
