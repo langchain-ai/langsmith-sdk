@@ -18,14 +18,20 @@ from langsmith import utils as ls_utils
 from langsmith._internal import _addressing, _context
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith._internal._v2_migration_utils import QueryBackend as _QueryBackend
-from langsmith.address import EnvAddressError
+from langsmith.address import (
+    EnvAddressError,
+    address_from_env,
+    address_to_lrn,
+    ensure_address,
+    ensure_agent,
+)
 from langsmith.client import Client
 from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree, _Baggage
 from langsmith.schemas import FeedbackCreate, Run
 
-SUPPORT = ls.AgentAddress("support", "production")
-STAGING = ls.AgentAddress("support", "staging")
+SUPPORT = ls.agent_address("support", "production")
+STAGING = ls.agent_address("support", "staging")
 SUPPORT_LRN = "lrn:agents/support/environments/production"
 STAGING_LRN = "lrn:agents/support/environments/staging"
 UNTRACED = "LangSmith is not tracing this call"
@@ -76,20 +82,38 @@ def _root() -> tuple:
 
 
 def _agent(agent_id: str, environment: str) -> str:
-    return ls.AgentAddress(agent_id, environment)._lrn()
+    return address_to_lrn(
+        ensure_address({"kind": "AGENT", "id": agent_id, "environment": environment})
+    )
 
 
 def _from_env() -> Optional[str]:
-    agent = ls.AgentAddress.from_env()
-    return None if agent is None else agent._lrn()
+    agent = address_from_env()
+    return None if agent is None else address_to_lrn(agent)
 
 
 # -- The handle ---------------------------------------------------------------
 
 
 class TestConstructors:
+    def test_public_factories(self) -> None:
+        assert ls.agent_address("support", "Production") == SUPPORT
+        assert (
+            ls.experiment_address("0190C3D4-0000-7000-8000-0000000000B1") == EXPERIMENT
+        )
+        assert ls.evaluator_address() == EVALUATOR
+        for address in (SUPPORT, EXPERIMENT, EVALUATOR):
+            assert json.loads(json.dumps(address)) == address
+
+    def test_plain_dict_normalization(self) -> None:
+        value = {"kind": "AGENT", "id": "support", "environment": "production"}
+        with ls.tracing_context(address=value):
+            assert ls.get_tracing_context()["address"] == SUPPORT
+        assert value["environment"] == "production"
+        assert _addressing.normalize_replicas([value]) == [{"address": SUPPORT}]
+
     def test_agent_renders_its_lrn(self) -> None:
-        assert SUPPORT._lrn() == SUPPORT_LRN
+        assert address_to_lrn(SUPPORT) == SUPPORT_LRN
 
     @pytest.mark.parametrize("agent_id", ["a", "a" * 63, "support-v2"])
     def test_valid_agent_ids(self, agent_id: str) -> None:
@@ -121,9 +145,14 @@ class TestConstructors:
     @pytest.mark.parametrize(
         "environment", ["local", "development", "staging", "production"]
     )
-    def test_environments_are_lowercased(self, environment: str) -> None:
+    def test_environments_are_uppercased(self, environment: str) -> None:
         for given in (environment, environment.upper(), environment.title()):
-            assert ls.AgentAddress("a", given).environment == environment
+            assert (
+                ensure_address({"kind": "AGENT", "id": "a", "environment": given})[
+                    "environment"
+                ]
+                == environment.upper()
+            )
 
     def test_from_env_with_nothing_set(self) -> None:
         assert _from_env() is None
@@ -167,22 +196,41 @@ class TestConstructors:
         assert _from_env() is None
 
     def test_agent_is_an_address(self) -> None:
-        assert isinstance(SUPPORT, ls.Address)
-        assert not isinstance(SUPPORT_LRN, ls.Address)
-        assert ls.AgentAddress(id="support", environment="PRODUCTION") == SUPPORT
+        assert isinstance(SUPPORT, dict)
+        assert not isinstance(SUPPORT_LRN, dict)
+        assert (
+            ensure_address(
+                {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"}
+            )
+            == SUPPORT
+        )
 
     def test_agent_renders_the_api_address(self) -> None:
-        assert SUPPORT.to_api_address() == {
+        assert ensure_address(SUPPORT) == {
             "kind": "AGENT",
             "id": "support",
             "environment": "PRODUCTION",
         }
 
-    def test_agent_is_immutable(self) -> None:
-        with pytest.raises(AttributeError):
-            SUPPORT.environment = "staging"  # type: ignore[misc]
+    def test_json_round_trip(self) -> None:
+        address = json.loads(json.dumps(SUPPORT))
+        assert ensure_agent(address) == SUPPORT
+        with ls.tracing_context(address=address):
+            assert ls.get_tracing_context()["address"] == SUPPORT
 
-    @pytest.mark.parametrize("value", ["support", SUPPORT_LRN, 42, object()])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "support",
+            SUPPORT_LRN,
+            42,
+            object(),
+            {},
+            {"kind": "UNKNOWN"},
+            {"kind": "AGENT", "id": "Bad", "environment": "production"},
+            {"kind": "AGENT", "id": "support", "environment": "qa"},
+        ],
+    )
     def test_entry_points_reject_anything_but_an_address(self, value: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="(?i)address"):
             with ls.tracing_context(address=value):
@@ -195,19 +243,21 @@ class TestConstructors:
             RunTree(name="r", address=value)
 
 
-EXPERIMENT = ls.ExperimentAddress("0190C3D4-0000-7000-8000-0000000000B1")
-EVALUATOR = ls.EvaluatorAddress()
+EXPERIMENT = ensure_address(
+    {"kind": "EXPERIMENT", "id": "0190C3D4-0000-7000-8000-0000000000B1"}
+)
+EVALUATOR = ensure_address({"kind": "EVALUATOR"})
 
 
 class TestOtherAddresses:
     """Addresses of other features name a project for the query APIs only."""
 
     def test_the_api_addresses(self) -> None:
-        assert EXPERIMENT.to_api_address() == {
+        assert ensure_address(EXPERIMENT) == {
             "kind": "EXPERIMENT",
             "id": "0190c3d4-0000-7000-8000-0000000000b1",
         }
-        assert EVALUATOR.to_api_address() == {"kind": "EVALUATOR"}
+        assert ensure_address(EVALUATOR) == {"kind": "EVALUATOR"}
 
     @pytest.mark.parametrize(
         "value",
@@ -224,11 +274,11 @@ class TestOtherAddresses:
     )
     def test_an_experiment_id_must_be_a_uuid(self, value: Any) -> None:
         with pytest.raises(ls_utils.LangSmithUserError, match="UUID"):
-            ls.ExperimentAddress(value)
+            ensure_address({"kind": "EXPERIMENT", "id": value})
 
     def test_they_are_addresses(self) -> None:
         for address in (SUPPORT, EXPERIMENT, EVALUATOR):
-            assert isinstance(address, ls.Address)
+            assert isinstance(address, dict)
 
     @pytest.mark.parametrize("address", [EXPERIMENT, EVALUATOR], ids=["exp", "eval"])
     def test_only_an_agent_can_receive_traces(self, address: Any) -> None:
@@ -711,7 +761,12 @@ class TestWire:
         assert payload["address"] == SUPPORT_LRN
 
     def test_a_payload_address_object_is_rendered_once(self) -> None:
-        payload = {"id": "x", "address": ls.AgentAddress("support", "Production")}
+        payload = {
+            "id": "x",
+            "address": ensure_address(
+                {"kind": "AGENT", "id": "support", "environment": "Production"}
+            ),
+        }
         _addressing.apply_to_payload(payload)
         assert payload["address"] == SUPPORT_LRN
 
@@ -875,7 +930,7 @@ class TestWire:
         ("address", "query"),
         [
             (SUPPORT, {"kind": "AGENT", "id": "support", "environment": "PRODUCTION"}),
-            (EXPERIMENT, {"kind": "EXPERIMENT", "id": str(EXPERIMENT.id)}),
+            (EXPERIMENT, {"kind": "EXPERIMENT", "id": str(EXPERIMENT["id"])}),
             (EVALUATOR, {"kind": "EVALUATOR"}),
         ],
         ids=["agent", "experiment", "evaluator"],
@@ -920,4 +975,6 @@ def test_the_address_classes_carry_the_address_suffix() -> None:
     for name in ("Agent", "Experiment", "Evaluator"):
         assert not hasattr(ls, name), name
         assert getattr(ls, f"{name}Address") is getattr(ls.address, f"{name}Address")
-    assert ls.AgentAddress("a", "local") == ls.AgentAddress("a", "LOCAL")
+    assert ensure_address(
+        {"kind": "AGENT", "id": "a", "environment": "local"}
+    ) == ensure_address({"kind": "AGENT", "id": "a", "environment": "LOCAL"})

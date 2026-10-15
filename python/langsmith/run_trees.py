@@ -22,7 +22,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith._internal import _addressing, _v2_migration_utils
 from langsmith._internal._uuid import uuid7, uuid7_deterministic
-from langsmith.address import AgentAddress
+from langsmith.address import AgentAddress, address_from_lrn, address_to_lrn
 from langsmith.client import (
     ID_TYPE,
     RUN_TYPE_T,
@@ -294,8 +294,8 @@ def configure(
 
             Pass `None` to explicitly clear the project name.
         address: (beta) An `AgentAddress`, such as
-            `ls.AgentAddress(id, environment)`, to send traces to instead of a
-            project. Mutually exclusive with `project_name`.
+            `ls.agent_address(id, environment)`, to send
+            traces to instead of a project. Mutually exclusive with `project_name`.
 
             Pass `None` to explicitly clear it.
         tags: A list of tags to be applied to all traced runs.
@@ -887,7 +887,7 @@ class RunTree(ls_schemas.RunBase):
         seed = (
             project_name
             if project_name is not None
-            else (address._lrn() if address is not None else "agent//")
+            else (address_to_lrn(address) if address is not None else "agent//")
         )
 
         if updates and updates.get("reroot", False):
@@ -1517,7 +1517,7 @@ class _Baggage:
             )
         if self.address is not None:
             items.append(
-                f"{LANGSMITH_ADDRESS}={urllib.parse.quote(self.address._lrn())}"
+                f"{LANGSMITH_ADDRESS}={urllib.parse.quote(address_to_lrn(self.address))}"
             )
         return ",".join(items)
 
@@ -1525,7 +1525,7 @@ class _Baggage:
 def _address_from_header(value: Any) -> Optional[AgentAddress]:
     """Build an address from an untrusted header value, or `None` if unusable."""
     try:
-        return AgentAddress._from_lrn(value)
+        return address_from_lrn(value)
     except utils.LangSmithUserError:
         # The value is untrusted, so it is not logged.
         logger.warning("Ignoring an unusable address in a `baggage` header.")

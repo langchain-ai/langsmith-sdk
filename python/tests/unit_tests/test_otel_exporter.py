@@ -723,10 +723,10 @@ def _otel_exporter_headers(**kwargs) -> dict:
 
 
 def test_otel_exporter_addresses_an_agent(set_env):
-    from langsmith.address import AgentAddress
+    from langsmith.address import agent_address
 
     headers = _otel_exporter_headers(
-        address=AgentAddress("support-agent", "production")
+        address=agent_address("support-agent", "production")
     )
 
     assert headers == {
@@ -754,11 +754,11 @@ def test_otel_exporter_keeps_the_project_default(set_env):
 
 
 def test_otel_exporter_rejects_a_project_and_an_address(set_env):
-    from langsmith.address import AgentAddress
+    from langsmith.address import agent_address
     from langsmith.utils import LangSmithUserError
 
     with pytest.raises(LangSmithUserError, match="both set"):
         _otel_exporter_headers(
             project="my-project",
-            address=AgentAddress("support-agent", "production"),
+            address=agent_address("support-agent", "production"),
         )

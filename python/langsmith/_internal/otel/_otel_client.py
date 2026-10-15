@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from langsmith import utils as ls_utils
 from langsmith._internal import _addressing
-from langsmith.address import AgentAddress, EnvAddressError
+from langsmith.address import EnvAddressError, address_from_env
 
 
 def _import_otel_client():
@@ -67,7 +67,7 @@ def _destination_headers() -> dict[str, str]:
     there is nothing to address.
     """
     try:
-        address = AgentAddress.from_env()
+        address = address_from_env()
     except EnvAddressError:
         return {}
     if address is not None:
