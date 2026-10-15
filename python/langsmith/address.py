@@ -10,14 +10,13 @@ from __future__ import annotations
 import re
 from typing import Any, Optional, Union, cast
 
-from typing_extensions import Literal, Required, TypedDict
+from typing_extensions import Literal, TypedDict
 
 from langsmith import utils
 
 __all__ = [
     "Address",
     "AgentAddress",
-    "ApiAddress",
     "EvaluatorAddress",
     "EnvAddressError",
     "ExperimentAddress",
@@ -60,14 +59,6 @@ class EvaluatorAddress(TypedDict):
 
 
 Address = Union[AgentAddress, ExperimentAddress, EvaluatorAddress]
-
-
-class ApiAddress(TypedDict, total=False):
-    """The backend address representation."""
-
-    kind: Required[Literal["AGENT", "EXPERIMENT", "EVALUATOR"]]
-    id: str
-    environment: Literal["LOCAL", "DEVELOPMENT", "STAGING", "PRODUCTION"]
 
 
 class EnvAddressError(utils.LangSmithUserError):
@@ -144,16 +135,6 @@ def ensure_address(address: Any) -> Address:
     raise utils.LangSmithUserError(
         "An address must have kind AGENT, EXPERIMENT or EVALUATOR."
     )
-
-
-def to_api_address(address: Address) -> ApiAddress:
-    """Convert an address dictionary to the backend representation."""
-    normalized = ensure_address(address)
-    if normalized["kind"] == "AGENT":
-        return cast(
-            ApiAddress, {**normalized, "environment": normalized["environment"].upper()}
-        )
-    return cast(ApiAddress, normalized)
 
 
 def address_to_lrn(address: AgentAddress) -> str:

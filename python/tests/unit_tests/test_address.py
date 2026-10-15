@@ -24,7 +24,6 @@ from langsmith.address import (
     address_to_lrn,
     ensure_address,
     ensure_agent,
-    to_api_address,
 )
 from langsmith.client import Client
 from langsmith.run_helpers import get_current_run_tree, trace, traceable
@@ -207,7 +206,7 @@ class TestConstructors:
         )
 
     def test_agent_renders_the_api_address(self) -> None:
-        assert to_api_address(SUPPORT) == {
+        assert ensure_address(SUPPORT) == {
             "kind": "AGENT",
             "id": "support",
             "environment": "PRODUCTION",
@@ -254,11 +253,11 @@ class TestOtherAddresses:
     """Addresses of other features name a project for the query APIs only."""
 
     def test_the_api_addresses(self) -> None:
-        assert to_api_address(EXPERIMENT) == {
+        assert ensure_address(EXPERIMENT) == {
             "kind": "EXPERIMENT",
             "id": "0190c3d4-0000-7000-8000-0000000000b1",
         }
-        assert to_api_address(EVALUATOR) == {"kind": "EVALUATOR"}
+        assert ensure_address(EVALUATOR) == {"kind": "EVALUATOR"}
 
     @pytest.mark.parametrize(
         "value",

@@ -132,7 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
-from langsmith.address import Address, AgentAddress, to_api_address
+from langsmith.address import Address, AgentAddress, ensure_address
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -4932,7 +4932,7 @@ class Client:
     def _resolve_address(self, address: Address) -> uuid.UUID:
         """Return the ID of the project an address names, with one request."""
         response = self._get_langsmith_api_sync().sessions.resolve(
-            **to_api_address(address)
+            **ensure_address(address)
         )
         return _as_uuid(response.session_id, "session_id")
 
