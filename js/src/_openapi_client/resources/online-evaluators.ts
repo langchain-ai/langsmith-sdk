@@ -95,8 +95,9 @@ export class OnlineEvaluators extends APIResource {
   /**
    * Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
    * evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-   * session_id, or dataset_id is required. resource_id, type, feedback_key, and
-   * tag_value_id may be supplied with group_by to narrow listing aggregations.
+   * session_id, or dataset_id is required. resource_id, type, feedback_key,
+   * tag_value_id, and agent_id may be supplied with group_by to narrow listing
+   * aggregations.
    */
   spend(
     query: OnlineEvaluatorSpendParams,
@@ -463,7 +464,8 @@ export interface OnlineEvaluatorUpdateParams {
 
 export interface OnlineEvaluatorListParams extends OffsetPaginationOnlineEvaluatorsParams {
   /**
-   * Filter to evaluators attached to the agent's environments or tagged datasets
+   * Filter to evaluators attached to the agent's environments or tagged datasets;
+   * run_rules then lists only those attachments
    */
   agent_id?: string;
 
@@ -527,6 +529,12 @@ export interface OnlineEvaluatorSpendParams {
    * Start of the 7-day window (YYYY-MM-DD).
    */
   period_start: string;
+
+  /**
+   * Filter grouped results to spend from evaluator attachments on the agent's
+   * environments or tagged datasets. Only valid with group_by.
+   */
+  agent_id?: string;
 
   /**
    * Filter to a specific dataset (UUID). Mutually exclusive with group_by.
