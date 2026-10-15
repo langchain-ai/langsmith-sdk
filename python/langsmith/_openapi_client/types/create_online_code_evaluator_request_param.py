@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Dict, Optional
 from typing_extensions import Literal, TypedDict
 
+from .._types import SequenceNotStr
+
 __all__ = ["CreateOnlineCodeEvaluatorRequestParam", "ManagedCodeEvaluatorSettings"]
 
 
@@ -38,4 +40,12 @@ class CreateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
     """
     RequireAttachments opts the evaluator into selecting/presigning run attachments
     (s3_urls) at evaluation time. Default false.
+    """
+
+    workspace_secrets_keys: SequenceNotStr[str]
+    """
+    WorkspaceSecretsKeys names the workspace secrets this evaluator may use. Each is
+    sent as a header on requests to the hosts allowed for that secret; evaluator
+    code never sees the value. Requires advanced_features_enabled, and each secret
+    needs an allowed host with a header.
     """
