@@ -132,7 +132,7 @@ from langsmith._openapi_client._base_client import (
     SyncHttpxClientWrapper as _SyncHttpxClientWrapper,
 )
 from langsmith._openapi_client._httpx import httpx as _httpx
-from langsmith.address import Address, AgentAddress
+from langsmith.address import Address, AgentAddress, to_api_address
 from langsmith.prompt_cache import PromptCache, prompt_cache_singleton
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
@@ -2592,7 +2592,8 @@ class Client:
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
             address (Optional[AgentAddress]): (beta) An `AgentAddress`, such as
-                `ls.AgentAddress(id, environment)`, to send the run to instead of a project.
+                `ls.agent_address(id, environment)`, to send
+                the run to instead of a project.
                 Cannot be combined with `project_name` / `session_id` in the
                 same call. Defaults to the `LANGSMITH_AGENT_*` env vars.
                 This is in beta and enabled per workspace; a
@@ -4931,7 +4932,7 @@ class Client:
     def _resolve_address(self, address: Address) -> uuid.UUID:
         """Return the ID of the project an address names, with one request."""
         response = self._get_langsmith_api_sync().sessions.resolve(
-            **address.to_api_address()
+            **to_api_address(address)
         )
         return _as_uuid(response.session_id, "session_id")
 

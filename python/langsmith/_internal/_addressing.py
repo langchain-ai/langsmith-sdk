@@ -6,7 +6,7 @@
     to a project. This API may change without notice.
 
 A run goes to exactly one destination: a project (`project_name`) or an
-address (`langsmith.AgentAddress(id, environment)`), which
+address (`ls.agent_address(id, environment)`), which
 names an agent and one of its environments. The server resolves an address to
 the agent environment's project, so traces follow the agent rather than a
 project name. Project addressing keeps working alongside it.
@@ -69,7 +69,7 @@ def normalize_replicas(replicas: Optional[Any]) -> Optional[list]:
         return None
     normalized = []
     for replica in replicas:
-        if not isinstance(replica, Mapping):
+        if not isinstance(replica, Mapping) or "kind" in replica:
             normalized.append({"address": check_address(replica)})
             continue
         normalized_replica = dict(replica)
@@ -117,7 +117,7 @@ def resolve(*tiers: Tier) -> tuple[Optional[str], Optional[AgentAddress]]:
         if address is not None:
             return None, address
     env_project = utils.get_tracer_project(return_default_value=False) or None
-    env_address = AgentAddress.from_env()
+    env_address = _address.address_from_env()
     if env_project and env_address is not None:
         raise EnvAddressError(
             str(_both_at_one_level(env_project, env_address, "in the environment"))
@@ -162,8 +162,8 @@ def otlp_destination_headers(
     """
     if address is not None:
         return {
-            "Langsmith-Agent-Id": address.id,
-            "Langsmith-Agent-Environment": address.environment,
+            "Langsmith-Agent-Id": address["id"],
+            "Langsmith-Agent-Environment": address["environment"].lower(),
         }
     return {"Langsmith-Project": project} if project else {}
 
@@ -191,7 +191,7 @@ def warn_on_env() -> None:
     if not present:
         return
     try:
-        address = AgentAddress.from_env()
+        address = _address.address_from_env()
     except EnvAddressError as e:
         warnings.warn(
             f"{e} Calls that name no destination in code are not traced.",
@@ -254,7 +254,7 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         # Wire data already applied: a retried batch re-sends it. It is parsed
         # again, so a malformed one cannot fail the whole batch in the backend.
         try:
-            address = AgentAddress._from_lrn(address)
+            address = _address.address_from_lrn(address)
         except utils.LangSmithUserError:
             raise utils.LangSmithUserError(
                 "The run's `address` is not a valid agent address."
@@ -265,11 +265,11 @@ def apply_to_payload(payload: dict, *, update: bool = False) -> None:
         payload.get("session_id") is not None or payload.get("session_name") is not None
     )
     if address is None and not (update or named_project):
-        address = AgentAddress.from_env()
+        address = _address.address_from_env()
     if address is None:
         return
     warn_is_beta()
-    payload["address"] = address._lrn()
+    payload["address"] = _address.address_to_lrn(address)
     if not named_project:
         payload.pop("session_name", None)
         payload.pop("session_id", None)

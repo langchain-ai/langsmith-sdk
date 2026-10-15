@@ -26,6 +26,9 @@ if TYPE_CHECKING:
         AgentAddress,
         EvaluatorAddress,
         ExperimentAddress,
+        agent_address,
+        evaluator_address,
+        experiment_address,
     )
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client, TracingMode
@@ -131,7 +134,15 @@ def __getattr__(name: str) -> Any:
 
         # `from langsmith import address` would re-enter this hook.
         return importlib.import_module("langsmith.address")
-    elif name in ("Address", "AgentAddress", "EvaluatorAddress", "ExperimentAddress"):
+    elif name in (
+        "Address",
+        "AgentAddress",
+        "EvaluatorAddress",
+        "ExperimentAddress",
+        "agent_address",
+        "experiment_address",
+        "evaluator_address",
+    ):
         from langsmith import address
 
         return getattr(address, name)
@@ -270,6 +281,9 @@ __all__ = [
     "AgentAddress",
     "ExperimentAddress",
     "EvaluatorAddress",
+    "agent_address",
+    "experiment_address",
+    "evaluator_address",
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
