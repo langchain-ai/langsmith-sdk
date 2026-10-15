@@ -101,7 +101,7 @@ jobs:
       contents: read
       pull-requests: read
     env:
-      FROZEN: "js"
+      FROZEN: "js python"
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
     steps:
