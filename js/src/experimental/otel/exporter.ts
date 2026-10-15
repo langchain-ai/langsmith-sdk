@@ -7,6 +7,7 @@ import {
   getLangSmithEnvironmentVariable,
 } from "../../utils/env.js";
 import { extractUsageMetadata } from "../../utils/vercel.js";
+import { warnOnce } from "../../utils/warn.js";
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -76,8 +77,10 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
  *
  * This exporter automatically configures itself with LangSmith endpoints and API keys,
  * based on your LANGSMITH_API_KEY and LANGSMITH_PROJECT environment variables.
- * Will also respect OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_HEADERS environment
- * variables if set.
+ * OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is a full traces URL and takes precedence over
+ * OTEL_EXPORTER_OTLP_ENDPOINT, a base URL to which /v1/traces is appended unless
+ * it already ends in /traces for compatibility.
+ * Also respects OTEL_EXPORTER_OTLP_HEADERS if set.
  *
  * @param config - Optional configuration object that accepts all OTLPTraceExporter parameters.
  *                 If not provided, uses default LangSmith configuration:
@@ -97,9 +100,28 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       getLangSmithEnvironmentVariable("ENDPOINT") ||
       "https://api.smith.langchain.com";
     const defaultBaseUrl = defaultLsEndpoint.replace(/\/$/, "");
+    const baseEndpoint =
+      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ||
+      `${defaultBaseUrl}/otel`;
     const defaultUrl =
-      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
-      `${defaultBaseUrl}/otel/v1/traces`;
+      getEnvironmentVariable("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") ||
+      (baseEndpoint.endsWith("/traces")
+        ? baseEndpoint
+        : `${baseEndpoint.replace(/\/$/, "")}/v1/traces`);
+    if (
+      config?.url === undefined &&
+      !getEnvironmentVariable("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") &&
+      baseEndpoint.endsWith("/traces")
+    ) {
+      warnOnce(
+        "LangSmith now treats OTEL_EXPORTER_OTLP_ENDPOINT as a base URL and " +
+          "appends /v1/traces. Your value ends in /traces, so it is being " +
+          "preserved unchanged for compatibility. This fallback will be " +
+          "removed in the v1 release of the SDK. Move this full URL to " +
+          "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to use standard OpenTelemetry " +
+          "configuration.",
+      );
+    }
     // Configure headers with API key and project if available
     let headers = config?.headers;
     if (headers === undefined) {

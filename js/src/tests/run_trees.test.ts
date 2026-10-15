@@ -756,3 +756,189 @@ describe("LANGSMITH_EXCLUDE_INPUTS_ON_PATCH", () => {
     expect(updateSpy.mock.calls[1][1].inputs).toEqual({ a: 1 });
   });
 });
+
+describe("primary replica owns the original run ids", () => {
+  // A replica for the run's own project must not keep the original ids when
+  // another replica is primary: the backend would see one run id in two
+  // projects and route every run of the trace to only one of them.
+  const OWN = "document-summarization";
+
+  const idsByProject = (calls: any[]) =>
+    Object.fromEntries(calls.map(([run]) => [run.session_name, run.id]));
+
+  test("own-project replica is remapped on post and patch", async () => {
+    const { client } = mockClient();
+    const createRun = jest
+      .spyOn(client, "createRun")
+      .mockResolvedValue(undefined as any);
+    const updateRun = jest
+      .spyOn(client, "updateRun")
+      .mockResolvedValue(undefined as any);
+    const run = new RunTree({
+      name: "agent",
+      inputs: {},
+      client,
+      project_name: OWN,
+      replicas: [
+        { projectName: "production", primary: true },
+        { projectName: OWN },
+      ],
+    });
+
+    await run.postRun();
+    await run.end({});
+    await run.patchRun();
+
+    const posted = idsByProject(createRun.mock.calls);
+    expect(posted.production).toBe(run.id);
+    expect(posted[OWN]).toBe(computeRunIdForSecondaryReplica(run.id, OWN));
+    const patched = Object.fromEntries(
+      updateRun.mock.calls.map(([runId, update]: any[]) => [
+        update.session_name,
+        runId,
+      ]),
+    );
+    expect(patched.production).toBe(run.id);
+    expect(patched[OWN]).toBe(computeRunIdForSecondaryReplica(run.id, OWN));
+  });
+
+  test("without a primary, the own-project replica keeps the original ids", async () => {
+    const { client } = mockClient();
+    const createRun = jest
+      .spyOn(client, "createRun")
+      .mockResolvedValue(undefined as any);
+    const run = new RunTree({
+      name: "agent",
+      inputs: {},
+      client,
+      project_name: OWN,
+      replicas: [{ projectName: OWN }, { projectName: "audit" }],
+    });
+
+    await run.postRun();
+
+    const posted = idsByProject(createRun.mock.calls);
+    expect(posted[OWN]).toBe(run.id);
+    expect(posted.audit).toBe(computeRunIdForSecondaryReplica(run.id, "audit"));
+  });
+
+  describe.each([
+    ["replica without project", {}],
+    ["replica for own project", { project_name: OWN }],
+  ])("LANGSMITH_RUNS_ENDPOINTS with a primary plus a %s", (_label, second) => {
+    const originalEnv = process.env;
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    test("does not reuse ids across projects", async () => {
+      const endpoint = "https://api.smith.langchain.com";
+      process.env = {
+        ...originalEnv,
+        LANGSMITH_PROJECT: OWN,
+        LANGSMITH_RUNS_ENDPOINTS: JSON.stringify([
+          {
+            api_url: endpoint,
+            api_key: "k",
+            project_name: "production",
+            primary: true,
+          },
+          { api_url: endpoint, api_key: "k", ...second },
+        ]),
+      };
+      const { client } = mockClient();
+      const createRun = jest
+        .spyOn(client, "createRun")
+        .mockResolvedValue(undefined as any);
+      const run = new RunTree({ name: "agent", inputs: {}, client });
+
+      await run.postRun();
+
+      const posted = createRun.mock.calls.map(([r]: any[]) => r);
+      expect(posted).toHaveLength(2);
+      expect(new Set(posted.map((r) => r.session_name)).size).toBe(2);
+      expect(new Set(posted.map((r) => r.id)).size).toBe(2);
+      expect(idsByProject(createRun.mock.calls).production).toBe(run.id);
+    });
+  });
+});
+
+describe("batch ingest with one run id in two projects", () => {
+  const ID = "01a0f16c-551e-71b2-afda-7dcd1fac635b";
+  const ref = {
+    id: ID,
+    trace_id: ID,
+    dotted_order: `20260930T082644000000Z${ID}`,
+  };
+  const create = (sessionName: string) => ({
+    ...ref,
+    name: "agent",
+    run_type: "chain",
+    inputs: {},
+    start_time: Date.now(),
+    session_name: sessionName,
+  });
+  const update = {
+    ...ref,
+    end_time: Date.now(),
+    outputs: {},
+  };
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test("warns every time a create is dropped for another project", async () => {
+    const { client } = mockClient();
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    await client.multipartIngestRuns({
+      runCreates: [create("production"), create("document-summarization")],
+      runUpdates: [update],
+    });
+    await client.multipartIngestRuns({
+      runCreates: [create("production"), create("document-summarization")],
+      runUpdates: [update],
+    });
+
+    const collisions = warn.mock.calls.filter(([m]) =>
+      String(m).includes("two projects with the same id"),
+    );
+    expect(collisions).toHaveLength(2);
+    expect(String(collisions[0][0])).toContain("production");
+    expect(String(collisions[0][0])).toContain("document-summarization");
+  });
+
+  test.each(["batchIngestRuns", "multipartIngestRuns"] as const)(
+    "%s warns for creates-only batches and still sends both",
+    async (method) => {
+      const { client, callSpy } = mockClient();
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+      await client[method]({
+        runCreates: [create("production"), create("document-summarization")],
+      });
+
+      expect(
+        warn.mock.calls.filter(([m]) =>
+          String(m).includes("two projects with the same id"),
+        ),
+      ).toHaveLength(1);
+      const [, init] = callSpy.mock.calls.at(-1);
+      const body = await new Response(init.body).text();
+      expect(body).toContain("production");
+      expect(body).toContain("document-summarization");
+    },
+  );
+
+  test("does not warn for duplicate creates to one project", async () => {
+    const { client } = mockClient();
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    await client.multipartIngestRuns({
+      runCreates: [create("production"), create("production")],
+      runUpdates: [update],
+    });
+
+    expect(
+      warn.mock.calls.filter(([m]) =>
+        String(m).includes("two projects with the same id"),
+      ),
+    ).toHaveLength(0);
+  });
+});

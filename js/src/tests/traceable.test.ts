@@ -739,6 +739,48 @@ describe("async generators", () => {
     });
   });
 
+  test("readable stream that errors", async () => {
+    const { client, callSpy } = mockClient();
+
+    const stream = traceable(
+      async function stream() {
+        let count = 0;
+        return new ReadableStream({
+          async pull(controller) {
+            if (count < 2) {
+              controller.enqueue(count);
+              count += 1;
+            } else {
+              controller.error(new Error("stream failed"));
+            }
+          },
+        });
+      },
+      { client, tracingEnabled: true },
+    );
+
+    const numbers: number[] = [];
+    await expect(async () => {
+      for await (const num of (await stream()) as unknown as AsyncGenerator<number>) {
+        numbers.push(num);
+      }
+    }).rejects.toThrow("stream failed");
+
+    expect(numbers).toEqual([0, 1]);
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client),
+    ).toMatchObject({
+      nodes: ["stream:0"],
+      edges: [],
+      data: {
+        "stream:0": {
+          error: "Error: stream failed",
+          outputs: { outputs: [0, 1] },
+        },
+      },
+    });
+  });
+
   test("iterable with props", async () => {
     const { client, callSpy } = mockClient();
 

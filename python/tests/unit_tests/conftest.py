@@ -17,10 +17,15 @@ class HttpEndpoint:
     def __init__(self) -> None:
         self.count = 0
         self.status: int = HTTPStatus.OK
+        self.status_by_path: dict[str, int] = {}
         self.retry_after: int | None = None
         self.url = ""
         self.responses: dict[str, tuple[str, bytes]] = {}
         self.requests: list[tuple[str, str, bytes]] = []
+
+    @property
+    def paths(self) -> list[str]:
+        return [path for _, path, _ in self.requests]
 
 
 @pytest.fixture
@@ -49,7 +54,7 @@ def endpoint() -> Iterator[HttpEndpoint]:
             content_type, body = ep.responses.get(
                 self.path, ("application/json", b"{}")
             )
-            self.send_response(ep.status)
+            self.send_response(ep.status_by_path.get(self.path, ep.status))
             if ep.retry_after is not None:
                 self.send_header("Retry-After", str(ep.retry_after))
             self.send_header("Content-Type", content_type)

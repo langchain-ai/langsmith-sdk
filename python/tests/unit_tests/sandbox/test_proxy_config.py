@@ -143,11 +143,9 @@ def test_proxy_config_composes_multiple_provider_rules() -> None:
 
     assert proxy_config(
         rules=[aws_rule, gcp_rule],
-        no_proxy=["metadata.google.internal"],
         access_control={"allow_list": ["*.googleapis.com", "*.amazonaws.com"]},
     ) == {
         "rules": [aws_rule, gcp_rule],
-        "no_proxy": ["metadata.google.internal"],
         "access_control": {"allow_list": ["*.googleapis.com", "*.amazonaws.com"]},
     }
 
@@ -215,6 +213,25 @@ def test_mount_config_nests_mounts_and_provider_auth() -> None:
             },
         ],
     }
+
+
+def test_s3_mount_sets_kms_key_only_when_encryption_given() -> None:
+    kms_key = (
+        "arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+    )
+
+    assert "encryption" not in s3_mount(id="s3_data", mount_path="/mnt/s3", bucket="b")
+    mount = s3_mount(
+        id="s3_data",
+        mount_path="/mnt/s3",
+        bucket="b",
+        encryption={"kms_key": kms_key},
+    )
+    assert mount["encryption"] == {"kms_key": kms_key}
+    with pytest.raises(ValueError, match="encryption.kms_key"):
+        s3_mount(
+            id="s3_data", mount_path="/mnt/s3", bucket="b", encryption={"kms_key": " "}
+        )
 
 
 def test_git_mount_serializes_backend_shape() -> None:
@@ -419,6 +436,12 @@ def test_gcp_auth_rejects_empty_scopes(scopes: list[str]) -> None:
         )
 
 
+def test_proxy_config_ignores_deprecated_no_proxy() -> None:
+    with pytest.warns(DeprecationWarning, match="no_proxy"):
+        config = proxy_config(rules=[], no_proxy=["metadata.google.internal"])
+    assert "no_proxy" not in config
+
+
 def test_proxy_config_rejects_gcp_auth_without_scopes() -> None:
     with pytest.raises(ValueError, match="scopes"):
         proxy_config(
@@ -512,7 +535,6 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
     )
     extra_proxy_config = proxy_config(
         rules=[extra_rule],
-        no_proxy=["metadata.google.internal"],
         access_control={"allow_list": ["github.com", "*.amazonaws.com"]},
     )
 
@@ -527,7 +549,6 @@ def test_create_sandbox_preserves_mount_config_and_proxy_config_separately(
     assert "mounts" not in body
     assert body["proxy_config"] == {
         "rules": [extra_rule],
-        "no_proxy": ["metadata.google.internal"],
         "access_control": {"allow_list": ["github.com", "*.amazonaws.com"]},
     }
     client.close()

@@ -12,7 +12,7 @@ import time
 import uuid
 import warnings
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Event, Lock
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Tuple
 from unittest import mock
@@ -24,6 +24,7 @@ from langchain_core.runnables import chain as as_runnable
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
 from langsmith._internal._v2_migration_utils import _v2_run_to_schema
+from langsmith.evaluation import evaluate_comparative
 from langsmith.evaluation._runner import (
     ComparativeExperimentResults,
     _build_comparative_url,
@@ -255,6 +256,137 @@ async def test_aevaluate_feedback_includes_experiment_id_and_start_time() -> Non
     run = fake_request.runs[feedback["run_id"]]
     assert feedback["session_id"] == fake_request.created_session["id"]
     assert feedback["start_time"] == run["start_time"]
+
+
+def _evaluator_run_ids(fake_request: FakeRequest) -> set:
+    return {
+        run_id
+        for run_id, run in fake_request.runs.items()
+        if run.get("session_name") == "evaluators"
+    }
+
+
+def _feedback_source_run_id(feedback: dict) -> Any:
+    return ((feedback.get("feedback_source") or {}).get("metadata") or {}).get("__run")
+
+
+@pytest.mark.parametrize("disable_evaluator_tracing", [True, False])
+def test_evaluate_disable_evaluator_tracing(disable_evaluator_tracing: bool) -> None:
+    example, example_payload = _create_example(0)
+    client, fake_request = _fake_client_for_examples(
+        [example_payload], str(example.dataset_id), "my-dataset"
+    )
+
+    def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    def broken(run, example):
+        raise RuntimeError("boom")
+
+    def summary(runs_, examples_):
+        return {"key": "count", "score": len(runs_)}
+
+    results = evaluate(
+        predict,
+        data=[example],
+        evaluators=[score, broken],
+        summary_evaluators=[summary],
+        client=client,
+        blocking=True,
+        max_concurrency=0,
+        disable_evaluator_tracing=disable_evaluator_tracing,
+    )
+    rows = list(results)
+    assert len(rows) == 1
+    row_results = rows[0]["evaluation_results"]["results"]
+    assert {r.key for r in row_results} == {"quality", "broken"}
+    if not disable_evaluator_tracing:
+        assert all(r.source_run_id is not None for r in row_results)
+    else:
+        assert all(r.source_run_id is None for r in row_results)
+
+    # Per-run feedback for both evaluators plus the summary feedback.
+    _wait_until(lambda: len(fake_request.feedbacks) == 3)
+    client.flush()
+    run_feedbacks = [f for f in fake_request.feedbacks if f.get("run_id")]
+    assert len(run_feedbacks) == 2
+    for feedback in run_feedbacks:
+        assert feedback["run_id"] in fake_request.runs
+        if not disable_evaluator_tracing:
+            assert _feedback_source_run_id(feedback) is not None
+        else:
+            assert _feedback_source_run_id(feedback) is None
+
+    evaluator_runs = _evaluator_run_ids(fake_request)
+    if not disable_evaluator_tracing:
+        assert evaluator_runs
+    else:
+        assert not evaluator_runs
+        # Only the target run was uploaded.
+        assert set(fake_request.runs) == {run_feedbacks[0]["run_id"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("disable_evaluator_tracing", [True, False])
+async def test_aevaluate_disable_evaluator_tracing(
+    disable_evaluator_tracing: bool,
+) -> None:
+    example, example_payload = _create_example(0)
+    client, fake_request = _fake_client_for_examples(
+        [example_payload], str(example.dataset_id), "my-dataset"
+    )
+
+    async def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    async def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    async def broken(run, example):
+        raise RuntimeError("boom")
+
+    def summary(runs_, examples_):
+        return {"key": "count", "score": len(runs_)}
+
+    results = await aevaluate(
+        predict,
+        data=[example],
+        evaluators=[score, broken],
+        summary_evaluators=[summary],
+        client=client,
+        blocking=True,
+        max_concurrency=0,
+        disable_evaluator_tracing=disable_evaluator_tracing,
+    )
+    rows = [row async for row in results]
+    assert len(rows) == 1
+    row_results = rows[0]["evaluation_results"]["results"]
+    assert {r.key for r in row_results} == {"quality", "broken"}
+    if not disable_evaluator_tracing:
+        assert all(r.source_run_id is not None for r in row_results)
+    else:
+        assert all(r.source_run_id is None for r in row_results)
+
+    _wait_until(lambda: len(fake_request.feedbacks) == 3)
+    client.flush()
+    run_feedbacks = [f for f in fake_request.feedbacks if f.get("run_id")]
+    assert len(run_feedbacks) == 2
+    for feedback in run_feedbacks:
+        assert feedback["run_id"] in fake_request.runs
+        if not disable_evaluator_tracing:
+            assert _feedback_source_run_id(feedback) is not None
+        else:
+            assert _feedback_source_run_id(feedback) is None
+
+    evaluator_runs = _evaluator_run_ids(fake_request)
+    if not disable_evaluator_tracing:
+        assert evaluator_runs
+    else:
+        assert not evaluator_runs
+        assert set(fake_request.runs) == {run_feedbacks[0]["run_id"]}
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
@@ -1448,6 +1580,7 @@ def test_invalid_evaluate_args() -> None:
         {"num_repetitions": 2},
         {"experiment": "foo"},
         {"upload_results": False},
+        {"disable_evaluator_tracing": True},
         {"summary_evaluators": [lambda a, b: 2]},
         {"data": "data"},
     ]:
@@ -1600,6 +1733,76 @@ def _make_comparative_experiment(tenant_id, dataset_id):
         created_at=datetime.now(timezone.utc),
         modified_at=datetime.now(timezone.utc),
     )
+
+
+def test_comparative_randomized_concurrent_evaluators_keep_run_ids() -> None:
+    tenant_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    projects = [_make_session(None, tenant_id, dataset_id, name) for name in ("a", "b")]
+    example = ls_schemas.Example(
+        id=uuid.uuid4(),
+        dataset_id=dataset_id,
+        inputs={"question": "answer"},
+        outputs={"answer": "correct"},
+        created_at=datetime.now(timezone.utc),
+    )
+    runs = [
+        ls_schemas.Run(
+            id=uuid.uuid4(),
+            name=project.name,
+            run_type="chain",
+            start_time=datetime.now(timezone.utc),
+            inputs=example.inputs,
+            outputs={"answer": answer},
+            reference_example_id=example.id,
+            session_id=project.id,
+            trace_id=uuid.uuid4(),
+            dotted_order="x",
+        )
+        for project, answer in zip(projects, ("correct", "wrong"))
+    ]
+    client = MagicMock()
+    client.info.instance_flags = {}
+    client.list_runs.side_effect = lambda project_id, **kwargs: [
+        run for run in runs if run.session_id == project_id
+    ]
+    client.list_examples.return_value = [example]
+    client.create_comparative_experiment.return_value = _make_comparative_experiment(
+        tenant_id, dataset_id
+    )
+    first_started = Event()
+    second_finished = Event()
+
+    def first_comparator(ordered_runs, _example):
+        first_run = ordered_runs[0]
+        first_started.set()
+        assert second_finished.wait(5)
+        return {"key": "first", "scores": {first_run.id: 1, ordered_runs[1].id: 0}}
+
+    def second_comparator(ordered_runs, _example):
+        assert first_started.wait(5)
+        second_finished.set()
+        return {"key": "second", "scores": {ordered_runs[0].id: 1}}
+
+    with mock.patch(
+        "langsmith.evaluation._runner.random.shuffle",
+        side_effect=lambda items: items.reverse(),
+    ):
+        result = evaluate_comparative(
+            projects,
+            evaluators=[first_comparator, second_comparator],
+            client=client,
+            randomize_order=True,
+            max_concurrency=2,
+        )
+
+    assert result[example.id]["runs"] == runs
+    first_scores = {
+        call.kwargs["run_id"]: call.kwargs["score"]
+        for call in client.create_feedback.call_args_list
+        if call.kwargs["key"] == "first"
+    }
+    assert first_scores == {runs[0].id: 0, runs[1].id: 1}
 
 
 def test_build_comparative_url() -> None:

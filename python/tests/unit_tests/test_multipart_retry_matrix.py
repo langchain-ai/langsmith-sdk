@@ -9,7 +9,9 @@ This is the executable spec for *what gets retried and how many times* when
    *only* when the response actually carries a ``Retry-After`` header.
 2. The ``for idx in range(1, attempts + 1)`` loop in ``_send_multipart_req``,
    which retries only ``LangSmithConnectionError`` / ``LangSmithRequestTimeout``
-   / ``LangSmithAPIError`` (500) and swallows everything else.
+   / ``LangSmithAPIError`` (500), re-raises ``LangSmithNotFoundError`` (404)
+   so ``_multipart_ingest_ops`` can fall back to ``/runs/batch``, and swallows
+   everything else.
 
 A ``MagicMock`` session cannot see layer 1 at all, so these tests drive a real
 local HTTP server through the real adapter and count sockets hit.
@@ -42,14 +44,8 @@ def no_sleep():
         yield slept
 
 
-def _payload(n_runs=1):
-    """Build a payload through the real serializer, so the log context is real.
-
-    The per-op context string is ``trace=<trace_id>,id=<run_id>``
-    (``_operations.py``), and ``join_multipart_parts_and_context`` concatenates
-    one of those per operation with ``"; "``. Hand-writing the context in a test
-    would pin a message shape that never occurs in production.
-    """
+def _ops(n_runs=1):
+    """Build serialized run ops; ``_payload`` turns them into a multipart body."""
     ops = []
     ids = []
     for _ in range(n_runs):
@@ -79,6 +75,18 @@ def _payload(n_runs=1):
                 attachments=None,
             )
         )
+    return ops, ids
+
+
+def _payload(n_runs=1):
+    """Build a payload through the real serializer, so the log context is real.
+
+    The per-op context string is ``trace=<trace_id>,id=<run_id>``
+    (``_operations.py``), and ``join_multipart_parts_and_context`` concatenates
+    one of those per operation with ``"; "``. Hand-writing the context in a test
+    would pin a message shape that never occurs in production.
+    """
+    ops, ids = _ops(n_runs)
     parts = [
         serialized_run_operation_to_multipart_parts_and_context(op)[0] for op in ops
     ]
@@ -119,7 +127,8 @@ RETRY_MATRIX = [
     # Plain client errors are never retried.
     (401, None, 1, "none"),
     (403, None, 1, "none"),
-    (404, None, 1, "none"),
+    # 404 is re-raised so the caller can fall back to /runs/batch.
+    (404, None, 1, "none (raised)"),
     (422, None, 1, "none"),
 ]
 
@@ -148,7 +157,11 @@ def test_multipart_retry_counts(
     endpoint.retry_after = retry_after
     client = _client(endpoint)
 
-    client._send_multipart_req(_one_run_payload())
+    if status == 404:
+        with pytest.raises(ls_utils.LangSmithNotFoundError):
+            client._send_multipart_req(_one_run_payload())
+    else:
+        client._send_multipart_req(_one_run_payload())
 
     assert endpoint.count == expected_requests, (
         f"HTTP {status} (Retry-After={retry_after}) produced {endpoint.count} "
@@ -297,7 +310,6 @@ def test_app_loop_does_not_back_off(endpoint, no_sleep):
         (409, False),  # swallowed as a duplicate -- silently dropped, no dump
         (500, True),
         (429, True),
-        (404, True),
     ],
 )
 def test_exhausted_batch_is_dropped_not_requeued(
@@ -336,6 +348,18 @@ def test_no_failed_traces_dir_means_silent_data_loss(endpoint, no_sleep, monkeyp
     # Nothing on disk, and the only programmatic signal is the error callback.
     assert len(errors) == 1
     assert isinstance(errors[0], ls_utils.LangSmithAPIError)
+
+
+def test_404_falls_back_to_batch_and_disables_multipart(endpoint, no_sleep):
+    """A 404 on /runs/multipart resends the runs via /runs/batch (LSDK-551)."""
+    endpoint.status_by_path["/runs/multipart"] = 404
+    client = _client(endpoint)
+    ops, _ = _ops(1)
+
+    client._multipart_ingest_ops(ops)
+
+    assert endpoint.paths == ["/runs/multipart", "/runs/batch"]
+    assert client._multipart_disabled is True
 
 
 # ---------------------------------------------------------------------------

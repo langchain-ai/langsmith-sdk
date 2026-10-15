@@ -1,5 +1,6 @@
 """Client configuration for OpenTelemetry integration with LangSmith."""
 
+import functools
 import os
 import warnings
 from typing import TYPE_CHECKING
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
         TracerProvider = object  # type: ignore[assignment, misc]
 
 from langsmith import utils as ls_utils
+from langsmith._internal import _addressing
+from langsmith.address import EnvAddressError, address_from_env
 
 
 def _import_otel_client():
@@ -42,6 +45,38 @@ def _import_otel_client():
         return None
 
 
+@functools.lru_cache(maxsize=1)
+def _warn_legacy_traces_endpoint() -> None:
+    warnings.warn(
+        "LangSmith now treats OTEL_EXPORTER_OTLP_ENDPOINT as a base URL and "
+        "appends /v1/traces. Your value ends in /traces, so it is being "
+        "preserved unchanged for compatibility. This fallback will be "
+        "removed in the v1 release of the SDK. Move this full URL to "
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to use standard OpenTelemetry "
+        "configuration.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+def _destination_headers() -> dict[str, str]:
+    """Return the headers sending exports to the env's project or agent environment.
+
+    An env that names half an agent address, or an agent and a project, sends
+    neither: calls that name no destination in code are not traced for it, so
+    there is nothing to address.
+    """
+    try:
+        address = address_from_env()
+    except EnvAddressError:
+        return {}
+    if address is not None:
+        if ls_utils.get_tracer_project(return_default_value=False):
+            return {}
+        return _addressing.otlp_destination_headers(None, address)
+    return _addressing.otlp_destination_headers(ls_utils.get_tracer_project(), None)
+
+
 def get_otlp_tracer_provider() -> "TracerProvider":
     """Get the OTLP tracer provider for LangSmith.
 
@@ -53,7 +88,10 @@ def get_otlp_tracer_provider() -> "TracerProvider":
       Langsmith-Project header if project is configured
 
     These defaults can be overridden by setting the environment variables before
-    calling this function. Values are passed directly to the exporter constructor
+    calling this function. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes precedence as
+    a full traces URL; OTEL_EXPORTER_OTLP_ENDPOINT is a base URL to which
+    /v1/traces is appended unless it already ends in /traces for compatibility.
+    Resolved values are passed to the exporter constructor
     rather than written to os.environ.
 
     Returns:
@@ -74,10 +112,16 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         BatchSpanProcessor,
     ) = otel_imports
 
-    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
     if not endpoint:
-        ls_endpoint = ls_utils.get_api_url(None)
-        endpoint = f"{ls_endpoint}/otel"
+        base_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if not base_endpoint:
+            base_endpoint = f"{ls_utils.get_api_url(None)}/otel"
+        if base_endpoint.endswith("/traces"):
+            endpoint = base_endpoint
+            _warn_legacy_traces_endpoint()
+        else:
+            endpoint = f"{base_endpoint.rstrip('/')}/v1/traces"
 
     # Configure headers with API key and project if available.
     # Build a dict because OTLPSpanExporter expects a mapping, not a string.
@@ -91,11 +135,7 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         }
     else:
         api_key = ls_utils.get_api_key(None) or ""
-        headers = {"x-api-key": api_key}
-
-        project = ls_utils.get_tracer_project()
-        if project:
-            headers["Langsmith-Project"] = project
+        headers = {"x-api-key": api_key, **_destination_headers()}
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "langsmith")
     resource = Resource(

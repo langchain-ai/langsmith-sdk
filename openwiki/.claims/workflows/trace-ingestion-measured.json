@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:cf58e61bf14fa7eaa69b6bf33da2172e9a5d98aaeeac3026c8f5a8d1e2bc941a",
+  "claims": [
+    {
+      "id": "claim_367b3eb9f8424728a15eea8697441b1b",
+      "statement": "The Python client can move buffered run-operation processing to a shared background thread pool, with synchronous fallback if that pool is shut down; non-multipart ingestion groups serialized post and patch operations and sends them through the batch-ingest request path subject to a byte-size limit.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/client.py#L2995-L3020",
+          "version": "repo-lines-v1:sha256:bb550e0cdefb53d2a57ee899c633bdd647094328f8505577eb108f36e6265578:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhNTAzYWE3MjY4MTFjOWI0ZGFhMmZmMDdlNmY1NTg2NmQ2OWM2NDY4NjZlZmM0ZjljZjBmZWY3OWQxOWRhMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiYjIxMGMxMDAwMTNiYTQ5M2IxNDc0YzFlYTE1YTA5ZjYyMjk0NjkzNDIxZGRmMjZkNWZlY2UwYWQzNGNjMDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE3YTgwNDEyM2ZlZDdmNzAzMGNmN2EyMzkwN2I0MjlhYTMwNTk3ZTQ0ZDdmNDUzMDM1MWQyODA5YjdlMWFlYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2YWYzZGFkZWMzMjdiYjhiNzg0NmRlOTJiOTE0NmM2NzMzOTM3OWNhNzBhZGZkNzQ3YjYzMjkwMDk2ZWRlOWEifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L3022-L3117",
+          "version": "repo-lines-v1:sha256:fbf08e78c37d7881ef98642a50379ddebc3b3abb756b57bff648ed73563d708d:eyJzZWxlY3RlZExpbmVDb3VudCI6OTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMzBhNDRjYzQ1ZDZhOTA3YjQ0ZTc5ZTJmYTgzNzYyODJkMjY1MWM2ZDc2MzYzOGVmNjM3YTM1ZTgwZGY2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzOTc0YmY1YjI1OTYyMzE2MGYwOWFhMGY4NjUxZTQ3ODY2MTNiYzg4ZjQ4NWJjYzBkZDkwYzAzY2M5OGUyMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhMTNiZTYzYTczNjgxM2E0NDVmMTIwN2Y2MDdkYWFmMTNhYmE0ODZmNDgxZTY0MDc2NWNmZTEwNWU2MzZjMzQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T09:58:29.947Z"
+  }
+}

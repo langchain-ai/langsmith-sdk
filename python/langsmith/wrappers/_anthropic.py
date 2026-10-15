@@ -606,13 +606,15 @@ def wrap_anthropic(
         prepopulated_invocation_params,
         tracing_extra_rest,
     )
-    client.completions.create = _get_wrapper(  # type: ignore[method-assign]
-        client.completions.create,
-        completions_name,
-        _reduce_completions,
-        prepopulated_invocation_params,
-        tracing_extra_rest,
-    )
+    # anthropic>=1.0 removed the legacy Text Completions resource.
+    if hasattr(client, "completions") and hasattr(client.completions, "create"):
+        client.completions.create = _get_wrapper(  # type: ignore[method-assign]
+            client.completions.create,
+            completions_name,
+            _reduce_completions,
+            prepopulated_invocation_params,
+            tracing_extra_rest,
+        )
 
     if (
         hasattr(client, "beta")

@@ -19,7 +19,15 @@ export class Info extends APIResource {
 export interface InfoListResponse {
   batch_ingest_config?: InfoListResponse.BatchIngestConfig;
 
+  /**
+   * BillingInstallationID is the persistent per-installation identity for
+   * self-hosted deployments.
+   */
+  billing_installation_id?: string;
+
   customer_info?: InfoListResponse.CustomerInfo;
+
+  engine_github_web_base_url?: string;
 
   git_sha?: string;
 

@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:2b96765593cf7f602c00cb79902a1781662d036aa88040cd285efc874faccb57",
+  "claims": [
+    {
+      "id": "claim_dcc913d3771e4975adcb5300716d2d0d",
+      "statement": "Python unit validation is intended to run through `make tests`, which defaults to `tests/unit_tests`, clears tracing-related environment variables, enables Python and asyncio debug modes, installs the HTTPX compatibility alias on `PYTHONPATH`, disables network sockets except Unix sockets, and runs pytest in parallel.",
+      "evidence": [
+        {
+          "resource": "repo://python/AGENTS.md#L15-L21",
+          "version": "repo-lines-v1:sha256:7f52a397a52b8c2f1e852608585147c834a9ae4bdd8acf48fcb35e0fc4c6041c:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQwZTVkZWEyYTg3NDg4MzFlZDcwZmU4ODc3NjkxNjQxNTk3ZmUxNjY0NDYzNGY5ZDRhZTI2MGE3Y2U1YzNjZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTI5NThlM2U1ZmI2YzNiNTdkMjFhY2FhZGRiMWI5OTNlYzE2ZjQ1ZDc3ODQzYzg5YWVlYTAxMWNkZjhlMTgxMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmY2NzNkODdmMDc2YzkwY2Y3YjhjNzMzNWViNjY3NDhkMGE2MDk5OTZjYmZmMDA5MDQyZWY2ZDY3MDg3Mzc5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGI0ZGNiOGYzYjY2NDEzYmI3MGM0YWE3ZDlmNmI0ZWIwZmE0MmJlMWRhMDYzNjVjMWY0YTA2MTQ5MTY5YjRlZiJ9"
+        },
+        {
+          "resource": "repo://python/Makefile#L37-L48",
+          "version": "repo-lines-v1:sha256:57cb750c2c6de7ad3d37335b831efd28c261a599a0998482cb89de255a7e07d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ZDcxNTViMmFlMDFkYzJkNzg0NTlmMGZhN2Y2ODA4NjEzZWNjYzI3YzIzOTFkZWE5MzgwZDIxNGMzMzA0NjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZTk1NTcyNjgzNzc3NDVkODhmNGUyZjY1ZmM5NDVlNmIxNmQ0YWU4MjY0YTlhZDFkZjNjM2Y0MGYwZmI0MGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwNTU2NzRhY2Q1NDMxYzc4NzEzMDk1NjY5NjM2ZGI2Yzk2MjVkOGU3MGUyODNlYTQzYjI1ZGFkMGFlNWNlY2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkNGNkZTA4NGVkNWZmNmVkMGYwNzQxMGEzMzk5MDViMzI1ZjJmY2Y2MjA3ODRhZWJlMDg5ZDJmMmNkZTkyOTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_50b48056d2454dd5abec6073967d3e6e",
+      "statement": "The TypeScript package separates Jest unit tests, Jest `*.int.test.ts` integration tests, and Vitest `*.vitesttest.*` tests into distinct commands and configurations.",
+      "evidence": [
+        {
+          "resource": "repo://js/jest.config.cjs#L2-L30",
+          "version": "repo-lines-v1:sha256:28d06ff99b3f9d5ea980889fc3acb56ab96a858de11d759adc347d5a61e5dae3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZTYxZmRmMjAyOGEzOTQxMGYwNTFmOTdiZTBkYjU4MGMzZWZiYWJmNWE3ZjI3Yjc2ZDQ4N2U1ZDA5OWZiMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NmYxZDhhMjI3ZjdiYWJiOWNkNjM2MTUxZjlmMGIyYzZlZjUyYTUxZjFjNzc4MDk1NzM1YTI4YWZiNTg4NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjZTg3ZDg5ZDhhMTFjYmFmYzIyZmZkMTFjYjM3ZDY1MTE3MTBmYzgyZWI5YWFkMWEwODA2MjEwMWJmMWRlOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1OWMwMDc4Mjk4YzIzYTY0MmFmMDM4MzM1Mzc5YmI5MjdlZDNjZjgzNTUyYjlmYmE0NmI2MDNhMGIyZmNjY2MifQ"
+        },
+        {
+          "resource": "repo://js/package.json#L123-L130",
+          "version": "repo-lines-v1:sha256:f45339084f6d677322dbbf5cf46c9457763a8667e2698a173e5f17888028a087:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzFhYmExODU2MGFlM2FmYjc4YTBiNzk2ZjFlNjc0ZGFiOTViYjhmNWJjNmQzMWZkZGU5NGU3ODk1YmE5Y2RlZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzZlNTc5Nzg0MGQ5MjM4YzgyYWMxYzY0OGJmODQ2YTM4ZjAyNGFjMzhjOTJjOTM2NzUzNzFmNDE3Yzc4YzhjNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWM3YTYyNDBkMjE5OTY0YjA3Y2FhY2FjYWJkNDdhNjQ5ZGVjOTcyYzk3OTY4YmU3Yzc1ZDNkY2RjNmEyNjc1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWY0NGU2NGE3ZDE2MjMyY2VjYTdlOWVjOTk5MjQ4Nzk5ODQ3ZTY3NGRjNzdhZGY4MDFkYjc0NjQ0OTYzODk2MyJ9"
+        },
+        {
+          "resource": "repo://js/vitest.config.ts#L3-L8",
+          "version": "repo-lines-v1:sha256:bd819191e06719f8f117b8019ef220378da28a0521703fc0597e45e3808e3939:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjJjZWNiMTQ0YTQ2ZjVkY2YxMmE2MTY5ZmNlZWQ3Njk1ZTgyOTRiMDkwZGU3NmYzNjYxY2RkMDI0OTMwMDE0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ1Y2QyZmI0ZjNkZjg4NDUxNTI1NWIzOTUyM2YyZjhiNTQ3MmJlZWE5ZjU2NmZmY2EyMDRkYjgwMjU2MTA0MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTA2ZDU2OWQxNWRmMmUwZTc1MjUyZGY1YjFmNGZkZGU5MjUwMzQ2MTY5NWFiMzBjNjRlMTBhNWFhMTEwZGQ0YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjZmNWI0MGIxNTg0NTdkMTc4NjRmMjE3OTA3ODZkZDVhMmVjZGI2NGI2NmE2NTFmNzg4ZDRlMjVjZDMzMDNkMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7feefb1aa4a34860b56def766fad48ff",
+      "statement": "Before a pull request, Python changes require `make format`, `make lint`, and `make tests` from `python/`, while TypeScript changes require `pnpm format`, `pnpm lint`, and `pnpm test` from `js/`.",
+      "evidence": [
+        {
+          "resource": "repo://js/AGENTS.md#L3-L12",
+          "version": "repo-lines-v1:sha256:5fe15d46e52c2c7186c9228ec0566dd3475365586bad50e5b6fb69747154098f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4ZGI0ZGU3YTBjYmMzOTBmMTY0YzM0MmMzMjgwM2M1ZjVlODJiMDU3NDQ5NjU4ODg2ZWQwN2FmNjkzOTQ0ZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiNzU5OWExN2U3MjcyNzZkZjZhM2FiYTNlNWZiNDJjMmUxNjUzMDkxYTNlNzFiZDY4NDNmNzI3MTg4Nzg3MzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1M2JlOTAwNzc5NzliZjU5M2EwNDc5M2U4Y2UxZGJmZjg2YTMyZDYyZWFmNDE1YmZjNjlhZWYxOGMzOTdiN2QifQ"
+        },
+        {
+          "resource": "repo://python/AGENTS.md#L3-L13",
+          "version": "repo-lines-v1:sha256:130059513cd4a74029909f02d5dbe09da7eb4071f1819d4e2e9971ec12eeb305:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3Mzc4NmZmODBjYjc3M2FlOGRmNTY0YWRiOGVkN2Y2NzdhNGU4M2FiZmE3MmI2M2RmNTI5MDEwM2FlMjgwMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwZWJkMzRkOGRjMDgzMzNjMTU2NDczYjhiODY3ZjU3M2E4NWVmNzY3YTMxOTUxNGU5M2Y1ZThiNmYwMDRmNmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlNmExNGQyMTAxNjNhMzRjZjQ2YzU4NDkxY2E5Mzg5YTUzZTkzODJhY2NlMWQ5ODNkOTY5NTgxYzhiNzA5MTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE5YTRhY2IyZWM1MjZkYzBkM2U4ZmUyMzU2NjRhNGI5OGU5YmI1NTc4YWUzYmM1OTc2ZDdhMGFlZGU2M2I3MGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e5427b6418834ad5add07665616bdc77",
+      "statement": "CI tests Python unit behavior on Python 3.10 through 3.13 and JavaScript unit behavior on Node 22 and 24 on Linux plus Node 24 on Windows and macOS; the JavaScript CI also builds and checks the package version before running Jest and Vitest.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L113-L143",
+          "version": "repo-lines-v1:sha256:b4b24bbe9d9b84bfd099b4e6186c909bf42f14bf47c4754a6c606c0c3fcb941d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5MGI2Nzc4NWJmMmE4NGQwZDE2ODNjMGJjNmQ2ZjY2MjQxMGUyNzZkMmVhNWI0ZDUzZDFkNmNjMGJiMGI4NjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1YjRmMTRkY2Y4OWYxNDcwYzUyYTI0YzQxZDAwZTc4MzRkZjBmMTg1ZjZiODI2ZjUyYmU0ZDg0NmJiNWU3ZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhMjVjMWZjZGIxNTk0ZTAxNzBkZDFmZjQzMGFmNTI3ODU4MDc5ODM1ZWE4NTE0ZDczMGI4MWMzMTA0NjRhZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmNDM5OTUyMDA4YmI5MzBmYjVjMzRiZGY2M2QzNDNmZTM5YjcxYzBjMWE5NTFjMjVjNmY1NWFhOWE0ZDhmMDcifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/ci.yml#L241-L279",
+          "version": "repo-lines-v1:sha256:0e87025c9c234d11e97c2e76dd0b10bce25a3a694c4667f19441c5f56b3a4219:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzMzA1YWQwY2U4YzYwZDM1MmI2NzJjNTEyODdkZmVlODRhMDllZjBkMzJiYTc3YTFkYTkyN2E3YWVmMTUxZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2OWI0ZjUzMmVjM2M2YTU1OWM0N2Q2YmY2YzhjYWJiODBlNzM1ZTQ4Mjk2ODNmNWE4MWFhODYwNTE1ZTg3MjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViMTE1ZjcwZDg4MWJmODZjZGJlNDRjMjk4NThlOGZkMTAyODAzMTMxMWQ4N2ZjYjM1YjJkNTY5MDRhZDE5M2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwZTY3NzI2MzQ5MGE3ZWJjNTAxOWZjOGE2ZGIxYTJmNTQ0NWQ0ZmQ2NzYxODg1ZDVjMjhkNTYyYjY0ZjI2N2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dcd2d8750cec4b59b69dfb2c8572b409",
+      "statement": "Integration CI can target beta, ClickHouse-only, dual, and SmithDB-only LangSmith environments; Python integration cases are deterministically assigned to six shards, and backend capability markers selectively exclude unsupported Python and JavaScript tests.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L579-L648",
+          "version": "repo-lines-v1:sha256:319e513cab86d7a9126dfb0771946bd74e0e0a758aa6afc8cf727079b3591494:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzY2JhNWUxM2NlMDMyNjY2YjAyODM4YjQzM2RhZjNmMDFmMzdiMzkxZTllYWQxZmEwODExYmE5YTRjMGNlOTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhYmY3NjIwZDEzMWE0YmM2ZTI5NjIyY2M1NjQwODk4NDIyN2FlNDgwOTFmMGI4MTg3YTgzYmZiOGYzY2I4OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5YjM0YjRkZDFkNTQ1NjgxZjBjODAzN2IzNGVlM2IyNDc2YjBhOGIzZGVjNzA2NDYwODZjZmQwZDIyOTdjZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4NzllMGYyMTM5YjcyYTMyZWYwMWZhNzYxZDk0NmJlN2QyNWMzZWFmMzY5YTM5YmIyMmQwZmU5MTk3NjYyNDYifQ"
+        },
+        {
+          "resource": "repo://js/src/tests/utils/markers.ts#L5-L46",
+          "version": "repo-lines-v1:sha256:8162fb8baffdf4fab389838f7d093137d061272ee08df8a4a33f6d0ec13d651d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4N2IyZWM5ZWQwMWRiODQ4ZWI4YjIxODk1MGE4NjY4MzFlMjQ1YTkxYzEyY2I3MGJkZjA4NzM5MGEwOTEwYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiYjFlMmUwM2M4MDE1NWZiYmM2ODEyMWIzMjliOThhZTU2OWVmNDdkMmMxYWFhNWI4ZmY5NGE3ZDc4MjQ0ZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://python/conftest.py#L95-L122",
+          "version": "repo-lines-v1:sha256:8cd3371c4358443e8cbf5c7cc4e7f4a35b40474ce0645b941019a5497af46079:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiNmFlYzVkMzRlMTI0NzRjMGZlNWI5Nzc2YjY5N2EzYzc3MDVmODNkODkzOWNiYWM2ZmMwZGViNDEzNjZjNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlNzhjNzc0ZmMxZTZjODY1YWQ0ZjQ0YzJmODkzY2Q4Y2RlODM2Y2U5YzNmZDNmZWFiMTI4ZTllYzQxNGE5YzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlNDM0MDk4MTljYzAwNDAyNGMyZmMyOTFiNDc2NDgyYWYyMGQ4ZGViYmY3ZWFjNDJjODBhYTY3MTE2NTA5M2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4NTQxNzg3NTMwZTk5MDBjOGExNDE1NzRjMzA0MzAwZjk5YWUyNDM1YzU4NzBhNTc5ZmI3YjE3YTI5ZWY2YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_73e7f98a76d441a0b75733d25c47034f",
+      "statement": "Python integration fail-fast is configurable and normally enabled on push and pull request runs but disabled nightly, whereas JavaScript integration and Vitest evaluation runs default to reporting all failures unless a manual dispatch requests bail.",
+      "evidence": [
+        {
+          "resource": "repo://.github/actions/js-integration-tests/action.yml#L7-L10",
+          "version": "repo-lines-v1:sha256:a3334880452f58e4d1080319949703fa38b6ddba683f512ab20bbd6f3df8081d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWEwOWE4YTUwYTBhNzY1OWMyYzNhODg1YmMzMmNiZDUyZDc2MGYzODI4NTFkMzk3Njk5MjMyYjkyOTFiNjg5ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTNkNzU1MTg4Yzc3ZDc5NTFiMTg0NzllNzg0YjczNDA0N2VkMGEwZDZkZTlmODViMDlhNGU5MTZmZDRlN2YyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U4YThhNjQ5ODdkYTI5YjQ4ZDAzY2QwNjRiYzEwZGYwN2Q3YjQxYTc5YzQxYjFkZDNiYjZjZTIzMWQ0NjlmNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzVjNDhhYjVhOGY0ZTQ3NDc3YjhhNWViZWUzNWQzNmM3N2JkMDg0ODc2ODZjNDVhODRmOGU2NzAwNDhjMjVlYSJ9"
+        },
+        {
+          "resource": "repo://.github/actions/js-vitest-eval-test/action.yml#L7-L10",
+          "version": "repo-lines-v1:sha256:c63a7f97ce06cde57e2a4e6980f4d15390a724e4f3e13182233bccea3c131e67:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWEwOWE4YTUwYTBhNzY1OWMyYzNhODg1YmMzMmNiZDUyZDc2MGYzODI4NTFkMzk3Njk5MjMyYjkyOTFiNjg5ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTNkNzU1MTg4Yzc3ZDc5NTFiMTg0NzllNzg0YjczNDA0N2VkMGEwZDZkZTlmODViMDlhNGU5MTZmZDRlN2YyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U4YThhNjQ5ODdkYTI5YjQ4ZDAzY2QwNjRiYzEwZGYwN2Q3YjQxYTc5YzQxYjFkZDNiYjZjZTIzMWQ0NjlmNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDA1OTFkZjU1ZDRkZTg2OTY1NjNiNzg4NDYzMDZlNGJkOWQ1NDQ2NGI1NTM5N2UwOTIzMGIwMTJhZWNhMmEwYyJ9"
+        },
+        {
+          "resource": "repo://.github/workflows/ci.yml#L651-L689",
+          "version": "repo-lines-v1:sha256:d512649230f41ab855ff609c94ff28794a51975643a0161e0b8825793f25fc4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNjg5OGRlZWE0ZDJkNjIwMjZkMmJhYWYwM2QxMjc4Y2ZlOWQ5MWM1ZWQ1NDkxODcyYTY2OGJhMTg5ODUzN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3YjgxNTM0YWJiOGZhZTIyYzU2M2VmODYwZmM0NDBmZDY4Njk5MWRiMjk3NGZjMzJjOGFlYmZlYTUxYmI0YTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkNDA4YmJhYzllZjc4OGJjMGNmODBmMjlmMmQwNjY2MzI1OWMxZDQzMDI3NTMyNTRiYWI1MTNjNTczMWE3ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0OTU3MmFjYjE5NGJhZjZlYjM3ZWI4OGU1YjY5YTEzM2U3ODIzOGI5M2IyYmU1MWU5M2JiMjMyZmY5ZmZkMTkifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/ci.yml#L698-L735",
+          "version": "repo-lines-v1:sha256:4bbc97cf5a4b700e5640a2d66840566fa2e7c25bc9da94cc03697a292858bace:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MGI1MTJlZmIxZDE4ZjdmZjc3YWNlODk2ZDNkM2ExNmZjOGNjMGRjODA1OWY0ZjQ5M2JiMTdkMWJjNjUzZWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhNjBmYjk5OWNlNjBlZDQwZTZmM2IxYzAyOTZmMGRjODIxNjA0OTlkMDhlZjU3NmYwMWEwMTQ2ZjI4ZmQzZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5MTExMmM2NGI5ZGQxOGMwYzUwM2ZjYjEzMTU4ZDYxOWViZGY1MmFjZmUwZGFkZWQ5OTFmZjY5ZTY5MDkzNmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyNDUwMGJhN2M5NDMwMTcxYWNjZDM0ZGE3YzVkMTNiN2QwZjA4M2ViNDc0NTNmNzc2ODc4NGRkMThlNjRjZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b0e858dc08ee4c91a36f2155d7c8bb78",
+      "statement": "The Python test configuration automatically manages VCR cassettes, records only supported AI-provider traffic, filters sensitive headers and request data, and skips slow tests unless `--runslow` is requested; integration cassette handling includes OpenAI, Anthropic, and Gemini domains.",
+      "evidence": [
+        {
+          "resource": "repo://python/conftest.py#L125-L174",
+          "version": "repo-lines-v1:sha256:46ed5d74aeaa684e74269ed1244f5c640e6fd849e8f1412ec031bac8522d01d3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNzNhNmJkZWU1ZmRmMTQyZDYxZTg4YzA3MGUzOTVhNDBiNGIxMWM2YzM4NDYyODEzNzgyODIzYTU2MzRlZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyMDg1MzI5MTBjZmNlZmU1ODcwM2Q0MzQ0NWE5YzIwMmIxMjQ4NzcyZjE2ZWY1YTE2MzBlNjJmMjVkZjAyNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1NjZlOTFiMDM3YmFhNDdhMWUzNjU5YWU0YWZiNTE3NTBjZTg2OWMyODhmYTJmZDg0ZmE1OGYzNjJjNTIwYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM4Y2JmYjE0ZWFmMGFjZWUwNmQyMzA3Yjg3NTIyY2ZmNGI5NzAzMjQ0YzhlOTBkZTExNDhhYTU0MGM1YzFmZmQifQ"
+        },
+        {
+          "resource": "repo://python/conftest.py#L177-L232",
+          "version": "repo-lines-v1:sha256:497025d8eb697059b17afa919479e90fe2598d0a3611689bff2ae81bb1004a4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5ODNhODA1NWQ3NDc1Y2ZiMGJkZmUwNDI0ODIyN2EzYzkwOTE2NWNiMzMyNDMyMzVhZDQwMDQwNzc0YTk5NTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNDQ2MGRiOTA0NDY3Y2U1NWRhMDZlYTU3YTY4YjFhN2QzMDllNzMwMzBiMDE5MGVhZDQ3NTcwZjk3NmYxNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczMDMyNWY5ODBiNGFiZTBhNWJmZGViMmQzZWI5MzQ4NzZkM2EwNDMzMjU2NDQ0NzJjMTM2Y2NhMDJiOWE4MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4N2M0OGRkYzBlZjc4NjQwYjg0MWQzNDNjNGM3Yzg0ZmU1NzhlNDkzMWI3NDUxNDNjZGM1ODJmNGYxNzI5MmQifQ"
+        },
+        {
+          "resource": "repo://python/conftest.py#L74-L93",
+          "version": "repo-lines-v1:sha256:8e8030ec1060751dd4b441c9752a62865f9b6458d2ab92cd24eba90f943b8ef0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5OWRlODg3N2JkMjlmMmUwOTZmNzE3NDlhMGQ5MzU4NDg1MGI4NjFhNTM2MDgxYjg0NzhkMmIyMjE0YTcxN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhZjdkZWQ5OTIzZDc0Y2ZmMDk5YzkzY2FiMTEzNWM4YjE3NGRlZGFkZjAzMzE3NzFiZmYwN2ZiMjAyMDI0MWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxMGJiOGJlOTMyYWZhMmMyMGZlYmU4NDFjZDVhYzBjZjEzMzIyZDlmNDM4NTQ3NjUyMzBhNjRmMjU4ZmIxMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1YjlkNDIzOWY2YzYzNjMzOGQwYjVlMTYyM2Y1NDA0YTRjMzU1ZTRiNWFhM2NlMWIzYTRiNWMzYjM1ZjExYjkifQ"
+        },
+        {
+          "resource": "repo://python/tests/integration_tests/conftest.py#L136-L165",
+          "version": "repo-lines-v1:sha256:f52c972c4207c6e10f17ed6e8b91a846a982818819870cc2fc132e3f6af8075f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzYmIyNDdjM2M3MjVjYzJmY2I2MDhjMzNiMGQ0M2I2YTQxMWIyYmIzMWZhYThkY2VmNzQzOWVlYWM4MGQ4ZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNDQ2MGRiOTA0NDY3Y2U1NWRhMDZlYTU3YTY4YjFhN2QzMDllNzMwMzBiMDE5MGVhZDQ3NTcwZjk3NmYxNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmZjc4ZTAwNTU1ODU4ZGRlMzhmZWIxNDBlYTI1OTE4YTg5OGIyNDE2OGU3OGIyYjc1YTg2NDFjM2Q2MzBhMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://python/tests/integration_tests/conftest.py#L42-L60",
+          "version": "repo-lines-v1:sha256:f1cc647b52a2d2876c1a03d4ac7631c15713a53ffa07c6f328fe9ebcf8ee1988:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1OGFmM2FkZjljNmU3Njc0OTRhY2U1MmI4MDk4ZGI4NTk3ZjhmNDgwZWRkOGQxMzAwODRhNzRjYjNlNjkyNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMmZkNmNjYjIyYTI1ODZlMjIzODZkYjg4ZGQyZjk4NTZiNjliODgyMGNhNmJhYzc5OTQ4Yzg5Y2U0Y2Q5ZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZkOThkYjc4NDlhNmRmOGQ3NWVlNzY3NmU2ZjAyOTdkMTI4NzI4MGFkNjBkN2Q0NDdhYTA5ZWFlZmIwMGFjMTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0NDc1Nzk4NGZhOWVjYWQ1ZDNmNzBkNDI2ZWI4MGU0ZmRiMjA4NGMxM2Y3ZmE0YWJmOWQxMDE4YzFlNDRkNTcifQ"
+        },
+        {
+          "resource": "repo://python/tests/integration_tests/conftest.py#L63-L133",
+          "version": "repo-lines-v1:sha256:226931c4967c9b9cf82d20d869431fbfd5722e40ef64605b2ecec21441a56fdb:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MWNmZjFmYjEyZGE3YmY1NjI2Y2EwZTI0MjM1Y2U2MGQwOWE2NjZkY2ZiMjE0NWNjNmUyYzI3NDc2YTk3ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzN2Q2MjcwMzM5ZjdkNTUzNzY3ZGI1ZjhhMTYwMzE2Mjc5MTIwNjNhNmExYWNkNjA0N2QxM2Y4YjllNjk2N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwNGRhNDljMjUxZmI3YjIxY2JjYzIyMzJkNDIzNDRkNWFlYTdkNzA4MDFiYTQyMTJjZjQ3NzQ2MzU1NWIxZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0ODFjZGVkZWFjN2M4MzJjMjVjODM5ZWY5NTM0YWY5MWMzNWRiODM5N2I4ZDNlMDkwMTNjMWMwZWVkYTc4MGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dc543d05554049f9904536d2bf0833bd",
+      "statement": "JavaScript environment tests install the built repository package into isolated Node consumer projects and exercise ESM, CJS, Cloudflare, Vite, Webpack, esbuild, and Metro compatibility through dedicated Docker Compose services.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L284-L386",
+          "version": "repo-lines-v1:sha256:326be084f056e31a5a76b4ee21130c5386d7fa5d3910a62d97fcee4389a0f234:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlNjUxZGNiY2NkZDgyY2JiNmNkNjg1NzI5MjdmMzRmYmMyNmJlOGY4ZTA2MDg4ODZjMzUxMGYyN2Y0ZGZkYzM2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3ZTk4MTk4MmJiYzAzM2M3MjQ4MjFhMGE1YmVkNjkxZDcyYmExOTRlMGYyMjI3ODdlMDYyMThlNTkyYTA5OWNjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjZjEyZjgwZDU5NDU0OWE3YWJmNzdjZWU5OTFmYzI3M2Y4YjE0YTliM2U4ZDU2NjBlNzEyZDEzMzdjN2UwM2I1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxNzk1NDBhODU0ODlkNDhmZjBhNDVkNDcxMmJlZjAzN2ZhM2M1MGEyMDkzNzk5MGE5MmVhODliNTFiODk2ZDE3In0"
+        },
+        {
+          "resource": "repo://.github/workflows/ci.yml#L388-L464",
+          "version": "repo-lines-v1:sha256:df1ac73a9ee7c33ce82b997131dae508063509a0a699637a802d3678fb2ee365:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NTJhNWY5ZDU2MjBjMDUzYTIyMTE1MjlhMDkzNDAxZmE5NGY5Y2RhODRkYmE0YWZmM2Q0ZTNkZTdkMWVjNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMGMyOTgxODEzNzM5Mzg5OTJlYzQ3ZjQ2ZTM4NTc5NGI0ZGFkNTk2YjQ2N2E5OGU1NjkwNDkxZDZlODQ0OGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzMTMxMjYxZTUwZTBmYWY2MjczZDE1M2UxNTUxMWFjNGYwMWQ3YzFlYTBlMmJhYTA1NTk4ZGUwN2RkNmNhZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlNjhmNzkzMzY1ZTc5NWU2N2U0MjEwYjE3ZDYyY2VhOWIxZjBmN2M5YWZkNTk2NDg5Y2IxMmZiZWQwN2QwMTMifQ"
+        },
+        {
+          "resource": "repo://js/internal/environment_tests/docker-compose.yml#L3-L51",
+          "version": "repo-lines-v1:sha256:ce405934a11a86892f0114a33a70a2eadbcc03e5e4f332449102af75121d0133:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhNzNmY2NkYzk5ZWE4MzU5NjdjN2RlZTdlZmJlZDFmM2NhODcyNjBkOTI5MzE4NTBmZGQ2NmRhOGNiMTJmMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyZGNiMDljZmE2YTdkOTYxMzYzM2EyZDliNzYyZjhkYmExOTU3MDFiODk3N2QxMjJkZmMyYjNjZWNlYTM2MGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjZWNhODkxYmJmOGNmOWE5MTliMWVjZmQxZTE2MjdmZjM2MTAxMjY5MTRjNWQ5ODEzODBkYjQwMzRhMjFhOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3ZjQ4MDlhZDAyNWY3MTk4OWQ3ZjQwMTY2OWQ3YmJlZTYyZDJhMmFiMjcxZjYxODRlNWZmMzk1M2ZmMTQxN2MifQ"
+        },
+        {
+          "resource": "repo://js/internal/environment_tests/test-exports-cf/package.json#L1-L14",
+          "version": "repo-lines-v1:sha256:242c244b7122f249512ef09a0c9a2cac6e4c5f779f5f815bce7f73f1efc3cb4e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmIwOGZkYTFhY2I5NTdiNjExNmJkMzc4MTFhMWZlNDFhMDE2MTFjMDYzMWVkYmY3ODZkNjg4OWEyN2E1NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4MWY5YjBkNDI5YjhlOTU0NDg4NzVjZTRjYTc1YjI0NTgyNDVhNTIwYmRmMTM2MzM5ZDZiZjAzM2MzZmM3NjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNhMjYyM2ZlNmE3YWE1OTA2NzgzNzk4NjBkYzFiMjEzZWE3ZTkwZWFhNzQyM2RjODE4MTI2MDVkMWViN2Q3MDMifQ"
+        },
+        {
+          "resource": "repo://js/internal/environment_tests/test-exports-esm/package.json#L1-L16",
+          "version": "repo-lines-v1:sha256:f27666edc6323fbcc30d2e41ece8270f091b592990ebf514916ff50acd0f9cc5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmIwOGZkYTFhY2I5NTdiNjExNmJkMzc4MTFhMWZlNDFhMDE2MTFjMDYzMWVkYmY3ODZkNjg4OWEyN2E1NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MDdjZGY1Y2Y3M2EzNTc2NTEzMTZlYTdjNjMyYjEwNzM3YmM5YjJmYjAwNWJiNzk0NGYwYzUxN2IxNGY0ZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmNzM5YTA2YzFjYmIxMjQ0ZTMzNjNkMzhiY2Y5ZmE1MGNlODRmZWQzOTljMjE5M2EzYzdmMDhkNTk5MThiMmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9b570360c90d4c868141b02e1d6808ee",
+      "statement": "The Python wheel-import check builds and installs a wheel with only declared runtime dependencies and verifies representative OpenAPI and core client imports, providing a strict dependency boundary beyond source-tree unit tests.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L145-L161",
+          "version": "repo-lines-v1:sha256:51b7b5a07d3887ee55d555802682f71a27c5a4d4893a238ff3ba340fd7815fb2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYThlZDU2OWVmZGZkYjViZmEyMDg4YmQ3MTVlZTMwNGJjMmM0YzI2ZDA4OTQ3ODIxZGJkZGI3NjA5ZDQ0NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNTA1NGZhNThhYjVmY2FlYmExNDBiYTZmZmIyNzg1ZmJlMzMxOTQxOTVmZTY4MGMzNjU5YjAwMDhkNmIyNjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMxZGI3ZmI4OTU3OWY0Mjg1NzI0NDMzNGQwMmZiZDU1ZDRhODEyYWMyMTY1YjQxYTNjYzQ4ZmMxM2VhNWEwODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhYTIwODMyMTkxYTRjNjVkYTc3ZDEyMjc5YTc5NDg3YjQzZGRlNWZiNzkyMWJhNzlkMzNhMjQ4MjBmNWRmODMifQ"
+        },
+        {
+          "resource": "repo://python/Makefile#L86-L98",
+          "version": "repo-lines-v1:sha256:97afa494d57b1795ddc26ff181f240128fe9b2d2586a9c790c68e20d716d2d40:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4MWEwZTQzMTA5MmI5NjFmODdmNzYwODRiOTMzNTk0N2FmMTU5OGEzNTBlMDQzZWMyMzUxMzk5OTgzN2M0NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyYTIyM2I2NmYwOWYxNTI4MzU3NTBkY2NlZjcwODdlZTg3YzcxNWNkNTI1NGNhN2Y0MzNkYjIzOWEyMjZhNjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiZDM3MWRlNjY0YjQ3ZmQ0NDAyMDRjYTgwZTdkODM2MzAwMjBlMjdhNWRlNWFhYzlhYTJkMTA4MGU5ZjFkYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxOThjMDBiNjY5MzljOTlkYjY5YzM5NTg4NzgyOTk2NTg1OWNiOTllMjAwZGM4YjRhN2E3NTA2N2QxYzY4NGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0a9c5e2b0e764207b6659640aa79e582",
+      "statement": "Generated Python and JavaScript OpenAPI client directories may only be changed by the authorized synchronization workflow; ordinary pull requests touching them are rejected.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/protect-openapi-client.yml#L13-L41",
+          "version": "repo-lines-v1:sha256:c1d9394cd6dcadb8e6aa00ddb25d885140a205225daf8566363756fb3eb5d1dc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwZTIyNWU0MGU1NjI0YjgxYTJlMmQwNDU1YzA4ODBiZWE0OWYwZGU0MzRiMmY2Yjg0ZjczMmEzODRjNzk1NGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxODdjZTRmMDJhYjRmY2Y3Y2Q4MTc2ODMxNTgzNDVjN2ZjNTI0OTc5MzEwMWMxYWVkNWM4NGMxNGViMjg3ZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhNGViZjk4NjFlNjgzOTk5ZjhiYmJkZjljM2RlZDc2YWFmOGY4NDc2YTc2OTNlMjYzNGQ1ZjU2ZGJhOGQ2MWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/protect-openapi-client.yml#L3-L9",
+          "version": "repo-lines-v1:sha256:5b50d1eec1cd6a93818f905501590836072e8e99bab03378a0f266ac31de3de5:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTk2ZGM0ODE0OWY1YTgzZDFlZDZkYmIzOWJiYzdlMmI5MDJhYTNkMzRkNmJkNWFlNGIyOTFiNjhkZjBjYTc5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDY0OTZmMzQ4OTEzNjFjN2NiYzk3N2E4ZWU1NmE2ZmQwNDRlNDcwNzc5ZjkyMDZmNmYyNGM2OTE0ODVlZjliNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2E0ZWJmOTg2MWU2ODM5OTlmOGJiYmRmOWMzZGVkNzZhYWY4Zjg0NzZhNzY5M2UyNjM0ZDVmNTZkYmE4ZDYxYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1385ec932e084d04baf29b85e7f06423",
+      "statement": "Python provides pyperf and pytest-benchmark entrypoints over shared benchmark cases, while the opt-in JavaScript tracing benchmark uses an injected fake fetch, measures create/update latency and event-loop lag, and emits machine-readable results without contacting the network.",
+      "evidence": [
+        {
+          "resource": "repo://js/src/tests/perf.int.test.ts#L101-L131",
+          "version": "repo-lines-v1:sha256:72fd3bd6557247e21f6ace85061c8fdaeb33d91c3d70877d694eb43776a1a477:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2ZjgzYmYxYjExYTVkYTU0NzZjYTNiYjE5NjIzMTM0ZjY0Y2RmODY1Y2JmMWMyYWE4Y2UyNWE4Y2ZkYzhiYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyMDQwZTA5NWE5NGUyYWRhNzRlNDIxZjM3MTg3NTFhOTFhODEwYmZkNjZmNDhmNGU5MzljN2I3NDgwZWI2NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4ZWRhOGNjNjgyNjFiNmJhNmVkYzU5OWMzYzY5MzZjMzY2M2RmZjJhMjMzNDc4YTkyNDBkM2FiZmI5NzNmZjgifQ"
+        },
+        {
+          "resource": "repo://js/src/tests/perf.int.test.ts#L133-L215",
+          "version": "repo-lines-v1:sha256:c213e9eba981a331f20ed1c6cdd6a5bbd14ae6a9229d6db6a89adfed60b5d6f9:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2Y2JlMTQ4NTEzOWU4NTlhYjk5NzkzNThlOTc4YTcwNjM0MjUyNDQyMjJiOTEyMDk5NWI2ODliZDQzMzM5YjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTJjYjI1YTEyMmI0NDIyMWE2MjM0ZWM2NjBhN2I1ZmI3ZjliZGU3YjNiOWUyYjNjNTU5YTBkOTZmYWM3MzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3M2IwZGJlMjE4Yzc4NWI4YWY4MDNhOGJlZDBlZWVmNTc3NmUxNTNkM2FjOTFlMzFiYzlhOTJmNTJlYTIxMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0ZjcxYTI1MWU0YWM4ZGUzNjFiNTY0YzE0MTUzMDQ3ZjYzZmU3YTg4YmU3ODc2MzVjYWIwMjI4MTVlOGVkNzcifQ"
+        },
+        {
+          "resource": "repo://js/src/tests/perf.int.test.ts#L40-L65",
+          "version": "repo-lines-v1:sha256:3810fec798e65278d504fbbcd48be76eeada831bc1a0f0558a27ea5d1bba09a1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNjdiZDgxNTJmMTQwYTE4Yzg2Zjg4OGEyMzhhNGMzNGIxZGFhYTc4MDNmMzZjNjhmZTcxZjk0M2Y1ZDY5MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiZjk1YWEwNGY4M2RmNWZjNDUxYzZkYzU5MThkMjE2NWE2YzRhZjhlZDFjZGJiZDIyM2U1MTQwNmJhOTAxYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiMjJmYTdiYjA4ZTRmZWE4NjE3OTQ5OGVkMzJkYTU1MTA3M2VkZWM3MzQyMDY2ZjQ0ZGRkNWJkNWU1ZmFkODYifQ"
+        },
+        {
+          "resource": "repo://python/Makefile#L4-L26",
+          "version": "repo-lines-v1:sha256:c497137d68237f2430f7feef1703dab135d6af0c50895d9d8d9650eff04183c8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzNDVhZmEzOGRhNWI1YWEzOWVmYTVkOTQ5ZjFmZTI4NTcxNjQ4YTg2ODRmZWU5ZmYyMmU0YTg0Nzg0OTE1ZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkNmZjMTAxZjYxNmI0ZDM5NzZjYmE2NzEyOTA4M2YxMzJlZTZiMzQ1ZWYxNTA1ZjlkNmViMDk1Yzc5MDZkY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjYzQ4NTE2NzA4MDliMjdjOTBlOTQ2Mzk3MmE1YjI4YWY3ZTIxZDQyZTBhN2FiOWM5NDE1ZGRhNGQyNGZkZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYTBiZThmNWM0NTQ2YzEyMjY0MzJiNTEwZWM5N2U2MWZjYjlmMTBhNTBjMzJkNWYyNTFhZWQzMWU1YWU0NDYifQ"
+        },
+        {
+          "resource": "repo://python/bench/test_bench.py#L8-L19",
+          "version": "repo-lines-v1:sha256:6ba2ad6945b2dc0b0dcf7b321b30986b84c73e4e9bda3b21fc9f1814e2c3ed0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3NWE4MzAyYzYyMTkwNzQ2Y2Q4ZmMyMjljNjE4NmYxMWZiNTMxNDIxOGIyMGQxYjc0MjkyMDMwMWE0OTViNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkMzRhZWI1NzdjYzk2MjMxMTBkYzY2MzMyZWFlMGNlNzViY2E2MjI2OTMyOGIzYmM3MTdhZDQ5NmFiYzE3N2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwODQ3MmNkY2Q2ZjEzYWI0NDM1YjdjNmI5NzAyMjdkODM3MTA4YzlmOWJjNzA2MzdmOWQ5ZDA3ZjVkZjQ5Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_db36f06e46f242bf8389997dd19fb1c9",
+      "statement": "CI path detection selects Python or JavaScript jobs when the corresponding SDK tree or `.github/**` changes, and the aggregate `CI Success` gate fails on any failed or cancelled dependency while accepting skipped jobs.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/ci.yml#L68-L86",
+          "version": "repo-lines-v1:sha256:8d1eac6ccd46b6efdc00f5c38529cd2711a9ceb53af6903f4603520e1f5adeda:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZjkyMDE5NDAxNmUwNmM2MzhhM2NkMWI4NDFlNjY4ODQ5ZWU2OTg0YjM0YWM2ZjU4NTBkYjczMDRhMzE3N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1OTcxMTZlMTA1ZGI1NzE2ZGIyZTIzZTNkZjE0NmQ3YjI4MDkzNjQzMjY1NDQyNGMzM2JlZDQ1Y2I3NWQwMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0ZDNjNTdhOTg4NDdlOWI2NTgyNWYzZjE3M2FhMDMyMzAwY2I0MjM0OTQ4NzNhZTQxMjc3OTIxMjkxMjI4MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkMjcwNmQ3ZjUyMzliMDZmNWNiN2FhOGY2ZDliYjI4YWIyNzZmYzA4YzJiMGFkYjczMTVjN2JiMGIyMTRmYmEifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/ci.yml#L818-L863",
+          "version": "repo-lines-v1:sha256:a589a934dfebfb9ccc8b9083e211ec1e3f050ec72484db54d4e6a6d0f12998da:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxZGM3Y2FhMTM5ZWIyN2EwYWIzMDhkNjcyNjJhYzUxNWRiYWQyMTcxMzg1ZDM4ZTQ3ZmQzYjIzYWIxYWMwYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzOWM0ZGU1MTczMmFhYmQ5M2E5ZTViOWQxNWVjNTlkYmE0Y2EzMDM3MzdiMTMzZThkZTRjMjA4YTNlM2VjNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiOTQyMTE4NjBkYmJjMTJiYzQwOTgzNjRmYjZlYjE4MDNlNjVkYTM2MWYxYTI3NzhkZGZjYzNlNDYzOWMyNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4N2I4ZjI5YTM3NTM3ZDE3MzhmNWM0N2Y5ZDE0YmVkZjE0NGRhNmUzODIwMTkxMmRhZDNhYTRmM2QxZjRkOWIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.2",
+    "at": "2026-09-15T08:28:54.852Z"
+  }
+}

@@ -205,14 +205,18 @@ describe("sandbox proxy config helpers", () => {
     expect(
       proxyConfig({
         rules: [awsRule, gcpRule],
-        noProxy: ["metadata.google.internal"],
         accessControl: { allow_list: ["*.googleapis.com", "*.amazonaws.com"] },
       }),
     ).toEqual({
       rules: [awsRule, gcpRule],
-      no_proxy: ["metadata.google.internal"],
       access_control: { allow_list: ["*.googleapis.com", "*.amazonaws.com"] },
     });
+  });
+
+  it("proxyConfig ignores the deprecated noProxy option", () => {
+    expect(
+      proxyConfig({ rules: [], noProxy: ["metadata.google.internal"] }),
+    ).toEqual({ rules: [] });
   });
 
   it("mountConfig nests mounts and provider auth", () => {
@@ -1071,7 +1075,6 @@ describe("SandboxClient - createSandbox", () => {
     });
     const extraProxyConfig = proxyConfig({
       rules: [extraRule],
-      noProxy: ["metadata.google.internal"],
       accessControl: { allow_list: ["github.com", "*.amazonaws.com"] },
     });
 
@@ -1086,7 +1089,6 @@ describe("SandboxClient - createSandbox", () => {
     expect(body.mounts).toBeUndefined();
     expect(body.proxy_config).toEqual({
       rules: [extraRule],
-      no_proxy: ["metadata.google.internal"],
       access_control: { allow_list: ["github.com", "*.amazonaws.com"] },
     });
   });

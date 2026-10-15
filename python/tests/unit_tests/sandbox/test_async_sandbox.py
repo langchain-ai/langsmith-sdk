@@ -15,6 +15,24 @@ from langsmith.sandbox import (
 )
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 
+from ._sse_fixtures import SSE_HEADERS, exited, out, sse_bytes, started
+
+EXEC_URL = "https://sandbox-router.example.com/sb-123/execute/stream/start"
+
+
+def sse_response(httpx_mock: HTTPXMock, *events: tuple[str, object]) -> None:
+    """Queue an SSE exec stream for the sandbox's start endpoint."""
+    httpx_mock.add_response(
+        method="POST", url=EXEC_URL, content=sse_bytes(*events), headers=SSE_HEADERS
+    )
+
+
+@pytest.fixture(autouse=True)
+def sse_exec(monkeypatch):
+    """run() needs a transport; these tests use SSE rather than a live socket."""
+    monkeypatch.setenv("LANGSMITH_EXPERIMENTAL_FEATURES", "sandbox_sse_exec")
+    monkeypatch.setattr("langsmith.sandbox._sse_execute._resume_delay", lambda _: 0.0)
+
 
 @pytest.fixture
 async def client():
@@ -150,18 +168,11 @@ class TestAsyncSandboxStatusFields:
         assert sb.status_message is None
 
     async def test_dataplane_op_not_gated_on_status(
-        self, client, httpx_mock: HTTPXMock, monkeypatch
+        self, client, httpx_mock: HTTPXMock
     ):
         """The client does not pre-check status: a stopped sandbox still runs;
         the platform resumes it when the dataplane request arrives."""
-        monkeypatch.setattr(
-            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
-        )
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "ok\n", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), ("stdout", out(0, b"ok\n")), exited())
         sb = AsyncSandbox.from_dict(
             data={
                 "name": "test-sandbox",
@@ -212,30 +223,15 @@ class TestAsyncSandboxStatusFields:
 
 
 class TestAsyncSandboxRun:
-    """AsyncSandbox.run() over the HTTP fallback path.
+    """AsyncSandbox.run() over the SSE exec transport.
 
-    run() uses WebSocket by default; these cases pin the request/response
-    shaping of the blocking HTTP endpoint it falls back to when the websockets
-    library is unavailable.
+    These cases pin the request shaping and error mapping of
+    /execute/stream/start, which run() uses when the SSE feature is on.
     """
 
-    @pytest.fixture(autouse=True)
-    def _ws_unavailable(self, monkeypatch):
-        """Force the missing-websockets condition so run() takes the HTTP path."""
-        monkeypatch.setattr(
-            "langsmith.sandbox._async_sandbox.WEBSOCKETS_AVAILABLE", False
-        )
-
     async def test_run_command_success(self, sandbox, httpx_mock: HTTPXMock):
-        """Test running a successful command."""
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={
-                "stdout": "hello world\n",
-                "stderr": "",
-                "exit_code": 0,
-            },
+        sse_response(
+            httpx_mock, started(), ("stdout", out(0, b"hello world\n")), exited(0)
         )
 
         result = await sandbox.run("echo hello world")
@@ -246,15 +242,11 @@ class TestAsyncSandboxRun:
         assert result.success is True
 
     async def test_run_command_failure(self, sandbox, httpx_mock: HTTPXMock):
-        """Test running a failing command."""
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={
-                "stdout": "",
-                "stderr": "command not found\n",
-                "exit_code": 127,
-            },
+        sse_response(
+            httpx_mock,
+            started(),
+            ("stderr", out(0, b"command not found\n")),
+            exited(127),
         )
 
         result = await sandbox.run("nonexistent-command")
@@ -263,10 +255,12 @@ class TestAsyncSandboxRun:
         assert result.success is False
 
     async def test_run_connection_error(self, sandbox, httpx_mock: HTTPXMock):
-        """Test run with connection error."""
+        """A dial that keeps failing is retried, then reported."""
         import httpx
 
-        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+        httpx_mock.add_exception(
+            httpx.ConnectError("Connection refused"), is_reusable=True
+        )
 
         with pytest.raises(SandboxConnectionError):
             await sandbox.run("echo hello")
@@ -274,10 +268,10 @@ class TestAsyncSandboxRun:
     async def test_run_starting_sandbox_raises_not_ready(
         self, sandbox, httpx_mock: HTTPXMock
     ):
-        """Test run maps router startup refusals to SandboxNotReadyError."""
+        """Router startup refusals map to SandboxNotReadyError."""
         httpx_mock.add_response(
             method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
+            url=EXEC_URL,
             status_code=503,
             json={
                 "detail": {
@@ -291,12 +285,8 @@ class TestAsyncSandboxRun:
             await sandbox.run("echo hello")
 
     async def test_run_without_dataplane_url(self, client: AsyncSandboxClient):
-        """Test run raises error when dataplane_url is not configured."""
         sandbox = AsyncSandbox.from_dict(
-            data={
-                "name": "test-sandbox",
-                "dataplane_url": None,
-            },
+            data={"name": "test-sandbox", "dataplane_url": None},
             client=client,
             auto_delete=False,
         )
@@ -308,35 +298,21 @@ class TestAsyncSandboxRun:
         assert "dataplane_url" in str(exc_info.value)
 
     async def test_run_with_env(self, sandbox, httpx_mock: HTTPXMock):
-        """Test running a command with environment variables."""
         import json
 
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), exited())
 
         await sandbox.run("echo $MY_VAR", env={"MY_VAR": "hello", "OTHER": "value"})
 
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
+        payload = json.loads(httpx_mock.get_request().content)
         assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
 
     async def test_run_with_custom_headers(self, sandbox, httpx_mock: HTTPXMock):
-        """Test running a command with per-request headers."""
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), exited())
 
         await sandbox.run(
             "echo hello",
-            headers={
-                "X-Api-Key": "override-key",
-                "X-Test-Header": "sandbox-run",
-            },
+            headers={"X-Api-Key": "override-key", "X-Test-Header": "sandbox-run"},
         )
 
         request = httpx_mock.get_request()
@@ -344,67 +320,40 @@ class TestAsyncSandboxRun:
         assert request.headers.get("X-Test-Header") == "sandbox-run"
 
     async def test_run_with_cwd(self, sandbox, httpx_mock: HTTPXMock):
-        """Test running a command with custom working directory."""
         import json
 
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "/tmp\n", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), exited())
 
         await sandbox.run("pwd", cwd="/tmp")
 
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
-        assert payload["cwd"] == "/tmp"
+        assert json.loads(httpx_mock.get_request().content)["cwd"] == "/tmp"
 
     async def test_run_with_custom_shell(self, sandbox, httpx_mock: HTTPXMock):
-        """Test running a command with custom shell."""
         import json
 
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), exited())
 
         await sandbox.run("echo hello", shell="/bin/sh")
 
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
-        assert payload["shell"] == "/bin/sh"
+        assert json.loads(httpx_mock.get_request().content)["shell"] == "/bin/sh"
 
     async def test_run_default_shell(self, sandbox, httpx_mock: HTTPXMock):
-        """Test that default shell is /bin/bash."""
         import json
 
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), exited())
 
         await sandbox.run("echo hello")
 
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
-        assert payload["shell"] == "/bin/bash"
+        assert json.loads(httpx_mock.get_request().content)["shell"] == "/bin/bash"
 
     async def test_run_omits_none_values(self, sandbox, httpx_mock: HTTPXMock):
-        """Test that None values for env and cwd are omitted from payload."""
         import json
 
-        httpx_mock.add_response(
-            method="POST",
-            url="https://sandbox-router.example.com/sb-123/execute",
-            json={"stdout": "", "stderr": "", "exit_code": 0},
-        )
+        sse_response(httpx_mock, started(), exited())
 
         await sandbox.run("echo hello", env=None, cwd=None)
 
-        request = httpx_mock.get_request()
-        payload = json.loads(request.content)
+        payload = json.loads(httpx_mock.get_request().content)
         assert "env" not in payload
         assert "cwd" not in payload
 

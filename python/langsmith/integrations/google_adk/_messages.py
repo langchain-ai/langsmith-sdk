@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import itertools
 import json
+from collections import defaultdict, deque
 from typing import Any
 
 
@@ -45,19 +47,25 @@ def _serialize_part(part: Any) -> dict[str, Any]:
 
     if hasattr(part, "function_call") and part.function_call:
         fc = part.function_call
-        return {
+        call: dict[str, Any] = {
             "type": "tool_use",
             "name": getattr(fc, "name", "unknown"),
             "input": dict(getattr(fc, "args", None) or {}),
         }
+        if call_id := getattr(fc, "id", None):
+            call["id"] = str(call_id)
+        return call
 
     if hasattr(part, "function_response") and part.function_response:
         fr = part.function_response
-        return {
+        result: dict[str, Any] = {
             "type": "tool_result",
             "name": getattr(fr, "name", "unknown"),
             "content": _safe_serialize(getattr(fr, "response", None)),
         }
+        if result_id := getattr(fr, "id", None):
+            result["tool_use_id"] = str(result_id)
+        return result
 
     if hasattr(part, "text") and part.text is not None:
         return {"type": "text", "text": str(part.text)}
@@ -107,7 +115,37 @@ def _safe_serialize(obj: Any) -> Any:
     return str(obj)
 
 
-def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
+class ToolIdState:
+    """Shared tool call id numbering for one LLM call."""
+
+    def __init__(self) -> None:
+        self._fallback_ids = itertools.count()
+        self._unanswered: dict[str, deque[str]] = defaultdict(deque)
+
+    def call_id(self, tool_call: dict[str, Any]) -> str:
+        """Return the id of an assistant tool call, preferring the one ADK set."""
+        call_id = str(tool_call.get("id") or f"ls-adk-{next(self._fallback_ids)}")
+        self._unanswered[tool_call.get("name", "")].append(call_id)
+        return call_id
+
+    def result_id(self, tool_result: dict[str, Any]) -> str:
+        """Return the id of the call a tool result answers, or "" if unknown."""
+        pending = self._unanswered[tool_result.get("name", "")]
+        own_id = tool_result.get("tool_use_id")
+        if own_id:
+            # Drop the call this answers, so a later result whose id ADK stripped
+            # cannot re-pair with it.
+            try:
+                pending.remove(str(own_id))
+            except ValueError:
+                pass
+            return str(own_id)
+        return str(pending.popleft() if pending else "")
+
+
+def convert_llm_request_to_messages(
+    llm_request: Any, id_state: ToolIdState | None = None
+) -> list[dict[str, Any]]:
     """Convert LlmRequest to OpenAI-compatible message format."""
     messages: list[dict[str, Any]] = []
 
@@ -121,6 +159,8 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
     contents = getattr(llm_request, "contents", None)
     if not contents:
         return messages
+
+    id_state = id_state or ToolIdState()
 
     for content in contents:
         role = getattr(content, "role", "user")
@@ -148,29 +188,28 @@ def convert_llm_request_to_messages(llm_request: Any) -> list[dict[str, Any]]:
                     "content": " ".join(text_parts) if text_parts else None,
                     "tool_calls": [
                         {
-                            "id": f"call_{i}",
+                            "id": id_state.call_id(tc),
                             "type": "function",
                             "function": {
                                 "name": tc.get("name", ""),
                                 "arguments": json.dumps(tc.get("input", {})),
                             },
                         }
-                        for i, tc in enumerate(tool_calls)
+                        for tc in tool_calls
                     ],
                 }
             )
         elif tool_results:
             for tr in tool_results:
                 c = tr.get("content")
-                messages.append(
-                    {
-                        "role": "tool",
-                        "name": tr.get("name", ""),
-                        "content": (
-                            json.dumps(c) if isinstance(c, dict) else str(c or "")
-                        ),
-                    }
-                )
+                message = {
+                    "role": "tool",
+                    "name": tr.get("name", ""),
+                    "content": (json.dumps(c) if isinstance(c, dict) else str(c or "")),
+                }
+                if tool_call_id := id_state.result_id(tr):
+                    message["tool_call_id"] = tool_call_id
+                messages.append(message)
         else:
             messages.append(
                 {

@@ -541,53 +541,53 @@ describe("createChatExample", () => {
       fetchOptions: { cache: "no-store" },
     });
 
-    const datasetName = "__createChatExample-test-dataset JS";
-    await deleteDataset(langchainClient, datasetName);
+    const datasetName = `__createChatExample-test-dataset JS ${uuidv4()}`;
     const dataset = await langchainClient.createDataset(datasetName);
 
-    const input = [new HumanMessage({ content: "Hello, world!" })];
-    const generation = new FunctionMessage({
-      name: "foo",
-      content: "",
-      additional_kwargs: {
-        function_call: { arguments: "args", name: "foo" },
-      },
-    });
-    const options = { datasetId: dataset.id };
-
-    // Create the example from messages
-    await langchainClient.createChatExample(input, generation, options);
-
-    // Read the example
-    const examples = [];
-    for await (const example of langchainClient.listExamples({
-      datasetId: dataset.id,
-    })) {
-      examples.push(example);
-    }
-    expect(examples.length).toBe(1);
-    expect(examples[0].inputs).toEqual({
-      input: [
-        {
-          type: "human",
-          data: { content: "Hello, world!" },
+    try {
+      const input = [new HumanMessage({ content: "Hello, world!" })];
+      const generation = new FunctionMessage({
+        name: "foo",
+        content: "",
+        additional_kwargs: {
+          function_call: { arguments: "args", name: "foo" },
         },
-      ],
-    });
-    expect(examples[0].outputs).toEqual({
-      output: {
-        type: "function",
-        data: {
-          content: "",
-          additional_kwargs: {
-            function_call: { arguments: "args", name: "foo" },
+      });
+      const options = { datasetId: dataset.id };
+
+      // Create the example from messages
+      await langchainClient.createChatExample(input, generation, options);
+
+      // Read the example
+      const examples = [];
+      for await (const example of langchainClient.listExamples({
+        datasetId: dataset.id,
+      })) {
+        examples.push(example);
+      }
+      expect(examples.length).toBe(1);
+      expect(examples[0].inputs).toEqual({
+        input: [
+          {
+            type: "human",
+            data: { content: "Hello, world!" },
+          },
+        ],
+      });
+      expect(examples[0].outputs).toEqual({
+        output: {
+          type: "function",
+          data: {
+            content: "",
+            additional_kwargs: {
+              function_call: { arguments: "args", name: "foo" },
+            },
           },
         },
-      },
-    });
-
-    // Delete dataset
-    await langchainClient.deleteDataset({ datasetId: dataset.id });
+      });
+    } finally {
+      await langchainClient.deleteDataset({ datasetId: dataset.id });
+    }
   }, 180_000);
 });
 

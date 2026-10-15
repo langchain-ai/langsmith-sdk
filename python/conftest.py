@@ -232,6 +232,18 @@ def vcr_fixture(request):
         yield
 
 
+original_reset_patchers = vcr.patch.reset_patchers
+
+
+def safe_reset_patchers():
+    """Keep HTTPX cassette patches active during urllib3 network passthrough."""
+    for patcher in original_reset_patchers():
+        if patcher.attribute not in ("handle_request", "handle_async_request"):
+            yield patcher
+
+
+vcr.patch.reset_patchers = safe_reset_patchers
+
 original_exit = vcr.patch.ConnectionRemover.__exit__
 
 

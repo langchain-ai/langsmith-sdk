@@ -10,6 +10,7 @@ from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
     SandboxProxyRule,
     SandboxProxySecret,
+    _get_aws_role_arn,
 )
 
 
@@ -18,6 +19,16 @@ class MountCacheConfig(TypedDict, total=False):
 
     max_size_bytes: int
     writeback_seconds: int
+
+
+class MountEncryptionConfig(TypedDict):
+    """Customer-managed key that uploads through a mount are encrypted with.
+
+    For S3 mounts, ``kms_key`` is a KMS key ARN in the mount's region and uploads
+    use SSE-KMS with it.
+    """
+
+    kms_key: str
 
 
 class BucketMountSpecBase(TypedDict, total=False):
@@ -42,7 +53,13 @@ class S3MountConfig(S3MountConfigRequired, total=False):
     path_style: bool
 
 
-class S3MountSpec(BucketMountSpecBase):
+class S3MountSpecBase(BucketMountSpecBase, total=False):
+    """Optional fields applied per S3 sandbox mount."""
+
+    encryption: MountEncryptionConfig
+
+
+class S3MountSpec(S3MountSpecBase):
     """S3-backed sandbox mount specification."""
 
     id: str
@@ -132,6 +149,12 @@ class AWSMountAuthConfig(TypedDict):
     secret_access_key: SandboxProxySecret
 
 
+class AWSMountRoleAuthConfig(TypedDict):
+    """IAM role restricted by the backend to this sandbox's S3 mount scopes."""
+
+    role_arn: str
+
+
 class GCPMountAuthConfig(TypedDict):
     """GCP credentials used by the backend to authenticate GCS mounts."""
 
@@ -141,7 +164,7 @@ class GCPMountAuthConfig(TypedDict):
 class SandboxMountAuthConfig(TypedDict, total=False):
     """Provider auth blocks for sandbox mounts."""
 
-    aws: AWSMountAuthConfig
+    aws: Union[AWSMountAuthConfig, AWSMountRoleAuthConfig]
     gcp: GCPMountAuthConfig
 
 
@@ -225,6 +248,7 @@ def s3_mount(
     path_style: bool = False,
     read_only: bool | None = None,
     cache: MountCacheConfig | None = None,
+    encryption: MountEncryptionConfig | None = None,
 ) -> S3MountSpec:
     """Build an S3-backed sandbox mount specification."""
     s3: S3MountConfig = {
@@ -246,6 +270,12 @@ def s3_mount(
         mount["read_only"] = read_only
     if cache is not None:
         mount["cache"] = _copy_cache_config(cache)
+    if encryption is not None:
+        mount["encryption"] = {
+            "kms_key": _require_non_empty_string(
+                encryption.get("kms_key", ""), "encryption.kms_key"
+            )
+        }
     return mount
 
 
@@ -395,6 +425,10 @@ def _normalize_mount_auth(
             aws = block.get("aws")
             if not isinstance(aws, dict):
                 raise ValueError("aws mount auth must include an aws block")
+            role_arn = _get_aws_role_arn(aws)
+            if role_arn is not None:
+                by_provider["aws"] = {"role_arn": role_arn}
+                continue
             by_provider["aws"] = {
                 "access_key_id": _copy_mount_secret(
                     aws.get("access_key_id"), "access_key_id"
@@ -419,17 +453,32 @@ def mount_config(
     *,
     mounts: Sequence[SandboxMount],
     auth: Sequence[SandboxMountAuth] = (),
+    proxy_config: SandboxProxyConfig | None = None,
 ) -> SandboxMountConfig:
     """Build a high-level mount config from provider auth and mount specs.
 
     The returned value is sent as the public ``mount_config`` field. The
     backend expands provider auth into runtime proxy rules.
+
+    For S3 mounts, pass the same ``proxy_config`` here and to sandbox creation
+    to use its enabled AWS rule. That rule remains general proxy auth; it is
+    not copied into mount-scoped auth or restricted to mount paths. GCS mounts
+    still require explicit GCP authentication in ``auth``.
     """
     normalized_mounts = _normalize_mounts(mounts)
     auth_by_provider = _normalize_mount_auth(auth)
     mount_providers = {mount["type"] for mount in normalized_mounts}
+    proxy_providers = {
+        rule.get("type")
+        for rule in (proxy_config or {}).get("rules", [])
+        if isinstance(rule, dict) and rule.get("enabled") is True
+    }
 
-    if "s3" in mount_providers and "aws" not in auth_by_provider:
+    if (
+        "s3" in mount_providers
+        and "aws" not in auth_by_provider
+        and "aws" not in proxy_providers
+    ):
         raise ValueError("s3 mounts require aws auth in mount_config")
     if "gcs" in mount_providers and "gcp" not in auth_by_provider:
         raise ValueError("gcs mounts require gcp auth in mount_config")
@@ -438,10 +487,12 @@ def mount_config(
     if "gcp" in auth_by_provider and "gcs" not in mount_providers:
         raise ValueError("gcp auth requires at least one gcs mount in mount_config")
 
-    return {
+    config: SandboxMountConfig = {
         "auth": auth_by_provider,
         "mounts": normalized_mounts,
     }
+    validate_mount_config_proxy_config(config, proxy_config)
+    return config
 
 
 def validate_mount_config_proxy_config(
