@@ -38,6 +38,7 @@ from langsmith.sandbox._client import SandboxClient
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
     DataplaneNotConfiguredError,
+    InvalidCommandError,
     QuotaExceededError,
     ResourceAlreadyExistsError,
     ResourceCreationError,
@@ -225,6 +226,7 @@ __all__ = [
     "SandboxNotReadyError",
     "SandboxOperationError",
     "CommandTimeoutError",
+    "InvalidCommandError",
     "DataplaneNotConfiguredError",
     # Tunnel
     "Tunnel",

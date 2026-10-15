@@ -10,6 +10,7 @@ import pytest
 
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
+    InvalidCommandError,
     SandboxConnectionError,
     SandboxOperationError,
     SandboxRetryableConnectionError,
@@ -150,6 +151,19 @@ class TestRaiseFromErrorMsg:
             _raise_from_error_msg(
                 {"type": "error", "error": "timed out", "error_type": "CommandTimeout"}
             )
+
+    def test_invalid_command(self):
+        with pytest.raises(InvalidCommandError, match="invalid argument") as exc_info:
+            _raise_from_error_msg(
+                {
+                    "type": "error",
+                    "error": "fork/exec /bin/sh: invalid argument",
+                    "error_type": "InvalidCommand",
+                }
+            )
+        assert exc_info.value.error_type == "InvalidCommand"
+        assert exc_info.value.operation == "command"
+        assert isinstance(exc_info.value, SandboxOperationError)
 
     def test_command_not_found(self):
         with pytest.raises(

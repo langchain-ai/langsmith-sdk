@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional
 from langsmith import utils as ls_utils
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
+    InvalidCommandError,
     SandboxConnectionError,
     SandboxConnectTimeoutError,
     SandboxOperationError,
@@ -354,6 +355,8 @@ def _raise_from_error_msg(msg: dict, *, command_id: str = "") -> None:
 
     if error_type == "CommandTimeout":
         raise CommandTimeoutError(error_msg)
+    if error_type == "InvalidCommand":
+        raise InvalidCommandError(error_msg)
     if error_type == "CommandNotFound":
         raise SandboxOperationError(
             f"Command not found: {command_id}" if command_id else error_msg,
