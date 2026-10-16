@@ -3034,4 +3034,249 @@ describe("wrapClaudeAgentSDK", () => {
       ],
     });
   });
+
+  test("isolates concurrent subagent histories and seeds background subagent prompts", async () => {
+    const { client, callSpy } = mockClient();
+    const mockSDK = {
+      ...createMockSDK(),
+      query: async function* (_params: MockQueryParams) {
+        yield {
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: {
+            id: "msg_root",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "agent_a",
+                name: "Agent",
+                input: { subagent_type: "alpha", prompt: "Task for alpha" },
+              },
+              {
+                type: "tool_use",
+                id: "agent_b",
+                name: "Agent",
+                input: {
+                  subagent_type: "beta",
+                  prompt: "Task for beta",
+                  run_in_background: true,
+                },
+              },
+            ],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        };
+        yield {
+          type: "user",
+          parent_tool_use_id: "agent_a",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "Task for alpha" }],
+          },
+        };
+        yield {
+          type: "user",
+          parent_tool_use_id: null,
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "agent_b",
+                content: "Async agent launched successfully.",
+              },
+            ],
+          },
+          tool_use_result: {
+            status: "async_launched",
+            agentId: "beta_agent",
+            description: "Background task",
+            prompt: "Task for beta",
+            outputFile: "/tmp/beta.output",
+          },
+        };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: "agent_a",
+          message: {
+            id: "msg_a_1",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "bash_a",
+                name: "Bash",
+                input: { command: "echo alpha" },
+              },
+            ],
+            usage: { input_tokens: 5, output_tokens: 3 },
+          },
+        };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: "agent_b",
+          message: {
+            id: "msg_b_1",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "bash_b",
+                name: "Bash",
+                input: { command: "echo beta" },
+              },
+            ],
+            usage: { input_tokens: 5, output_tokens: 3 },
+          },
+        };
+        yield {
+          type: "user",
+          parent_tool_use_id: "agent_b",
+          message: {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "bash_b", content: "beta" },
+            ],
+          },
+        };
+        yield {
+          type: "user",
+          parent_tool_use_id: "agent_a",
+          message: {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "bash_a", content: "alpha" },
+            ],
+          },
+        };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: "agent_b",
+          message: {
+            id: "msg_b_2",
+            role: "assistant",
+            content: [{ type: "text", text: "Beta done" }],
+            usage: { input_tokens: 8, output_tokens: 2 },
+          },
+        };
+        yield {
+          type: "assistant",
+          parent_tool_use_id: "agent_a",
+          message: {
+            id: "msg_a_2",
+            role: "assistant",
+            content: [{ type: "text", text: "Alpha done" }],
+            usage: { input_tokens: 8, output_tokens: 2 },
+          },
+        };
+      },
+    };
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+    const messages: MockSDKMessage[] = [];
+    for await (const message of wrapped.query({ prompt: "Delegate work" })) {
+      messages.push(message);
+    }
+
+    const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(res).toMatchObject({
+      nodes: [
+        "claude.conversation:0",
+        "Agent:1",
+        "alpha:2",
+        "Agent:3",
+        "beta:4",
+        "claude.assistant.turn:5",
+        "Bash:6",
+        "claude.assistant.turn:7",
+        "Bash:8",
+        "claude.assistant.turn:9",
+        "claude.assistant.turn:10",
+        "claude.assistant.turn:11",
+      ],
+      edges: [
+        ["claude.conversation:0", "Agent:1"],
+        ["Agent:1", "alpha:2"],
+        ["claude.conversation:0", "Agent:3"],
+        ["Agent:3", "beta:4"],
+        ["claude.conversation:0", "claude.assistant.turn:5"],
+        ["alpha:2", "Bash:6"],
+        ["alpha:2", "claude.assistant.turn:7"],
+        ["beta:4", "Bash:8"],
+        ["beta:4", "claude.assistant.turn:9"],
+        ["beta:4", "claude.assistant.turn:10"],
+        ["alpha:2", "claude.assistant.turn:11"],
+      ],
+      data: {
+        "claude.assistant.turn:7": {
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "Task for alpha" }],
+              },
+            ],
+          },
+        },
+        "claude.assistant.turn:9": {
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "Task for beta" }],
+              },
+            ],
+          },
+        },
+        "claude.assistant.turn:10": {
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "Task for beta" }],
+              },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "bash_b",
+                    name: "Bash",
+                    input: { command: "echo beta" },
+                  },
+                ],
+              },
+              { role: "tool", tool_use_id: "bash_b", content: "beta" },
+            ],
+          },
+        },
+        "claude.assistant.turn:11": {
+          inputs: {
+            messages: [
+              {
+                role: "user",
+                content: [{ type: "text", text: "Task for alpha" }],
+              },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "bash_a",
+                    name: "Bash",
+                    input: { command: "echo alpha" },
+                  },
+                ],
+              },
+              { role: "tool", tool_use_id: "bash_a", content: "alpha" },
+            ],
+          },
+        },
+      },
+    });
+  });
 });
