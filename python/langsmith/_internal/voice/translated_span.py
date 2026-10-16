@@ -179,3 +179,15 @@ class TranslatedSpan:
         self.attributes["gen_ai.completion"] = (
             tool_output if isinstance(tool_output, str) else json.dumps(tool_output)
         )
+
+    def set_tool_error(self, message: str) -> None:
+        """Mark a tool run failed with ``message``.
+
+        LangSmith reads a run's error from an OTel ``exception`` event.
+        """
+        self.events.append(
+            Event(
+                "exception",
+                {"exception.type": "ToolError", "exception.message": message},
+            )
+        )

@@ -1693,6 +1693,40 @@ class TestContentAttributeVersions:
             assert value in attrs[io_key]
 
 
+class TestToolError:
+    @pytest.mark.parametrize("prefix", ["lk.", "lk.pii."])
+    def test_failed_tool_call_is_exported_as_an_error(self, prefix):
+        proc = _processor()
+        proc.on_end(
+            _make_span(
+                "function_tool",
+                {
+                    "lk.function_tool.name": "list_segments",
+                    f"{prefix}function_tool.output": "The list is still loading.",
+                    "lk.function_tool.is_error": True,
+                },
+            )
+        )
+        exported = proc.downstream.on_end.call_args.args[0]
+        exceptions = [e for e in exported.events if e.name == "exception"]
+        assert [e.attributes["exception.message"] for e in exceptions] == [
+            "The list is still loading."
+        ]
+
+    @pytest.mark.parametrize("is_error", [False, None])
+    def test_successful_tool_call_carries_no_exception(self, is_error):
+        attributes = {
+            "lk.function_tool.name": "list_segments",
+            "lk.function_tool.output": "3 segments",
+        }
+        if is_error is not None:
+            attributes["lk.function_tool.is_error"] = is_error
+        proc = _processor()
+        proc.on_end(_make_span("function_tool", attributes))
+        exported = proc.downstream.on_end.call_args.args[0]
+        assert [e for e in exported.events if e.name == "exception"] == []
+
+
 class TestGenAIMessageAttributes:
     """Fixtures follow LiveKit 1.8 telemetry/gen_ai.py's serialized part shapes."""
 
