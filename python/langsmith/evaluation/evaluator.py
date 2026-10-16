@@ -18,7 +18,7 @@ from typing import (
     cast,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from typing_extensions import TypedDict
 
 from langsmith import run_helpers as rh
@@ -98,6 +98,33 @@ class EvaluationResult(BaseModel):
     """Metadata for the evaluator run."""
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("feedback_config", mode="before")
+    @classmethod
+    def _validate_feedback_config(cls, v: Any) -> Any:
+        """Validate feedback_config: preserve arbitrary keys, enforce type literal.
+
+        Fixes langchain#31802: without this validator, Pydantic's TypedDict
+        validation may silently strip keys not defined in FeedbackConfig.
+
+        Behavior:
+        - Any dict is accepted (arbitrary keys preserved).
+        - If a 'type' key is present, it must be one of the valid literals.
+        - None passes through unchanged.
+        """
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            # Enforce 'type' literal when present (real behavioral change)
+            if "type" in v:
+                valid_types = {"continuous", "categorical", "freeform"}
+                if v["type"] not in valid_types:
+                    raise ValueError(
+                        f"feedback_config.type must be one of {valid_types}, "
+                        f"got '{v['type']}'"
+                    )
+            return v
+        return v
 
     @model_validator(mode="after")
     def check_value_non_numeric(self) -> EvaluationResult:
