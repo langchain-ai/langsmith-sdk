@@ -1,9 +1,16 @@
 # LangSmith Client SDKs
 
-> **This repository is archived.**
-> The Python and JavaScript SDKs now live in [langsmith-python](https://github.com/langchain-ai/langsmith-python)
-> and [langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript).
-> Open new issues and pull requests in the corresponding repository.
+> [!IMPORTANT]
+> ## This repository has moved
+>
+> The LangSmith SDKs now live in their own repositories. This one is frozen and will be archived.
+>
+> | SDK | New repository | Package |
+> |---|---|---|
+> | Python | **[langchain-ai/langsmith-python](https://github.com/langchain-ai/langsmith-python)** | [`langsmith` on PyPI](https://pypi.org/project/langsmith/) |
+> | JavaScript / TypeScript | **[langchain-ai/langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript)** | [`langsmith` on npm](https://www.npmjs.com/package/langsmith) |
+>
+> Packages are unchanged, nothing to do for installs. Open new issues and pull requests in the new repositories. Details in [#3691](https://github.com/langchain-ai/langsmith-sdk/issues/3691).
 
 [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
 [![Python Downloads](https://img.shields.io/pypi/dm/langsmith)](https://pypi.org/project/langsmith/)
