@@ -972,7 +972,7 @@ SUMMARY_EVALUATOR_T = Union[
 def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
     supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    all_args = [pname for pname, p in sig.parameters.items()]
+    all_args = [pname for pname, p in sig.parameters.items() if p.kind != p.VAR_KEYWORD]
     args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
@@ -993,10 +993,9 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         raise ValueError(msg)
     # For backwards compatibility we assume custom arg names are Sequence[Run] and
     # Sequence[Example] types, respectively.
-    elif not all(pname in supported_args for pname in all_args) or all_args == [
-        "runs",
-        "examples",
-    ]:
+    elif not all(
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    ) or all_args == ["runs", "examples"]:
         return func
     else:
 
