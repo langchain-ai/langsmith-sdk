@@ -8502,3 +8502,119 @@ class TestFeedbackAgentAddressing:
         assert body["address"] == "lrn:agents/my-agent/environments/staging"
         assert "agent_id" not in body
         assert "agent_environment" not in body
+
+
+def test_flush_waits_for_buffered_run_ops_without_compression():
+    """flush() must not return before process_buffered_run_ops output is sent."""
+    sent: list[str] = []
+
+    def request(method, url, **kwargs):
+        sent.append(url)
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"{}"
+        resp.url = url
+        return resp
+
+    def slow_processor(runs):
+        time.sleep(0.5)
+        return runs
+
+    session = mock.MagicMock(spec=requests.Session)
+    session.request.side_effect = request
+    info = ls_schemas.LangSmithInfo(
+        batch_ingest_config=ls_schemas.BatchIngestConfig(
+            use_multipart_endpoint=True,
+            size_limit=100,
+            size_limit_bytes=20971520,
+            scale_up_nthreads_limit=1,
+            scale_up_qsize_trigger=1000,
+            scale_down_nempty_trigger=4,
+        ),
+        instance_flags={},
+    )
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="k",
+        session=session,
+        info=info,
+        auto_batch_tracing=True,
+        process_buffered_run_ops=slow_processor,
+        run_ops_buffer_size=1,
+    )
+    assert client._futures is None  # non-compression path
+
+    run_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    client.create_run(
+        name="n",
+        inputs={"a": 1},
+        run_type="chain",
+        project_name="p",
+        id=run_id,
+        trace_id=run_id,
+        dotted_order=now.strftime("%Y%m%dT%H%M%S%fZ") + str(run_id),
+        start_time=now,
+    )
+    client.flush(timeout=10)
+    assert any("runs/multipart" in url for url in sent)
+
+
+def test_flush_waits_for_buffered_run_ops_respects_timeout():
+    """flush(timeout=...) must not block past the deadline on a slow processor."""
+    sent: list[str] = []
+
+    def request(method, url, **kwargs):
+        sent.append(url)
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = b"{}"
+        resp.url = url
+        return resp
+
+    def slow_processor(runs):
+        time.sleep(1.5)
+        return runs
+
+    session = mock.MagicMock(spec=requests.Session)
+    session.request.side_effect = request
+    info = ls_schemas.LangSmithInfo(
+        batch_ingest_config=ls_schemas.BatchIngestConfig(
+            use_multipart_endpoint=True,
+            size_limit=100,
+            size_limit_bytes=20971520,
+            scale_up_nthreads_limit=1,
+            scale_up_qsize_trigger=1000,
+            scale_down_nempty_trigger=4,
+        ),
+        instance_flags={},
+    )
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="k",
+        session=session,
+        info=info,
+        auto_batch_tracing=True,
+        process_buffered_run_ops=slow_processor,
+        run_ops_buffer_size=1,
+    )
+    assert client._futures is None  # non-compression path
+
+    run_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    client.create_run(
+        name="n",
+        inputs={"a": 1},
+        run_type="chain",
+        project_name="p",
+        id=run_id,
+        trace_id=run_id,
+        dotted_order=now.strftime("%Y%m%dT%H%M%S%fZ") + str(run_id),
+        start_time=now,
+    )
+    start = time.monotonic()
+    client.flush(timeout=0.1)
+    assert time.monotonic() - start < 1.0
+    assert not sent
+    client.flush(timeout=10)
+    assert any("runs/multipart" in url for url in sent)
