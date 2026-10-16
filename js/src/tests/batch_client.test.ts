@@ -2,7 +2,14 @@
 /* eslint-disable prefer-const */
 /* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { jest, describe, expect, afterEach, it } from "@jest/globals";
+import {
+  jest,
+  describe,
+  expect,
+  beforeEach,
+  afterEach,
+  it,
+} from "@jest/globals";
 import { v4 as uuidv4 } from "../utils/uuid/src/index.js";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
@@ -104,6 +111,17 @@ describe.each(ENDPOINT_TYPES)(
         : "https://api.smith.langchain.com/runs/multipart";
 
     let testClients: any[] = [];
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      originalEnv = process.env;
+      process.env = Object.fromEntries(
+        Object.entries(originalEnv).filter(
+          ([key]) =>
+            !key.startsWith("LANGSMITH_") && !key.startsWith("LANGCHAIN_"),
+        ),
+      );
+    });
 
     const createClient = (
       config: any,
@@ -146,6 +164,10 @@ describe.each(ENDPOINT_TYPES)(
       jest.clearAllMocks();
       jest.clearAllTimers();
       jest.useRealTimers();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
     });
 
     it("should create a batched run with the given input", async () => {
