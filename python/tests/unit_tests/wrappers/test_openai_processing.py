@@ -7,6 +7,8 @@ import pytest
 from langsmith import run_helpers
 from langsmith.wrappers._openai import (
     _infer_invocation_params,
+    _process_chat_completion,
+    _reduce_chat,
     _traceable_kwargs_with_ls_agent_type,
 )
 
@@ -187,3 +189,84 @@ def test_nested_none_opt_out_overrides_propagated_tag():
     )
     assert "ls_agent_type" in result["child_metadata"]
     assert result["child_metadata"]["ls_agent_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# service tier usage metadata
+# ---------------------------------------------------------------------------
+
+
+def _chat_chunks(service_tier):
+    from openai.types.chat import ChatCompletionChunk
+    from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
+    from openai.types.completion_usage import (
+        CompletionTokensDetails,
+        CompletionUsage,
+        PromptTokensDetails,
+    )
+
+    common = dict(
+        id="chatcmpl-1",
+        created=0,
+        model="gpt-5",
+        object="chat.completion.chunk",
+        service_tier=service_tier,
+    )
+    return [
+        ChatCompletionChunk(
+            choices=[
+                Choice(
+                    index=0,
+                    delta=ChoiceDelta(role="assistant", content="hi"),
+                    finish_reason="stop",
+                )
+            ],
+            **common,
+        ),
+        ChatCompletionChunk(
+            choices=[],
+            usage=CompletionUsage(
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                prompt_tokens_details=PromptTokensDetails(cached_tokens=20),
+                completion_tokens_details=CompletionTokensDetails(reasoning_tokens=10),
+            ),
+            **common,
+        ),
+    ]
+
+
+@pytest.mark.parametrize("tier", ["priority", "flex"])
+def test_streamed_chat_usage_uses_service_tier(tier):
+    usage = _reduce_chat(_chat_chunks(tier))["usage_metadata"]
+
+    assert usage["input_token_details"] == {f"{tier}_cache_read": 20, tier: 80}
+    assert usage["output_token_details"] == {f"{tier}_reasoning": 10, tier: 40}
+
+
+@pytest.mark.parametrize("tier", ["priority", "flex"])
+def test_streamed_and_non_streamed_chat_usage_match(tier):
+    from openai.types.chat import ChatCompletion
+
+    chunks = _chat_chunks(tier)
+    completion = ChatCompletion(
+        id="chatcmpl-1",
+        created=0,
+        model="gpt-5",
+        object="chat.completion",
+        service_tier=tier,
+        choices=[
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "hi"},
+            }
+        ],
+        usage=chunks[-1].usage,
+    )
+
+    assert (
+        _reduce_chat(chunks)["usage_metadata"]
+        == _process_chat_completion(completion)["usage_metadata"]
+    )
