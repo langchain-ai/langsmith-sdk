@@ -21,7 +21,9 @@ class UpdateOnlineCodeEvaluatorRequestParam(TypedDict, total=False):
 
     code: str
 
-    code_evaluator_input: Optional[Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai"]]
+    code_evaluator_input: Optional[
+        Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai", "trajectory"]
+    ]
     """CodeEvaluatorInput is config (not a snapshot rebuild). Null clears it."""
 
     dependencies: Optional[str]

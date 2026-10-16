@@ -19,7 +19,9 @@ class OnlineCodeEvaluator(BaseModel):
 
     code: Optional[str] = None
 
-    code_evaluator_input: Optional[Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai"]] = None
+    code_evaluator_input: Optional[
+        Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai", "trajectory"]
+    ] = None
     """
     CodeEvaluatorInput is which thread data the evaluator receives. Null for run
     evaluators.
