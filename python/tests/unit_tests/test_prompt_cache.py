@@ -112,17 +112,13 @@ class TestCacheLRU:
             cache.set("key2", sample_prompt_commit, mock_refresh)
             cache.set("key3", sample_prompt_commit, mock_refresh)
 
-            # All should be present
-            assert cache.get("key1", mock_refresh) is not None
-            assert cache.get("key2", mock_refresh) is not None
-            assert cache.get("key3", mock_refresh) is not None
-
-            # Add one more - key1 should be evicted (oldest)
             cache.set("key4", sample_prompt_commit, mock_refresh)
 
-            # key1 was accessed most recently due to get() above,
-            # but let's test the actual behavior
-            assert cache.get("key4", mock_refresh) is not None
+            assert cache.get("key1", mock_refresh) is None
+            assert cache.get("key2", mock_refresh) is sample_prompt_commit
+            assert cache.get("key3", mock_refresh) is sample_prompt_commit
+            assert cache.get("key4", mock_refresh) is sample_prompt_commit
+            mock_refresh.assert_not_called()
         finally:
             cache.shutdown()
 
@@ -135,14 +131,14 @@ class TestCacheLRU:
             cache.set("key2", sample_prompt_commit, mock_refresh)
 
             # Access key1 to make it most recently used
-            cache.get("key1", mock_refresh)
+            assert cache.get("key1", mock_refresh) is sample_prompt_commit
 
-            # Add key3 - key2 should be evicted (now oldest)
             cache.set("key3", sample_prompt_commit, mock_refresh)
 
-            assert cache.get("key1", mock_refresh) is not None  # Still present
-            assert cache.get("key3", mock_refresh) is not None  # Present
-            # key2 was evicted
+            assert cache.get("key2", mock_refresh) is None
+            assert cache.get("key1", mock_refresh) is sample_prompt_commit
+            assert cache.get("key3", mock_refresh) is sample_prompt_commit
+            mock_refresh.assert_not_called()
         finally:
             cache.shutdown()
 
