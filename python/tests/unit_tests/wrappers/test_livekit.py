@@ -1803,6 +1803,47 @@ class TestGenAIMessageAttributes:
         assert attrs["gen_ai.input.messages"] == json.dumps(inputs)
 
     @pytest.mark.parametrize(
+        "raw",
+        [
+            "[]",
+            "not json",
+            "null",
+            json.dumps(
+                [
+                    {"role": "user", "parts": [{"type": "text", "content": "Hi"}]},
+                    {
+                        "role": "assistant",
+                        "parts": [{"type": "text", "content": "Hello"}],
+                    },
+                ]
+            ),
+        ],
+    )
+    def test_system_instructions_are_not_shadowed_by_original_history(self, raw):
+        attributes = {
+            "gen_ai.input.messages": raw,
+            "gen_ai.system_instructions": json.dumps(
+                [{"type": "text", "content": "Always respond in French"}]
+            ),
+        }
+        span = self._export(attributes)
+
+        # Ingestion prefers gen_ai.input.messages to gen_ai.prompt. Export only
+        # the translated prompt, which contains both instructions and history.
+        assert "gen_ai.input.messages" not in span._attributes
+        prompt = json.loads(span._attributes["gen_ai.prompt"])["messages"]
+        assert prompt[0] == {"role": "system", "content": "Always respond in French"}
+        assert prompt[1:] == (build_messages_from_gen_ai(raw) or [])
+        assert attributes["gen_ai.input.messages"] == raw
+
+    def test_untranslated_input_attribute_is_preserved(self):
+        attributes = {"gen_ai.input.messages": "not json"}
+        span = self._export(attributes)
+
+        assert span._attributes["gen_ai.input.messages"] == "not json"
+        assert "gen_ai.prompt" not in span._attributes
+
+    @pytest.mark.parametrize(
         "arguments", [{"city": "Paris"}, '{"city":"Paris"}', "partial{"]
     )
     def test_output_tool_calls(self, arguments):
