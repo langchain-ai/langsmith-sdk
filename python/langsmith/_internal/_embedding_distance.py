@@ -148,6 +148,8 @@ class EmbeddingDistance:
         Returns:
             np.floating: The Euclidean distance.
         """
+        import numpy as np
+
         return np.linalg.norm(a - b)
 
     @staticmethod
@@ -161,6 +163,8 @@ class EmbeddingDistance:
         Returns:
             np.floating: The Manhattan distance.
         """
+        import numpy as np
+
         return np.sum(np.abs(a - b))
 
     @staticmethod
@@ -174,6 +178,8 @@ class EmbeddingDistance:
         Returns:
             np.floating: The Chebyshev distance.
         """
+        import numpy as np
+
         return np.max(np.abs(a - b))
 
     @staticmethod
@@ -187,4 +193,6 @@ class EmbeddingDistance:
         Returns:
             np.floating: The Hamming distance.
         """
+        import numpy as np
+
         return np.mean(a != b)
