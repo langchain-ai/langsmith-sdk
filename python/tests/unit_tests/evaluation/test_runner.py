@@ -29,6 +29,7 @@ from langsmith.evaluation._runner import (
     ComparativeExperimentResults,
     _build_comparative_url,
     _collect_evaluator_keys,
+    _forward,
     _get_target_args,
     _load_traces_for_experiment,
 )
@@ -256,6 +257,254 @@ async def test_aevaluate_feedback_includes_experiment_id_and_start_time() -> Non
     run = fake_request.runs[feedback["run_id"]]
     assert feedback["session_id"] == fake_request.created_session["id"]
     assert feedback["start_time"] == run["start_time"]
+
+
+@pytest.mark.parametrize("disable_evaluator_tracing", [True, False])
+def test_evaluate_upload_runs_callable_samples_runs_but_scores_all(
+    disable_evaluator_tracing: bool,
+) -> None:
+    """`upload_runs` as a callable controls which runs are persisted, but
+    summary evaluators must still see -- and score -- every run/repetition."""
+    NUM_EXAMPLES = 3
+    NUM_REPETITIONS = 4
+    example_responses = [_create_example(i) for i in range(NUM_EXAMPLES)]
+    examples = [e[0] for e in example_responses]
+    client, fake_request = _fake_client_for_examples(
+        [e[1] for e in example_responses],
+        "00886375-eb2a-4038-9032-efff60309896",
+        "my-dataset",
+    )
+
+    def predict(inputs: dict) -> dict:
+        return {"output": inputs["in"] + 1}
+
+    def score(run, example):
+        return {"key": "quality", "score": 1}
+
+    summary_run_counts: List[int] = []
+
+    def summary_eval(runs_, examples_):
+        summary_run_counts.append(len(runs_))
+        return {"key": "count", "score": len(runs_)}
+
+    # Called once per generated run (once per repetition of each example), so a
+    # stateful predicate can sample independently across repetitions.
+    call_count = 0
+
+    def upload_every_other(example: ls_schemas.Example) -> bool:
+        nonlocal call_count
+        call_count += 1
+        return call_count % 2 == 1
+
+    results = evaluate(
+        predict,
+        client=client,
+        data=examples,
+        evaluators=[score],
+        summary_evaluators=[summary_eval],
+        num_repetitions=NUM_REPETITIONS,
+        upload_runs=upload_every_other,
+        disable_evaluator_tracing=disable_evaluator_tracing,
+        max_concurrency=0,
+    )
+    results_list = list(results)
+
+    total_runs = NUM_EXAMPLES * NUM_REPETITIONS
+    uploaded_runs = total_runs // 2
+    assert len(results_list) == total_runs
+    assert call_count == total_runs
+
+    # The experiment is still created even though only some runs are uploaded.
+    assert fake_request.created_session
+
+    # Only sampled target runs are uploaded. Unless evaluator tracing is
+    # disabled, their evaluator runs and the summary evaluator are uploaded too.
+    expected_runs = (
+        uploaded_runs if disable_evaluator_tracing else uploaded_runs * 2 + 1
+    )
+    _wait_until(lambda: len(fake_request.runs) == expected_runs)
+    assert len(fake_request.runs) == expected_runs
+
+    # The summary evaluator saw every run, not just the uploaded ones.
+    assert summary_run_counts == [total_runs]
+
+    # Row-level feedback only exists for the runs that were actually uploaded,
+    # but the aggregate (project-level, run_id=None) feedback always reflects
+    # every run.
+    _wait_until(lambda: len(fake_request.feedbacks) == uploaded_runs + 1)
+    per_run_feedback = [
+        f for f in fake_request.feedbacks if f.get("run_id") is not None
+    ]
+    aggregate_feedback = [f for f in fake_request.feedbacks if f.get("run_id") is None]
+    assert len(per_run_feedback) == uploaded_runs
+    assert len(aggregate_feedback) == 1
+    assert aggregate_feedback[0]["score"] == total_runs
+
+
+@pytest.mark.parametrize("disable_evaluator_tracing", [True, False])
+@pytest.mark.parametrize("max_concurrency", [2, None])
+def test_evaluate_upload_runs_callable_out_of_order(
+    max_concurrency, disable_evaluator_tracing: bool
+) -> None:
+    """Keep upload decisions tied to runs when predictions finish out of order."""
+    example_responses = [_create_example(i) for i in range(4)]
+    examples = [example for example, _ in example_responses]
+    client, fake_request = _fake_client_for_examples(
+        [response for _, response in example_responses],
+        "00886375-eb2a-4038-9032-efff60309896",
+        "my-dataset",
+    )
+    later_run_finished = Event()
+    completion_order = []
+    completion_lock = Lock()
+    predicate_examples = []
+    summary_counts = []
+
+    def upload_every_other(example):
+        predicate_examples.append(example.id)
+        return len(predicate_examples) % 2 == 1
+
+    def predict(inputs):
+        assert examples[inputs["in"]].id in predicate_examples
+        if inputs["in"] == 0:
+            assert later_run_finished.wait(timeout=10)
+        return {"output": inputs["in"] + 1}
+
+    def forward(*args, **kwargs):
+        result = _forward(*args, **kwargs)
+        value = result["example"].inputs["in"]
+        with completion_lock:
+            completion_order.append(value)
+        if value == 1:
+            later_run_finished.set()
+        return result
+
+    def score(run, example):
+        return {"key": "quality", "score": run.outputs["output"]}
+
+    def summary_eval(runs, examples):
+        summary_counts.append((len(runs), len(examples)))
+        return {"key": "count", "score": len(runs)}
+
+    with mock.patch("langsmith.evaluation._runner._forward", side_effect=forward):
+        rows = list(
+            evaluate(
+                predict,
+                client=client,
+                data=examples,
+                evaluators=[score],
+                summary_evaluators=[summary_eval],
+                upload_runs=upload_every_other,
+                disable_evaluator_tracing=disable_evaluator_tracing,
+                max_concurrency=max_concurrency,
+            )
+        )
+
+    assert completion_order.index(1) < completion_order.index(0)
+    assert predicate_examples == [example.id for example in examples]
+    assert len(rows) == len(examples)
+    assert summary_counts == [(4, 4)]
+    selected_runs = {
+        str(row["run"].id): row["example"].inputs["in"] + 1
+        for row in rows
+        if row["example"].id in {examples[0].id, examples[2].id}
+    }
+    _wait_until(lambda: len(fake_request.feedbacks) == 3)
+    assert {
+        feedback["run_id"]: feedback["score"]
+        for feedback in fake_request.feedbacks
+        if feedback.get("run_id") is not None
+    } == selected_runs
+    assert [
+        feedback["score"]
+        for feedback in fake_request.feedbacks
+        if feedback.get("run_id") is None
+    ] == [4]
+    expected_runs = 2 if disable_evaluator_tracing else 5
+    _wait_until(lambda: len(fake_request.runs) == expected_runs)
+    assert {
+        run_id
+        for run_id, run in fake_request.runs.items()
+        if run.get("reference_example_id")
+    } == set(selected_runs)
+    if disable_evaluator_tracing:
+        assert not _evaluator_run_ids(fake_request)
+        assert all(
+            _feedback_source_run_id(feedback) is None
+            for feedback in fake_request.feedbacks
+        )
+    assert not fake_request.should_fail
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "00886375-eb2a-4038-9032-efff60309896",
+        (
+            "00886375-eb2a-4038-9032-efff60309896",
+            "11886375-eb2a-4038-9032-efff60309896",
+        ),
+    ],
+)
+@pytest.mark.parametrize("upload_parameter", ["upload_runs", "upload_results"])
+def test_evaluate_rejects_callable_upload_runs_for_experiment_targets(
+    target: Any,
+    upload_parameter: str,
+) -> None:
+    """A per-run callable only makes sense when new runs are being created.
+
+    Re-evaluating an existing experiment, or comparing two existing
+    experiments, doesn't create any new runs, so a callable `upload_runs`
+    must be rejected rather than silently ignored.
+    """
+    with pytest.raises(ValueError, match="upload_runs"):
+        evaluate(target, **{upload_parameter: lambda example: True})
+
+
+@pytest.mark.parametrize("via_client", [False, True])
+@pytest.mark.parametrize("upload_runs", [True, False, lambda example: True])
+def test_evaluate_rejects_both_upload_names(upload_runs, via_client) -> None:
+    entrypoint = (
+        Client(
+            api_url="http://localhost:1984",
+            api_key="test",
+            info={},
+            auto_batch_tracing=False,
+        ).evaluate
+        if via_client
+        else evaluate
+    )
+    with pytest.raises(ValueError, match="only one of upload_runs and upload_results"):
+        entrypoint(lambda inputs: inputs, upload_runs=upload_runs, upload_results=True)
+
+
+@pytest.mark.parametrize("via_client", [False, True])
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        ({}, True),
+        ({"upload_runs": None}, True),
+        ({"upload_runs": True}, True),
+        ({"upload_runs": False}, False),
+        ({"upload_results": False}, False),
+    ],
+)
+def test_evaluate_upload_runs_default_and_alias(options, expected, via_client) -> None:
+    entrypoint = (
+        Client(
+            api_url="http://localhost:1984",
+            api_key="test",
+            info={},
+            auto_batch_tracing=False,
+        ).evaluate
+        if via_client
+        else evaluate
+    )
+    assert inspect.signature(entrypoint).parameters["upload_runs"].default is None
+    example, _ = _create_example(0)
+    with mock.patch("langsmith.evaluation._runner._evaluate") as run_evaluate:
+        entrypoint(lambda inputs: inputs, data=[example], **options)
+    assert run_evaluate.call_args.kwargs["upload_runs"] is expected
 
 
 def _evaluator_run_ids(fake_request: FakeRequest) -> set:

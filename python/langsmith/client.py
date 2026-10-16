@@ -10753,7 +10753,7 @@ class Client:
     @overload
     def evaluate(
         self,
-        target: Union[TARGET_T, Runnable, EXPERIMENT_T],
+        target: Union[TARGET_T, Runnable],
         /,
         data: Optional[DATA_T] = None,
         evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -10765,7 +10765,27 @@ class Client:
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
-        upload_results: bool = True,
+        upload_runs: Optional[Union[bool, Callable[[ls_schemas.Example], bool]]] = None,
+        disable_evaluator_tracing: bool = False,
+        **kwargs: Any,
+    ) -> ExperimentResults: ...
+
+    @overload
+    def evaluate(
+        self,
+        target: EXPERIMENT_T,
+        /,
+        data: Optional[DATA_T] = None,
+        evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = 0,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[EXPERIMENT_T] = None,
+        upload_runs: Optional[bool] = None,
         disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ExperimentResults: ...
@@ -10785,7 +10805,7 @@ class Client:
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
-        upload_results: bool = True,
+        upload_runs: Optional[bool] = None,
         disable_evaluator_tracing: bool = False,
         **kwargs: Any,
     ) -> ComparativeExperimentResults: ...
@@ -10808,7 +10828,7 @@ class Client:
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
-        upload_results: bool = True,
+        upload_runs: Optional[Union[bool, Callable[[ls_schemas.Example], bool]]] = None,
         disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
@@ -10848,7 +10868,10 @@ class Client:
 
                 For advanced usage only. Should not be specified if target is an existing experiment or
                 two-tuple fo experiments.
-            upload_results (bool, default=True): Whether to upload the results to LangSmith.
+            upload_runs (bool | Callable[[Example], bool] | None, default=None):
+                Whether to upload run traces and row feedback. `None` enables uploads.
+                A callable selects runs; summary scores still use every run.
+                `upload_results` remains an alias through keyword arguments.
             error_handling (str, default="log"): How to handle individual run errors.
 
                 `'log'` will trace the runs with the error message as part of the
@@ -11019,7 +11042,7 @@ class Client:
             client=self,
             blocking=blocking,
             experiment=experiment,
-            upload_results=upload_results,
+            upload_runs=upload_runs,
             error_handling=error_handling,
             disable_evaluator_tracing=disable_evaluator_tracing,
             **kwargs,

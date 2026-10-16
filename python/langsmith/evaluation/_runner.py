@@ -90,11 +90,16 @@ AEVALUATOR_T = Union[
     ],
 ]
 EXPERIMENT_T = Union[str, uuid.UUID, schemas.TracerSession]
+# Whether to upload a given run's trace + feedback to LangSmith. A bool applies
+# to every run in the call; a callable is invoked once per generated run
+# (once per repetition, for repeated examples) so it can sample or subset runs
+# while the aggregate/summary score is still computed over every run.
+UPLOAD_RUNS_T = Union[bool, Callable[[schemas.Example], bool]]
 
 
 @overload
 def evaluate(
-    target: Union[TARGET_T, Runnable, EXPERIMENT_T],
+    target: Union[TARGET_T, Runnable],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -107,7 +112,31 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: bool = True,
+    upload_runs: Optional[UPLOAD_RUNS_T] = None,
+    disable_evaluator_tracing: bool = False,
+    **kwargs: Any,
+) -> ExperimentResults: ...
+
+
+@overload
+def evaluate(
+    target: EXPERIMENT_T,
+    /,
+    data: Optional[DATA_T] = None,
+    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: Optional[int] = 0,
+    num_repetitions: int = 1,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+    experiment: Optional[EXPERIMENT_T] = None,
+    # No new runs are created when re-evaluating an existing experiment, so
+    # there's nothing for a per-run callable to decide -- only a plain bool
+    # is accepted here.
+    upload_runs: Optional[bool] = None,
     disable_evaluator_tracing: bool = False,
     **kwargs: Any,
 ) -> ExperimentResults: ...
@@ -128,7 +157,10 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: bool = True,
+    # No new runs are created when comparing two existing experiments, so
+    # there's nothing for a per-run callable to decide -- only a plain bool
+    # is accepted here.
+    upload_runs: Optional[bool] = None,
     disable_evaluator_tracing: bool = False,
     **kwargs: Any,
 ) -> ComparativeExperimentResults: ...
@@ -150,7 +182,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
-    upload_results: bool = True,
+    upload_runs: Optional[UPLOAD_RUNS_T] = None,
     disable_evaluator_tracing: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
@@ -196,6 +228,25 @@ def evaluate(
             `'log'` will trace the runs with the error message as part of the
             experiment, `'ignore'` will not count the run as part of the experiment at
             all.
+        upload_runs (bool | Callable[[Example], bool] | None, default=None): Whether to
+            upload each run's trace and row-level feedback to LangSmith.
+
+            `None` uploads all runs. `False` keeps results local, including summary
+            scores. The previous name, `upload_results`, is accepted as an alias;
+            do not supply both names. With a callable,
+            returning `False` skips that run's trace and row-level feedback, while
+            summary scores still include every run and are uploaded.
+
+            Pass a callable to decide per run instead of for the whole call — it's
+            invoked once per generated run (once per repetition, for repeated
+            examples), so a stateful/random callable can sample a subset of runs.
+            Summary evaluator scores are still computed and uploaded over *all*
+            runs regardless of which individual runs were uploaded.
+
+            Only a plain bool is accepted when `target` is an existing experiment
+            or a pair of experiments to compare — those paths don't create new
+            runs, so there's nothing for a per-run callable to decide, and one
+            is rejected with a `ValueError`.
         disable_evaluator_tracing (bool, default=False): Whether to skip tracing
             evaluator invocations to the `evaluators` project in LangSmith.
 
@@ -281,6 +332,20 @@ def evaluate(
         >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
         ...     pass
 
+        Uploading only a sample of runs, while still scoring every run:
+
+        >>> import random
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ...     evaluators=[accuracy],
+        ...     summary_evaluators=[precision],
+        ...     num_repetitions=5,
+        ...     description="Only keep traces for 10% of runs.",
+        ...     upload_runs=lambda example: random.random() < 0.1,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+
 
 
         Evaluating a LangChain object:
@@ -306,11 +371,20 @@ def evaluate(
         'max_concurrency' default updated from None (no limit on concurrency)
         to 0 (no concurrency at all).
     """  # noqa: E501
+    if "upload_results" in kwargs:
+        if upload_runs is not None:
+            raise ValueError("Specify only one of upload_runs and upload_results.")
+        upload_runs = kwargs.pop("upload_results")
+    if upload_runs is None:
+        upload_runs = True
     if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
         invalid_args = {
             "num_repetitions": num_repetitions > 1,
             "experiment": bool(experiment),
-            "upload_results": not upload_results,
+            # A per-run callable only makes sense when new runs are being
+            # created; re-evaluating/comparing existing experiments doesn't
+            # create any, so only a plain, truthy bool is accepted here.
+            "upload_runs": not upload_runs or callable(upload_runs),
             "experiment_prefix": bool(experiment_prefix),
             "data": bool(data),
         }
@@ -338,7 +412,10 @@ def evaluate(
         invalid_args = {
             "num_repetitions": num_repetitions > 1,
             "experiment": bool(experiment),
-            "upload_results": not upload_results,
+            # A per-run callable only makes sense when new runs are being
+            # created; re-evaluating/comparing existing experiments doesn't
+            # create any, so only a plain, truthy bool is accepted here.
+            "upload_runs": not upload_runs or callable(upload_runs),
             "disable_evaluator_tracing": disable_evaluator_tracing,
             "summary_evaluators": bool(summary_evaluators),
             "data": bool(data),
@@ -404,8 +481,8 @@ def evaluate(
         )
         raise ValueError(msg)
     else:
-        if not upload_results:
-            _warn_once("'upload_results' parameter is in beta.")
+        if not upload_runs:
+            _warn_once("'upload_runs' parameter is in beta.")
         logger.debug(f"Running evaluation over target system {target}...")
         return _evaluate(
             target,
@@ -420,7 +497,7 @@ def evaluate(
             client=client,
             blocking=blocking,
             experiment=experiment,
-            upload_results=upload_results,
+            upload_runs=upload_runs,
             error_handling=error_handling,
             disable_evaluator_tracing=disable_evaluator_tracing,
         )
@@ -1117,7 +1194,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-    upload_results: bool = True,
+    upload_runs: UPLOAD_RUNS_T = True,
     disable_evaluator_tracing: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
 ) -> ExperimentResults:
@@ -1138,7 +1215,7 @@ def _evaluate(
         runs=runs,
         # Create or resolve the experiment.
         include_attachments=_include_attachments(target, evaluators),
-        upload_results=upload_results,
+        upload_runs=upload_runs,
         error_handling=error_handling,
         disable_evaluator_tracing=disable_evaluator_tracing,
     ).start()
@@ -1425,10 +1502,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluator_keys: Optional[list[str]] = None,
         include_attachments: bool = False,
         reuse_attachments: bool = False,
-        upload_results: bool = True,
+        upload_runs: UPLOAD_RUNS_T = True,
         attachment_raw_data_dict: Optional[dict] = None,
         disable_evaluator_tracing: bool = False,
         error_handling: Literal["log", "ignore"] = "log",
+        upload_decisions: Optional[dict[uuid.UUID, bool]] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -1450,10 +1528,23 @@ class _ExperimentManager(_ExperimentManagerMixin):
         )
         self._include_attachments = include_attachments
         self._reuse_attachments = reuse_attachments
-        self._upload_results = upload_results
+        self._upload_runs = upload_runs
         self._attachment_raw_data_dict = attachment_raw_data_dict
         self._error_handling = error_handling
         self._disable_evaluator_tracing = disable_evaluator_tracing
+        # Per-run upload decisions, keyed by run id. Populated as predictions are
+        # made and read back when scoring, so a stochastic/subsetting
+        # `upload_runs` callable is only ever resolved once per run. Shared
+        # (not copied) across `_copy()` calls so later stages of the pipeline
+        # (evaluators) see the same decision the prediction stage made.
+        self._upload_decisions: dict[uuid.UUID, bool] = (
+            upload_decisions if upload_decisions is not None else {}
+        )
+
+    def _resolve_upload(self, example: schemas.Example) -> bool:
+        if callable(self._upload_runs):
+            return bool(self._upload_runs(example))
+        return bool(self._upload_runs)
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1556,7 +1647,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        project = self._get_project(first_example) if self._upload_results else None
+        project = self._get_project(first_example) if self._upload_runs else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self._copy(self.examples, experiment=project)
@@ -1658,35 +1749,41 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         if max_concurrency == 0:
             for example in self.examples:
-                yield _forward(
+                upload = self._resolve_upload(example)
+                result = _forward(
                     fn,
                     example,
                     self.experiment_name,
                     self._metadata,
                     self.client,
-                    self._upload_results,
+                    upload,
                     include_attachments,
                     self._error_handling,
                 )
+                self._upload_decisions[result["run"].id] = upload
+                yield result
 
         else:
             with ls_utils.ContextThreadPoolExecutor(max_concurrency) as executor:
-                futures = [
-                    executor.submit(
+                future_uploads = {}
+                for example in self.examples:
+                    upload = self._resolve_upload(example)
+                    future = executor.submit(
                         _forward,
                         fn,
                         example,
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        self._upload_results,
+                        upload,
                         include_attachments,
                         self._error_handling,
                     )
-                    for example in self.examples
-                ]
-                for future in cf.as_completed(futures):
-                    yield future.result()
+                    future_uploads[future] = upload
+                for future in cf.as_completed(future_uploads):
+                    result = future.result()
+                    self._upload_decisions[result["run"].id] = future_uploads[future]
+                    yield result
         # Close out the project.
         self._end()
 
@@ -1697,6 +1794,16 @@ class _ExperimentManager(_ExperimentManagerMixin):
         executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
+        # Whether *this specific run* was uploaded, not just whether uploads are
+        # enabled at all -- a run that wasn't uploaded has no trace on the server
+        # to attach feedback to. `dict.get`'s default is evaluated eagerly, so
+        # look the id up explicitly rather than re-invoking a (possibly
+        # stateful/random) `upload_runs` callable a second time.
+        run_id = current_results["run"].id
+        if run_id in self._upload_decisions:
+            run_uploaded = self._upload_decisions[run_id]
+        else:
+            run_uploaded = self._resolve_upload(current_results["example"])
         metadata = {
             **(current_context["metadata"] or {}),
             **{
@@ -1710,7 +1817,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **_addressed_to_project(current_context, "evaluators"),
                 "metadata": metadata,
                 "enabled": _evaluator_tracing_mode(
-                    self._upload_results, self._disable_evaluator_tracing
+                    run_uploaded, self._disable_evaluator_tracing
                 ),
                 "client": self.client,
             }
@@ -1733,7 +1840,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     if self._disable_evaluator_tracing:
                         evaluator_response = _without_source_run_ids(selected_results)
                     eval_results["results"].extend(selected_results)
-                    if self._upload_results:
+                    if run_uploaded:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response,
@@ -1763,7 +1870,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         eval_results["results"].extend(
                             self.client._select_eval_results(error_response)
                         )
-                        if self._upload_results:
+                        if run_uploaded:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response,
@@ -1844,7 +1951,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             examples.append(example)
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
-            project_id = self._get_experiment().id if self._upload_results else None
+            project_id = self._get_experiment().id if self._upload_runs else None
             current_context = rh.get_tracing_context()
             metadata = {
                 **(current_context["metadata"] or {}),
@@ -1859,7 +1966,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "metadata": metadata,
                     "client": self.client,
                     "enabled": _evaluator_tracing_mode(
-                        self._upload_results, self._disable_evaluator_tracing
+                        bool(self._upload_runs), self._disable_evaluator_tracing
                     ),
                 }
             ):
@@ -1872,7 +1979,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             fn_name=evaluator.__name__,
                         )
                         aggregate_feedback.extend(flattened_results)
-                        if self._upload_results:
+                        if self._upload_runs:
                             for result in flattened_results:
                                 feedback = result.model_dump(exclude={"target_run_id"})
                                 evaluator_info = feedback.pop("evaluator_info", None)
@@ -1916,7 +2023,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     def _end(self) -> None:
-        if not self._upload_results:
+        if not self._upload_runs:
             return
         experiment = self._experiment
         if experiment is None:
@@ -1946,7 +2053,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
             "evaluator_keys": self._evaluator_keys,
             "include_attachments": self._include_attachments,
             "reuse_attachments": self._reuse_attachments,
-            "upload_results": self._upload_results,
+            "upload_runs": self._upload_runs,
+            "upload_decisions": self._upload_decisions,
             "attachment_raw_data_dict": self._attachment_raw_data_dict,
             "error_handling": self._error_handling,
             "disable_evaluator_tracing": self._disable_evaluator_tracing,
@@ -1957,12 +2065,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
 
 def _evaluator_tracing_mode(
-    upload_results: bool, disable_evaluator_tracing: bool
+    upload_runs: bool, disable_evaluator_tracing: bool
 ) -> Union[bool, Literal["local"]]:
     """Resolve the tracing mode used while invoking evaluators."""
     if disable_evaluator_tracing:
         return False
-    return "local" if not upload_results else True
+    return "local" if not upload_runs else True
 
 
 def _without_source_run_ids(results: list[EvaluationResult]) -> EvaluationResults:
@@ -2028,7 +2136,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
-    upload_results: bool,
+    upload_runs: bool,
     include_attachments: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
 ) -> _ForwardResults:
@@ -2056,7 +2164,7 @@ def _forward(
     else:
         raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
 
-    with rh.tracing_context(enabled="local" if not upload_results else True):
+    with rh.tracing_context(enabled="local" if not upload_runs else True):
         try:
             arg_names = _get_target_args(fn)
             args = [getattr(example, argn) for argn in arg_names]

@@ -937,6 +937,16 @@ def test_async_methods() -> None:
         assert sync_method in sync_methods
         sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
         async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
+        if sync_method == "evaluate":
+            # Sync evaluation renamed this option; its legacy alias still matches
+            # the unchanged async API. Both defaults enable uploads.
+            sync_upload = inspect.signature(Client.evaluate).parameters["upload_runs"]
+            async_upload = inspect.signature(Client.aevaluate).parameters[
+                "upload_results"
+            ]
+            assert sync_upload.default is None
+            assert async_upload.default is True
+            sync_args = (sync_args - {"upload_runs"}) | {"upload_results"}
         extra_args = sync_args - async_args
         assert not extra_args, (
             f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
