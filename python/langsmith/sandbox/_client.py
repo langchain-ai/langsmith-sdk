@@ -8,7 +8,7 @@ import posixpath
 import shlex
 import tarfile
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union, overload
 from urllib.parse import quote
@@ -414,6 +414,7 @@ class SandboxClient:
         mount_config: Optional[SandboxMountConfig] = None,
         proxy_config: Optional[SandboxProxyConfig] = None,
         run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
+        tag_value_ids: Optional[Sequence[str]] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
@@ -472,6 +473,9 @@ class SandboxClient:
                 ``~regex``). Use ``proxy_config`` with provider rule helpers
                 such as ``aws_auth`` to let the proxy sign supported
                 AWS HTTPS requests on the sandbox's behalf.
+            tag_value_ids: Optional resource tag value IDs to attach to the
+                sandbox at creation. A workload identity ``subject_scope`` of
+                ``"tag:<tag value id>"`` must name one of these.
 
         Returns:
             Sandbox instance.
@@ -497,6 +501,7 @@ class SandboxClient:
             mount_config=mount_config,
             proxy_config=proxy_config,
             run_config=run_config,
+            tag_value_ids=tag_value_ids,
             headers=headers,
         )
         sb._auto_delete = True
@@ -520,6 +525,7 @@ class SandboxClient:
         proxy_config: Optional[SandboxProxyConfig] = None,
         run_config: Optional[Union[RunConfig, dict[str, Any]]] = None,
         access_delegation: Optional[AccessDelegation] = None,
+        tag_value_ids: Optional[Sequence[str]] = None,
         headers: RequestHeaders = None,
     ) -> Sandbox:
         """Create a new Sandbox.
@@ -580,6 +586,9 @@ class SandboxClient:
                 permissions listed, each of which you must already hold. The
                 grant belongs to the sandbox, so anyone who can exec into it
                 can make calls under it. Omit for no access.
+            tag_value_ids: Optional resource tag value IDs to attach to the
+                sandbox at creation. A workload identity ``subject_scope`` of
+                ``"tag:<tag value id>"`` must name one of these.
 
         Returns:
             Created Sandbox. When wait_for_ready=False, the sandbox will have
@@ -638,6 +647,10 @@ class SandboxClient:
             payload["access_delegation"] = _validate_access_delegation(
                 access_delegation
             )
+        if tag_value_ids is not None:
+            if isinstance(tag_value_ids, str):
+                raise ValueError("tag_value_ids must be a list of tag value IDs")
+            payload["tag_value_ids"] = list(tag_value_ids)
 
         http_timeout = (timeout + 30) if wait_for_ready else 30
 

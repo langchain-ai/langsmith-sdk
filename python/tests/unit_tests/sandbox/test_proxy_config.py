@@ -442,15 +442,10 @@ def test_proxy_config_ignores_deprecated_no_proxy() -> None:
     assert "no_proxy" not in config
 
 
-def test_proxy_config_rejects_gcp_auth_without_scopes() -> None:
-    with pytest.raises(ValueError, match="scopes"):
-        proxy_config(
-            rules=[
-                gcp_auth(
-                    service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON")
-                )
-            ]
-        )
+def test_proxy_config_accepts_gcp_auth_without_scopes() -> None:
+    rule = gcp_auth(service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"))
+    assert "scopes" not in rule["gcp"]
+    assert proxy_config(rules=[rule]) == {"rules": [rule]}
 
 
 def test_create_sandbox_forwards_composed_proxy_config(

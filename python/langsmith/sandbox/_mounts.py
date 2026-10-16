@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Literal, TypedDict, Union
+from typing import Any, Literal, TypedDict, Union, cast
 from urllib.parse import urlsplit
 
 from langsmith.sandbox._proxy_config import (
     SandboxProxyConfig,
     SandboxProxyRule,
     SandboxProxySecret,
-    _get_aws_role_arn,
+    _aws_role_config,
+    _azure_config,
+    _gcp_config,
 )
 
 
@@ -89,6 +91,28 @@ class GCSMountSpec(BucketMountSpecBase):
     gcs: GCSMountConfig
 
 
+class AzureBlobMountConfigRequired(TypedDict):
+    """Required Azure Blob configuration for a sandbox mount."""
+
+    storage_account: str
+    container: str
+
+
+class AzureBlobMountConfig(AzureBlobMountConfigRequired, total=False):
+    """Azure Blob container configuration for a sandbox mount."""
+
+    prefix: str
+
+
+class AzureBlobMountSpec(BucketMountSpecBase):
+    """Azure Blob container-backed sandbox mount specification."""
+
+    id: str
+    type: Literal["azure_blob"]
+    mount_path: str
+    azure_blob: AzureBlobMountConfig
+
+
 class GitMountRefSpec(TypedDict):
     """Git ref selected for a sandbox mount."""
 
@@ -139,7 +163,9 @@ class ContextHubMountSpec(TypedDict):
     contexthub: ContextHubMountConfig
 
 
-SandboxMount = Union[S3MountSpec, GCSMountSpec, GitMountSpec, ContextHubMountSpec]
+SandboxMount = Union[
+    S3MountSpec, GCSMountSpec, AzureBlobMountSpec, GitMountSpec, ContextHubMountSpec
+]
 
 
 class AWSMountAuthConfig(TypedDict):
@@ -149,10 +175,16 @@ class AWSMountAuthConfig(TypedDict):
     secret_access_key: SandboxProxySecret
 
 
-class AWSMountRoleAuthConfig(TypedDict):
+class AWSMountRoleAuthConfigRequired(TypedDict):
     """IAM role restricted by the backend to this sandbox's S3 mount scopes."""
 
     role_arn: str
+
+
+class AWSMountRoleAuthConfig(AWSMountRoleAuthConfigRequired, total=False):
+    """IAM role restricted by the backend to this sandbox's S3 mount scopes."""
+
+    subject_scope: str
 
 
 class GCPMountAuthConfig(TypedDict):
@@ -161,11 +193,58 @@ class GCPMountAuthConfig(TypedDict):
     service_account_json: SandboxProxySecret
 
 
+class GCPMountWorkloadIdentityAuthConfigRequired(TypedDict):
+    """GCP workload identity federation used to authenticate GCS mounts."""
+
+    workload_identity_provider: str
+
+
+class GCPMountWorkloadIdentityAuthConfig(
+    GCPMountWorkloadIdentityAuthConfigRequired, total=False
+):
+    """GCP workload identity federation used to authenticate GCS mounts."""
+
+    service_account_email: str
+    subject_scope: str
+
+
+class AzureMountWorkloadIdentityAuthConfigRequired(TypedDict):
+    """Entra workload identity federation used to authenticate Azure Blob mounts."""
+
+    tenant_id: str
+    client_id: str
+
+
+class AzureMountWorkloadIdentityAuthConfig(
+    AzureMountWorkloadIdentityAuthConfigRequired, total=False
+):
+    """Entra workload identity federation used to authenticate Azure Blob mounts."""
+
+    subject_scope: str
+
+
+class AzureMountAccountKeyAuthConfig(TypedDict):
+    """Storage account key used to authenticate Azure Blob mounts."""
+
+    account_key: SandboxProxySecret
+
+
+class AzureMountSASAuthConfig(TypedDict):
+    """SAS token used to authenticate Azure Blob mounts."""
+
+    sas_token: SandboxProxySecret
+
+
 class SandboxMountAuthConfig(TypedDict, total=False):
     """Provider auth blocks for sandbox mounts."""
 
     aws: Union[AWSMountAuthConfig, AWSMountRoleAuthConfig]
-    gcp: GCPMountAuthConfig
+    gcp: Union[GCPMountAuthConfig, GCPMountWorkloadIdentityAuthConfig]
+    azure: Union[
+        AzureMountWorkloadIdentityAuthConfig,
+        AzureMountAccountKeyAuthConfig,
+        AzureMountSASAuthConfig,
+    ]
 
 
 SandboxMountAuth = SandboxProxyRule
@@ -178,7 +257,7 @@ class SandboxMountConfig(TypedDict):
     mounts: list[SandboxMount]
 
 
-def _require_non_empty_string(value: str, field: str) -> str:
+def _require_non_empty_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a non-empty string")
     return value.strip()
@@ -279,6 +358,39 @@ def s3_mount(
     return mount
 
 
+def azure_blob_mount(
+    *,
+    id: str,
+    mount_path: str,
+    storage_account: str,
+    container: str,
+    prefix: str | None = None,
+    read_only: bool | None = None,
+    cache: MountCacheConfig | None = None,
+) -> AzureBlobMountSpec:
+    """Build an Azure Blob container-backed sandbox mount specification."""
+    azure_blob: AzureBlobMountConfig = {
+        "storage_account": _require_non_empty_string(
+            storage_account, "storage_account"
+        ),
+        "container": _require_non_empty_string(container, "container"),
+    }
+    if prefix is not None:
+        azure_blob["prefix"] = _require_non_empty_string(prefix, "prefix")
+
+    mount: AzureBlobMountSpec = {
+        "id": _require_non_empty_string(id, "id"),
+        "type": "azure_blob",
+        "mount_path": _require_non_empty_string(mount_path, "mount_path"),
+        "azure_blob": azure_blob,
+    }
+    if read_only is not None:
+        mount["read_only"] = read_only
+    if cache is not None:
+        mount["cache"] = _copy_cache_config(cache)
+    return mount
+
+
 def git_mount(
     *,
     id: str,
@@ -372,9 +484,10 @@ def _normalize_mounts(mounts: Sequence[SandboxMount]) -> list[SandboxMount]:
         if not isinstance(mount, dict) or not mount:
             raise ValueError("mounts must be a non-empty list of mount dictionaries")
         mount_type = mount.get("type")
-        if mount_type not in {"s3", "gcs", "git", "contexthub"}:
+        if mount_type not in {"s3", "gcs", "azure_blob", "git", "contexthub"}:
             raise ValueError(
-                "mount_config only supports s3, gcs, git, and contexthub mounts"
+                "mount_config only supports s3, gcs, azure_blob, git, and "
+                "contexthub mounts"
             )
         _reject_provider_credentials_in_mount(mount)
         normalized.append(mount)
@@ -386,6 +499,8 @@ _FORBIDDEN_MOUNT_CREDENTIAL_FIELDS = {
     "secret_access_key",
     "session_token",
     "service_account_json",
+    "account_key",
+    "sas_token",
     "access_token",
     "refresh_token",
     "credentials",
@@ -407,46 +522,61 @@ def _reject_provider_credentials_in_mount(value: Any) -> None:
             _reject_provider_credentials_in_mount(child)
 
 
+# Fields each provider's mount auth accepts; rule-only fields (scopes,
+# resources, storage_account) are dropped.
+_MOUNT_AUTH_FIELDS = {
+    "gcp": (
+        "service_account_json",
+        "workload_identity_provider",
+        "service_account_email",
+        "subject_scope",
+    ),
+    "azure": ("tenant_id", "client_id", "subject_scope", "account_key", "sas_token"),
+}
+_MOUNT_AUTH_SECRETS = {"service_account_json", "account_key", "sas_token"}
+
+
 def _normalize_mount_auth(
     auth: Sequence[SandboxMountAuth],
-) -> SandboxMountAuthConfig:
+) -> tuple[SandboxMountAuthConfig, str | None]:
+    """Return mount auth by provider and a static azure block's storage account."""
     if isinstance(auth, dict) or isinstance(auth, str):
         raise ValueError("auth must be a list of provider auth blocks")
-    by_provider: SandboxMountAuthConfig = {}
+    by_provider: dict[str, Any] = {}
+    azure_static_account: str | None = None
     for block in auth:
         if not isinstance(block, dict) or not block:
             raise ValueError("auth must be a list of provider auth blocks")
         provider = block.get("type")
-        if provider not in {"aws", "gcp"}:
-            raise ValueError("mount_config auth only supports aws and gcp blocks")
+        if provider not in {"aws", "gcp", "azure"}:
+            raise ValueError(
+                "mount_config auth only supports aws, gcp, and azure blocks"
+            )
         if provider in by_provider:
             raise ValueError(f"duplicate {provider} auth rule in mount_config")
+        config = block.get(provider)
+        if not isinstance(config, dict):
+            article = "a" if provider == "gcp" else "an"
+            raise ValueError(
+                f"{provider} mount auth must include {article} {provider} block"
+            )
         if provider == "aws":
-            aws = block.get("aws")
-            if not isinstance(aws, dict):
-                raise ValueError("aws mount auth must include an aws block")
-            role_arn = _get_aws_role_arn(aws)
-            if role_arn is not None:
-                by_provider["aws"] = {"role_arn": role_arn}
-                continue
-            by_provider["aws"] = {
-                "access_key_id": _copy_mount_secret(
-                    aws.get("access_key_id"), "access_key_id"
-                ),
-                "secret_access_key": _copy_mount_secret(
-                    aws.get("secret_access_key"), "secret_access_key"
-                ),
+            role = _aws_role_config(config)
+            by_provider["aws"] = role or {
+                field: _copy_mount_secret(config.get(field), field)
+                for field in ("access_key_id", "secret_access_key")
             }
-        else:
-            gcp = block.get("gcp")
-            if not isinstance(gcp, dict):
-                raise ValueError("gcp mount auth must include a gcp block")
-            by_provider["gcp"] = {
-                "service_account_json": _copy_mount_secret(
-                    gcp.get("service_account_json"), "service_account_json"
-                )
-            }
-    return by_provider
+            continue
+        config = (_gcp_config if provider == "gcp" else _azure_config)(config)
+        azure_static_account = config.get("storage_account", azure_static_account)
+        by_provider[provider] = {
+            field: _copy_mount_secret(value, field)
+            if field in _MOUNT_AUTH_SECRETS
+            else value
+            for field, value in config.items()
+            if field in _MOUNT_AUTH_FIELDS[provider]
+        }
+    return cast(SandboxMountAuthConfig, by_provider), azure_static_account
 
 
 def mount_config(
@@ -460,19 +590,27 @@ def mount_config(
     The returned value is sent as the public ``mount_config`` field. The
     backend expands provider auth into runtime proxy rules.
 
-    For S3 mounts, pass the same ``proxy_config`` here and to sandbox creation
-    to use its enabled AWS rule. That rule remains general proxy auth; it is
-    not copied into mount-scoped auth or restricted to mount paths. GCS mounts
-    still require explicit GCP authentication in ``auth``.
+    Instead of mount-scoped ``auth``, mounts can use an enabled rule in the
+    same ``proxy_config`` passed here and to sandbox creation: an AWS rule for
+    S3, a GCP workload identity rule for GCS, or an Azure rule for Azure Blob.
+    That rule remains general proxy auth; it is not copied into mount-scoped
+    auth or restricted to mount paths.
     """
     normalized_mounts = _normalize_mounts(mounts)
-    auth_by_provider = _normalize_mount_auth(auth)
+    auth_by_provider, azure_static_account = _normalize_mount_auth(auth)
     mount_providers = {mount["type"] for mount in normalized_mounts}
-    proxy_providers = {
-        rule.get("type")
+    enabled_rules = [
+        rule
         for rule in (proxy_config or {}).get("rules", [])
         if isinstance(rule, dict) and rule.get("enabled") is True
-    }
+    ]
+    proxy_providers = {rule.get("type") for rule in enabled_rules}
+    has_gcp_workload_identity_rule = any(
+        rule.get("type") == "gcp"
+        and isinstance(rule.get("gcp"), dict)
+        and rule["gcp"].get("workload_identity_provider")
+        for rule in enabled_rules
+    )
 
     if (
         "s3" in mount_providers
@@ -480,13 +618,38 @@ def mount_config(
         and "aws" not in proxy_providers
     ):
         raise ValueError("s3 mounts require aws auth in mount_config")
-    if "gcs" in mount_providers and "gcp" not in auth_by_provider:
-        raise ValueError("gcs mounts require gcp auth in mount_config")
+    if (
+        "gcs" in mount_providers
+        and "gcp" not in auth_by_provider
+        and not has_gcp_workload_identity_rule
+    ):
+        raise ValueError(
+            "gcs mounts require gcp auth in mount_config or a GCP workload "
+            "identity rule in proxy_config"
+        )
+    if (
+        "azure_blob" in mount_providers
+        and "azure" not in auth_by_provider
+        and "azure" not in proxy_providers
+    ):
+        raise ValueError("azure_blob mounts require azure auth in mount_config")
     if "aws" in auth_by_provider and "s3" not in mount_providers:
         raise ValueError("aws auth requires at least one s3 mount in mount_config")
     if "gcp" in auth_by_provider and "gcs" not in mount_providers:
         raise ValueError("gcp auth requires at least one gcs mount in mount_config")
-
+    if "azure" in auth_by_provider and "azure_blob" not in mount_providers:
+        raise ValueError(
+            "azure auth requires at least one azure_blob mount in mount_config"
+        )
+    if azure_static_account is not None and any(
+        mount["azure_blob"]["storage_account"] != azure_static_account
+        for mount in normalized_mounts
+        if mount["type"] == "azure_blob"
+    ):
+        raise ValueError(
+            "azure_blob mounts using an azure account key or SAS token must "
+            "all use the auth's storage_account"
+        )
     config: SandboxMountConfig = {
         "auth": auth_by_provider,
         "mounts": normalized_mounts,
@@ -510,7 +673,7 @@ def validate_mount_config_proxy_config(
         if not isinstance(rule, dict):
             continue
         rule_type = rule.get("type")
-        if rule_type in {"aws", "gcp"} and rule_type in auth:
+        if rule_type in {"aws", "gcp", "azure"} and rule_type in auth:
             raise ValueError(
                 f"{rule_type} auth cannot be provided in both "
                 "mount_config and proxy_config"
