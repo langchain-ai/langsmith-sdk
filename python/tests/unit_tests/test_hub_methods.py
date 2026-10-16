@@ -112,10 +112,22 @@ def test_agent_entry_exclude_none_strips_response_only_fields() -> None:
     assert "commit_id" not in dumped
 
 
-def test_push_agent_rejects_short_parent_commit() -> None:
-    ctx = _mock_sync_client()
+@pytest.mark.parametrize("parent_commit", ["", "a" * 7, "a" * 65])
+def test_push_agent_rejects_invalid_parent_commit(parent_commit: str) -> None:
+    client = _mock_sync_client()
     with pytest.raises(ls_utils.LangSmithUserError, match="8-64"):
-        ctx.push_agent("-/repo", files={}, parent_commit="abc")
+        client.push_agent("-/repo", files={}, parent_commit=parent_commit)
+    client.request_with_retries.assert_not_called()
+
+
+@pytest.mark.parametrize("parent_commit", ["", "a" * 7, "a" * 65])
+async def test_async_push_agent_rejects_invalid_parent_commit(
+    parent_commit: str,
+) -> None:
+    client = _mock_async_client()
+    with pytest.raises(ls_utils.LangSmithUserError, match="8-64"):
+        await client.push_agent("-/repo", files={}, parent_commit=parent_commit)
+    client._arequest_with_retries.assert_not_awaited()
 
 
 def test_push_agent_rejects_invalid_handle_on_create() -> None:
