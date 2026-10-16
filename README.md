@@ -1,5 +1,3 @@
-# LangSmith Client SDKs
-
 > [!IMPORTANT]
 > ## This repository has moved
 >
@@ -11,6 +9,10 @@
 > | JavaScript / TypeScript | **[langchain-ai/langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript)** | [`langsmith` on npm](https://www.npmjs.com/package/langsmith) |
 >
 > Packages are unchanged, nothing to do for installs. Open new issues and pull requests in the new repositories.
+
+<br>
+
+# LangSmith Client SDKs
 
 [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
 [![Python Downloads](https://img.shields.io/pypi/dm/langsmith)](https://pypi.org/project/langsmith/)
