@@ -63,7 +63,7 @@ from langsmith.sandbox._sse_execute import (
     start_payload as _sse_start_payload,
 )
 from langsmith.sandbox._tracing import add_sandbox_metadata
-from langsmith.sandbox._tunnel import Tunnel
+from langsmith.sandbox._tunnel import Dialer, Tunnel
 from langsmith.sandbox._ws_execute import (
     WEBSOCKETS_AVAILABLE,
     _retry_delay,
@@ -1011,6 +1011,40 @@ class Sandbox:
         )
         t._start()
         return t
+
+    def dialer(
+        self,
+        *,
+        max_reconnects: int = 3,
+        headers: RequestHeaders = None,
+    ) -> Dialer:
+        """Open a session for dialing ports inside the sandbox in-process.
+
+        Unlike :meth:`tunnel`, nothing listens locally: each
+        :meth:`Dialer.dial` returns an already-connected socket that only this
+        process holds::
+
+            with sandbox.dialer() as d:
+                sock = d.dial(8000)
+
+        Args:
+            max_reconnects: Maximum number of automatic reconnect attempts
+                when the WebSocket session drops. Set to 0 to disable.
+
+        Returns:
+            A Dialer instance (context manager).
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+        """
+        d = Dialer(
+            self._require_dataplane_url(),
+            self._client._api_key,
+            max_reconnects=max_reconnects,
+            headers=headers,
+        )
+        d._start()
+        return d
 
     def service(
         self,
