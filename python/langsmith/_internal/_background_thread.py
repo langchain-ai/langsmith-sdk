@@ -776,36 +776,37 @@ def tracing_control_thread_func_compress_parallel(
                         compressed_traces_info,
                         destinations=destinations,
                     )
-            last_flush_time = time.monotonic()
-
-        else:
-            if (time.monotonic() - last_flush_time) >= flush_interval:
-                (
-                    data_stream,
-                    compressed_traces_info,
-                    destinations,
-                ) = _tracing_thread_drain_compressed_buffer(
-                    client, size_limit=1, size_limit_bytes=1
-                )
-                if data_stream is not None:
-                    try:
-                        cf.wait(
-                            [
-                                LANGSMITH_CLIENT_THREAD_POOL.submit(
-                                    client._send_compressed_multipart_req,
-                                    data_stream,
-                                    compressed_traces_info,
-                                    destinations=destinations,
-                                )
-                            ]
-                        )
-                    except RuntimeError:
-                        client._send_compressed_multipart_req(
-                            data_stream,
-                            compressed_traces_info,
-                            destinations=destinations,
-                        )
                 last_flush_time = time.monotonic()
+
+        # Evaluated on every iteration, not only when idle: steady traffic keeps
+        # the event set and would otherwise starve the time-based flush.
+        if (time.monotonic() - last_flush_time) >= flush_interval:
+            (
+                data_stream,
+                compressed_traces_info,
+                destinations,
+            ) = _tracing_thread_drain_compressed_buffer(
+                client, size_limit=1, size_limit_bytes=1
+            )
+            if data_stream is not None:
+                try:
+                    cf.wait(
+                        [
+                            LANGSMITH_CLIENT_THREAD_POOL.submit(
+                                client._send_compressed_multipart_req,
+                                data_stream,
+                                compressed_traces_info,
+                                destinations=destinations,
+                            )
+                        ]
+                    )
+                except RuntimeError:
+                    client._send_compressed_multipart_req(
+                        data_stream,
+                        compressed_traces_info,
+                        destinations=destinations,
+                    )
+            last_flush_time = time.monotonic()
 
     # Drain the buffer on exit (final flush)
     try:
