@@ -12,6 +12,7 @@ from langsmith.sandbox import (
 )
 from langsmith.sandbox._exceptions import (
     CommandTimeoutError,
+    InvalidCommandError,
     SandboxConnectionError,
     SandboxServerReloadError,
 )
@@ -173,6 +174,19 @@ class TestResourceNameConflictError:
             "Name already exists", resource_type="snapshot"
         )
         assert error.resource_type == "snapshot"
+
+
+class TestInvalidCommandError:
+    """Tests for InvalidCommandError."""
+
+    def test_is_sandbox_operation_error(self):
+        assert issubclass(InvalidCommandError, SandboxOperationError)
+
+    def test_attributes(self):
+        err = InvalidCommandError("fork/exec /bin/sh: invalid argument")
+        assert err.operation == "command"
+        assert err.error_type == "InvalidCommand"
+        assert isinstance(err, SandboxOperationError)
 
 
 class TestCommandTimeoutError:

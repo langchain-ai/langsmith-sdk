@@ -312,6 +312,14 @@ class CommandTimeoutError(SandboxOperationError):
         self.timeout = timeout
 
 
+class InvalidCommandError(SandboxOperationError):
+    """Raised when exec refuses to start the command."""
+
+    def __init__(self, message: str):
+        """Initialize the error."""
+        super().__init__(message, operation="command", error_type="InvalidCommand")
+
+
 # ========================================================================
 # Tunnel Errors
 # ========================================================================
