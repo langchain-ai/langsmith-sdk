@@ -61,8 +61,15 @@ def extract_usage_metadata(usage: Any) -> dict[str, Any]:
     if cache_read:
         input_token_details["cache_read"] = cache_read
 
-    # Structured cache_creation (with ephemeral breakdown) takes precedence
-    # over the flat cache_creation_input_tokens field.
+    # Anthropic reports cache creation twice: cache_creation_input_tokens is
+    # the total, and cache_creation breaks that total down per TTL tier. Read
+    # the breakdown for the details, but keep the flat total authoritative for
+    # the arithmetic. Summing the breakdown instead drops any tier this code
+    # does not name from input_tokens and total_tokens, with nothing raising,
+    # and the set of tiers is not fixed: the 1-hour tier is itself a later
+    # addition to what used to be a single flat field.
+    cache_creation_total = _to_int(get("cache_creation_input_tokens"))
+
     cache_creation = get("cache_creation")
     if isinstance(cache_creation, dict):
         eph_5m = _to_int(cache_creation.get("ephemeral_5m_input_tokens"))
@@ -71,15 +78,14 @@ def extract_usage_metadata(usage: Any) -> dict[str, Any]:
             input_token_details["ephemeral_5m_input_tokens"] = eph_5m
         if eph_1h:
             input_token_details["ephemeral_1hr_input_tokens"] = eph_1h
-    else:
+        if not cache_creation_total:
+            cache_creation_total = eph_5m + eph_1h
+    elif cache_creation_total:
         # Flat/legacy field — assume 5-minute cache
-        flat_cache_create = _to_int(get("cache_creation_input_tokens"))
-        if flat_cache_create:
-            input_token_details["ephemeral_5m_input_tokens"] = flat_cache_create
+        input_token_details["ephemeral_5m_input_tokens"] = cache_creation_total
 
     # Sum cache tokens into input_tokens (Anthropic cache tokens are additive)
-    cache_token_sum = sum(input_token_details.values())
-    adjusted_input = raw_input + cache_token_sum
+    adjusted_input = raw_input + cache_read + cache_creation_total
     total_tokens = adjusted_input + output_tokens
 
     meta: dict[str, Any] = {
