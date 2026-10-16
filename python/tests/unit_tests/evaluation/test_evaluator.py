@@ -49,6 +49,24 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
     assert result.score == 1.0
 
 
+@pytest.mark.parametrize(
+    "feedback_config",
+    [
+        {"threshold": 1.0},
+        {"type": "continuous", "min": 0, "max": 1},
+        {"type": "continuous", "threshold": 1.0},
+        None,
+    ],
+)
+def test_evaluation_result_preserves_feedback_config_dict(
+    feedback_config: Optional[dict],
+):
+    result = EvaluationResult(key="test", feedback_config=feedback_config)
+
+    assert result.feedback_config == feedback_config
+    assert result.model_dump()["feedback_config"] == feedback_config
+
+
 async def test_dynamic_comparison_run_evaluator():
     def foo(runs: list, example):
         return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
