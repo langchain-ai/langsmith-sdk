@@ -126,12 +126,15 @@ class RunsResource(SyncAPIResource):
     def query_v2(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         has_error: bool | Omit = omit,
         ids: SequenceNotStr[str] | Omit = omit,
         is_root: bool | Omit = omit,
+        max_feedback_modified_at: Union[str, datetime] | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
+        min_feedback_modified_at: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_ids: SequenceNotStr[str] | Omit = omit,
@@ -155,9 +158,18 @@ class RunsResource(SyncAPIResource):
         start_time. Supports filters, cursor pagination, and `selects` to select fields
         to return.
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the run. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes. Not supported on public dataset queries.
+
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
               as opaque and pass it back unmodified.
 
@@ -174,8 +186,20 @@ class RunsResource(SyncAPIResource):
 
           is_root: `is_root` returns only root runs (true) or only non-root runs (false).
 
+          max_feedback_modified_at: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
+
           max_start_time: `max_start_time` is the upper bound for run `start_time` (RFC3339). Defaults to
               now.
+
+          min_feedback_modified_at: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
 
           min_start_time: `min_start_time` is the lower bound for run `start_time` (RFC3339). Defaults to
               1 day ago.
@@ -232,12 +256,15 @@ class RunsResource(SyncAPIResource):
             page=SyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "filter": filter,
                     "has_error": has_error,
                     "ids": ids,
                     "is_root": is_root,
+                    "max_feedback_modified_at": max_feedback_modified_at,
                     "max_start_time": max_start_time,
+                    "min_feedback_modified_at": min_feedback_modified_at,
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_ids": project_ids,
@@ -460,12 +487,15 @@ class AsyncRunsResource(AsyncAPIResource):
     def query_v2(
         self,
         *,
+        ai_search: str | Omit = omit,
         cursor: str | Omit = omit,
         filter: str | Omit = omit,
         has_error: bool | Omit = omit,
         ids: SequenceNotStr[str] | Omit = omit,
         is_root: bool | Omit = omit,
+        max_feedback_modified_at: Union[str, datetime] | Omit = omit,
         max_start_time: Union[str, datetime] | Omit = omit,
+        min_feedback_modified_at: Union[str, datetime] | Omit = omit,
         min_start_time: Union[str, datetime] | Omit = omit,
         page_size: int | Omit = omit,
         project_ids: SequenceNotStr[str] | Omit = omit,
@@ -489,9 +519,18 @@ class AsyncRunsResource(AsyncAPIResource):
         start_time. Supports filters, cursor pagination, and `selects` to select fields
         to return.
 
+        When `ai_search` is set, `Accept: text/event-stream` is required; requests
+        without it return 406. AI search is unavailable on deployments that route
+        queries to the v1 backend and returns 501 there.
+
         Self-hosted deployments require LangSmith `v0.16` or later.
 
         Args:
+          ai_search: `ai_search` is a plain-language criterion evaluated against the messages from
+              the agent trajectory scoped to the run. AND-ed with the ordinary filters.
+              Requires semantic filtering enabled for the deployment. Must contain nonempty
+              text of at most 2000 UTF-8 bytes. Not supported on public dataset queries.
+
           cursor: `cursor` is the opaque string from a previous response's `next_cursor`. Treat it
               as opaque and pass it back unmodified.
 
@@ -508,8 +547,20 @@ class AsyncRunsResource(AsyncAPIResource):
 
           is_root: `is_root` returns only root runs (true) or only non-root runs (false).
 
+          max_feedback_modified_at: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
+
           max_start_time: `max_start_time` is the upper bound for run `start_time` (RFC3339). Defaults to
               now.
+
+          min_feedback_modified_at: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on feedback
+              `modified_at`, applied to the feedback conditions in `filter`, `trace_filter`,
+              or `tree_filter` (for example eq(feedback_key, "correctness")). Requires at
+              least one feedback condition. Runs must still fall within the `start_time`
+              window.
 
           min_start_time: `min_start_time` is the lower bound for run `start_time` (RFC3339). Defaults to
               1 day ago.
@@ -566,12 +617,15 @@ class AsyncRunsResource(AsyncAPIResource):
             page=AsyncItemsCursorPostPagination[Run],
             body=maybe_transform(
                 {
+                    "ai_search": ai_search,
                     "cursor": cursor,
                     "filter": filter,
                     "has_error": has_error,
                     "ids": ids,
                     "is_root": is_root,
+                    "max_feedback_modified_at": max_feedback_modified_at,
                     "max_start_time": max_start_time,
+                    "min_feedback_modified_at": min_feedback_modified_at,
                     "min_start_time": min_start_time,
                     "page_size": page_size,
                     "project_ids": project_ids,

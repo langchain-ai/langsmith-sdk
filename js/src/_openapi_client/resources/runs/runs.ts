@@ -42,6 +42,10 @@ export class Runs extends APIResource {
    * start_time. Supports filters, cursor pagination, and `selects` to select fields
    * to return.
    *
+   * When `ai_search` is set, `Accept: text/event-stream` is required; requests
+   * without it return 406. AI search is unavailable on deployments that route
+   * queries to the v1 backend and returns 501 there.
+   *
    * Self-hosted deployments require LangSmith `v0.16` or later.
    *
    * @example
@@ -874,6 +878,15 @@ export interface RunGetURLParams {
 
 export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   /**
+   * Body param: `ai_search` is a plain-language criterion evaluated against the
+   * messages from the agent trajectory scoped to the run. AND-ed with the ordinary
+   * filters. Requires semantic filtering enabled for the deployment. Must contain
+   * nonempty text of at most 2000 UTF-8 bytes. Not supported on public dataset
+   * queries.
+   */
+  ai_search?: string;
+
+  /**
    * Body param: `filter` narrows results to runs matching this LangSmith filter
    * expression, evaluated against each individual run. For example: and(eq(run_type,
    * "llm"), gt(latency, 5)) or eq(status, "error"). See
@@ -900,10 +913,28 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   is_root?: boolean;
 
   /**
+   * Body param: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  max_feedback_modified_at?: string;
+
+  /**
    * Body param: `max_start_time` is the upper bound for run `start_time` (RFC3339).
    * Defaults to now.
    */
   max_start_time?: string;
+
+  /**
+   * Body param: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  min_feedback_modified_at?: string;
 
   /**
    * Body param: `min_start_time` is the lower bound for run `start_time` (RFC3339).
@@ -973,7 +1004,8 @@ export interface RunQueryV2Params extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json or text/event-stream
+   * Header param: application/json, or text/event-stream (required when ai_search is
+   * set)
    */
   Accept?: string;
 }
@@ -1124,6 +1156,15 @@ export interface RunRetrieveParams {
 
 export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   /**
+   * Body param: `ai_search` is a plain-language criterion evaluated against the
+   * messages from the agent trajectory scoped to the run. AND-ed with the ordinary
+   * filters. Requires semantic filtering enabled for the deployment. Must contain
+   * nonempty text of at most 2000 UTF-8 bytes. Not supported on public dataset
+   * queries.
+   */
+  ai_search?: string;
+
+  /**
    * Body param: `filter` narrows results to runs matching this LangSmith filter
    * expression, evaluated against each individual run. For example: and(eq(run_type,
    * "llm"), gt(latency, 5)) or eq(status, "error"). See
@@ -1150,10 +1191,28 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   is_root?: boolean;
 
   /**
+   * Body param: `max_feedback_modified_at` is the exclusive upper bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  max_feedback_modified_at?: string;
+
+  /**
    * Body param: `max_start_time` is the upper bound for run `start_time` (RFC3339).
    * Defaults to now.
    */
   max_start_time?: string;
+
+  /**
+   * Body param: `min_feedback_modified_at` is the inclusive lower bound (RFC3339) on
+   * feedback `modified_at`, applied to the feedback conditions in `filter`,
+   * `trace_filter`, or `tree_filter` (for example eq(feedback_key, "correctness")).
+   * Requires at least one feedback condition. Runs must still fall within the
+   * `start_time` window.
+   */
+  min_feedback_modified_at?: string;
 
   /**
    * Body param: `min_start_time` is the lower bound for run `start_time` (RFC3339).
@@ -1223,7 +1282,8 @@ export interface RunQueryParams extends ItemsCursorPostPaginationParams {
   tree_filter?: string;
 
   /**
-   * Header param: application/json or text/event-stream
+   * Header param: application/json, or text/event-stream (required when ai_search is
+   * set)
    */
   Accept?: string;
 }

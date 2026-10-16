@@ -84,6 +84,15 @@ import {
   ProductFeedbackRetrieveResponse,
 } from './resources/product-feedback.js';
 import {
+  PromptWebhook,
+  PromptWebhookCreateParams,
+  PromptWebhookListResponse,
+  PromptWebhookTestParams,
+  PromptWebhookTestResponse,
+  PromptWebhookUpdateParams,
+  PromptWebhooks,
+} from './resources/prompt-webhooks.js';
+import {
   CustomChartsSection,
   CustomChartsSectionRequest,
   RunStatsGroupBy,
@@ -964,6 +973,7 @@ export class Langsmith {
   onlineEvaluators: API.OnlineEvaluators = new API.OnlineEvaluators(this);
   public: API.Public = new API.Public(this);
   annotationQueues: API.AnnotationQueues = new API.AnnotationQueues(this);
+  promptWebhooks: API.PromptWebhooks = new API.PromptWebhooks(this);
   info: API.Info = new API.Info(this);
   issues: API.Issues = new API.Issues(this);
   sandboxes: API.Sandboxes = new API.Sandboxes(this);
@@ -979,6 +989,7 @@ Langsmith.Traces = Traces;
 Langsmith.OnlineEvaluators = OnlineEvaluators;
 Langsmith.Public = Public;
 Langsmith.AnnotationQueues = AnnotationQueues;
+Langsmith.PromptWebhooks = PromptWebhooks;
 Langsmith.Info = Info;
 Langsmith.Issues = Issues;
 Langsmith.Sandboxes = Sandboxes;
@@ -1173,6 +1184,16 @@ export declare namespace Langsmith {
     type AnnotationQueueRetrieveRunParams as AnnotationQueueRetrieveRunParams,
     type AnnotationQueueRetrieveSizeParams as AnnotationQueueRetrieveSizeParams,
     type AnnotationQueueRetrieveTotalArchivedParams as AnnotationQueueRetrieveTotalArchivedParams,
+  };
+
+  export {
+    PromptWebhooks as PromptWebhooks,
+    type PromptWebhook as PromptWebhook,
+    type PromptWebhookListResponse as PromptWebhookListResponse,
+    type PromptWebhookTestResponse as PromptWebhookTestResponse,
+    type PromptWebhookCreateParams as PromptWebhookCreateParams,
+    type PromptWebhookUpdateParams as PromptWebhookUpdateParams,
+    type PromptWebhookTestParams as PromptWebhookTestParams,
   };
 
   export { Info as Info, type InfoListResponse as InfoListResponse };

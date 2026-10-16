@@ -80,6 +80,14 @@ from .sandboxes import (
     SandboxesResourceWithStreamingResponse,
     AsyncSandboxesResourceWithStreamingResponse,
 )
+from .prompt_webhooks import (
+    PromptWebhooksResource,
+    AsyncPromptWebhooksResource,
+    PromptWebhooksResourceWithRawResponse,
+    AsyncPromptWebhooksResourceWithRawResponse,
+    PromptWebhooksResourceWithStreamingResponse,
+    AsyncPromptWebhooksResourceWithStreamingResponse,
+)
 from .product_feedback import (
     ProductFeedbackResource,
     AsyncProductFeedbackResource,
@@ -166,6 +174,12 @@ __all__ = [
     "AsyncAnnotationQueuesResourceWithRawResponse",
     "AnnotationQueuesResourceWithStreamingResponse",
     "AsyncAnnotationQueuesResourceWithStreamingResponse",
+    "PromptWebhooksResource",
+    "AsyncPromptWebhooksResource",
+    "PromptWebhooksResourceWithRawResponse",
+    "AsyncPromptWebhooksResourceWithRawResponse",
+    "PromptWebhooksResourceWithStreamingResponse",
+    "AsyncPromptWebhooksResourceWithStreamingResponse",
     "InfoResource",
     "AsyncInfoResource",
     "InfoResourceWithRawResponse",

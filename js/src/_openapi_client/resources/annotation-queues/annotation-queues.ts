@@ -195,6 +195,10 @@ export interface AnnotationQueueRubricItemSchema {
 
   description?: string | null;
 
+  feedback_config?: AnnotationQueueRubricItemSchema.FeedbackConfig | null;
+
+  feedback_config_id?: string | null;
+
   is_assertion?: boolean | null;
 
   is_required?: boolean | null;
@@ -204,6 +208,54 @@ export interface AnnotationQueueRubricItemSchema {
   score_descriptions?: { [key: string]: string } | null;
 
   value_descriptions?: { [key: string]: string } | null;
+}
+
+export namespace AnnotationQueueRubricItemSchema {
+  export interface FeedbackConfig {
+    id: string;
+
+    feedback_config: FeedbackConfig.FeedbackConfig;
+
+    feedback_key: string;
+
+    modified_at: string;
+
+    tenant_id: string;
+
+    is_deleted?: boolean;
+
+    is_enforced?: boolean;
+
+    is_first?: boolean;
+
+    is_lower_score_better?: boolean | null;
+  }
+
+  export namespace FeedbackConfig {
+    export interface FeedbackConfig {
+      /**
+       * Enum for feedback types.
+       */
+      type: 'continuous' | 'categorical' | 'freeform';
+
+      categories?: Array<FeedbackConfig.Category> | null;
+
+      max?: number | null;
+
+      min?: number | null;
+    }
+
+    export namespace FeedbackConfig {
+      /**
+       * Specific value and label pair for feedback
+       */
+      export interface Category {
+        value: number;
+
+        label?: string | null;
+      }
+    }
+  }
 }
 
 /**
@@ -518,7 +570,7 @@ export interface AnnotationQueueUpdateParams {
 
   description?: string | null;
 
-  enable_reservations?: boolean;
+  enable_reservations?: boolean | DatasetsAPI.Missing;
 
   metadata?: { [key: string]: unknown } | DatasetsAPI.Missing | null;
 
@@ -526,7 +578,7 @@ export interface AnnotationQueueUpdateParams {
 
   num_reviewers_per_item?: number | DatasetsAPI.Missing | null;
 
-  reservation_minutes?: number | null;
+  reservation_minutes?: number | DatasetsAPI.Missing | null;
 
   reviewer_access_mode?: 'any' | 'assigned' | null;
 

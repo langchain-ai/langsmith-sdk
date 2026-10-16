@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Union, Iterable
+from typing import Dict, List, Union, Iterable
 from typing_extensions import Literal, Required, Annotated, TypeAlias, TypedDict
 
 from ..._types import SequenceNotStr
@@ -20,8 +20,16 @@ __all__ = [
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig",
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigAccessKeyID",
     "ProxyConfigRuleAwsSandboxesProxyAwsStaticConfigSecretAccessKey",
+    "ProxyConfigRuleAzure",
+    "ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey",
+    "ProxyConfigRuleAzureSandboxesProxyAzureSasConfig",
+    "ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken",
     "ProxyConfigRuleGcp",
-    "ProxyConfigRuleGcpServiceAccountJson",
+    "ProxyConfigRuleGcpSandboxesProxyGcpWorkloadIdentityConfig",
+    "ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfig",
+    "ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfigServiceAccountJson",
     "ProxyConfigRuleHeader",
     "RunConfig",
 ]
@@ -90,9 +98,18 @@ class ProxyConfigCallback(TypedDict, total=False):
 class ProxyConfigRuleAwsSandboxesProxyAwsRoleConfig(TypedDict, total=False):
     role_arn: Required[str]
     """
-    RoleARN selects automatically renewed IAM-role credentials instead of static
-    keys. Access follows the role's effective AWS permissions, not the sandbox's
-    mount scope. Configure at creation; the role cannot be changed afterward.
+    IAM role to assume with AssumeRoleWithWebIdentity, using a short-lived OIDC
+    token LangSmith signs for this workspace. The role's trust policy must trust
+    LangSmith's issuer for the token subject. Credentials renew automatically, and
+    access follows the role's effective AWS permissions. Mutually exclusive with
+    static keys, and cannot be changed after creation.
+    """
+
+    subject_scope: str
+    """
+    SubjectScope picks the token subject the role trusts: "workspace" (the default)
+    or "tag:<tag value id>", which must be one of the sandbox's tag_value_ids. Only
+    valid with role_arn.
     """
 
 
@@ -119,9 +136,11 @@ class ProxyConfigRuleAwsSandboxesProxyAwsStaticConfig(TypedDict, total=False):
 
     role_arn: Literal[""]
     """
-    RoleARN selects automatically renewed IAM-role credentials instead of static
-    keys. Access follows the role's effective AWS permissions, not the sandbox's
-    mount scope. Configure at creation; the role cannot be changed afterward.
+    IAM role to assume with AssumeRoleWithWebIdentity, using a short-lived OIDC
+    token LangSmith signs for this workspace. The role's trust policy must trust
+    LangSmith's issuer for the token subject. Credentials renew automatically, and
+    access follows the role's effective AWS permissions. Mutually exclusive with
+    static keys, and cannot be changed after creation.
     """
 
 
@@ -130,7 +149,46 @@ ProxyConfigRuleAws: TypeAlias = Union[
 ]
 
 
-class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):
+class ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig(TypedDict, total=False):
+    client_id: Required[str]
+    """
+    ClientID is the application (client) ID, a GUID, of the app registration or
+    user-assigned managed identity whose federated identity credential trusts
+    LangSmith's issuer. Required with tenant_id.
+    """
+
+    tenant_id: Required[str]
+    """TenantID is the Entra tenant (directory) ID, a GUID.
+
+    Setting it selects workload identity: LangSmith signs an OIDC token for this
+    workspace and exchanges it at Entra ID for access tokens of client_id, so no
+    secret is stored. Cannot be changed after creation.
+    """
+
+    resources: List[
+        Literal[
+            "https://storage.azure.com",
+            "https://vault.azure.net",
+            "https://management.azure.com",
+            "https://cognitiveservices.azure.com",
+        ]
+    ]
+    """
+    Resources narrows the Entra resources access tokens are obtained for, from
+    https://storage.azure.com, https://vault.azure.net, https://management.azure.com
+    and https://cognitiveservices.azure.com. Defaults to all of them. Only valid
+    with tenant_id.
+    """
+
+    subject_scope: str
+    """
+    SubjectScope picks the token subject the federated credential trusts:
+    "workspace" (the default) or "tag:<tag value id>", which must be one of the
+    sandbox's tag_value_ids. Only valid with tenant_id.
+    """
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey(TypedDict, total=False):
     type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
 
     is_set: bool
@@ -138,10 +196,96 @@ class ProxyConfigRuleGcpServiceAccountJson(TypedDict, total=False):
     value: str
 
 
-class ProxyConfigRuleGcp(TypedDict, total=False):
-    scopes: Required[SequenceNotStr[str]]
+class ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig(TypedDict, total=False):
+    account_key: Required[ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfigAccountKey]
 
-    service_account_json: Required[ProxyConfigRuleGcpServiceAccountJson]
+    storage_account: Required[str]
+    """
+    StorageAccount is the storage account static credentials authenticate to:
+    requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+    of account_key (requests are signed with SharedKey) or sas_token (appended to
+    each request).
+    """
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken(TypedDict, total=False):
+    type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
+
+    is_set: bool
+
+    value: str
+
+
+class ProxyConfigRuleAzureSandboxesProxyAzureSasConfig(TypedDict, total=False):
+    sas_token: Required[ProxyConfigRuleAzureSandboxesProxyAzureSasConfigSasToken]
+
+    storage_account: Required[str]
+    """
+    StorageAccount is the storage account static credentials authenticate to:
+    requests to its blob, dfs, queue, table and file endpoints. Requires exactly one
+    of account_key (requests are signed with SharedKey) or sas_token (appended to
+    each request).
+    """
+
+
+ProxyConfigRuleAzure: TypeAlias = Union[
+    ProxyConfigRuleAzureSandboxesProxyAzureWorkloadIdentityConfig,
+    ProxyConfigRuleAzureSandboxesProxyAzureAccountKeyConfig,
+    ProxyConfigRuleAzureSandboxesProxyAzureSasConfig,
+]
+
+
+class ProxyConfigRuleGcpSandboxesProxyGcpWorkloadIdentityConfig(TypedDict, total=False):
+    workload_identity_provider: Required[str]
+    """
+    WorkloadIdentityProvider federates an OIDC token LangSmith signs for this
+    workspace through Workload Identity Federation instead of a service account key.
+    Use the full resource name:
+    //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+    Cannot be changed after creation.
+    """
+
+    scopes: SequenceNotStr[str]
+    """Scopes are the OAuth scopes requested for the access token.
+
+    Omit them to use https://www.googleapis.com/auth/cloud-platform.
+    """
+
+    service_account_email: str
+    """
+    ServiceAccountEmail is the service account to impersonate with the federated
+    token. Omit it to use the federated principal directly.
+    """
+
+    subject_scope: str
+    """
+    SubjectScope picks the token subject the provider trusts: "workspace" (the
+    default) or "tag:<tag value id>", which must be one of the sandbox's
+    tag_value_ids. Only valid with workload_identity_provider.
+    """
+
+
+class ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfigServiceAccountJson(TypedDict, total=False):
+    type: Required[Literal["plaintext", "opaque", "workspace_secret"]]
+
+    is_set: bool
+
+    value: str
+
+
+class ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfig(TypedDict, total=False):
+    service_account_json: Required[ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfigServiceAccountJson]
+
+    scopes: SequenceNotStr[str]
+    """Scopes are the OAuth scopes requested for the access token.
+
+    Omit them to use https://www.googleapis.com/auth/cloud-platform.
+    """
+
+
+ProxyConfigRuleGcp: TypeAlias = Union[
+    ProxyConfigRuleGcpSandboxesProxyGcpWorkloadIdentityConfig, ProxyConfigRuleGcpSandboxesProxyGcpServiceAccountConfig
+]
 
 
 class ProxyConfigRuleHeader(TypedDict, total=False):
@@ -158,6 +302,8 @@ class ProxyConfigRule(TypedDict, total=False):
     name: Required[str]
 
     aws: ProxyConfigRuleAws
+
+    azure: ProxyConfigRuleAzure
 
     description: str
     """

@@ -13,6 +13,12 @@ class OnlineEvaluatorSpendParams(TypedDict, total=False):
     period_start: Required[str]
     """Start of the 7-day window (YYYY-MM-DD)."""
 
+    agent_id: str
+    """
+    Filter grouped results to spend from evaluator attachments on the agent's
+    environments or tagged datasets. Only valid with group_by.
+    """
+
     dataset_id: str
     """Filter to a specific dataset (UUID). Mutually exclusive with group_by."""
 

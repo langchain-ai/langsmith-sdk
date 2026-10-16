@@ -14,6 +14,14 @@ __all__ = ["TraceQueryParams"]
 
 
 class TraceQueryParams(TypedDict, total=False):
+    ai_search: str
+    """
+    `ai_search` is a plain-language criterion evaluated against the messages from
+    the agent trajectory scoped to the trace. AND-ed with the ordinary filters.
+    Requires semantic filtering enabled for the deployment. Must contain nonempty
+    text of at most 2000 UTF-8 bytes.
+    """
+
     cursor: str
     """`cursor` is the opaque string returned in a previous response's `next_cursor`."""
 
@@ -68,3 +76,5 @@ class TraceQueryParams(TypedDict, total=False):
     `tree_filter` narrows results to traces containing at least one run anywhere in
     the run tree (root or descendant) that matches this LangSmith filter expression.
     """
+
+    accept: Annotated[str, PropertyInfo(alias="Accept")]

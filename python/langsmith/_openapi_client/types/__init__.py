@@ -13,6 +13,7 @@ from .thread_stats import ThreadStats as ThreadStats
 from .thread_trace import ThreadTrace as ThreadTrace
 from .missing_param import MissingParam as MissingParam
 from .run_type_enum import RunTypeEnum as RunTypeEnum
+from .prompt_webhook import PromptWebhook as PromptWebhook
 from .online_evaluator import OnlineEvaluator as OnlineEvaluator
 from .run_query_params import RunQueryParams as RunQueryParams
 from .run_select_field import RunSelectField as RunSelectField
@@ -49,9 +50,14 @@ from .trace_list_runs_response import TraceListRunsResponse as TraceListRunsResp
 from .online_evaluator_run_rule import OnlineEvaluatorRunRule as OnlineEvaluatorRunRule
 from .thread_list_traces_params import ThreadListTracesParams as ThreadListTracesParams
 from .online_evaluator_spend_day import OnlineEvaluatorSpendDay as OnlineEvaluatorSpendDay
+from .prompt_webhook_test_params import PromptWebhookTestParams as PromptWebhookTestParams
 from .annotation_queue_size_schema import AnnotationQueueSizeSchema as AnnotationQueueSizeSchema
 from .online_evaluator_list_params import OnlineEvaluatorListParams as OnlineEvaluatorListParams
 from .online_evaluator_spend_group import OnlineEvaluatorSpendGroup as OnlineEvaluatorSpendGroup
+from .prompt_webhook_create_params import PromptWebhookCreateParams as PromptWebhookCreateParams
+from .prompt_webhook_list_response import PromptWebhookListResponse as PromptWebhookListResponse
+from .prompt_webhook_test_response import PromptWebhookTestResponse as PromptWebhookTestResponse
+from .prompt_webhook_update_params import PromptWebhookUpdateParams as PromptWebhookUpdateParams
 from .online_evaluator_spend_params import OnlineEvaluatorSpendParams as OnlineEvaluatorSpendParams
 from .thread_aggregate_stats_params import ThreadAggregateStatsParams as ThreadAggregateStatsParams
 from .annotation_queue_export_params import AnnotationQueueExportParams as AnnotationQueueExportParams

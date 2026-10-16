@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         datasets,
         sessions,
         sandboxes,
+        prompt_webhooks,
         product_feedback,
         annotation_queues,
         online_evaluators,
@@ -57,6 +58,7 @@ if TYPE_CHECKING:
     from .resources.runs.runs import RunsResource, AsyncRunsResource
     from .resources.fleet.fleet import FleetResource, AsyncFleetResource
     from .resources.public.public import PublicResource, AsyncPublicResource
+    from .resources.prompt_webhooks import PromptWebhooksResource, AsyncPromptWebhooksResource
     from .resources.threads.threads import ThreadsResource, AsyncThreadsResource
     from .resources.product_feedback import ProductFeedbackResource, AsyncProductFeedbackResource
     from .resources.datasets.datasets import DatasetsResource, AsyncDatasetsResource
@@ -203,6 +205,12 @@ class Langsmith(SyncAPIClient):
         from .resources.annotation_queues import AnnotationQueuesResource
 
         return AnnotationQueuesResource(self)
+
+    @cached_property
+    def prompt_webhooks(self) -> PromptWebhooksResource:
+        from .resources.prompt_webhooks import PromptWebhooksResource
+
+        return PromptWebhooksResource(self)
 
     @cached_property
     def info(self) -> InfoResource:
@@ -491,6 +499,12 @@ class AsyncLangsmith(AsyncAPIClient):
         return AsyncAnnotationQueuesResource(self)
 
     @cached_property
+    def prompt_webhooks(self) -> AsyncPromptWebhooksResource:
+        from .resources.prompt_webhooks import AsyncPromptWebhooksResource
+
+        return AsyncPromptWebhooksResource(self)
+
+    @cached_property
     def info(self) -> AsyncInfoResource:
         from .resources.info import AsyncInfoResource
 
@@ -715,6 +729,12 @@ class LangsmithWithRawResponse:
         return AnnotationQueuesResourceWithRawResponse(self._client.annotation_queues)
 
     @cached_property
+    def prompt_webhooks(self) -> prompt_webhooks.PromptWebhooksResourceWithRawResponse:
+        from .resources.prompt_webhooks import PromptWebhooksResourceWithRawResponse
+
+        return PromptWebhooksResourceWithRawResponse(self._client.prompt_webhooks)
+
+    @cached_property
     def info(self) -> info.InfoResourceWithRawResponse:
         from .resources.info import InfoResourceWithRawResponse
 
@@ -798,6 +818,12 @@ class AsyncLangsmithWithRawResponse:
         from .resources.annotation_queues import AsyncAnnotationQueuesResourceWithRawResponse
 
         return AsyncAnnotationQueuesResourceWithRawResponse(self._client.annotation_queues)
+
+    @cached_property
+    def prompt_webhooks(self) -> prompt_webhooks.AsyncPromptWebhooksResourceWithRawResponse:
+        from .resources.prompt_webhooks import AsyncPromptWebhooksResourceWithRawResponse
+
+        return AsyncPromptWebhooksResourceWithRawResponse(self._client.prompt_webhooks)
 
     @cached_property
     def info(self) -> info.AsyncInfoResourceWithRawResponse:
@@ -885,6 +911,12 @@ class LangsmithWithStreamedResponse:
         return AnnotationQueuesResourceWithStreamingResponse(self._client.annotation_queues)
 
     @cached_property
+    def prompt_webhooks(self) -> prompt_webhooks.PromptWebhooksResourceWithStreamingResponse:
+        from .resources.prompt_webhooks import PromptWebhooksResourceWithStreamingResponse
+
+        return PromptWebhooksResourceWithStreamingResponse(self._client.prompt_webhooks)
+
+    @cached_property
     def info(self) -> info.InfoResourceWithStreamingResponse:
         from .resources.info import InfoResourceWithStreamingResponse
 
@@ -968,6 +1000,12 @@ class AsyncLangsmithWithStreamedResponse:
         from .resources.annotation_queues import AsyncAnnotationQueuesResourceWithStreamingResponse
 
         return AsyncAnnotationQueuesResourceWithStreamingResponse(self._client.annotation_queues)
+
+    @cached_property
+    def prompt_webhooks(self) -> prompt_webhooks.AsyncPromptWebhooksResourceWithStreamingResponse:
+        from .resources.prompt_webhooks import AsyncPromptWebhooksResourceWithStreamingResponse
+
+        return AsyncPromptWebhooksResourceWithStreamingResponse(self._client.prompt_webhooks)
 
     @cached_property
     def info(self) -> info.AsyncInfoResourceWithStreamingResponse:

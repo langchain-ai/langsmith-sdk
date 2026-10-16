@@ -95,8 +95,9 @@ export class OnlineEvaluators extends APIResource {
   /**
    * Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
    * evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-   * session_id, or dataset_id is required. resource_id, type, feedback_key, and
-   * tag_value_id may be supplied with group_by to narrow listing aggregations.
+   * session_id, or dataset_id is required. resource_id, type, feedback_key,
+   * tag_value_id, and agent_id may be supplied with group_by to narrow listing
+   * aggregations.
    */
   spend(
     query: OnlineEvaluatorSpendParams,
@@ -126,6 +127,18 @@ export interface CreateOnlineCodeEvaluatorRequest {
 
   code?: string;
 
+  /**
+   * CodeEvaluatorInput is which thread data the evaluator receives. Null or omitted
+   * for run evaluators.
+   */
+  code_evaluator_input?:
+    | 'thread'
+    | 'all_messages'
+    | 'human_ai_pairs'
+    | 'first_human_last_ai'
+    | 'trajectory'
+    | null;
+
   dependencies?: string | null;
 
   /**
@@ -144,6 +157,14 @@ export interface CreateOnlineCodeEvaluatorRequest {
    * (s3_urls) at evaluation time. Default false.
    */
   require_attachments?: boolean;
+
+  /**
+   * WorkspaceSecretsKeys names the workspace secrets this evaluator may use. Each is
+   * sent as a header on requests to the hosts allowed for that secret; evaluator
+   * code never sees the value. Requires advanced_features_enabled, and each secret
+   * needs an allowed host with a header.
+   */
+  workspace_secrets_keys?: Array<string>;
 }
 
 export namespace CreateOnlineCodeEvaluatorRequest {
@@ -194,6 +215,18 @@ export interface OnlineCodeEvaluator {
 
   code?: string;
 
+  /**
+   * CodeEvaluatorInput is which thread data the evaluator receives. Null for run
+   * evaluators.
+   */
+  code_evaluator_input?:
+    | 'thread'
+    | 'all_messages'
+    | 'human_ai_pairs'
+    | 'first_human_last_ai'
+    | 'trajectory'
+    | null;
+
   dependencies?: string;
 
   evaluator_build_error?: string;
@@ -216,6 +249,14 @@ export interface OnlineCodeEvaluator {
    * (s3_urls) at evaluation time. Default false.
    */
   require_attachments?: boolean;
+
+  /**
+   * WorkspaceSecretsKeys names the workspace secrets this evaluator may use. Each is
+   * sent as a header on requests to the hosts allowed for that secret; evaluator
+   * code never sees the value. Requires advanced_features_enabled, and each secret
+   * needs an allowed host with a header.
+   */
+  workspace_secrets_keys?: Array<string>;
 }
 
 export namespace OnlineCodeEvaluator {
@@ -374,6 +415,17 @@ export interface UpdateOnlineCodeEvaluatorRequest {
 
   code?: string;
 
+  /**
+   * CodeEvaluatorInput is config (not a snapshot rebuild). Null clears it.
+   */
+  code_evaluator_input?:
+    | 'thread'
+    | 'all_messages'
+    | 'human_ai_pairs'
+    | 'first_human_last_ai'
+    | 'trajectory'
+    | null;
+
   dependencies?: string | null;
 
   language?: string;
@@ -387,6 +439,15 @@ export interface UpdateOnlineCodeEvaluatorRequest {
    * sandbox snapshot.
    */
   require_attachments?: boolean;
+
+  /**
+   * WorkspaceSecretsKeys names the workspace secrets this evaluator may use. Each is
+   * sent as a header on requests to the hosts allowed for that secret; evaluator
+   * code never sees the value. Requires advanced_features_enabled, and each secret
+   * needs an allowed host with a header. Omit to keep the current list; [] clears
+   * it. Changing it does not rebuild the evaluator.
+   */
+  workspace_secrets_keys?: Array<string>;
 }
 
 export namespace UpdateOnlineCodeEvaluatorRequest {
@@ -446,7 +507,8 @@ export interface OnlineEvaluatorUpdateParams {
 
 export interface OnlineEvaluatorListParams extends OffsetPaginationOnlineEvaluatorsParams {
   /**
-   * Filter to evaluators attached to the agent's environments or tagged datasets
+   * Filter to evaluators attached to the agent's environments or tagged datasets;
+   * run_rules then lists only those attachments
    */
   agent_id?: string;
 
@@ -510,6 +572,12 @@ export interface OnlineEvaluatorSpendParams {
    * Start of the 7-day window (YYYY-MM-DD).
    */
   period_start: string;
+
+  /**
+   * Filter grouped results to spend from evaluator attachments on the agent's
+   * environments or tagged datasets. Only valid with group_by.
+   */
+  agent_id?: string;
 
   /**
    * Filter to a specific dataset (UUID). Mutually exclusive with group_by.

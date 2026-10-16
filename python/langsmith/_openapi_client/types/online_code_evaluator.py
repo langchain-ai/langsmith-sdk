@@ -1,6 +1,6 @@
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from typing_extensions import Literal
 
 from .._models import BaseModel
@@ -18,6 +18,14 @@ class OnlineCodeEvaluator(BaseModel):
     advanced_features_enabled: Optional[bool] = None
 
     code: Optional[str] = None
+
+    code_evaluator_input: Optional[
+        Literal["thread", "all_messages", "human_ai_pairs", "first_human_last_ai", "trajectory"]
+    ] = None
+    """
+    CodeEvaluatorInput is which thread data the evaluator receives. Null for run
+    evaluators.
+    """
 
     dependencies: Optional[str] = None
 
@@ -38,4 +46,12 @@ class OnlineCodeEvaluator(BaseModel):
     """
     RequireAttachments opts the evaluator into selecting/presigning run attachments
     (s3_urls) at evaluation time. Default false.
+    """
+
+    workspace_secrets_keys: Optional[List[str]] = None
+    """
+    WorkspaceSecretsKeys names the workspace secrets this evaluator may use. Each is
+    sent as a header on requests to the hosts allowed for that secret; evaluator
+    code never sees the value. Requires advanced_features_enabled, and each secret
+    needs an allowed host with a header.
     """

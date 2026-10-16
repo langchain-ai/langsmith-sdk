@@ -204,7 +204,8 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         name, tag, feedback key, or resource ID.
 
         Args:
-          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets
+          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets;
+              run_rules then lists only those attachments
 
           feedback_key: Filter by feedback key
 
@@ -359,6 +360,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         self,
         *,
         period_start: str,
+        agent_id: str | Omit = omit,
         dataset_id: str | Omit = omit,
         evaluator_id: str | Omit = omit,
         feedback_key: str | Omit = omit,
@@ -377,11 +379,15 @@ class OnlineEvaluatorsResource(SyncAPIResource):
         """
         Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
         evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-        session_id, or dataset_id is required. resource_id, type, feedback_key, and
-        tag_value_id may be supplied with group_by to narrow listing aggregations.
+        session_id, or dataset_id is required. resource_id, type, feedback_key,
+        tag_value_id, and agent_id may be supplied with group_by to narrow listing
+        aggregations.
 
         Args:
           period_start: Start of the 7-day window (YYYY-MM-DD).
+
+          agent_id: Filter grouped results to spend from evaluator attachments on the agent's
+              environments or tagged datasets. Only valid with group_by.
 
           dataset_id: Filter to a specific dataset (UUID). Mutually exclusive with group_by.
 
@@ -421,6 +427,7 @@ class OnlineEvaluatorsResource(SyncAPIResource):
                 query=maybe_transform(
                     {
                         "period_start": period_start,
+                        "agent_id": agent_id,
                         "dataset_id": dataset_id,
                         "evaluator_id": evaluator_id,
                         "feedback_key": feedback_key,
@@ -603,7 +610,8 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         name, tag, feedback key, or resource ID.
 
         Args:
-          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets
+          agent_id: Filter to evaluators attached to the agent's environments or tagged datasets;
+              run_rules then lists only those attachments
 
           feedback_key: Filter by feedback key
 
@@ -758,6 +766,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         self,
         *,
         period_start: str,
+        agent_id: str | Omit = omit,
         dataset_id: str | Omit = omit,
         evaluator_id: str | Omit = omit,
         feedback_key: str | Omit = omit,
@@ -776,11 +785,15 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
         """
         Returns per-day LLM evaluator spend for the requested 7-day period, grouped by
         evaluator, resource, or run rule. Exactly one of group_by, evaluator_id,
-        session_id, or dataset_id is required. resource_id, type, feedback_key, and
-        tag_value_id may be supplied with group_by to narrow listing aggregations.
+        session_id, or dataset_id is required. resource_id, type, feedback_key,
+        tag_value_id, and agent_id may be supplied with group_by to narrow listing
+        aggregations.
 
         Args:
           period_start: Start of the 7-day window (YYYY-MM-DD).
+
+          agent_id: Filter grouped results to spend from evaluator attachments on the agent's
+              environments or tagged datasets. Only valid with group_by.
 
           dataset_id: Filter to a specific dataset (UUID). Mutually exclusive with group_by.
 
@@ -820,6 +833,7 @@ class AsyncOnlineEvaluatorsResource(AsyncAPIResource):
                 query=await async_maybe_transform(
                     {
                         "period_start": period_start,
+                        "agent_id": agent_id,
                         "dataset_id": dataset_id,
                         "evaluator_id": evaluator_id,
                         "feedback_key": feedback_key,
