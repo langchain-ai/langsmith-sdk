@@ -71,6 +71,16 @@ class TestBuildWsUrl:
             "ws://localhost:8080/sb-123/execute/ws"
         )
 
+    def test_strips_trailing_slash(self):
+        assert _build_ws_url("https://example.com/sb-123/") == (
+            "wss://example.com/sb-123/execute/ws"
+        )
+
+    def test_rewrites_only_scheme(self):
+        assert _build_ws_url("https://example.com/sb-123?next=http://x") == (
+            "wss://example.com/sb-123/execute/ws?next=http://x"
+        )
+
 
 class TestBuildAuthHeaders:
     def test_builds_header(self):
