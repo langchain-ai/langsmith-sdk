@@ -1,5 +1,10 @@
 # LangSmith Client SDKs
 
+> **This repository is archived.**
+> The Python and JavaScript SDKs now live in [langsmith-python](https://github.com/langchain-ai/langsmith-python)
+> and [langsmith-javascript](https://github.com/langchain-ai/langsmith-javascript).
+> Open new issues and pull requests in the corresponding repository.
+
 [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
 [![Python Downloads](https://img.shields.io/pypi/dm/langsmith)](https://pypi.org/project/langsmith/)
 
