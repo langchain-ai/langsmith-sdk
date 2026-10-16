@@ -243,6 +243,23 @@ def test_secret_anonymizer_redacts_pem_block():
     assert redact({"file": pem}) == {"file": SECRET_PLACEHOLDER}
 
 
+def test_secret_anonymizer_redacts_truncated_pem_block():
+    # A block cut off before its END line is still key material.
+    redact = create_secret_anonymizer()
+    begin = " ".join(["-----BEGIN", "RSA", "PRIVATE", "KEY-----"])
+    truncated = "\n".join(["log: ", begin, "a" * 64])
+    assert redact({"file": truncated}) == {"file": "log: \n" + SECRET_PLACEHOLDER}
+
+
+def test_secret_anonymizer_pem_rule_is_linear():
+    # Many BEGIN lines with no END line used to make each one rescan the rest
+    # of the string: about 4 seconds for 128 KB.
+    redact = create_secret_anonymizer()
+    begin = " ".join(["-----BEGIN", "PRIVATE", "KEY-----"])
+    elapsed = timeit.timeit(lambda: redact({"file": begin * 4800}), number=1)
+    assert elapsed < 1
+
+
 def test_secret_anonymizer_redacts_multi_segment_langsmith_key():
     redact = create_secret_anonymizer()
     key = "lsv2_pt_" + "a" * 36 + "_" + "b" * 10
