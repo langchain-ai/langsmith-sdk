@@ -2083,32 +2083,38 @@ class Client:
                                 f"Server error ({response.status_code}) caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
-                                f"{_context}"
-                            )
+                                f"{_context}",
+                                response=response,
+                            ) from e
                         elif response.status_code == 408:
                             raise ls_utils.LangSmithRequestTimeout(
                                 f"Client took too long to send request to {method}"
-                                f"{pathname} {_context}"
-                            )
+                                f"{pathname} {_context}",
+                                response=response,
+                            ) from e
                         elif response.status_code == 429:
                             raise ls_utils.LangSmithRateLimitError(
                                 f"Rate limit exceeded for {pathname}. {repr(e)}"
-                                f"{_context}"
-                            )
+                                f"{_context}",
+                                response=response,
+                            ) from e
                         elif response.status_code == 401:
                             raise ls_utils.LangSmithAuthError(
                                 f"Authentication failed for {pathname}. {repr(e)}"
-                                f"{_context}"
-                            )
+                                f"{_context}",
+                                response=response,
+                            ) from e
                         elif response.status_code == 404:
                             raise ls_utils.LangSmithNotFoundError(
                                 f"Resource not found for {pathname}. {repr(e)}"
-                                f"{_context}"
-                            )
+                                f"{_context}",
+                                response=response,
+                            ) from e
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}{_context}"
-                            )
+                                f"Conflict for {pathname}. {repr(e)}{_context}",
+                                response=response,
+                            ) from e
                         elif response.status_code == 403:
                             try:
                                 error_data = response.json()
@@ -2117,24 +2123,27 @@ class Client:
                                     raise ls_utils.LangSmithUserError(
                                         "This API key is org-scoped and requires workspace specification. "
                                         "Please provide 'workspace_id' parameter, "
-                                        "or set LANGSMITH_WORKSPACE_ID environment variable."
-                                    )
+                                        "or set LANGSMITH_WORKSPACE_ID environment variable.",
+                                        response=response,
+                                    ) from e
                             except (ValueError, KeyError):
                                 pass
                             raise ls_utils.LangSmithError(
                                 f"Failed to {method} {pathname} in LangSmith"
-                                f" API. {repr(e)}"
-                            )
+                                f" API. {repr(e)}",
+                                response=response,
+                            ) from e
                         else:
                             raise ls_utils.LangSmithError(
                                 f"Failed to {method} {pathname} in LangSmith"
-                                f" API. {repr(e)}"
-                            )
+                                f" API. {repr(e)}",
+                                response=response,
+                            ) from e
 
                     else:
                         raise ls_utils.LangSmithUserError(
                             f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
-                        )
+                        ) from e
                 except requests.ConnectionError as e:
                     recommendation = (
                         "Please confirm your LANGCHAIN_ENDPOINT."
@@ -2213,7 +2222,8 @@ class Client:
             # Else we still raise an error
 
         raise ls_utils.LangSmithError(
-            f"Failed to {method} {pathname} in LangSmith API."
+            f"Failed to {method} {pathname} in LangSmith API.",
+            response=response,
         )
 
     def _get_paginated_list(

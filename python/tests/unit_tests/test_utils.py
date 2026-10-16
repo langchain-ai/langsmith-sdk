@@ -695,3 +695,26 @@ def test_an_empty_project_variable_falls_back_to_default(
 
     assert ls_utils.get_tracer_project() == ""
     assert _addressing.resolve()[0] == "default"
+
+
+def test_langsmith_error_response_defaults_to_none():
+    err = ls_utils.LangSmithError("boom")
+    assert err.response is None
+    assert err.status_code is None
+    assert str(err) == "boom"
+
+
+def test_langsmith_error_with_response_pickles():
+    import pickle
+
+    response = requests.Response()
+    response.status_code = 429
+    response.headers["retry-after"] = "7"
+    err = ls_utils.LangSmithRateLimitError("Rate limit exceeded", response=response)
+    assert err.status_code == 429
+
+    restored = pickle.loads(pickle.dumps(err))
+    assert isinstance(restored, ls_utils.LangSmithRateLimitError)
+    assert str(restored) == "Rate limit exceeded"
+    assert restored.status_code == 429
+    assert restored.response.headers["retry-after"] == "7"

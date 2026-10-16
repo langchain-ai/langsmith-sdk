@@ -40,7 +40,24 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class LangSmithError(Exception):
-    """An error occurred while communicating with the LangSmith API."""
+    """An error occurred while communicating with the LangSmith API.
+
+    Attributes:
+        response: The HTTP response that caused the error, or None when the
+            error did not come from an HTTP response.
+    """
+
+    response: Any = None
+
+    def __init__(self, *args: Any, response: Any = None) -> None:
+        """Initialize the error with an optional HTTP response."""
+        super().__init__(*args)
+        self.response = response
+
+    @property
+    def status_code(self) -> Optional[int]:
+        """The HTTP status code of `response`, or None if there is no response."""
+        return getattr(self.response, "status_code", None)
 
 
 class LangSmithAPIError(LangSmithError):

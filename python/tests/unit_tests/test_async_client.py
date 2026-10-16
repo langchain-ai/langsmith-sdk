@@ -347,6 +347,40 @@ async def test_create_feedback_forwards_trace_id(
     assert body["key"] == "quality"
 
 
+@pytest.mark.parametrize(
+    "status_code, error_class",
+    [
+        (404, ls_utils.LangSmithNotFoundError),
+        (429, ls_utils.LangSmithRateLimitError),
+        (503, ls_utils.LangSmithAPIError),
+    ],
+)
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_http_errors_keep_the_response(
+    mock_client_cls: mock.Mock, status_code: int, error_class: type
+) -> None:
+    # Build the response with the HTTP backend the client uses (httpx2 or httpx).
+    from langsmith._openapi_client._httpx import httpx as client_httpx
+
+    mock_httpx_client = AsyncMock()
+    mock_client_cls.return_value = mock_httpx_client
+    request = client_httpx.Request("GET", "http://localhost:1984/runs")
+    response = client_httpx.Response(
+        status_code, headers={"retry-after": "7"}, request=request
+    )
+    mock_httpx_client.request.return_value = response
+    client = AsyncClient(api_url="http://localhost:1984", api_key="test")
+
+    with pytest.raises(error_class) as exc_info:
+        await client._arequest_with_retries("GET", "/runs", stop_after_attempt=1)
+
+    assert exc_info.value.response is response
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.response.headers["retry-after"] == "7"
+    assert isinstance(exc_info.value.__cause__, client_httpx.HTTPStatusError)
+
+
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 @patch("langsmith.async_client.asyncio.sleep", new_callable=AsyncMock)
