@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > ## This repository has moved
 >
-> The LangSmith SDKs now live in their own repositories. This one is archived.
+> The LangSmith SDKs now live in their own repositories and this one is now archived.
 >
 > | SDK | New repository | Package |
 > |---|---|---|
