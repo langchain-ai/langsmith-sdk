@@ -121,7 +121,10 @@ def read_usage_and_stop_reasons_from_transcript(
         # (with stop_reason set) overwrites earlier partials.
         raw_usage: dict[str, dict[str, Any]] = {}
         stop_reasons: dict[str, str] = {}
-        with open(path) as f:
+        # The SDK appends to this file while we read it, so the last line
+        # can end mid UTF-8 character. Replace undecodable bytes; the
+        # resulting partial line fails JSON parsing and is skipped.
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -145,7 +148,7 @@ def read_usage_and_stop_reasons_from_transcript(
 
         usage_by_id = {mid: extract_usage_metadata(u) for mid, u in raw_usage.items()}
         return usage_by_id, stop_reasons
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         logger.debug(f"Could not read transcript {file_path}: {e}")
         return {}, {}
 
@@ -182,7 +185,10 @@ def read_llm_turns_from_transcript(
         # Tool result blocks are formatted as role:"tool" messages.
         entries_by_id: dict[str, dict[str, Any]] = {}
         conversation: list[dict[str, Any]] = []
-        with open(path) as f:
+        # The SDK appends to this file while we read it, so the last line
+        # can end mid UTF-8 character. Replace undecodable bytes; the
+        # resulting partial line fails JSON parsing and is skipped.
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -254,6 +260,6 @@ def read_llm_turns_from_transcript(
 
         # Only return final entries (stop_reason is set).
         return [e for e in entries_by_id.values() if e.get("stop_reason")]
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         logger.debug(f"Could not read transcript {file_path}: {e}")
         return []
