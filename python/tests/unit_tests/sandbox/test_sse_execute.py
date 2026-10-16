@@ -457,3 +457,32 @@ class TestFeatureFlags:
 
         assert _features.enabled(_features.SANDBOX_SSE_EXEC)
         assert "not_a_feature" in caplog.text
+
+    def test_last_setting_wins(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv(_features.ENV_VAR, "nosandbox_sse_exec, SANDBOX-SSE-EXEC")
+        assert _features.enabled(_features.SANDBOX_SSE_EXEC)
+
+    def test_settings_are_read_on_each_call(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv(_features.ENV_VAR, "sandbox_sse_exec")
+        assert _features.enabled(_features.SANDBOX_SSE_EXEC)
+
+        monkeypatch.setenv(_features.ENV_VAR, "nosandbox_sse_exec")
+        assert not _features.enabled(_features.SANDBOX_SSE_EXEC)
+
+    @pytest.mark.parametrize("on", [True, False])
+    def test_setting_hint_controls_feature(self, monkeypatch: pytest.MonkeyPatch, on):
+        hint = _features.setting_hint(" SANDBOX-SSE-EXEC ", on=on)
+        name, value = hint.split("=", 1)
+        assert name == _features.ENV_VAR
+        assert value == ("sandbox_sse_exec" if on else "nosandbox_sse_exec")
+
+        monkeypatch.setenv(name, value)
+        assert _features.enabled(_features.SANDBOX_SSE_EXEC) is on
+
+    def test_unknown_name_does_not_change_default(
+        self, monkeypatch: pytest.MonkeyPatch, caplog
+    ):
+        monkeypatch.setenv(_features.ENV_VAR, "nosomething_else")
+        assert not _features.enabled(_features.SANDBOX_SSE_EXEC)
+        assert "nosomething_else" in caplog.text
+        assert _features.SANDBOX_SSE_EXEC in caplog.text
