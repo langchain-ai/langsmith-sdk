@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:cf58e61bf14fa7eaa69b6bf33da2172e9a5d98aaeeac3026c8f5a8d1e2bc941a",
+  "pageVersion": "sha256:9d085309cbd3cb7d04ccbc250376116cf847aff6d0e8d16f735862c2d4a5a973",
   "claims": [
     {
       "id": "claim_367b3eb9f8424728a15eea8697441b1b",
@@ -15,10 +15,104 @@
           "version": "repo-lines-v1:sha256:fbf08e78c37d7881ef98642a50379ddebc3b3abb756b57bff648ed73563d708d:eyJzZWxlY3RlZExpbmVDb3VudCI6OTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMzBhNDRjYzQ1ZDZhOTA3YjQ0ZTc5ZTJmYTgzNzYyODJkMjY1MWM2ZDc2MzYzOGVmNjM3YTM1ZTgwZGY2YjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzOTc0YmY1YjI1OTYyMzE2MGYwOWFhMGY4NjUxZTQ3ODY2MTNiYzg4ZjQ4NWJjYzBkZDkwYzAzY2M5OGUyMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhMTNiZTYzYTczNjgxM2E0NDVmMTIwN2Y2MDdkYWFmMTNhYmE0ODZmNDgxZTY0MDc2NWNmZTEwNWU2MzZjMzQifQ"
         }
       ]
+    },
+    {
+      "id": "claim_0ae2d4fca28b4ecca46af76af7435709",
+      "statement": "Current Python SDK OTEL translation and the public Python native span processor default to `/otel/v1/traces`; a capture that used `POST /otel` therefore does not represent the current endpoint default.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L95-L105",
+          "version": "repo-lines-v1:sha256:8826a923f11564d8ee18bc09126358db146bde2a97679b9b4d966d79923006fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMzhhZjZjYTU1OGI2ZmM5MWNhYmQ2NmJjZmRiYTBhOTYxMTgxMzIwMWNlYTIzYjc5ZDgyMDViMTllMDhiNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwMTJmNzNmZjU4NDkzYmVjOGRmZjNhYjlkZGFmMzFkZGI5YmUzMjczYmZlODI3NDk4OTZmNmJmOWZjZjQwYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyYzZmMDkwYzUxOTIxNGQ3YzE0ZTA5N2I1NjY2NzAxMDc0NzA3NzhmOTY2NWFkYTA2YjRjZTljMTRmZDAzZjgifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L91-L96",
+          "version": "repo-lines-v1:sha256:ea09881b9934c9fdc28aad62b1005e6f0f1159d6f364c4bad61e8d79e2b59a76:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGM3YmNjY2YyZTA4ZDczZWI3MWJkMmM2NDc2ZmUwNTkzNGM1ODM4MDU5ZGYwOTcyY2UwODU0NzEzYTAxOTVkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGIzMzczMGM5OTc2ZjJkMzBhOTNhMzJmZjYxMzhiNTk5OTQ4MDhjOTI0MmEyNTZjMTE3ZDEzY2NjODRlNGUyZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTU4NWIzNjgzZDMxMjkzYjkwOWFkYmM0YTMwZWI1YmMwOWEwMmQ0MGYyNjdjMzg3NWYxY2FmZTZhMTlmN2I0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDEwNWIyYTY1ZWEwMzkwMjdkMTUyNzNiNWU4ZmNhNTQzOGYxOTEzM2NlYzkwN2U5YzE0MTAyNDg3ZDlhOGY1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa995c8df68b488ca2bc55a94f5fd22a",
+      "statement": "For the internal Python OTLP provider, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` has precedence as a complete URL; otherwise `OTEL_EXPORTER_OTLP_ENDPOINT` is a base to which `/v1/traces` is appended, with `{LANGSMITH_ENDPOINT}/otel/v1/traces` as the default and a temporary warning-backed compatibility exception for bases ending in `/traces`.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L46-L57",
+          "version": "repo-lines-v1:sha256:33c7afeb7fb42952ac4ba8dd65b362376383f73f5b0915f77c7ed0e7de530b57:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5MjA1Y2NhN2FiYzY3OTQ3ZjE1NzNjZjdlZjkwYTkzOGRiNjBjMjBlNTAxOGIxZGQ3MjQyNTI5ZDg4MzVmYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczM2U4NDg3Yzg1ZGZkY2Y5ZmE3YjkzYzc0NmM5NDYyNWFlNDdlMTIwYzc5N2U3OTFlNzM3ZjllZDdmZmM3M2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyMjVlOTc1NGJmOTdlOWI4NTcyZTI3ZjRhNTMxNmFiODQ4M2Y2NzQ4NDAxMmFiOGQxM2E1ODY5Y2QzNTY5YjAifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L95-L105",
+          "version": "repo-lines-v1:sha256:8826a923f11564d8ee18bc09126358db146bde2a97679b9b4d966d79923006fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMzhhZjZjYTU1OGI2ZmM5MWNhYmQ2NmJjZmRiYTBhOTYxMTgxMzIwMWNlYTIzYjc5ZDgyMDViMTllMDhiNjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwMTJmNzNmZjU4NDkzYmVjOGRmZjNhYjlkZGFmMzFkZGI5YmUzMjczYmZlODI3NDk4OTZmNmJmOWZjZjQwYjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyYzZmMDkwYzUxOTIxNGQ3YzE0ZTA5N2I1NjY2NzAxMDc0NzA3NzhmOTY2NWFkYTA2YjRjZTljMTRmZDAzZjgifQ"
+        },
+        {
+          "resource": "repo://python/tests/unit_tests/test_otel_exporter.py#L513-L589",
+          "version": "repo-lines-v1:sha256:778281790fef0734719aa45ed0fcef4ac1de531b84b4af327f72e3a8d0c856d0:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmMzQ1ODNhNTk4NzY3YmY1NmFlZmViNjVlMjAzM2ExNjUxY2M0YzhkN2U2ZjBhZjNlNWNmZDMyOTNmOTMzYjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjODYyMTE4YTBjOWJiYmIwY2U5ZTZiZDVhOGI3MzU1YjQwY2Y0MGFhZDQ4YzgwNzMxZGY2MjU1YzAyMzNkYTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmY2UyZjgxNzkzMmZlZjQ0N2QyYjIwZTM0M2Q2NTIzOTFiNjY4ZGU5NDdiZTQzODhmN2U1NGZhYWIzZGQ2MzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dd9de756fa9f42c08769f3326a816229",
+      "statement": "Python Client OTEL mode drains queued operations on tracing control or drain subthreads and translates them into ended spans, while the internal provider installs an OpenTelemetry `BatchSpanProcessor` that owns subsequent OTLP batch export.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L623-L687",
+          "version": "repo-lines-v1:sha256:7c2aa7d9abdb6cfb1c58c120a1c561a1793deed3c5ee0572e7ea6835ed53a092:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MDcyMDk1NzQwZGY0Y2NjYzNhMzdjMzFhZDI4NmQwODU1MGZkOGM5YzhlNzNiOTA2YjVjMzc1ZmMzY2MxM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZDM3Y2ZmYWQ2ZWMxMzIwNWVhN2JlMDA5MzdkYjk2NDgyZGYzNTk1NTJmN2UzNmNlZWE3ZGI5ZTdkM2I5MmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5MmNiMmM4MjY1YzUzYTA3NGMwYWI3Y2IxYTkyNDc1ZWZhZDg0Yjk5MDU3NGZhMDZmYTkzN2FmYjJmYzJjZGYifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/_background_thread.py#L901-L919",
+          "version": "repo-lines-v1:sha256:d1a80a9ee261be0a958fa1f400004b73e4c3e77641f27fd24a2ee7b181ef621b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkMzVjNDM4ODVmZTg1OWEzMTdlNDg2NDEzNTAzNjc1NTk3OTA4YTc2OWQ0MDY5NjUxYTk4MzhmODgwMmNmNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1N2IxNmExYjRmZWQ0YzkyMjUzMDc3OWVjZTJhNDRjZjQ5Mzk2YTE3NWY3ZjY3YmRjNWZlNmMzMmNkNGNhNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxYmQxMWE1ODllMzc3MmQzNjRjYjQ1MTMyNjAzNWM4M2IzNjg2M2QzMDdkYTY5MGQxZWY0ZjNlMjZjMDA2YmYifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_client.py#L133-L137",
+          "version": "repo-lines-v1:sha256:7378525c48b52cc15ae9013cd20e0ac4f3d8e3a3e7045ee446d8dcf940427bbc:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGVkZWRlYzM3ZjQ3ZTBhZmVjZDY0OTg1NjdiN2E5YjQ2ZWQ2MWZlYWU2YjFkNzdlYjQyODRlM2ZlODc0MzUyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDBhYTliYjczNDA5OTQ5NDM4NDExZTE0ZGUwMGFlYjM0NmY5M2M3OTE1MjcxNzUyZDljOGVlZDRlZDBhZTI2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzNiYWEwNDA1NTZiMjkyNTc0NTU5YjE2MWU0YWViODRkOGIwZDVlMTk1ODc4ZjY1ZGM0ZDNlZjk3NDE0MzYzMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGZkYjcwMGM0ZDIyYTZkNGIxYTYyNzkwZTMxM2UzZDA4NGExOWM2ZWYwNGMyOWZkZTIyNjk1YzE1ZGUyNjgzNCJ9"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_exporter.py#L255-L282",
+          "version": "repo-lines-v1:sha256:a4c6d7ba4d2f416e88631f8cebbafe419d11160d7955a6f46e9742a64aaaec7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNWU0ZjEwMzExMzVmODJhNjU0NzI0YTdmNDQ3MGRjMWFhNzE4NjEwNmUxN2Q2NDIwZDkxMTQwZDU5MTcxNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0OTY0ZGI5MDYyYWY3YjVlMTJhZTExYzY4ODEyMDU3M2YzMTRlOWZiM2IwMmRhM2NhZjE0MmU3NWYyMGVlYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5NjNmYzQ5OGEyM2RiMmJlMjlhMjNiOTk2YjljZDFjMWMxY2UwMmM4Y2QxZjlhMTlkMGY4MDM3NGFiYjc5NGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlMzlmNTMzNmI3NmRlNjlhOTRiZGVkYmZhOTUyOTU0M2FhYTNhMWQ1ODFjN2YxM2I0OTdiNjE5OGYyZWMwY2EifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/_internal/otel/_otel_exporter.py#L392-L400",
+          "version": "repo-lines-v1:sha256:723e1143be64172b84d2faddf18854aee86c7739f33cfdeb492e2123e1776c14:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTE2YWZlZGY0ZTI0OWFiNzdhOTY1NTE2Y2M3ODE3N2E3MDIwYjA2ZWU2YmZjMThhZTI3ZGMyYjA5OTFmOTQ1OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjI0NmYwNDY5ZWVmOGFkY2QyZjc1NmMzMWQwZmIwMmE2Y2VjM2U1NDBmZDUzMzcwNDRjZmFlN2RkZmJhNzJkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTZhMGM4ZGEwNWNmMjM5OWVkZGJjODc1MDAxZjg2MjRiMGI0YjM4ZDU0MTc0ODI4YzljMzkwYTgzNWZlZjE4NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a4a876edbb0146e4af346874e16963a2",
+      "statement": "`Client.flush(timeout)` waits Client-owned buffered run operations, unfinished tracing-queue tasks, and tracked compressed-send futures within its timeout, but public native OTEL completion is owned separately by `OtelSpanProcessor.force_flush()` or `shutdown()`.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/client.py#L4134-L4194",
+          "version": "repo-lines-v1:sha256:2024e24dd5a522a49cc8c8c8c0e1cf2676eb323b439c95666f687ca7c827d4fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZWNmYzNkYTQ3ZWI5MmEwZDRkMWYzYjY4MGQwOTE2YzczZjJlYjFkOWQ3ZDcwODYzY2M2OThmMWZkYjZiNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0YTQ1YjQzNDY2NDVmZmM5YWYzNmJkM2FkMWE0M2I0MGI4ZGYzMTY4YzhlMjBkNzA4MDQzNGVhMmY3MmY1Y2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1YTMzMDQyMzY1MGI5ZmYxYWE4YmQ3NTk5NTE4OGI4YmUxNDg0YzNiOGEyYmYxZmRiMWYwMmFmYzZhNzA1ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0OTU5MjNmZTBhMzQ1M2VhYTc4NDI1Y2EwM2VkZjNhMjc5NWRmZTQxYWJmNzcyN2E3NGYwYjIxMmQ2M2E1OTgifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/client.py#L4196-L4227",
+          "version": "repo-lines-v1:sha256:43f212b744f4bc37cc1835eaecd68766632cfd7c2d9a498a6b5e1bead76d0d2f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlMjY2ZGYxZjhlZmRkODQwOTY0YmQyOWQzNWZjYTkxMWE3NTkxYjQ1N2VkYTRhMmRlN2Q2MzU2MDYyODkwOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNzcyODgwZjYyZmE5MGM2ZWM2YTAwZDIzNGFjMzFmMjZkZmI0NzAzMWM5NTg3NjBhZWQ3NmY4Mzg0N2NiN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzZmQ5NDkwOWE2NTE3NmY3OTdiMWFiYjg3NzFkZmNmY2M0OGIwY2YwYTMzNTE2MTgyYTMwYzcyZjUzOTJiZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyNTlmY2Y1MTlhNWNiOTI2ZWE5NjkwOTlmMDYwMTQzYzYyOWE5ZDkyMWE4MjA2NjA4MjlhM2Y1OTE5NDBkMDkifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L225-L231",
+          "version": "repo-lines-v1:sha256:70759248ede0897d2337b95747d0865b018a1e04639ec11e8cd8fb747e510067:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzYyNGZkZmZkNWJiYjMyNTk0MWVkNjcwMWRiYzljY2JiNzRlOWNhMmVhYzE0ODMxNDA3Y2FhYzU5MzM2NmNmNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzI1ZmQyYWQ4YTk2OGI5ZjhmOTViZGRhZTYyN2JjMzA5YzFjNWUzYzQ2NWJhMzEwNzg3YjIyMmZhNDJkYmRlMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTFjNmFmOTQ1ZjRiOGFhYjQ5M2EzNmNmYjJhMDFmY2VjOWU5MjI5YjhiZTBhYTZlMmM3YTY3NThkZmY5NTgzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjMyZTFjMmQ3ZWMzYzJkOGY4M2NiMTgzMmViNGQyN2ZhODBmYWZiZTlhZmJkZDg5ZTA4ZDQ1NDA2N2E2MDk1MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_31199d3f2d514e6d8e034696b021f1b3",
+      "statement": "The public Python `OtelSpanProcessor` wraps `OtelExporter` in `BatchSpanProcessor` by default, defaults to `{LANGSMITH_ENDPOINT}/otel/v1/traces`, and treats processor `url` as a base while direct `OtelExporter(url=...)` treats it as the complete endpoint.",
+      "evidence": [
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L127-L197",
+          "version": "repo-lines-v1:sha256:30c05f95c81625e0acebe65f1bd45b007dfde6ac1073e799351ebe7d7b4a888e:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4MjQ2ODcxZjEwYzgxYjYwMjZkNTIzMmU2OTcyNWRjZjliNTBhMzUyOGNmNzc5NGM1ZDE1MzhlMTE1YWRmNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YTM0YmVmNjFjMzlhYzE1ODY0M2QzNTBkNGU3MjU2ODBkNzFmMzUxOWQxYTVlNWYyMzQ2M2JjMGI2YzJjZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyN2VjNjNhODM1MTZiN2FmN2VlMGNmYmU1MDM1ZDI0MzAwMTQ4NmFkODEzM2RhNTBiOTE0ODk0NmVjYWE2ZDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0NzM2OWNhNjFiYmJjMzBkODY5NWQ2MDcwNjZkMDVlNDhmYmQzOWI4MDZkOGJjOTI5MGE2ZGU2Y2Y2Y2M2MmIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L209-L231",
+          "version": "repo-lines-v1:sha256:a115e48fcbaeadff07148cbc1915566755d2a22e8db48c2be9892ec249884ae1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlMTc4YjJjZWY1YTM3NzYxNjNhYjU5ZjQxMDE4NjA3OGY4NDVhZTYzMTMyOTdmN2EzMjA0ZjJkY2Y5OTYzNTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyNWZkMmFkOGE5NjhiOWY4Zjk1YmRkYWU2MjdiYzMwOWMxYzVlM2M0NjViYTMxMDc4N2IyMjJmYTQyZGJkZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzYWU1MWMxN2FjMzYzODlmMmM0YTIzNGI3YTM1YjI1NjdlMjNmNmEyOWUxNWI1ZDExNDdkMzhlMTViMDhjMDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzMmUxYzJkN2VjM2MyZDhmODNjYjE4MzJlYjRkMjdmYTgwZmFmYmU5YWZiZGQ4OWUwOGQ0NTQwNjdhNjA5NTIifQ"
+        },
+        {
+          "resource": "repo://python/langsmith/integrations/otel/processor.py#L62-L124",
+          "version": "repo-lines-v1:sha256:8ee37f5d5f844d42e30363e02df3950b84d2e0d44d3432e09fb28092914b66ce:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YTk5MGZmNjU2YmZhODc1YzUyNzAwNzU1MjIyYjMyZGQ4NjA5YzZkNjY1MjYyYmNjOGVlMGRmMTE1MDE0NGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0M2I2ZDY4ZDViMmQ0YzQ2NzRhYTczOGVhNjM2YjdhZDA1MDg5NDdjMDI1NzFiMTY1MDllMWIyZjcyNjJlM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViMWMwNmRlZGY2ZTE1MjgwYmQwZjBlMmIzNDA2YzQ1NGVjYjYzNTM1ODJhYzJjZjA2YWRiYzQ5NjRkOWUwNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMmZlY2FjYTE4ZTliMDljNWI2M2E0OWU1ZjdhZDA1ODRlZDRlNzg3ZTgyOGM4OWM2YTU4OGE3YTQ5MDZkOGYifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.2",
-    "at": "2026-09-15T09:58:29.947Z"
+    "at": "2026-10-12T08:42:50.524Z"
   }
 }

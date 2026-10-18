@@ -1,11 +1,11 @@
 ---
 type: client configuration concept
 title: Client Configuration, Endpoints, and Authentication
-description: How the Python and JavaScript clients resolve endpoints, credentials, profiles, headers, OAuth refresh, retries, and runtime-specific constraints.
-tags: [client, configuration, authentication, oauth, endpoints, retries]
+description: How the Python and JavaScript clients resolve deployment endpoints, profiles, credentials, workspace context, headers, transport options, OAuth refresh, and retries.
+tags: [client, configuration, authentication, oauth, endpoints, headers, retries]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-12T08:42:50.524Z
 sources:
   - id: openwiki-source-c27c18f68326f94a1c4b2695
     resource: repo://js/src/client.ts
@@ -17,6 +17,8 @@ sources:
     resource: repo://js/src/tests/client.test.ts
   - id: openwiki-source-351c0aea4a1998f9a6e9defe
     resource: repo://js/src/tests/profile-oauth-discovery.test.ts
+  - id: openwiki-source-163491b21a70d753fa5ae3e6
+    resource: repo://js/src/utils/api_url.ts
   - id: openwiki-source-ab43484268d3173d8b30c2bc
     resource: repo://js/src/utils/async_caller.ts
   - id: openwiki-source-e67ba2efb94e620c92d92b92
@@ -45,101 +47,105 @@ sources:
     resource: repo://python/tests/unit_tests/test_oauth_refresh_lock.py
   - id: openwiki-source-fd83e773e395ee95899f43aa
     resource: repo://python/tests/unit_tests/test_profiles_oauth_discovery.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+generated: { by: "openwiki/0.5.2", at: "2026-10-12T08:42:50.524Z" }
 ---
 
-The Python `Client` and `AsyncClient`, and the JavaScript `Client`, turn several configuration channels into one API base URL, one workspace context, and one effective authentication mechanism. This layer is shared by the higher-level operations described in [Platform Client](./platform-client.md), while tracing and sandbox code build on the same endpoint and credential conventions.
+The Python `Client` and `AsyncClient`, and the JavaScript `Client`, turn constructor options, environment variables, and an optional local profile into deployment configuration for the operations described in [Platform Client](./platform-client.md). This page concerns the API deployment and its authentication and workspace context. Trace project and destination addressing—including `LANGSMITH_AGENT_*` and project/address precedence—is a separate concern covered by [Trace Destinations and Addressing](./trace-destinations-and-addressing.md).
 
-## Resolution order
+## Configuration resolution
 
-For the main endpoint and workspace, the effective order is:
+For the primary API endpoint and workspace, both SDKs use this precedence:
 
-1. Constructor argument: `api_url` / `apiUrl`, `workspace_id` / `workspaceId`.
+1. Constructor option: `api_url` / `apiUrl` or `workspace_id` / `workspaceId`.
 2. `LANGSMITH_ENDPOINT` or `LANGSMITH_WORKSPACE_ID`.
-3. The legacy `LANGCHAIN_ENDPOINT` or `LANGCHAIN_WORKSPACE_ID` alias.
+3. Legacy `LANGCHAIN_ENDPOINT` or `LANGCHAIN_WORKSPACE_ID`.
 4. The selected profile's `api_url` or `workspace_id`.
-5. For the API URL only, `https://api.smith.langchain.com`.
+5. For the endpoint only, `https://api.smith.langchain.com`.
 
-The environment helper checks the `LANGSMITH_` namespace before `LANGCHAIN_`; blank environment values are ignored in Python, while JavaScript uses the first truthy value. Values are trimmed and outer quotes removed when the client stores them. Constructor values therefore provide the cleanest way to target a self-hosted deployment for one client without changing process-wide state. [Python resolution](repo://python/langsmith/client.py#L1261-L1287) [JavaScript resolution](repo://js/src/client.ts#L1376-L1401) [environment aliases](repo://js/src/utils/env.ts#L175-L195)
+The environment helpers check `LANGSMITH_` before `LANGCHAIN_`. Python ignores blank environment values; JavaScript chooses the first truthy value. Stored constructor values are trimmed and have outer quotes removed. A constructor endpoint is therefore the most direct way to target a different deployment for one client. [Python resolution](repo://python/langsmith/client.py#L1283-L1306) [JavaScript resolution](repo://js/src/client.ts#L1428-L1447) [JavaScript defaults](repo://js/src/client.ts#L1558-L1594) [environment aliases](repo://js/src/utils/env.ts#L182-L201)
 
-Authentication has an additional gate. An explicit constructor API key wins over an environment key, and either one disables **all profile-managed authentication**. The profile can still supply its endpoint and workspace in that case. Only when neither constructor nor environment supplies an API key does the selected profile provide authentication. A workspace ID is not itself a credential: it becomes `X-Tenant-Id` / `x-tenant-id`, and is required when the server reports that an organization-scoped key needs a workspace. [Python auth gate](repo://python/langsmith/client.py#L1263-L1327) [JavaScript auth gate](repo://js/src/client.ts#L1500-L1529) [workspace failure](repo://js/src/utils/error.ts#L147-L176)
+Authentication has a separate gate. A constructor API-key value takes precedence over an environment API key, and an effective constructor or environment key disables profile-managed authentication. The profile may still provide the endpoint and workspace. Without either key, the profile can provide `api_key` or OAuth credentials. Avoid using an empty Python constructor key to mean “unset”: Python gates profile auth on whether the argument is `None`, whereas JavaScript trims and tests the resolved key for a value. A workspace ID is not a credential: it is sent as `X-Tenant-Id` / `x-tenant-id`, and the JavaScript error mapper gives a specific remediation when a `403` reports that an organization-scoped key requires a workspace. [Python auth gate](repo://python/langsmith/client.py#L1285-L1337) [JavaScript auth gate](repo://js/src/client.ts#L1437-L1447) [JavaScript defaults](repo://js/src/client.ts#L1558-L1594) [workspace failure](repo://js/src/utils/error.ts#L154-L168)
 
-There is one cross-language profile nuance worth preserving:
+Profile-internal credential ordering differs intentionally:
 
-- Python profile auth prefers `api_key` over an OAuth access token when both are present.
+- Python profile auth prefers `api_key` over an OAuth access token.
 - JavaScript profile auth prefers the OAuth access token over `api_key`.
 
-This is profile-internal ordering only; explicit and environment API keys still win in both SDKs. [Python profile header selection](repo://python/langsmith/_internal/_profiles.py#L456-L467) [JavaScript profile header selection](repo://js/src/utils/profiles.ts#L485-L509)
+This difference does not alter the constructor/environment gate. [Python profile headers](repo://python/langsmith/_internal/_profiles.py#L456-L467) [JavaScript profile headers](repo://js/src/utils/profiles.ts#L485-L509)
 
 ```mermaid
 flowchart TD
-    Start["Construct client"] --> Args["Read constructor arguments"]
-    Args --> Env["Read LANGSMITH then LANGCHAIN environment"]
-    Env --> Profile["Load selected profile when filesystem profiles are available"]
-    Profile --> Endpoint["Resolve endpoint and workspace"]
-    Endpoint --> Key{"Constructor or environment API key exists"}
+    Start["Construct client"] --> Args["Read constructor options"]
+    Args --> Env["Read LANGSMITH then LANGCHAIN variables"]
+    Env --> Profile["Load selected profile when filesystem access is available"]
+    Profile --> Resolve["Resolve endpoint and workspace"]
+    Resolve --> Key{"Effective constructor or environment API key"}
     Key -->|Yes| ApiKey["Use x-api-key and disable profile auth"]
-    Key -->|No| ProfileCred{"Profile credential exists"}
-    ProfileCred -->|API key or valid access token| Header["Build current auth header"]
-    ProfileCred -->|Refresh token needs refresh| Lock["Acquire profile refresh lock"]
+    Key -->|No| Cred{"Profile has a usable credential"}
+    Cred -->|No| Anonymous["No SDK-managed credential"]
+    Cred -->|Yes| Refresh{"OAuth token needs refresh"}
+    Refresh -->|No| Header["Select profile auth header"]
+    Refresh -->|Yes| Local["Coalesce refresh in process"]
+    Local --> Lock["Acquire filesystem refresh lock"]
     Lock --> Reload["Reload profile from disk"]
     Reload --> Fresh{"Another process already refreshed"}
     Fresh -->|Yes| Header
-    Fresh -->|No| Discover["Probe trusted OAuth metadata"]
-    Discover --> Token["Post refresh grant to token endpoint"]
-    Token --> Save["Atomically persist new token fields"]
+    Fresh -->|No| Discover["Discover and validate OAuth metadata"]
+    Discover --> Token["Post refresh grant"]
+    Token --> Save["Atomically persist recognized token fields"]
     Save --> Header
-    ProfileCred -->|No| Anonymous["Send no SDK-managed credential"]
-    ApiKey --> Request["Merge protected and caller headers"]
+    ApiKey --> Request["Apply protected headers and caller options"]
     Header --> Request
     Anonymous --> Request
 ```
 
-*Configuration and authentication resolution, including the coordinated OAuth refresh path used before a request.*
+*Deployment configuration and the coordinated profile OAuth refresh decision before a request.*
 
 ## Profiles and OAuth lifecycle
 
-Profiles live at `LANGSMITH_CONFIG_FILE` when set, otherwise `~/.langsmith/config.json`. `LANGSMITH_PROFILE` selects a named profile; absent that, the loader tries `current_profile`, then `default`. Missing files, malformed JSON, or missing profile entries are treated as “no profile” rather than construction failures. JavaScript deliberately skips profile filesystem access in browser and web-worker runtimes. [Python profile selection](repo://python/langsmith/_internal/_profiles.py#L71-L102) [JavaScript profile loading](repo://js/src/utils/profiles.ts#L52-L107)
+Profiles are read from `LANGSMITH_CONFIG_FILE` when set, otherwise `~/.langsmith/config.json`. `LANGSMITH_PROFILE` selects a name; otherwise selection falls through to `current_profile`, then `default`. A missing file, malformed JSON, absent profile map, or unresolved profile name behaves as no profile rather than failing construction. JavaScript skips profile filesystem access in browser and web-worker runtimes. [Python profile loading](repo://python/langsmith/_internal/_profiles.py#L71-L129) [JavaScript profile loading](repo://js/src/utils/profiles.ts#L52-L107)
 
-A profile may contain `api_key`, `api_url`, `workspace_id`, and an `oauth` object with `access_token`, `refresh_token`, and `expires_at`. Refresh is attempted only when a refresh token exists and the access token is absent or expires within one minute. Missing or malformed expiry data does not by itself force refresh. Refresh is best effort: transport, discovery, lock, non-success response, malformed token response, and persistence failures leave the current profile credential in use rather than failing client construction. [refresh predicate](repo://python/langsmith/_internal/_profiles.py#L238-L264) [refresh implementation](repo://python/langsmith/_internal/_profiles.py#L421-L454)
+A profile can contain `api_key`, `api_url`, `workspace_id`, and an `oauth` object with `access_token`, `refresh_token`, and `expires_at`. OAuth refresh requires a refresh token and is attempted when the access token is absent or expires within one minute. Missing or malformed expiry data does not force refresh. In Python, a profile `api_key` also suppresses OAuth refresh because it is the preferred profile credential. Refresh is best effort: discovery, transport, lock, response parsing, and persistence failures leave the available profile state in use instead of making client construction fail. [Python refresh predicate](repo://python/langsmith/_internal/_profiles.py#L238-L264) [Python refresh path](repo://python/langsmith/_internal/_profiles.py#L388-L454) [JavaScript refresh predicate](repo://js/src/utils/profiles.ts#L117-L133) [JavaScript refresh path](repo://js/src/utils/profiles.ts#L378-L475)
 
-Refresh coordination has two levels. A process-local lock or shared promise coalesces concurrent requests, and a filesystem lock serializes processes sharing the same config file. After taking the filesystem lock, the refresher reloads the profile and skips the network if another process already wrote a fresh token. Python uses `flock` on POSIX and an atomic directory lock elsewhere; JavaScript uses the atomic directory form. The fallback lock has stale-lock recovery and owner-checked release. Successful refresh updates only recognized token fields and writes the profile atomically; Python also applies restrictive file modes. [Python lock](repo://python/langsmith/_internal/_oauth_refresh_lock.py#L95-L160) [JavaScript lock](repo://js/src/utils/profile-lock.ts#L64-L118) [token persistence](repo://python/langsmith/_internal/_profiles.py#L297-L324)
+Refresh is coordinated at two levels. Python uses a process-local lock and JavaScript a shared promise; both also serialize processes that share the config file with a filesystem lock. After taking that lock, the refresher reloads the profile and skips the network when another process has already stored a fresh token. Python uses `flock` on POSIX and an atomic directory lock elsewhere; JavaScript uses the directory-lock form. Directory locks recover stale owners and release only when ownership still matches. Successful refresh applies only recognized token fields and atomically replaces the profile file; Python uses owner-restricted modes. [Python refresh lock](repo://python/langsmith/_internal/_oauth_refresh_lock.py#L95-L160) [JavaScript refresh lock](repo://js/src/utils/profile-lock.ts#L64-L118) [Python persistence](repo://python/langsmith/_internal/_profiles.py#L297-L324) [JavaScript persistence](repo://js/src/utils/profiles.ts#L418-L475)
 
-### OAuth discovery security boundary
+### OAuth discovery is a security boundary
 
-The SDK probes both SaaS-root and self-hosted `/api` issuer locations, including the RFC 8414 path-inserted well-known form. If discovery is unavailable, it falls back to `<normalized-profile-api-url>/oauth/token`; normalization strips `/api/v1` but deliberately retains `/api` because self-hosted authorization servers may be mounted there.
+Discovery probes the configured issuer, self-hosted `/api`, and root locations, including the RFC 8414 path-inserted well-known form. Metadata is accepted only when `issuer` equals the probed base after trailing-slash normalization and both advertised device and token endpoints have the issuer's scheme and host. Issuer mismatches, off-origin endpoints, invalid JSON, HTML SPA responses, and failed requests are ignored so they cannot redirect a refresh token to an untrusted host. [Python discovery](repo://python/langsmith/_internal/_profiles.py#L132-L235) [JavaScript discovery](repo://js/src/utils/profiles.ts#L135-L282) [focused Python tests](repo://python/tests/unit_tests/test_profiles_oauth_discovery.py#L91-L160) [focused JavaScript tests](repo://js/src/tests/profile-oauth-discovery.test.ts#L98-L179)
 
-**Discovery metadata is trusted only when its `issuer` exactly matches the issuer base that was probed, ignoring trailing slashes, and both the device and token endpoints have the issuer's scheme and host.** A mismatched issuer, off-origin endpoint, HTML SPA response, invalid JSON, or failed request is ignored. This is a credential-exfiltration boundary: a refresh token must never be posted to a location merely advertised by an untrusted document. [Python validation and discovery](repo://python/langsmith/_internal/_profiles.py#L141-L235) [JavaScript validation and discovery](repo://js/src/utils/profiles.ts#L152-L282) [focused rejection tests](repo://python/tests/unit_tests/test_profiles_oauth_discovery.py#L115-L160)
-
-Refresh always uses the profile's `api_url`, not a constructor endpoint override. This keeps the refresh token bound to the deployment that issued the profile even when API traffic from that client is temporarily redirected. [JavaScript behavior test](repo://js/src/tests/client.test.ts#L785-L842)
+If no trusted document is found, refresh falls back to `<normalized-profile-api-url>/oauth/token`. Normalization removes `/api/v1` but retains `/api`, because a self-hosted authorization server may be mounted there. Refresh uses the profile's `api_url`, not a constructor endpoint override, keeping the refresh token associated with the deployment that issued the profile. [fallback behavior](repo://python/langsmith/_internal/_profiles.py#L221-L235) [JavaScript refresh endpoint](repo://js/src/utils/profiles.ts#L418-L450)
 
 ## Endpoint composition and self-hosting
 
-The configured API URL is a base, not a promise that it is a bare origin. It may already end in `/api` or `/api/v1`. The generated OpenAPI clients remove an existing `/api` or `/api/v1` suffix before applying their generated `/api/v1/...` routes. Handwritten platform calls use `_getPlatformEndpointPath` in JavaScript and `_platform_path` in Python; those helpers omit another `/v1` when the configured base already ends in `/v1`. [JavaScript base normalization and helper](repo://js/src/client.ts#L1693-L1699) [JavaScript platform helper](repo://js/src/client.ts#L1745-L1750) [Python platform helper](repo://python/langsmith/client.py#L11775-L11787)
+A configured API URL may be a bare origin or already end in `/api` or `/api/v1`. Before generated clients append their generated `/api/v2/...` routes, both SDKs strip a trailing `/api` or `/api/v1`; a bare `/v1` is deliberately retained. [JavaScript normalizer](repo://js/src/utils/api_url.ts#L1-L7) [Python normalizer](repo://python/langsmith/client.py#L175-L181) [Python normalization tests](repo://python/tests/unit_tests/test_client.py#L6005-L6060)
 
-> **Repository invariant:** never hardcode a leading `/v1` when adding a platform operation. Use the platform path helper (or the generated resource route). A self-hosted endpoint such as `https://host/api/v1` would otherwise become an invalid doubled path such as `/api/v1/v1/platform/...`.
+Handwritten platform operations must instead use `_getPlatformEndpointPath` in JavaScript or `_platform_path` in Python. These helpers omit a second `/v1` when the configured base already ends in `/v1`. [JavaScript helper](repo://js/src/client.ts#L1806-L1811) [Python helper](repo://python/langsmith/client.py#L11934-L11939)
 
-A trailing slash is removed from the configured API URL. The optional web-app URL is separate; when absent, each SDK infers it from localhost, known hosted regions, or API suffixes. Supply `web_url` / `webUrl` explicitly when a self-hosted API and UI do not follow those conventions. [JavaScript URL normalization and inference](repo://js/src/client.ts#L1379-L1392) [JavaScript host inference](repo://js/src/client.ts#L1532-L1565)
+> **Self-hosted URL invariant:** never hardcode a leading `/v1` for a platform operation. Use the platform path helper or a generated resource route. Otherwise `https://host/api/v1` can become the invalid `/api/v1/v1/platform/...`.
 
-## Header ownership and request overrides
+The clients remove a trailing slash from the effective API URL. `web_url` / `webUrl` is independent; when omitted, host inference handles localhost, known hosted regions, and common API suffixes. Set it explicitly when a self-hosted API and UI do not follow those conventions. [JavaScript URL handling](repo://js/src/client.ts#L1431-L1444) [JavaScript host inference](repo://js/src/client.ts#L1597-L1630)
 
-Client-wide `headers` carry proxy, tenant-routing, or observability metadata. JavaScript also accepts `fetchOptions.headers`; collisions are case-insensitive and that channel wins over `config.headers`. In both languages, client-level custom headers are merged *under* SDK-required authentication and workspace headers, so they cannot replace a configured `x-api-key` or tenant ID. Changing the `headers` property recomputes or rebuilds request state; JavaScript additionally detects mutation through the getter before generated-client calls. [JavaScript header merge](repo://js/src/client.ts#L1568-L1721) [Python header merge](repo://python/langsmith/client.py#L1822-L1880)
+## Headers, caller authentication, and generated clients
 
-Per-request headers are intentionally more flexible. Python's handwritten request path merges `request_kwargs.headers` and direct `headers` after client defaults, then asks profile auth to remove stale profile-managed values. A truly explicit `Authorization` or `x-api-key` survives profile refresh. JavaScript's fetch wrapper likewise does not refresh over an explicit request auth header when no constructor or environment key is configured. Conversely, a configured client API key remains SDK-owned: JavaScript removes `Authorization` and supplies that key. This makes per-request auth useful for delegation, but only when client-level API-key authentication was not selected. [Python request merge](repo://python/langsmith/client.py#L1945-L1998) [Python profile override handling](repo://python/langsmith/_internal/_profiles.py#L368-L381) [JavaScript request auth handling](repo://js/src/client.ts#L1116-L1240)
+Client-wide custom headers are merged beneath SDK-owned authentication and workspace headers, so they cannot replace a configured API key or tenant ID. JavaScript accepts both `headers` and `fetchOptions.headers`; it resolves names case-insensitively, and `fetchOptions.headers` wins collisions. Malformed JavaScript header names fail during construction or assignment. [JavaScript merge](repo://js/src/client.ts#L1508-L1517) [JavaScript effective headers](repo://js/src/client.ts#L1633-L1691) [header tests](repo://js/src/tests/client_headers.test.ts#L34-L108) [Python merge](repo://python/langsmith/client.py#L1856-L1872)
 
-Malformed JavaScript header names fail eagerly at construction or assignment. Focused tests also verify that required auth and workspace headers survive custom header channels and that generated and handwritten paths agree. [JavaScript header tests](repo://js/src/tests/client_headers.test.ts#L34-L108) [Python header tests](repo://python/tests/unit_tests/test_custom_headers.py#L20-L78)
+Per-request authentication is more permissive when the client has no explicit/environment key. Python merges `request_kwargs.headers` and direct `headers` over client defaults, then removes stale profile-managed values while preserving a genuinely explicit `Authorization` or `x-api-key`. JavaScript similarly avoids refreshing over an explicit request credential. If JavaScript has a configured client API key, that key remains SDK-owned: it removes `Authorization` and ensures `x-api-key` is present. This supports delegated per-request credentials only when client-level key authentication was not selected. [Python request merge](repo://python/langsmith/client.py#L2018-L2032) [Python profile cleanup](repo://python/langsmith/_internal/_profiles.py#L368-L381) [JavaScript request auth](repo://js/src/client.ts#L1168-L1291)
+
+JavaScript's generated client captures API key and default headers. The wrapper computes a signature each time the generated resource is accessed and rebuilds the generated client when effective custom headers or current profile authentication change, including mutation through the `headers` getter. It also passes the normalized base URL, workspace, timeout, wrapped fetch, and `fetchOptions` except request-specific `method`, `body`, and `signal`. [generated-client options](repo://js/src/client.ts#L1694-L1741) [rebuild lifecycle](repo://js/src/client.ts#L1758-L1803) [rebuild tests](repo://js/src/tests/client_headers.test.ts#L168-L230)
+
+Python has a different lifecycle. `Client` lazily creates and caches its generated sync and async clients, while `AsyncClient` creates its generated client during construction; they are not rebuilt by the custom-header setters. Configure endpoint, credentials, workspace, and headers before first generated-resource access. For a caller-supplied `requests.Session`, handwritten calls use the session directly, while generated calls translate user-added headers, scoped cookies, TLS verification and client certificate, environment trust, and one proxy into an `httpx` client. Mounted adapters, `session.auth`, hooks, pool bounds, and session retry behavior do not cross that transport boundary. [Python generated clients](repo://python/langsmith/client.py#L1606-L1664) [session translation](repo://python/langsmith/client.py#L184-L232) [transport tests](repo://python/tests/unit_tests/test_client.py#L6112-L6200) [Python async construction](repo://python/langsmith/async_client.py#L273-L331)
 
 ## Retries, timeouts, and failures
 
-JavaScript routes calls through `AsyncCaller`. The ordinary caller fixes `maxRetries` at four; for the trace-ingest caller, `callerOptions` is spread after that default and can override it. Retryable statuses are `408`, `425`, `429`, `500`, `502`, `503`, and `504`, with randomized exponential backoff. Cancellation and timeout/abort errors are not retried, nor are ordinary non-retryable HTTP statuses. The trace-ingest caller also applies its rate-limit hook and concurrency or queue-byte limits. [client caller setup](repo://js/src/client.ts#L1396-L1433) [retry policy](repo://js/src/utils/async_caller.ts#L5-L13) [retry control flow](repo://js/src/utils/async_caller.ts#L119-L206)
+JavaScript handwritten operations use `AsyncCaller`. It retries status `408`, `425`, `429`, `500`, `502`, `503`, and `504` with randomized exponential backoff, rejects ordinary non-retryable statuses, and does not retry cancellation or timeout/abort failures. The ordinary caller always sets four retries because its `maxRetries` is applied after `callerOptions`; the trace-ingest caller applies `callerOptions` after its four-retry default, so ingestion can override it. The ingestion caller also owns the rate-limit hook and queue concurrency/byte limits. [caller setup](repo://js/src/client.ts#L1448-L1490) [retry policy](repo://js/src/utils/async_caller.ts#L5-L13) [retry control](repo://js/src/utils/async_caller.ts#L119-L206) [focused tests](repo://js/src/tests/client_retry.test.ts#L76-L160)
 
-Python's synchronous client mounts a urllib3 retry policy with three retries, the same status force-list, `Retry-After` support, and all HTTP methods on compatible urllib3 versions. Individual handwritten operations also control `stop_after_attempt` and exception retry classes. `AsyncClient` defaults to three configured attempts and retries connection, timeout, and server API errors, with selected call sites able to add exception types. Timeouts are independently configurable: Python sync accepts one value or connect/read values, Python async accepts one value or the httpx timeout tuple, and JavaScript uses `timeout_ms` with a 90-second default. [Python adapter policy](repo://python/langsmith/client.py#L664-L693) [Python sync request retries](repo://python/langsmith/client.py#L1945-L2017) [Python async retries](repo://python/langsmith/async_client.py#L450-L507)
+Python's synchronous `Client` mounts an urllib3 policy with three retries, the same status force-list, `Retry-After` support, and all methods on supported urllib3 versions. Handwritten operations can additionally set `stop_after_attempt` and retry exception classes. `AsyncClient` defaults to three attempts and retries connection, timeout, and server API errors, while call sites can add exception types. [sync policy](repo://python/langsmith/client.py#L671-L700) [sync request entrypoint](repo://python/langsmith/client.py#L1979-L2032) [async retry control](repo://python/langsmith/async_client.py#L456-L504)
 
-Operationally, distinguish authentication failures from retryable availability failures. A `401` is an auth error; an organization-scoped-key `403` gives the workspace-ID remediation; `400`, `404`, and conflicts are not generic transient failures. JavaScript tests specifically establish retry on `408` and `429`, but no retry for an actual fetch timeout or `400`. [JavaScript retry tests](repo://js/src/tests/client_retry.test.ts#L76-L160)
+Timeout configuration is transport-specific: Python sync accepts one millisecond value or connect/read values; Python async accepts one value or the `httpx` timeout tuple; JavaScript `timeout_ms` defaults to 90 seconds. A `401` indicates authentication failure, and the organization-scoped-key `403` calls for a workspace. Do not treat `400`, `404`, or conflict responses as generic availability failures.
 
-## Runtime constraints and safe configuration
+## Runtime and operational constraints
 
-- Browser and web-worker JavaScript clients cannot discover local profiles: pass `apiUrl`, credentials, workspace, and any custom `fetchImplementation` explicitly. Environment access is guarded because `process` may be absent and some Deno configurations throw on environment reads. [runtime detection](repo://js/src/utils/env.ts#L5-L50) [guarded environment reads](repo://js/src/utils/env.ts#L175-L185)
-- Browser bundles replace filesystem support with safe no-op stubs, reinforcing that profile refresh and on-disk token persistence are server/runtime features, not browser credential storage. [browser filesystem shim](repo://js/src/utils/fs.browser.ts#L1-L66)
-- Do not embed long-lived API keys or refresh tokens in browser-delivered code. If a browser must call directly, provide a narrowly scoped explicit token/header and enforce endpoint CORS and server-side authorization.
-- A custom Python `requests.Session` affects handwritten v1 calls. Generated v2 calls translate selected session settings but cannot carry custom mounted adapters, `session.auth`, or hooks; treat the generated client as a distinct transport boundary. [Python session boundary](repo://python/langsmith/client.py#L1083-L1091)
+- Browser and web-worker JavaScript clients cannot discover local profiles. Pass `apiUrl`, credentials or a narrow explicit header, workspace, and any `fetchImplementation` explicitly. Environment access is guarded because `process` may be absent and some Deno configurations throw on reads. [runtime detection](repo://js/src/utils/env.ts#L5-L50) [guarded reads](repo://js/src/utils/env.ts#L182-L201)
+- Browser bundles replace filesystem support with safe stubs, so on-disk profile refresh and persistence are server-runtime features. Do not embed long-lived API keys or refresh tokens in browser-delivered code. [profile runtime gate](repo://js/src/utils/profiles.ts#L52-L107)
+- Keep workspace selection with deployment authentication. Do not use workspace headers to model trace destination or project selection; use the addressing mechanisms documented in [Trace Destinations and Addressing](./trace-destinations-and-addressing.md).
+- When debugging configuration, first log the resolved API URL source, then inspect the effective workspace and credential channel, and only then investigate retry behavior. This avoids mistaking a wrong deployment or workspace for a transient transport failure.

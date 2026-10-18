@@ -1,12 +1,14 @@
 ---
-type: sandbox workflow
-title: Sandbox Lifecycle, Files, Tunnels, and Command Execution
-description: End-to-end lifecycle of LangSmith sandboxes from control-plane creation through dataplane files, Python TCP tunnels, HTTP and WebSocket commands, reconnect offsets, snapshots, and cleanup.
-tags: [sandbox, lifecycle, command-execution, websocket, files, tunnels, snapshots]
+type: sandbox execution workflow
+title: Sandbox Lifecycle and Execution Transports
+description: Control-plane and dataplane lifecycle for LangSmith sandboxes, including mounts, files, snapshots, service access, cleanup, and the distinct HTTP, WebSocket, SSE, and Python tunnel paths.
+tags: [sandbox, lifecycle, command-execution, websocket, sse, files, tunnels, snapshots]
 verified:
   - by: openwiki/0.5.2
-    at: 2026-09-15T08:28:54.852Z
+    at: 2026-10-12T08:42:50.524Z
 sources:
+  - id: openwiki-source-b411bd39cbe3d8688c8ba913
+    resource: repo://js/src/sandbox/access_delegation.ts
   - id: openwiki-source-ddf28cb9b6b5dacdc8a1f53a
     resource: repo://js/src/sandbox/client.ts
   - id: openwiki-source-310f490fb831155d2293e269
@@ -21,12 +23,16 @@ sources:
     resource: repo://js/src/sandbox/sandbox.ts
   - id: openwiki-source-46b7851438a0d6e2153860a2
     resource: repo://js/src/sandbox/ws_execute.ts
-  - id: openwiki-source-ceeef45b4f268b5304e89354
-    resource: repo://js/src/tests/sandbox_command_id_retry.test.ts
   - id: openwiki-source-a77a0e86eab87c75fce7f80e
     resource: repo://js/src/tests/sandbox_reconnect_ack.test.ts
   - id: openwiki-source-8e54af4ee80afa1722f7a457
     resource: repo://js/src/tests/sandbox_ws_handshake.test.ts
+  - id: openwiki-source-f019a7262dadfd345448f8be
+    resource: repo://python/langsmith/_features.py
+  - id: openwiki-source-d4c042808d66d8576b54ca5b
+    resource: repo://python/langsmith/sandbox/_access_delegation.py
+  - id: openwiki-source-5e103137ae6d76b79aae352e
+    resource: repo://python/langsmith/sandbox/_async_client.py
   - id: openwiki-source-1e8b531f391cc696b325d3f4
     resource: repo://python/langsmith/sandbox/_async_sandbox.py
   - id: openwiki-source-396e1266c2fc11d522c8b43e
@@ -41,127 +47,164 @@ sources:
     resource: repo://python/langsmith/sandbox/_mounts.py
   - id: openwiki-source-b880125d71a73ecc7ad6e755
     resource: repo://python/langsmith/sandbox/_sandbox.py
+  - id: openwiki-source-26a7d4052cb10f44c697ef05
+    resource: repo://python/langsmith/sandbox/_sse_execute.py
   - id: openwiki-source-07206942861fb8d1398032be
     resource: repo://python/langsmith/sandbox/_tunnel.py
   - id: openwiki-source-39661c53aaaf7310bc551986
     resource: repo://python/langsmith/sandbox/_ws_execute.py
-generated: { by: "openwiki/0.5.2", at: "2026-09-15T08:28:54.852Z" }
+  - id: openwiki-source-25d47cb8dfe95cf06af78acb
+    resource: repo://python/tests/integration_tests/test_sandbox_sse_exec.py
+  - id: openwiki-source-972e5cf2ea08d2c6daec4559
+    resource: repo://python/tests/unit_tests/sandbox/test_service_access.py
+  - id: openwiki-source-08d3cffb16df005a6b7942c4
+    resource: repo://python/tests/unit_tests/sandbox/test_sse_execute.py
+  - id: openwiki-source-6ef48c78bd5473e949427182
+    resource: repo://python/tests/unit_tests/sandbox/test_ws_execute.py
+generated: { by: "openwiki/0.5.2", at: "2026-10-12T08:42:50.524Z" }
 ---
 
-# Sandbox Lifecycle, Files, Tunnels, and Command Execution
+# Sandbox Lifecycle and Execution Transports
 
-The sandbox SDK has a deliberate control-plane/dataplane split. `SandboxClient` (TypeScript) and `SandboxClient` / `AsyncSandboxClient` (Python) create, inspect, update, start, stop, delete, and snapshot resources under `/v2/sandboxes`. A returned `Sandbox` or `AsyncSandbox` retains the resource metadata and sends command and file traffic to its `dataplane_url`. In Python, it can also open a local TCP tunnel or request a service URL.
+The sandbox APIs separate resource management from runtime traffic. TypeScript `SandboxClient` and Python `SandboxClient` / `AsyncSandboxClient` use the `/v2/sandboxes` control plane to create, inspect, update, start, stop, delete, and snapshot resources. A returned `Sandbox` or `AsyncSandbox` retains that metadata and uses its `dataplane_url` for commands and filesystem operations. Python additionally exposes service URLs and TCP tunnels.
 
-Authentication and endpoint defaults follow the wider [client configuration model](/openwiki/concepts/client-configuration-and-auth.md): the sandbox endpoint is derived by appending `/v2/sandboxes` to `LANGSMITH_ENDPOINT`, and `LANGSMITH_API_KEY` becomes `X-Api-Key`. Constructor-supplied headers are carried to control-plane HTTP, dataplane HTTP, and WebSocket upgrades; Python additionally supports per-operation header overrides. The TypeScript control-plane fetcher and Python HTTP transports retry transient HTTP/network failures according to the client's retry configuration.
+Authentication and endpoint defaults follow the wider [client configuration model](/openwiki/concepts/client-configuration-and-auth.md). The sandbox base endpoint is derived from `LANGSMITH_ENDPOINT`, and `LANGSMITH_API_KEY` becomes `X-Api-Key`. Default headers reach control-plane HTTP, dataplane HTTP, and WebSocket upgrades; Python also accepts operation-level header overrides.
 
-## Creation and lifecycle
+## Creation, readiness, and lifecycle
 
-Creation posts to `/boxes`. It can boot the default runtime or a snapshot and can set name, CPU, memory, filesystem capacity, mounts, proxy policy, and two retention clocks. `idle_ttl_seconds` / `idleTtlSeconds` stops an idle sandbox; `delete_after_stop_seconds` / `deleteAfterStopSeconds` permanently removes a stopped sandbox and its filesystem clone after the configured interval. Both values use minute resolution, and `0` disables the corresponding automatic action. If omitted, server defaults apply.
+Creation posts to `/boxes`. It can boot the default runtime or a snapshot and configure name, CPU, memory, root-filesystem capacity, mounts, proxy policy, boot `run_config`, access delegation, and two retention clocks:
 
-By default creation asks the server to wait for readiness. With `wait_for_ready=False` (Python) or `waitForReady: false` (TypeScript), the caller receives a provisioning object and should use `wait_for_sandbox()` / `waitForSandbox()`. Polling uses the lightweight `/status` endpoint, fetches the full object only after `ready`, raises a typed creation error on `failed`, and includes the last observed status in a timeout error.
+- `idle_ttl_seconds` / `idleTtlSeconds` stops an inactive sandbox. `0` disables idle stop.
+- `delete_after_stop_seconds` / `deleteAfterStopSeconds` permanently removes a stopped sandbox and its filesystem clone after the interval. `0` disables stop-anchored deletion.
+
+Both TTLs must use minute resolution; omission leaves the server default in force. Python accepts snapshot UUIDs, `name:tag`, and bare names through `snapshot`; the TypeScript overload distinguishes a snapshot ID from `snapshotName`.
+
+Creation normally asks the server to wait. With `wait_for_ready=False` or `waitForReady: false`, it returns a provisioning object. `wait_for_sandbox()` / `waitForSandbox()` polls the lightweight `/status` endpoint, fetches the complete sandbox only after `ready`, maps `failed` to a resource-creation error, and puts the last observed status on a timeout error.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Provisioning: create
+    Provisioning --> Provisioning: status poll
     Provisioning --> Ready: status ready
     Provisioning --> Failed: status failed
-    Provisioning --> Provisioning: status poll
-    Ready --> Stopped: explicit stop or idle TTL
-    Stopped --> Ready: explicit start completes
-    Stopped --> Ready: dataplane access resumes
-    Ready --> Snapshotting: capture snapshot
-    Snapshotting --> Ready: snapshot request accepted
+    Ready --> Stopped: stop or idle TTL
+    Stopped --> Ready: explicit start
+    Stopped --> Ready: dataplane request resumes
     Ready --> Deleted: explicit delete
-    Stopped --> Deleted: explicit delete or retention deadline
+    Stopped --> Deleted: delete or retention deadline
     Failed --> Deleted: explicit delete
     Deleted --> [*]
 ```
 
-*Sandbox lifecycle as exposed by the SDK; snapshot building is a separate polled resource even though capture starts from a running sandbox.*
+*Sandbox resource states observed and acted on by the SDK; snapshot building has a separate lifecycle.*
 
-The most important runtime invariant is that **local `status` is not the dataplane gate**. `stop()` preserves `dataplane_url`, marks only the local status as `stopped`, and the platform may resume the sandbox when a dataplane request arrives. Every run, read, write, or Python tunnel therefore checks only that the URL exists. A missing URL raises `DataplaneNotConfiguredError` / `LangSmithDataplaneNotConfiguredError`; a genuinely unavailable or not-ready runtime is reported by the server as the typed not-ready or connection failure. Explicit `start()` posts to `/start`, waits for `ready`, and refreshes local `status` and `dataplane_url`.
+Runtime methods deliberately do **not** gate on the object's cached `status`. They require only `dataplane_url`: `stop()` preserves that stable URL and updates local status, and a later dataplane request may wake the runtime. An absent URL raises `DataplaneNotConfiguredError` / `LangSmithDataplaneNotConfiguredError`; actual readiness and connection failures are mapped from the server. Explicit `start()` posts to `/start`, waits for readiness, and refreshes local status and URL.
 
 ### Ownership and cleanup
 
-Cleanup semantics differ by entrypoint:
+- Python `client.sandbox()` returns an auto-deleting context-manager sandbox. `with` and `async with` suppress deletion failures so cleanup cannot mask an exception from the body. `create_sandbox()` is manually managed. Sync/async conversions refer to the same server resource but disable auto-delete on the converted object.
+- TypeScript has no auto-deleting `Sandbox` context manager; use `try` / `finally` and `await sandbox.delete()`.
+- Closing a Python client closes its HTTP pools, not manually managed sandboxes.
+- Stop is reversible and preserves files. Delete is the terminal resource operation.
 
-- Python `client.sandbox()` and `await async_client.sandbox()` return auto-deleting context-manager objects. `with sandbox:` or `async with sandbox:` suppresses cleanup errors so it does not mask the body exception. `create_sandbox()` is manual-lifecycle and must be deleted explicitly. Sync/async conversion points refer to the same server resource but disable auto-delete on the converted sandbox.
-- TypeScript has no auto-deleting `Sandbox` context manager. Use `try` / `finally` and `await sandbox.delete()`.
-- Closing a Python client (`close()`, `aclose()`, or its context manager) closes its HTTP pools; it does not substitute for deleting manually managed sandboxes.
-- A stop is not cleanup: it preserves files and can be reversed by `start()` or dataplane access. Deletion is the terminal resource operation.
+## Mounts, boot identity, and delegated access
 
-## Mounts and persistent inputs
+Both SDKs build S3, GCS, credential-free public HTTPS Git, and read-only Context Hub mounts. Bucket mounts support read-only and cache settings. Context Hub synchronization is one-way; subsequent synchronization can overwrite guest writes unless configured as initial-pull-only.
 
-Both SDKs expose builders for S3, GCS, public Git, and read-only Context Hub mounts. Bucket mounts may be read-only and carry cache settings; Git accepts only absolute credential-free HTTPS repository URLs and optional branch/tag refresh settings. Context Hub synchronization is one-way, and later synchronization may overwrite guest writes unless configured as initial-pull-only.
+Mount validation keeps provider credentials out of individual mount specs. GCS requires top-level GCP mount auth. S3 requires either top-level AWS mount auth or, where supported by the builder, an enabled AWS proxy rule; supplying the same provider in both mount and proxy auth is rejected. Auth blocks without a matching mount and duplicate provider blocks are also invalid.
 
-`mount_config` / `mountConfig` is validated before creation. S3 requires one AWS auth block and GCS requires one GCP auth block; credentials belong in the top-level mount auth section, never an individual mount spec. Supplying the same provider's auth in both mount configuration and explicit proxy rules is rejected. This boundary matters because the backend expands mount auth into runtime proxy behavior rather than exposing provider credentials as ordinary mount fields.
+Creation can attach `access_delegation`, allowing code inside the sandbox to call LangSmith without its own API key. `INHERIT` tracks the creator's current permissions and forbids a permission list; `EXPLICIT` requires a non-empty permission list. The grant is a ceiling rechecked against the creator on every request, not a snapshot of access. Because anyone able to execute in the sandbox can use the grant, it should be scoped as narrowly as possible.
 
-## Dataplane file and network operations
+## Files and downloadable links
 
-`write()` uploads UTF-8 encoded strings or bytes as multipart data to `/upload?path=...`; `read()` downloads raw bytes from `/download?path=...`. Errors are interpreted as dataplane operation failures, including a typed file-not-found result. The control-plane `generate_download_url()` / `generateDownloadURL()` instead mints a path-bound bearer link. Anyone holding that URL can fetch the selected file without LangSmith credentials, and fetching can wake a stopped sandbox. The link is bound to a path, not an immutable content snapshot, so callers should write a new path and mint a new link when contents change.
+`write()` sends strings as UTF-8 or accepts bytes and performs multipart upload to `/upload`. `read()` returns raw bytes from `/download`. Both SDKs also expose stat, byte-range reads, glob/listing, and literal grep dataplane operations; range callers must distinguish a `206` partial response from a `200` whole-file response after a validator mismatch.
 
-TCP tunneling is **Python-only in the inspected APIs**. `Sandbox.tunnel()` and `AsyncSandbox.tunnel()` open a loopback listener and connect to `wss://.../tunnel` (or `ws://`) with API/default headers. Each local TCP connection gets a yamux stream, a three-byte protocol-version/remote-port header, and then a bidirectional bridge after the daemon's status byte. A dead yamux session is re-established under a lock with bounded exponential backoff (`max_reconnects`, default `3`). `Tunnel` is a sync context manager; `AsyncTunnel` is an async wrapper that starts and closes the same threaded implementation through an executor. TypeScript does not expose this tunnel facility.
+`generate_download_url()` / `generateDownloadURL()` is a control-plane operation. It creates a bearer link bound to one sandbox and exact path, optionally with expiry and response headers. Possession is sufficient to fetch the file and a fetch can wake a stopped sandbox. The link is path-bound rather than content-snapshot-bound, so write changed content to a new path and mint a new URL.
 
-## Command execution selection
+## Service access and Python TCP tunnels
 
-`run()` defaults to a blocking `ExecutionResult` containing `stdout`, `stderr`, and `exit_code`:
+Service access is Python-only in the inspected APIs. Token mode (`sandbox.service()` or `client.service()`) mints a `ServiceURL`; its HTTP helpers inject `X-Langsmith-Sandbox-Service-Token`, and token-bearing fields refresh when within 30 seconds of expiry. The client-level `service(..., access="restricted" | "workspace")` instead creates a durable `ServiceLoginURL`: `restricted` requires `sandboxes:read`, while `workspace` admits members of the owning workspace. Login URLs have no token, expiry, or programmatic HTTP helpers. TypeScript does not expose these service helpers.
 
-1. If WebSocket support is installed, the default blocking call uses `/execute/ws` and drains a command handle.
-2. If the optional WebSocket library is unavailable, only the simple blocking case falls back to `POST /execute`. HTTP sends `command`, `timeout`, `shell`, and optional `env` / `cwd`, with an HTTP deadline slightly longer than the command timeout.
-3. Streaming callbacks and `wait=False` require WebSocket execution. Python rejects `wait=False` combined with callbacks. TypeScript accepts callbacks on the non-blocking handle, so do not infer exact option parity.
+TCP tunneling is also Python-only. `Sandbox.tunnel()` and `AsyncSandbox.tunnel()` listen on loopback and connect to dataplane `/tunnel` over WebSocket. Each local TCP connection receives a yamux stream and is bridged to the requested guest port after the daemon's status response. A dead session is re-established under a lock with bounded backoff (`max_reconnects`, default `3`). `AsyncTunnel` delegates the same threaded implementation through an executor. This transport forwards arbitrary TCP; it is not a command-execution fallback.
 
-Python's optional dependency is `websockets`; TypeScript uses the optional `ws` package. Python exposes separate sync and async clients, sandboxes, streams, and command handles. TypeScript is promise/async-iterator based. Python also accepts per-call headers and offers TCP tunnels and service URLs; those facilities are not present on the inspected TypeScript `Sandbox`.
+## Choosing a command transport
 
-## WebSocket protocol and command handles
+The languages do not have transport parity:
 
-The client converts `dataplane_url` to `/execute/ws`, authenticates the upgrade, and sends an `execute` frame containing execution options and a client-generated `command_id`. The server's frame order is `started`, zero or more interleaved `stdout` / `stderr` frames, then `exit`; an `error` frame maps to a typed exception. `started` supplies the command ID and PID. A `CommandHandle` / `AsyncCommandHandle` exposes streamed `OutputChunk`s, the aggregate result, process identity, byte offsets, `kill`, stdin input, and manual reconnect.
+| Path | TypeScript | Python | Controls and streaming |
+|---|---|---|---|
+| WebSocket `/execute/ws` | Preferred when optional `ws` is available | Default when optional `websockets` is available | Bidirectional output, stdin, close-stdin, signals, PTY, reconnect |
+| Blocking HTTP `POST /execute` | Fallback only for `wait: true` without callbacks when `ws` is unavailable | Not selected by current `run()` | One terminal `ExecutionResult`; no handle |
+| SSE `/execute/stream/start` and `/resume` | Not exposed | Experimental feature-gated alternative | One-way streaming and reconnect; no running-command controls or PTY |
+| TCP `/tunnel` | Not exposed | Exposed | Arbitrary port forwarding, not command execution |
 
-The client-generated ID makes the uncertain pre-start phase idempotent: if connection establishment fails or the stream closes before `started`, `run()` reissues the **same** ID so the daemon can get-or-create the command rather than spawn a duplicate. Transient upgrade statuses `429`, `500`, `502`, `503`, and `504` are retryable; a numeric `Retry-After` wins over jittered exponential backoff. Other rejected upgrades are permanent. The per-open timeout defaults to 30 seconds and is clamped by a default 120-second whole-connect budget; non-positive `LANGSMITH_SANDBOX_WS_TIMEOUT_OPEN` or `LANGSMITH_SANDBOX_WS_TIMEOUT_CONNECT_BUDGET` disables that bound. Python additionally configures WebSocket ping, ping timeout, and close timeout through sandbox timeout environment variables.
-
-After `started`, the command session and its socket are independent. Unless `kill_on_disconnect` is set, a lost attachment does not mean the command stopped. Handles reconnect by command ID with the last consumed stdout and stderr **byte** offsets; UTF-8 byte length, not character count, advances each cursor. The server replays from its ring buffer from the requested offsets, or from its earliest retained data when an offset is too old. `ttl_seconds` controls how long a finished session remains reconnectable, while `idle_timeout` controls a command with no attached clients.
+Python selects SSE first when `LANGSMITH_EXPERIMENTAL_FEATURES=sandbox_sse_exec`; otherwise it requires `websockets` and raises an installation/feature hint when no transport is available. The SSE feature is off by default and `nosandbox_sse_exec` explicitly disables it. TypeScript uses HTTP only for the simple blocking fallback; callbacks or `wait: false` require WebSocket. Python rejects callbacks with `wait=False`, whereas TypeScript permits callbacks on the returned non-blocking handle.
 
 ```mermaid
 sequenceDiagram
     participant App
-    participant Handle as Command Handle
-    participant DP as Dataplane WebSocket
+    participant SDK
+    participant DP as Sandbox Dataplane
     participant Cmd as Command Session
-    App->>DP: execute with stable command_id
-    DP->>Cmd: get or create command
-    DP-->>Handle: started with command_id and pid
-    Cmd-->>Handle: stdout or stderr with byte offset
-    Handle-->>App: output chunk
-    DP--xHandle: connection loss
-    Handle->>DP: reconnect with command_id and offsets
-    DP->>Cmd: attach existing session
-    DP-->>Handle: started with matching command_id
-    Note over Handle: reset consecutive reconnect budget
-    Cmd-->>Handle: replay then live output
-    Cmd-->>Handle: exit with exit_code
-    Handle-->>App: aggregate ExecutionResult
+    App->>SDK: run command
+    alt TypeScript simple call without ws
+        SDK->>DP: POST execute
+        DP-->>SDK: stdout stderr and exit code
+    else WebSocket selected
+        SDK->>DP: execute with stable command_id
+        DP->>Cmd: get or create
+        DP-->>SDK: started then output
+        SDK->>DP: controls or reconnect with offsets
+        Cmd-->>SDK: exit
+    else Python SSE feature selected
+        SDK->>DP: POST stream start with stable command_id
+        DP->>Cmd: get or create
+        DP-->>SDK: started and output events
+        DP-->>SDK: ack_required
+        SDK->>DP: POST stream resume with byte offsets
+        Cmd-->>SDK: exit event
+    end
+    SDK-->>App: handle or ExecutionResult
 ```
 
-*WebSocket execution and reattachment; reconnect is successful only when `started.command_id` matches the handle's command.*
+*Execution selection and the distinct request shapes for blocking HTTP, WebSocket, and Python SSE.*
 
-A handle permits five consecutive automatic reconnect failures, with delays starting at 0.5 seconds and capped at 8 seconds. Close code `1001` is treated as server reload and reconnects immediately. Output proves progress and resets the failure counter. Crucially, a quiet command also resets the counter when the reconnect stream emits a `started` frame whose `command_id` matches the attached command. A `started` frame for another command is ignored, does not move offsets, and does not restore the budget. After `kill()`, connection errors are propagated rather than triggering reattachment. `CommandNotFound`, `SessionExpired`, command timeout, malformed frame ordering, and a stream ending without `exit` are command/reconnect operation failures rather than successful completion.
+## WebSocket commands and reconnects
 
-Control-call details are language-specific: TypeScript `kill()` and `sendInput()` are synchronous socket sends, Python sync uses `kill()` / `send_input()`, and Python async requires `await handle.kill()` / `await handle.send_input(...)`. In all variants, requesting `.result` drains any unread stream and requires a terminal `exit` frame.
+A WebSocket start sends a client-generated `command_id` and waits for `started` with command ID and PID. Before that acknowledgement, transient connection failures or early closure cause the SDK to retry with the **same** ID, allowing the daemon's get-or-create behavior to avoid duplicate processes. Upgrade statuses `429`, `500`, `502`, `503`, and `504` are retryable; numeric `Retry-After` overrides jittered exponential backoff. Each open attempt is clamped by the whole-connect budget.
+
+Frames then progress through interleaved `stdout` / `stderr` to `exit`; an `error` frame maps to a typed failure. Handles aggregate an `ExecutionResult`, expose iteration and process identity, and provide kill, stdin, close-stdin, and manual reconnect controls appropriate to the language's sync/async model.
+
+After `started`, command lifetime is independent of the socket unless `kill_on_disconnect` is set. Reconnect carries command ID plus separate stdout and stderr **UTF-8 byte offsets**. Automatic reconnect allows five consecutive failures, reconnects immediately for server reload, and stops retrying after kill. Output resets the budget; for a quiet WebSocket command, a `started` acknowledgement resets it only when its command ID matches the attached command. Command timeout, missing or expired sessions, malformed frame order, and a stream ending without `exit` remain failures.
+
+## Python SSE execution
+
+SSE reuses `CommandHandle` / `AsyncCommandHandle` by translating HTTP events into the same internal `started`, output, and `exit` messages. Sync execution uses the client's synchronous `httpx` stream and async execution uses its asynchronous stream; both support blocking results, callbacks, `wait=False` handles, and explicit `reconnect()`.
+
+`POST /execute/stream/start` includes a stable generated `command_id` plus command, shell, timeout, idle timeout, TTL, and optional environment, working directory, and `run_config`. If failure occurs before `started`, the start body is resent with the same ID. Thereafter `/execute/stream/resume` carries `command_id`, `stdout_offset`, and `stderr_offset`.
+
+Output data is base64-decoded as bytes. Separate incremental decoders retain an incomplete UTF-8 character across chunk and resume boundaries, while cursors advance by raw byte count. `stream_end` flushes a trailing incomplete sequence as the replacement character; `exit` also flushes both streams and is the successful terminal event. `error` maps through the command error mapper, except `ServerShuttingDown`, which triggers resume. A resume `404` becomes `CommandNotFound` rather than restarting the command.
+
+SSE has no mid-stream control channel. When the bounded server buffer needs acknowledgement, it terminates the response with `ack_required`; the SDK immediately posts `/resume` using the supplied offsets, which are both acknowledgement and next-read cursor. This protocol-driven resume does not consume retry budget. Broken/truncated responses and recoverable transport errors retry resume with jittered exponential backoff, at most five consecutive attempts; actual output resets that budget, but a `started` event alone does not. `LANGSMITH_SANDBOX_SSE_TIMEOUT_READ` controls the per-event timeout (default 60 seconds, non-positive disables it).
+
+Because the transport is one-way, SSE rejects `pty=True`, `close_input=False`, and `kill_on_disconnect=True`; handles cannot send input or kill a running command. These are WebSocket capabilities, not SSE capabilities.
 
 ## Snapshots
 
-Snapshots are reusable boot sources and have their own `building` to `ready` / `failed` polling lifecycle. Clients can build from a Docker image (optionally through a private registry), capture a running sandbox, list/get/delete snapshots, and wait for completion. Python supports `snapshot` references as UUID, `name:tag`, or bare name and exposes snapshot tags; the TypeScript creation overload inspected here distinguishes snapshot ID from `snapshotName` and should not be assumed to support every Python reference form.
+Snapshots are reusable boot sources with a separate `building` to `ready` or `failed` resource lifecycle. Clients build from container images, capture running sandboxes, list/get/delete snapshots, and poll completion. Capturing a snapshot does not move the sandbox itself into a snapshot state.
 
-Dockerfile snapshot helpers are orchestration, not a separate server-side build primitive: they create a temporary builder sandbox, tar and upload the local context, run BuildKit on the capacity-backed root filesystem, capture the built image, then delete the builder in a context manager or `finally`. A failed build becomes a typed snapshot creation error, and builder deletion still runs.
+Dockerfile helpers orchestrate a temporary builder sandbox: package and upload the local context, run BuildKit on the capacity-backed root filesystem, capture the resulting image, and delete the builder in a context manager or `finally`. Build failure maps to a snapshot-creation error without skipping builder cleanup.
 
-## Failure model and operational checks
+## Failure boundaries and focused tests
 
-All module-specific failures share a base (`SandboxClientError` in Python, `LangSmithSandboxError` in TypeScript), then distinguish authentication, API, validation, quota, resource not found/timeout/creation, dataplane not configured, not ready, operation, command timeout, and connection failures. Resource and operation errors preserve useful fields such as `resource_type` / `resourceType`, `last_status` / `lastStatus`, `operation`, and machine-readable `error_type` / `errorType`. Standard server `error_id` values are retained in messages for support correlation.
+Sandbox-specific hierarchies distinguish authentication/API/validation/quota failures, missing resources, creation and polling timeouts, absent dataplane configuration, not-ready runtimes, operation errors, command timeouts, and transport failures. HTTP handlers preserve structured server details and `error_id` values where available. Transport code adds protocol-specific mapping: WebSocket handshake classification, SSE resume `404`, command error events, and tunnel daemon status are handled at their respective boundaries.
 
-When changing this workflow, focus tests on boundaries rather than only happy-path output:
+High-value tests include:
 
-- `sandbox_error_handling.test.ts` checks structured `422` validation versus runtime creation failures and preservation of server error IDs.
-- `sandbox_ws_handshake.test.ts` verifies retryable upgrade statuses, `Retry-After`, and permanent `4xx` handling.
-- `sandbox_command_id_retry.test.ts` verifies reuse of one command ID before `started`, retry budgets, and whole-connect deadline clamping.
-- `sandbox_reconnect_ack.test.ts` proves that a matching `started` acknowledgement keeps silent commands alive across more socket losses than the consecutive-failure budget, while a mismatched acknowledgement does not.
+- `sandbox_ws_handshake.test.ts` for retryable upgrade statuses, `Retry-After`, and permanent `4xx` failures.
+- `sandbox_reconnect_ack.test.ts` for matching versus mismatched quiet-command acknowledgements.
+- `test_sse_execute.py` for feature selection, request payloads, acknowledgements, retries, UTF-8 reconstruction, terminal events, errors, unsupported controls, and sync/async behavior.
+- `test_sandbox_sse_exec.py` for live multi-megabyte exactly-once output across repeated acknowledgements.
+- `test_service_access.py` for token versus LangSmith-login service URL modes.
 
-These focused tests complement the broader [repository test strategy](/openwiki/testing/repository-test-strategy.md) and preserve the SDK boundary described in the [SDK architecture](/openwiki/architecture/sdk-architecture.md).
+These boundaries complement the [repository test strategy](/openwiki/testing/repository-test-strategy.md) and the broader [SDK architecture](/openwiki/architecture/sdk-architecture.md).
